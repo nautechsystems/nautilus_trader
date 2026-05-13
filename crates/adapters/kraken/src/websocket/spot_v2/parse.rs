@@ -221,7 +221,7 @@ fn parse_book_level(
     ))
 }
 
-fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
+pub(super) fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
     let nanos = value
         .timestamp_nanos_opt()
         .with_context(|| format!("Failed to convert {field}='{value}' to nanoseconds"))?;

@@ -164,6 +164,7 @@ class KrakenDataClient(LiveMarketDataClient):
                 base_url=config.base_url_ws_spot,
                 heartbeat_secs=config.ws_heartbeat_secs,
                 proxy_url=config.proxy_url,
+                base_url_http=config.base_url_http_spot,
             )
             self._log.info(f"Spot WebSocket URL {self._ws_client_spot.url}", LogColor.BLUE)
 
@@ -180,6 +181,25 @@ class KrakenDataClient(LiveMarketDataClient):
             self._log.info(f"Futures WebSocket URL {self._ws_client_futures.url}", LogColor.BLUE)
 
         self._ws_client_async_futures: set[asyncio.Future] = set()
+
+        self._ws_client_spot_l3: nautilus_pyo3.KrakenSpotWebSocketClient | None = None
+        if KrakenProductType.SPOT in self._product_types:
+            self._ws_client_spot_l3 = nautilus_pyo3.KrakenSpotWebSocketClient(
+                environment=environment,
+                base_url=config.base_url_ws_l3_spot,
+                heartbeat_secs=config.ws_heartbeat_secs,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                proxy_url=config.proxy_url,
+                l3=True,
+                validate_l3_checksum=config.validate_l3_checksum,
+                base_url_http=config.base_url_http_spot,
+            )
+            self._log.info(
+                f"Spot L3 WebSocket URL {self._ws_client_spot_l3.url}",
+                LogColor.BLUE,
+            )
+        self._l3_connect_lock = asyncio.Lock()
 
         self._update_instruments_task: asyncio.Task | None = None
         self._instrument_status_subs: set[InstrumentId] = set()
@@ -284,6 +304,12 @@ class KrakenDataClient(LiveMarketDataClient):
                 LogColor.BLUE,
             )
 
+        # Shutdown L3 WebSocket
+        if self._ws_client_spot_l3 is not None and not self._ws_client_spot_l3.is_closed():
+            self._log.info("Disconnecting L3 WebSocket")
+            await self._ws_client_spot_l3.close()
+            self._log.info("Disconnected from L3 WebSocket", LogColor.BLUE)
+
         # Cancel any pending async futures
         await cancel_tasks_with_timeout(
             self._ws_client_async_futures,
@@ -302,6 +328,9 @@ class KrakenDataClient(LiveMarketDataClient):
             client = self._get_http_client_for_symbol(str(inst.raw_symbol))
             if client:
                 client.cache_instrument(inst)
+
+            if self._ws_client_spot_l3 is not None and not self._ws_client_spot_l3.is_closed():
+                self._ws_client_spot_l3.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -359,6 +388,10 @@ class KrakenDataClient(LiveMarketDataClient):
             )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        if command.book_type == BookType.L3_MBO:
+            await self._subscribe_l3_order_book(command)
+            return
+
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
                 f"Book type {book_type_to_str(command.book_type)} not supported by Kraken, skipping subscription",
@@ -383,6 +416,67 @@ class KrakenDataClient(LiveMarketDataClient):
         depth = command.depth if command.depth != 0 else 10
 
         await ws_client.subscribe_book(pyo3_instrument_id, depth)
+
+    async def _subscribe_l3_order_book(self, command: SubscribeOrderBook) -> None:
+        symbol = command.instrument_id.symbol.value
+        if nautilus_pyo3.kraken_product_type_from_symbol(symbol) != KrakenProductType.SPOT:
+            self._log.warning(
+                f"L3 order book not supported for non-spot instrument {command.instrument_id}",
+            )
+            return
+
+        if command.depth not in (0, 10, 100, 1000):
+            self._log.error(
+                "Cannot subscribe to L3 order book deltas: "
+                f"invalid `depth`, was {command.depth}; "
+                "valid depths are 0 (default 1000), 10, 100, or 1000",
+            )
+            return
+
+        if self._ws_client_spot_l3 is None:
+            self._log.error(
+                "Cannot subscribe to L3 order book: spot product not configured",
+            )
+            return
+
+        if not self._ws_client_spot_l3.has_credentials:
+            self._log.error(
+                "Cannot subscribe to L3 order book: API credentials required "
+                "(set api_key/api_secret on KrakenDataClientConfig or "
+                "KRAKEN_SPOT_API_KEY/KRAKEN_SPOT_API_SECRET env vars)",
+            )
+            return
+
+        depth = command.depth if command.depth != 0 else 1000
+
+        async with self._l3_connect_lock:
+            if (
+                self._ws_client_spot_l3.is_closed()
+                or not self._ws_client_spot_l3.is_authenticated()
+            ):
+                try:
+                    if self._ws_client_spot_l3.is_closed():
+                        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
+                        await self._ws_client_spot_l3.connect(
+                            self._loop,
+                            instruments_pyo3,
+                            self._handle_msg,
+                        )
+                        await self._ws_client_spot_l3.wait_until_active(timeout_secs=10.0)
+                    await self._ws_client_spot_l3.authenticate()
+                    self._log.info(
+                        f"Connected to L3 WebSocket {self._ws_client_spot_l3.url}",
+                        LogColor.BLUE,
+                    )
+                except Exception:
+                    await self._ws_client_spot_l3.close()
+                    raise
+
+        await self._ws_client_spot_l3.subscribe_l3_book(symbol, depth)
+        self._log.info(
+            f"Subscribed to L3 order book: {command.instrument_id} depth={depth}",
+            LogColor.BLUE,
+        )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         symbol = command.instrument_id.symbol.value
@@ -507,6 +601,13 @@ class KrakenDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         symbol = command.instrument_id.symbol.value
+
+        if self._ws_client_spot_l3 is not None:
+            subscriptions = self._ws_client_spot_l3.get_subscriptions()
+            if f"level3:{symbol}" in subscriptions:
+                await self._ws_client_spot_l3.unsubscribe_l3_book(symbol)
+                return
+
         ws_client = self._get_ws_client_for_symbol(symbol)
         if ws_client is None:
             return
@@ -1018,6 +1119,9 @@ class KrakenDataClient(LiveMarketDataClient):
 
         if self._ws_client_futures is not None and self._ws_client_futures_connected:
             self._ws_client_futures.cache_instrument(pyo3_instrument)
+
+        if self._ws_client_spot_l3 is not None and not self._ws_client_spot_l3.is_closed():
+            self._ws_client_spot_l3.cache_instrument(pyo3_instrument)
 
     def _handle_instrument_update(self, pyo3_instrument: KrakenInstrument) -> None:
         self._cache_instrument(pyo3_instrument)
