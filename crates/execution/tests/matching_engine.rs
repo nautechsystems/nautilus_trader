@@ -686,6 +686,118 @@ fn test_process_order_when_closed_linked_order(
 }
 
 #[rstest]
+fn test_process_bracket_order_list_does_not_double_submit_children(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    engine_config: OrderMatchingEngineConfig,
+) {
+    // Regression for discussion #4040: duplicate process_order on OTO children
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+        None,
+    );
+
+    // Ask side only: market BUY fills, SELL SL/TP have no bid to match
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1500.00"),
+        Quantity::from("10.000"),
+        1,
+    );
+    engine
+        .process_order_book_delta(
+            &OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+                .book_action(BookAction::Add)
+                .book_order(ask)
+                .build(),
+        )
+        .unwrap();
+
+    let entry_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let sl_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let tp_id = ClientOrderId::from("O-19700101-000000-001-001-3");
+
+    let mut entry = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sl_id, tp_id])
+        .submit(true)
+        .build();
+    let mut sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(sl_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![tp_id])
+        .submit(true)
+        .build();
+    let mut tp = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("3000.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(tp_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![sl_id])
+        .submit(true)
+        .build();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_order(entry.clone(), None, None, false)
+            .unwrap();
+        cache_mut.add_order(sl.clone(), None, None, false).unwrap();
+        cache_mut.add_order(tp.clone(), None, None, false).unwrap();
+    }
+
+    // Mirror `SimulatedExchange::process_trading_command` for SubmitOrderList
+    engine.process_order(&mut entry, account_id);
+    engine.process_order(&mut sl, account_id);
+    engine.process_order(&mut tp, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    let already_exists = events
+        .iter()
+        .filter(|e| {
+            e.event_type() == OrderEventType::Rejected
+                && e.message()
+                    .is_some_and(|m| m.as_str().contains("already exists"))
+        })
+        .count();
+    assert_eq!(
+        already_exists, 0,
+        "No bracket child should be rejected with 'Order already exists'; events: {events:?}",
+    );
+
+    let filled = events
+        .iter()
+        .filter(|e| e.event_type() == OrderEventType::Filled)
+        .count();
+    let accepted = events
+        .iter()
+        .filter(|e| e.event_type() == OrderEventType::Accepted)
+        .count();
+    assert_eq!(filled, 1, "entry should fill exactly once");
+    assert_eq!(
+        accepted, 2,
+        "SL and TP should each be accepted exactly once"
+    );
+}
+
+#[rstest]
 fn test_process_market_order_no_market_rejected(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,

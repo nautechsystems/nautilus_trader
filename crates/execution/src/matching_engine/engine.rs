@@ -2429,16 +2429,17 @@ impl OrderMatchingEngine {
     ///
     /// Panics if an OTO child order references a missing or non-OTO parent.
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
+        // Idempotent: OTO children may be re-routed via `fill_order`
+        if self.core.order_exists(order.client_order_id()) {
+            return;
+        }
+
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
         // This avoids RefCell re-entrancy panics from synchronous event
         // dispatch that calls back into the execution engine.
         let reject_reason: Option<Ustr> = 'validate: {
             let cache_borrow = self.cache.as_ref().borrow();
-
-            if self.core.order_exists(order.client_order_id()) {
-                break 'validate Some("Order already exists".into());
-            }
 
             // Index identifiers
             self.account_ids.insert(order.trader_id(), account_id);
