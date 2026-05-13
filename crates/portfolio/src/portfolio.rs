@@ -2316,6 +2316,7 @@ fn update_order(
         cache.borrow_mut().cache_account_owned(working_account);
     }
 
+    // Consumed by the matching `events.order.*` topic handler; engine publishes after every endpoint send
     if let Some(event_id) = mark_pre_position_fill_event {
         inner.borrow_mut().pre_position_fill_events.insert(event_id);
     }

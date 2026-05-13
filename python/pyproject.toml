@@ -53,8 +53,46 @@ strip = false
 include = ["**/*.pyi"]
 
 [tool.uv]
-required-version = "==0.11.8"
+required-version = "==0.11.12"
 exclude-newer = "3 days"
+# Block sdist builds for every third-party package in python/uv.lock so
+# unexpected loss of wheel publishing fails `uv lock` instead of silently
+# building from source. Kept in sync with python/uv.lock by
+# scripts/check-no-build-packages.sh (also a pre-commit hook). The local
+# nautilus-trader v2 package is intentionally absent because it must be built
+# by maturin.
+no-build-package = [
+  "colorama",
+  "coverage",
+  "execnet",
+  "iniconfig",
+  "librt",
+  "maturin",
+  "mypy",
+  "mypy-extensions",
+  "numpy",
+  "packaging",
+  "pandas",
+  "pathspec",
+  "pluggy",
+  "psutil",
+  "py-cpuinfo",
+  "pyarrow",
+  "pygments",
+  "pytest",
+  "pytest-asyncio",
+  "pytest-benchmark",
+  "pytest-cov",
+  "pytest-mock",
+  "pytest-xdist",
+  "python-dateutil",
+  "python-dotenv",
+  "pytz",
+  "ruff",
+  "six",
+  "typing-extensions",
+  "tzdata",
+]
 
 [dependency-groups]
 dev = ["maturin>=1.13.1", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.12"]

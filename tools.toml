@@ -5,7 +5,7 @@
 # uv:             pyproject.toml [tool.uv]
 
 [prek]
-version = "0.3.11"
+version = "0.3.13"
 
 [osv-scanner]
 version = "2.3.6"

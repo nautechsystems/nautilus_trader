@@ -70,6 +70,7 @@ chain attacks and vulnerabilities:
 
 - **Dependency auditing**: Automated security scanning via cargo-audit, cargo-deny, cargo-vet, and OSV Scanner (Rust) and pip-audit (Python).
 - **Dependency and tool cooldown**: Python dependency resolution excludes packages published within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit process and policy. The cooldown gives the community time to detect and quarantine compromised releases.
+- **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every third-party package locked in `uv.lock` and forbids `uv` from building any of them from source. In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed upstream stops publishing wheels for the target platform, in which case `uv lock` fails instead of silently building from an sdist. The local workspace package is intentionally absent because it must be built by the workspace's own build backend. The `check-no-build-packages` pre-commit hook verifies the list stays in lock-step with `uv.lock` on every commit that touches the lock or the manifest.
 - **Toolchain pinning**: The uv package manager version is pinned via `required-version` in `pyproject.toml` and enforced across CI, Docker, and local development.
 - **Code scanning**: CodeQL static analysis for Python and Rust code.
 - **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub Actions auditing, and Unicode control character detection.
@@ -89,6 +90,16 @@ chain attacks and vulnerabilities:
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
 
 For detailed CI/CD security practices, see [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
+
+## Advisories addressed
+
+Third-party security advisories we have addressed via dependency upgrades.
+Detection lag for each upgrade is gated by the `exclude-newer` cooldown described
+above; the cooldown can be bypassed when a CVE warrants immediate response.
+
+- **1.227.0**:
+  - [GHSA-mf9v-mfxr-j63j](https://github.com/urllib3/urllib3/security/advisories/GHSA-mf9v-mfxr-j63j) — `urllib3` decompression-bomb safeguard bypass via `HTTPResponse.drain_conn()` after partial decompression, and via the second `read(amt=N)`/`stream(amt=N)` call when Brotli-decompressed. Upgraded `urllib3` to v2.7.0.
+  - [GHSA-qccp-gfcp-xxvc](https://github.com/urllib3/urllib3/security/advisories/GHSA-qccp-gfcp-xxvc) — `urllib3` pools created via `ProxyManager.connection_from_url` not stripping headers listed in `Retry.remove_headers_on_redirect` when redirecting cross-host. Upgraded `urllib3` to v2.7.0.
 
 ## Verifying releases
 

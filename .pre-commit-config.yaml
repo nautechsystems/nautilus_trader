@@ -137,6 +137,14 @@ repos:
         language: system
         files: \.toml$
 
+      - id: check-no-build-packages
+        name: check no-build-packages
+        description: Ensures `[tool.uv].no-build-package` matches `uv.lock`
+        entry: bash scripts/check-no-build-packages.sh
+        language: system
+        files: ^(uv\.lock|python/uv\.lock|pyproject\.toml|python/pyproject\.toml)$
+        pass_filenames: false
+
       - id: check-todo-exclamation
         name: check todo! markers
         description: Prevents committing TODO! markers that indicate incomplete work
@@ -370,7 +378,7 @@ repos:
           ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.8 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.12 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$

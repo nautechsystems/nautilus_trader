@@ -69,12 +69,14 @@ Released on TBD (UTC).
 ### Security
 - Added Sigstore SBOM attestation for Docker container images at the published digest
 - Added CI smoke tests verifying wheel, sdist, and Docker image signatures after publish
-- Documented Sigstore signature and SBOM verification commands in `SECURITY.md`
+- Removed long-lived `PACKAGES_TOKEN` PAT in favor of per-job GHCR `GITHUB_TOKEN`
 - Hardened CI release signing chain: pinned cosign tooling, `harden-runner` on merge jobs
 - Hardened nightly-merge auth by storing token in git extraheader rather than remote URL
 - Hardened PyPI publishing with OIDC trusted publishing, eliminating long-lived API tokens
+- Hardened Python dependency installation by listing every third-party package in `[tool.uv].no-build-package` (kept in sync with `uv.lock` by a pre-commit hook) so unexpected loss of wheel publishing fails `uv lock` instead of silently building from an sdist
+- Upgraded `urllib3` to v2.7.0 (addresses GHSA-mf9v-mfxr-j63j decompression-bomb bypass and GHSA-qccp-gfcp-xxvc sensitive header leak on cross-host proxy redirect)
 - Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
-- Removed long-lived `PACKAGES_TOKEN` PAT in favor of per-job GHCR `GITHUB_TOKEN`
+- Documented Sigstore signature and SBOM verification commands in `SECURITY.md`
 
 ### Fixes
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
@@ -82,6 +84,7 @@ Released on TBD (UTC).
 - Fixed `RefCell` double-borrow panic in `Portfolio::update_position` when `calculate_account_state` is true
 - Fixed identifier deserialization inside `#[serde(tag = "type")]` enums and `serde_json::Value`; all identifiers now accept owned strings via `Cow<'de, str>`
 - Fixed `AccountsManager::update_balances` discarding recalculated balances by mutating a dropped clone
+- Fixed margin account balance not applying realized price PnL on close and reversal fills (#4056), thanks @faysou
 - Fixed Rust portfolio account event clone overhead (#4004), thanks for reporting @magnified103
 - Fixed margin `AccountState` events emitting empty balances when balances were populated
 - Fixed `allow_cash_borrowing` not applied to cached cash accounts during simulated venue initialization
@@ -94,6 +97,7 @@ Released on TBD (UTC).
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine.reset` leaking `OrderBook.ts_last` across resets (Python) (#3992), thanks @YeeTsai
 - Fixed sandbox tick-size precision race that could panic on stale ticks (#3994), thanks @graceyangfan
+- Fixed matching engine and sandbox handling of stale-precision quote and trade ticks (#4044), thanks @graceyangfan
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
 - Fixed reconciliation drift when a venue snapshot carries both a fill mismatch and a quantity/price amendment (Rust)
 - Fixed reconciliation premature `OrderUpdated` emission for pending venue states before venue confirmation (Rust)
@@ -149,6 +153,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers reconnect before server version handshake (#4027), thanks @faysou
 - Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
+- Fixed Kraken Spot WebSocket dispatch dropping delta-only execution frames that omit `symbol` (#4052), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed OKX missing `rebase` instrument status (#3998), thanks @jhavie
 - Fixed OKX future instrument status parsing (#4005), thanks @cryptoSUN2049
@@ -208,7 +213,7 @@ Released on TBD (UTC).
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
 - Upgraded `alloy` crate to v2.0.4
-- Upgraded `databento` crate to v0.50.0
+- Upgraded `databento` crate to v0.51.0
 - Upgraded `redis` crate to v1.2.1
 - Upgraded `tokio` crate to v1.52.3 (fixes a performance regression)
 

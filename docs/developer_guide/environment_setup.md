@@ -196,9 +196,9 @@ echo "PYTHONHOME: $PYTHONHOME"
 ## Dependency management
 
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
-`pyproject.toml` enforces two supply chain safety settings:
+`pyproject.toml` enforces three supply chain safety settings:
 
-- **`required-version = "==0.11.8"`**: all developers and CI use the same uv version. The version
+- **`required-version = "==0.11.12"`**: all developers and CI use the same uv version. The version
   is extracted by `scripts/uv-version.sh` for Makefile, CI, and Docker builds. If your local uv
   drifts off the pin, `uv lock`/`uv sync` will fail with `Required uv version ... does not match the
   running version ...`. Run `make update-uv` to install the pinned version (or follow uv's own
@@ -210,6 +210,13 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
   `"PT24H"`). uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside `uv.lock` and
   emits a sentinel `exclude-newer` timestamp alongside it for backwards compatibility; both
   lockfiles in this repo use that format.
+- **`no-build-package`**: explicit list of every third-party package locked in `uv.lock`. `uv`
+  refuses to build any of them from source. In normal operation uv prefers wheels, so the setting
+  is a no-op; it triggers only if a listed package stops publishing wheels for the target platform,
+  in which case `uv lock` fails rather than silently building from an sdist. The local workspace
+  package is intentionally not in the list because it must be built by the workspace's own build
+  backend. The list is kept in sync with `uv.lock` by `scripts/check-no-build-packages.sh`,
+  which also runs as a pre-commit hook on changes to `uv.lock` or `pyproject.toml`.
 
 ### Bypassing the cooldown
 
