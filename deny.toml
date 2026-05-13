@@ -228,6 +228,7 @@ skip = [
   { crate = "windows_aarch64_gnullvm" },
   { crate = "windows_aarch64_msvc" },
   { crate = "windows_i686_gnu" },
+  { crate = "windows_i686_gnullvm" },
   { crate = "windows_i686_msvc" },
   { crate = "windows_x86_64_gnu" },
   { crate = "windows_x86_64_gnullvm" },

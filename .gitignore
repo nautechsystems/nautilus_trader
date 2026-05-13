@@ -86,6 +86,7 @@ env/
 !scripts/ci/install-cargo-nextest.sh
 !scripts/ci/verify-ci-inputs.sh
 !scripts/ci/security-audit-gate.sh
+!scripts/ci/check-security-audit-result.sh
 !scripts/check-cargo-cooldown.sh
 !scripts/check-no-build-packages.sh
 !.pre-commit-hooks/*.sh
