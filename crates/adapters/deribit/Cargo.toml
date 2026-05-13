@@ -50,17 +50,23 @@ high-precision = ["nautilus-model/high-precision"]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[package.metadata.cargo-machete]
+ignored = ["arrow"] # Used by `custom_data` macro expansion
+
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-persistence-macros = { workspace = true }
+nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+arrow = { workspace = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }

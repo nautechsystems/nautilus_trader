@@ -29,12 +29,15 @@ pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::data::ensure_rust_extractor_registered;
+use nautilus_serialization::ensure_custom_data_registered;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
     common::consts::DERIBIT,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    data_types::DeribitVolatilityIndex,
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
 
@@ -103,6 +106,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::DeribitProductType>()?;
     m.add_class::<crate::common::enums::DeribitEnvironment>()?;
     m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
+    m.add_class::<DeribitVolatilityIndex>()?;
     m.add_class::<DeribitDataClientConfig>()?;
     m.add_class::<DeribitExecClientConfig>()?;
     m.add_class::<DeribitDataClientFactory>()?;
@@ -145,6 +149,9 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             "Failed to register Deribit exec config extractor: {e}"
         )));
     }
+
+    ensure_custom_data_registered::<DeribitVolatilityIndex>();
+    let _result = ensure_rust_extractor_registered::<DeribitVolatilityIndex>();
 
     Ok(())
 }
