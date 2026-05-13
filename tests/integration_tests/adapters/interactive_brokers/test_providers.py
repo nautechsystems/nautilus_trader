@@ -292,6 +292,86 @@ async def test_determine_venue_from_contract_opt_smart_uses_first_non_smart_from
     assert venue == "CBOE"
 
 
+def test_determine_venue_from_contract_stk_uses_primary_exchange_over_fill_exchange(
+    instrument_provider,
+):
+    contract = IBContract(
+        secType="STK",
+        symbol="META",
+        exchange="IBEOS",
+        primaryExchange="NASDAQ",
+        currency="USD",
+    )
+
+    venue = instrument_provider.determine_venue_from_contract(contract)
+
+    assert venue == "NASDAQ"
+
+
+def test_determine_venue_from_contract_stk_reuses_cached_mic_venue_over_primary_exchange(
+    ib_client,
+):
+    from nautilus_trader.common.component import LiveClock
+
+    provider = InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=InteractiveBrokersInstrumentProviderConfig(
+            convert_exchange_to_mic_venue=True,
+        ),
+    )
+    provider._process_contract_details(
+        [IBTestContractStubs.aapl_equity_contract_details()],
+    )
+    contract = IBContract(
+        secType="STK",
+        symbol="AAPL",
+        exchange="IBEOS",
+        primaryExchange="NASDAQ",
+        currency="USD",
+    )
+
+    venue = provider.determine_venue_from_contract(contract)
+
+    assert venue == "XNAS"
+
+
+@pytest.mark.parametrize(
+    "valid_exchanges",
+    [
+        "SMART,AMEX,NYSE,CBOE,PSX,ARCA",
+        "SMART,ARCA,AMEX,NYSE",
+    ],
+)
+def test_determine_venue_from_contract_stk_smart_reuses_cached_symbol_venue(
+    instrument_provider,
+    valid_exchanges,
+):
+    instrument_provider._process_contract_details(
+        [IBTestContractStubs.aapl_equity_contract_details()],
+    )
+
+    contract = IBContract(
+        secType="STK",
+        symbol="AAPL",
+        exchange="SMART",
+        primaryExchange="",
+        currency="USD",
+    )
+    details = IBContractDetails(
+        contract=contract,
+        validExchanges=valid_exchanges,
+        minTick=0.01,
+    )
+
+    venue = instrument_provider.determine_venue_from_contract(
+        contract,
+        contract_details=details,
+    )
+
+    assert venue == "NASDAQ"
+
+
 @pytest.mark.asyncio
 async def test_determine_venue_from_contract_opt_smart_maps_to_mic_when_convert_enabled(
     ib_client,
