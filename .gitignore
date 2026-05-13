@@ -87,8 +87,11 @@ env/
 !scripts/ci/verify-ci-inputs.sh
 !scripts/ci/security-audit-gate.sh
 !scripts/ci/check-security-audit-result.sh
+!scripts/ci/check-github-action-shas.sh
 !scripts/check-cargo-cooldown.sh
 !scripts/check-no-build-packages.sh
+!scripts/purge-orphan-dev-wheels.sh
+!scripts/regen-capnp.sh
 !.pre-commit-hooks/*.sh
 *tmp/
 *temp/

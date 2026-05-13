@@ -539,15 +539,15 @@ check-capnp-schemas:
 	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
 	@if ! command -v capnp > /dev/null 2>&1; then \
 		echo "$(YELLOW)⚠ capnp not installed, skipping schema check$(RESET)"; \
-	elif ! CAPNP_CHECK=1 bash scripts/regen_capnp.sh; then \
+	elif ! CAPNP_CHECK=1 bash scripts/regen-capnp.sh; then \
 		echo "$(RED)Error: Cap'n Proto regeneration failed$(RESET)"; \
-		echo "Run manually to see errors: ./scripts/regen_capnp.sh"; \
+		echo "Run manually to see errors: ./scripts/regen-capnp.sh"; \
 		exit 1; \
 	else \
 		DIFF_OUTPUT="$$(git diff -I\"ENCODED_NODE\" -- crates/serialization/generated/capnp)"; \
 		if [ -n "$$DIFF_OUTPUT" ]; then \
 			echo "$(RED)Error: Cap'n Proto generated files are out of date$(RESET)"; \
-			echo "Please run: ./scripts/regen_capnp.sh"; \
+			echo "Please run: ./scripts/regen-capnp.sh"; \
 			echo "Or: make regen-capnp"; \
 			exit 1; \
 		else \
@@ -558,7 +558,7 @@ check-capnp-schemas:
 .PHONY: regen-capnp  #-- Regenerate Cap'n Proto schema files
 regen-capnp:
 	$(info $(M) Regenerating Cap'n Proto schemas...)
-	@bash scripts/regen_capnp.sh
+	@bash scripts/regen-capnp.sh
 
 #== Rust Testing
 

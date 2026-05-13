@@ -10,7 +10,7 @@
 #   - capnpc-rust (installed via cargo build-dependencies)
 #
 # Usage:
-#   ./scripts/regen_capnp.sh
+#   ./scripts/regen-capnp.sh
 
 set -euo pipefail
 

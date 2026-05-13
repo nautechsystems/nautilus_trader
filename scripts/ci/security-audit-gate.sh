@@ -17,13 +17,13 @@ set -euo pipefail
 #
 # Required env vars:
 #   EVENT_NAME       - github.event_name
-#   BRANCH           - github.ref_name
 #   PR_BASE_REF      - github.event.pull_request.base.ref (PR only)
 #   PR_HEAD_SHA      - github.event.pull_request.head.sha (PR only)
 #   PUSH_BEFORE_SHA  - github.event.before (push only)
 #   PUSH_AFTER_SHA   - github.event.after  (push only)
 #
-# Audit-relevant paths:
+# Audit-relevant paths. Keep in sync with the `push.paths` list in
+# .github/workflows/security-audit.yml.
 #   - Lock files                Cargo.lock, uv.lock, python/uv.lock
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               pyproject.toml, python/pyproject.toml
@@ -47,10 +47,6 @@ case "$EVENT_NAME" in
     exit 0
     ;;
   push)
-    if [[ "$BRANCH" == "test-security" ]]; then
-      emit true "force-run branch test-security"
-      exit 0
-    fi
     base="$PUSH_BEFORE_SHA"
     head="$PUSH_AFTER_SHA"
     if [[ -z "$base" || "$base" =~ ^0+$ ]]; then

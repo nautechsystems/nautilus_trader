@@ -4,12 +4,10 @@ name: security-audit
 #
 # Triggers:
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
-#   - Push to test-security: every audit job runs unconditionally (test ramp).
-#   - Pull requests and pushes to develop / master: a path-filtered gate job
-#     decides whether the audit jobs run. Pushes / PRs that don't touch lock
-#     files, manifests, audit config, or this workflow itself report the audit
-#     jobs as `Skipped`, which satisfies required status checks without
-#     surfacing transient advisory noise.
+#   - Pull requests: a path-filtered gate job decides whether the audit jobs run.
+#   - Pushes to develop / master / test-security: GitHub path filters create a
+#     workflow run only when audit-relevant paths change. The gate job remains as
+#     a second check before the audit jobs run.
 
 permissions:
   contents: read
@@ -26,6 +24,28 @@ on:
   pull_request:
   push:
     branches: [develop, master, test-security]
+    paths:
+      # Keep in sync with scripts/ci/security-audit-gate.sh.
+      - Cargo.lock
+      - Cargo.toml
+      - crates/**/Cargo.toml
+      - uv.lock
+      - pyproject.toml
+      - python/uv.lock
+      - python/pyproject.toml
+      - deny.toml
+      - osv-scanner.toml
+      - .supply-chain/**
+      - tools.toml
+      - .cargo/config.toml
+      - .cargo/audit.toml
+      - rust-toolchain.toml
+      - scripts/cargo-tool-version.sh
+      - scripts/rust-toolchain.sh
+      - scripts/uv-version.sh
+      - scripts/ci/security-audit-gate.sh
+      - .github/actions/cargo-tool-install/**
+      - .github/workflows/security-audit.yml
   schedule:
     - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
@@ -54,7 +74,6 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BRANCH: ${{ github.ref_name }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}

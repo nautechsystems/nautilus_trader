@@ -1517,7 +1517,7 @@ When modifying schemas:
    ```bash
    make regen-capnp
    # or
-   ./scripts/regen_capnp.sh
+   ./scripts/regen-capnp.sh
    ```
 
 3. Review changes:
