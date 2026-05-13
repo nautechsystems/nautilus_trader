@@ -55,7 +55,7 @@ use book::{
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
 use futures::future::join_all;
-use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
+use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -64,10 +64,10 @@ use nautilus_common::{
     messages::data::{
         DataCommand, DataResponse, ForwardPricesResponse, RequestCommand, RequestForwardPrices,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-        UnsubscribeQuotes,
+        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
+        UnsubscribeOptionGreeks, UnsubscribeQuotes,
     },
     msgbus::{
         self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -77,7 +77,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, WeakCell,
+    Params, UUID4, WeakCell,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -96,7 +96,7 @@ use nautilus_model::{
         AggregationSource, BarAggregation, BookType, MarketStatusAction, OrderSide, PriceType,
         RecordFlag,
     },
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -112,10 +112,10 @@ use crate::defi::engine as _;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, RenkoBarAggregator, TickBarAggregator, TickImbalanceBarAggregator,
-        TickRunsBarAggregator, TimeBarAggregator, ValueBarAggregator, ValueImbalanceBarAggregator,
-        ValueRunsBarAggregator, VolumeBarAggregator, VolumeImbalanceBarAggregator,
-        VolumeRunsBarAggregator,
+        BarAggregator, RenkoBarAggregator, SpreadQuoteAggregator, TickBarAggregator,
+        TickImbalanceBarAggregator, TickRunsBarAggregator, TimeBarAggregator, ValueBarAggregator,
+        ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
+        VolumeImbalanceBarAggregator, VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
     option_chains::OptionChainManager,
@@ -123,6 +123,7 @@ use crate::{
 
 // Between built-in handlers (10) and default user handlers (0)
 const BAR_AGGREGATOR_PRIORITY: u32 = 5;
+const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
 
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
@@ -145,6 +146,8 @@ pub struct DataEngine {
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarType, Vec<BarAggregatorSubscription>>,
+    spread_quote_aggregators: AHashMap<InstrumentId, Rc<RefCell<SpreadQuoteAggregator>>>,
+    spread_quote_handlers: AHashMap<InstrumentId, Vec<(InstrumentId, TypedHandler<QuoteTick>)>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
     deferred_cmd_queue: DeferredCommandQueue,
@@ -206,6 +209,8 @@ impl DataEngine {
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
+            spread_quote_aggregators: AHashMap::new(),
+            spread_quote_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
             option_chain_instrument_index: AHashMap::new(),
             deferred_cmd_queue: Rc::new(RefCell::new(VecDeque::new())),
@@ -458,6 +463,12 @@ impl DataEngine {
                     .start_timer(Some(aggregator.clone()));
             }
         }
+
+        for aggregator in self.spread_quote_aggregators.values() {
+            aggregator
+                .borrow_mut()
+                .start_timer(Some(aggregator.clone()));
+        }
     }
 
     /// Stops all registered data clients and bar aggregator timers.
@@ -470,6 +481,10 @@ impl DataEngine {
 
         for aggregator in self.bar_aggregators.values() {
             aggregator.borrow_mut().stop();
+        }
+
+        for aggregator in self.spread_quote_aggregators.values() {
+            aggregator.borrow_mut().stop_timer();
         }
     }
 
@@ -486,6 +501,11 @@ impl DataEngine {
             if let Err(e) = self.stop_bar_aggregator(bar_type) {
                 log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
             }
+        }
+
+        let spread_ids: Vec<InstrumentId> = self.spread_quote_aggregators.keys().copied().collect();
+        for spread_id in spread_ids {
+            self.stop_spread_quote_aggregator(spread_id);
         }
 
         // Tear down option chain managers to unregister their msgbus handlers
@@ -877,6 +897,12 @@ impl DataEngine {
                 self.subscribe_synthetic_quotes(cmd.instrument_id);
                 return Ok(());
             }
+            SubscribeCommand::Quotes(cmd)
+                if self.is_spread_quote_command(cmd.instrument_id, cmd.params.as_ref()) =>
+            {
+                self.subscribe_spread_quotes(cmd);
+                return Ok(());
+            }
             SubscribeCommand::Trades(cmd) if cmd.instrument_id.is_synthetic() => {
                 self.subscribe_synthetic_trades(cmd.instrument_id);
                 return Ok(());
@@ -943,6 +969,12 @@ impl DataEngine {
             }
             UnsubscribeCommand::Quotes(cmd) if cmd.instrument_id.is_synthetic() => {
                 self.unsubscribe_synthetic_quotes(cmd.instrument_id);
+                return Ok(());
+            }
+            UnsubscribeCommand::Quotes(cmd)
+                if self.is_spread_quote_command(cmd.instrument_id, cmd.params.as_ref()) =>
+            {
+                self.unsubscribe_spread_quotes(cmd);
                 return Ok(());
             }
             UnsubscribeCommand::Trades(cmd) if cmd.instrument_id.is_synthetic() => {
@@ -1793,6 +1825,169 @@ impl DataEngine {
                 synthetics.push(synthetic.clone());
             }
         }
+    }
+
+    fn is_spread_quote_command(
+        &self,
+        instrument_id: InstrumentId,
+        params: Option<&Params>,
+    ) -> bool {
+        if !params
+            .and_then(|params| params.get_bool("aggregate_spread_quotes"))
+            .unwrap_or(false)
+        {
+            return false;
+        }
+
+        self.cache
+            .borrow()
+            .instrument(&instrument_id)
+            .is_some_and(InstrumentAny::is_spread)
+    }
+
+    fn subscribe_spread_quotes(&mut self, cmd: &SubscribeQuotes) {
+        if self
+            .spread_quote_aggregators
+            .contains_key(&cmd.instrument_id)
+        {
+            log::warn!(
+                "SpreadQuoteAggregator for {} is currently in use, subscription can't be started",
+                cmd.instrument_id,
+            );
+            return;
+        }
+
+        let Some(instrument) = self.cache.borrow().instrument(&cmd.instrument_id).cloned() else {
+            log::error!(
+                "Cannot create spread quote aggregator: no instrument found for {}",
+                cmd.instrument_id,
+            );
+            return;
+        };
+        let Some(legs) = spread_instrument_legs(&instrument) else {
+            log::error!(
+                "Cannot create spread quote aggregator: invalid spread legs for {}",
+                cmd.instrument_id,
+            );
+            return;
+        };
+
+        if legs.len() <= 1 {
+            log::error!(
+                "Cannot create spread quote aggregator: spread instrument {} should have more than one leg",
+                cmd.instrument_id,
+            );
+            return;
+        }
+
+        let cache = self.cache.clone();
+        let handler = Box::new(move |quote: QuoteTick| {
+            if let Err(e) = cache.borrow_mut().add_quote(quote) {
+                log_error_on_cache_insert(&e);
+            }
+            let topic = switchboard::get_quotes_topic(quote.instrument_id);
+            msgbus::publish_quote(topic, &quote);
+        });
+        let aggregator = Rc::new(RefCell::new(SpreadQuoteAggregator::new(
+            cmd.instrument_id,
+            &legs,
+            matches!(instrument, InstrumentAny::FuturesSpread(_)),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            handler,
+            self.clock.clone(),
+            false,
+            spread_quote_update_interval_seconds(cmd.params.as_ref()),
+            cmd.params
+                .as_ref()
+                .and_then(|params| params.get_u64("quote_build_delay"))
+                .unwrap_or(0),
+            None,
+            None,
+        )));
+
+        let mut handlers = Vec::with_capacity(legs.len());
+        for (leg_id, _) in &legs {
+            let topic = switchboard::get_quotes_topic(*leg_id);
+            let handler = TypedHandler::new(SpreadQuoteHandler::new(
+                &aggregator,
+                cmd.instrument_id,
+                *leg_id,
+            ));
+            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
+            handlers.push((*leg_id, handler));
+        }
+
+        aggregator
+            .borrow_mut()
+            .start_timer(Some(aggregator.clone()));
+        aggregator.borrow_mut().set_running(true);
+        self.spread_quote_aggregators
+            .insert(cmd.instrument_id, aggregator);
+        self.spread_quote_handlers
+            .insert(cmd.instrument_id, handlers);
+
+        for (leg_id, _) in legs {
+            let subscribe = SubscribeQuotes::new(
+                leg_id,
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(subscribe)));
+        }
+    }
+
+    fn unsubscribe_spread_quotes(&mut self, cmd: &UnsubscribeQuotes) {
+        let Some(leg_ids) = self.stop_spread_quote_aggregator(cmd.instrument_id) else {
+            return;
+        };
+
+        for leg_id in leg_ids {
+            let unsubscribe = UnsubscribeQuotes::new(
+                leg_id,
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+                unsubscribe,
+            )));
+        }
+    }
+
+    fn stop_spread_quote_aggregator(
+        &mut self,
+        spread_instrument_id: InstrumentId,
+    ) -> Option<Vec<InstrumentId>> {
+        let Some(aggregator) = self.spread_quote_aggregators.remove(&spread_instrument_id) else {
+            log::warn!(
+                "Cannot stop spread quote aggregator: no aggregator to stop for {spread_instrument_id}",
+            );
+            return None;
+        };
+
+        aggregator.borrow_mut().stop_timer();
+        aggregator.borrow_mut().set_running(false);
+
+        let handlers = self
+            .spread_quote_handlers
+            .remove(&spread_instrument_id)
+            .unwrap_or_default();
+        let mut leg_ids = Vec::with_capacity(handlers.len());
+        for (leg_id, handler) in handlers {
+            let topic = switchboard::get_quotes_topic(leg_id);
+            msgbus::unsubscribe_quotes(topic.into(), &handler);
+            leg_ids.push(leg_id);
+        }
+
+        Some(leg_ids)
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> bool {
@@ -2766,6 +2961,60 @@ impl DataEngine {
 
         Ok(())
     }
+}
+
+fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> {
+    match params.and_then(|params| params.get("update_interval_seconds")) {
+        Some(value) if value.is_null() => None,
+        Some(value) => value.as_u64().filter(|interval| *interval > 0),
+        None => Some(1),
+    }
+}
+
+fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentId, i64)>> {
+    if !instrument.is_spread() {
+        return None;
+    }
+
+    let instrument_id = instrument.id();
+    let symbol = instrument_id.symbol.as_str();
+    if !symbol.contains(GENERIC_SPREAD_ID_SEPARATOR) {
+        return Some(vec![(instrument_id, 1)]);
+    }
+
+    symbol
+        .split(GENERIC_SPREAD_ID_SEPARATOR)
+        .map(|component| parse_spread_leg(component, instrument_id.venue))
+        .collect()
+}
+
+fn parse_spread_leg(component: &str, venue: Venue) -> Option<(InstrumentId, i64)> {
+    if let Some(rest) = component.strip_prefix("((") {
+        let (ratio, symbol) = rest.split_once("))")?;
+        return parse_spread_leg_parts(ratio, symbol, venue, -1);
+    }
+
+    let rest = component.strip_prefix('(')?;
+    let (ratio, symbol) = rest.split_once(')')?;
+    parse_spread_leg_parts(ratio, symbol, venue, 1)
+}
+
+fn parse_spread_leg_parts(
+    ratio: &str,
+    symbol: &str,
+    venue: Venue,
+    sign: i64,
+) -> Option<(InstrumentId, i64)> {
+    if symbol.is_empty() {
+        return None;
+    }
+
+    let ratio = ratio.parse::<i64>().ok()?.checked_mul(sign)?;
+    if ratio == 0 {
+        return None;
+    }
+
+    Some((InstrumentId::new(Symbol::new(symbol), venue), ratio))
 }
 
 #[inline(always)]

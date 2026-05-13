@@ -56,7 +56,7 @@ use nautilus_common::{
     },
     testing::wait_until,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_data::{
     client::DataClientAdapter,
     engine::{DataEngine, config::DataEngineConfig},
@@ -85,14 +85,16 @@ use nautilus_model::{
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
-        CurrencyPair, FuturesContract, Instrument, InstrumentAny, SyntheticInstrument,
-        stubs::{audusd_sim, gbpusd_sim},
+        CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny,
+        SyntheticInstrument,
+        stubs::{audusd_sim, futures_spread_es, gbpusd_sim},
     },
     orderbook::OrderBook,
     stubs::TestDefault,
     types::{Currency, Price, Quantity},
 };
 use rstest::*;
+use serde_json::json;
 use ustr::Ustr;
 
 #[fixture]
@@ -168,6 +170,46 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+fn generic_futures_spread() -> FuturesSpread {
+    let mut spread = futures_spread_es();
+    spread.id = generic_futures_spread_id();
+    spread
+}
+
+fn generic_futures_spread_id() -> InstrumentId {
+    InstrumentId::from("(1)ESM4___((1))ESU4.GLBX")
+}
+
+fn generic_futures_spread_legs() -> (InstrumentId, InstrumentId) {
+    (
+        InstrumentId::from("ESM4.GLBX"),
+        InstrumentId::from("ESU4.GLBX"),
+    )
+}
+
+fn spread_quote_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+        "update_interval_seconds": null,
+    }))
+    .unwrap()
+}
+
+fn spread_quote_default_interval_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+    }))
+    .unwrap()
+}
+
+fn spread_quote_zero_interval_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+        "update_interval_seconds": 0,
+    }))
+    .unwrap()
 }
 
 #[rstest]
@@ -2238,6 +2280,395 @@ fn test_execute_subscribe_quotes(
 
     assert!(!data_engine.subscribed_quotes().contains(&audusd_sim.id));
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes-timer")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_default_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    advance_clock_and_dispatch(&clock, 0);
+    assert!(saver.get_messages().is_empty());
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+    assert!(saver.get_messages().is_empty());
+
+    advance_clock_and_dispatch(&clock, 1_000_000_000);
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+    assert_eq!(spread_quotes[0].ts_event, UnixNanos::from(1_000_000_000));
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_zero_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let leg_subscriptions: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)) => Some(cmd.instrument_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(leg_subscriptions, vec![leg_a, leg_b]);
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty());
+
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_b));
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+}
+
+#[rstest]
+fn test_unsubscribe_spread_quotes_stops_default_interval_timer(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let params = spread_quote_default_interval_params();
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    let unsub = UnsubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub)));
+
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        0
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_spread_quotes_removes_leg_handlers(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let params = spread_quote_params();
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+    recorder.borrow_mut().clear();
+
+    let unsub = UnsubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub)));
+
+    let leg_unsubscriptions: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(cmd)) => Some(cmd.instrument_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(leg_unsubscriptions, vec![leg_a, leg_b]);
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+
+    assert!(saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_default_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    data_engine.reset();
+
+    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        0
+    );
 }
 
 #[rstest]
