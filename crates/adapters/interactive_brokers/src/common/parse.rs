@@ -480,14 +480,22 @@ pub fn determine_venue_from_contract(
     }
 
     if convert_exchange_to_mic_venue {
-        for (venue_member, exchanges) in VENUE_MEMBERS.iter() {
-            if exchanges.iter().any(|candidate| *candidate == exchange) {
-                return (*venue_member).to_string();
-            }
+        if let Some(venue) = exchange_to_mic_venue(&exchange) {
+            return venue;
         }
     }
 
     exchange
+}
+
+/// Convert an Interactive Brokers exchange code to a MIC venue when known.
+#[must_use]
+pub fn exchange_to_mic_venue(exchange: &str) -> Option<String> {
+    VENUE_MEMBERS.iter().find_map(|(venue_member, exchanges)| {
+        exchanges
+            .contains(&exchange)
+            .then(|| (*venue_member).to_string())
+    })
 }
 
 /// Convert a NautilusTrader `InstrumentId` to an Interactive Brokers `Contract`.

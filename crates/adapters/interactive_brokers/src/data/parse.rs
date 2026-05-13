@@ -27,6 +27,20 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+fn checked_quantity(size: f64, precision: u8) -> anyhow::Result<Quantity> {
+    let quantity = Quantity::new_checked(size, precision)
+        .map_err(|e| anyhow::anyhow!("invalid quantity size={size}: {e}"))?;
+    let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
+    if (quantity.as_f64() - size).abs() > tolerance {
+        anyhow::bail!(
+            "quantity size={} cannot be represented with precision={}",
+            size,
+            precision
+        );
+    }
+    Ok(quantity)
+}
+
 /// Parse IB tick price and size data into a QuoteTick.
 ///
 /// This builds a quote from individual tick updates. You typically need to accumulate
@@ -49,8 +63,12 @@ pub fn parse_quote_tick(
 ) -> anyhow::Result<QuoteTick> {
     let bid = bid_price.map(|p| Price::new(p, price_precision));
     let ask = ask_price.map(|p| Price::new(p, price_precision));
-    let bid_qty = bid_size.map(|s| Quantity::new(s, size_precision));
-    let ask_qty = ask_size.map(|s| Quantity::new(s, size_precision));
+    let bid_qty = bid_size
+        .map(|s| checked_quantity(s, size_precision))
+        .transpose()?;
+    let ask_qty = ask_size
+        .map(|s| checked_quantity(s, size_precision))
+        .transpose()?;
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -80,7 +98,7 @@ pub fn parse_trade_tick(
     trade_id: Option<TradeId>,
 ) -> anyhow::Result<TradeTick> {
     let trade_price = Price::new(price, price_precision);
-    let trade_size = Quantity::new(size, size_precision);
+    let trade_size = checked_quantity(size, size_precision)?;
     let aggressor_side = AggressorSide::NoAggressor; // IB doesn't provide this directly
     let trade_id = trade_id
         .unwrap_or_else(|| crate::common::parse::generate_ib_trade_id(ts_event, price, size));
@@ -338,6 +356,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_trade_tick_rejects_unrepresentable_size() {
+        let instrument_id = create_test_instrument_id();
+        let result = parse_trade_tick(
+            instrument_id,
+            150.25,
+            0.5,
+            2,
+            0,
+            UnixNanos::new(1000),
+            UnixNanos::new(1000),
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_parse_quote_tick_rejects_unrepresentable_size() {
+        let instrument_id = create_test_instrument_id();
+        let result = parse_quote_tick(
+            instrument_id,
+            Some(150.25),
+            Some(150.30),
+            Some(0.5),
+            Some(200.0),
+            2,
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_parse_index_price_with_price_magnifier() {
         let instrument_id = create_test_instrument_id();
         let result = parse_index_price(
@@ -430,8 +483,8 @@ mod tests {
             instrument_id,
             Some(150.255),
             Some(150.305),
-            Some(100.5),
-            Some(200.5),
+            Some(100.0),
+            Some(200.0),
             2, // Price precision: 2 decimal places
             0, // Size precision: 0 decimal places
             UnixNanos::new(0),
