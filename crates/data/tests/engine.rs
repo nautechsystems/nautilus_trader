@@ -15,6 +15,8 @@
 
 mod common;
 
+#[cfg(feature = "streaming")]
+use std::path::{Path, PathBuf};
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, time::Duration};
 #[cfg(feature = "defi")]
 use std::{str::FromStr, sync::Arc};
@@ -93,6 +95,8 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{Currency, Price, Quantity},
 };
+#[cfg(feature = "streaming")]
+use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use rstest::*;
 use serde_json::json;
 use ustr::Ustr;
@@ -210,6 +214,155 @@ fn spread_quote_zero_interval_params() -> Params {
         "update_interval_seconds": 0,
     }))
     .unwrap()
+}
+
+#[cfg(feature = "streaming")]
+struct CatalogTempDir(PathBuf);
+
+#[cfg(feature = "streaming")]
+impl CatalogTempDir {
+    fn new(label: &str) -> Self {
+        let path =
+            std::env::temp_dir().join(format!("nautilus-data-engine-{label}-{}", UUID4::new()));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl Drop for CatalogTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn register_empty_catalog(data_engine: &mut DataEngine, label: &str) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_quote_catalog(
+    data_engine: &mut DataEngine,
+    instrument_id: InstrumentId,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("quotes");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![QuoteTick::new(
+                instrument_id,
+                Price::from("1.0000"),
+                Price::from("1.0001"),
+                Quantity::from(1),
+                Quantity::from(1),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_trade_catalog(
+    data_engine: &mut DataEngine,
+    instrument_id: InstrumentId,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("trades");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![TradeTick::new(
+                instrument_id,
+                Price::from("1.0000"),
+                Quantity::from(1),
+                AggressorSide::Buyer,
+                TradeId::new("T-1"),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_bar_catalog(
+    data_engine: &mut DataEngine,
+    bar_type: BarType,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("bars");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![Bar::new(
+                bar_type,
+                Price::from("1.0000"),
+                Price::from("1.0001"),
+                Price::from("0.9999"),
+                Price::from("1.0000"),
+                Quantity::from(1),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_recording_client(
+    data_engine: &mut DataEngine,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) -> Rc<RefCell<Vec<DataCommand>>> {
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, data_engine);
+    recorder
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_subscribe_command(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> SubscribeCommand {
+    let recorded = recorder.borrow();
+    let DataCommand::Subscribe(command) = &recorded[0] else {
+        panic!("expected subscribe command");
+    };
+    command.clone()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_subscribe_command_with_correlation(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    correlation_id: UUID4,
+) -> SubscribeCommand {
+    let command = recorded_subscribe_command(recorder);
+    assert_eq!(command.correlation_id(), Some(correlation_id));
+    command
 }
 
 #[rstest]
@@ -2280,6 +2433,249 @@ fn test_execute_subscribe_quotes(
 
     assert!(!data_engine.subscribed_quotes().contains(&audusd_sim.id));
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_from_catalog(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_quote_catalog(&mut data_engine, audusd_sim.id, 1_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(1_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_preserves_existing_start_ns(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_quote_catalog(&mut data_engine, audusd_sim.id, 1_000);
+    let params: Params = serde_json::from_value(json!({"start_ns": 42})).unwrap();
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(42)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_sets_null_without_catalog_hit(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-quotes");
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    let null_value = json!(null);
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get("start_ns")),
+        Some(&null_value)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_trades_from_catalog(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_trade_catalog(&mut data_engine, audusd_sim.id, 2_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
+
+    let SubscribeCommand::Trades(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected trades subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(2_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_external_bars_from_catalog(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 3_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let SubscribeCommand::Bars(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected bars subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(3_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_skips_internal_bars(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 4_000);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let SubscribeCommand::Bars(recorded) = recorded_subscribe_command(&recorder) else {
+        panic!("expected bars subscribe");
+    };
+    assert!(
+        recorded
+            .params
+            .as_ref()
+            .is_none_or(|params| !params.contains_key("start_ns"))
+    );
 }
 
 #[rstest]

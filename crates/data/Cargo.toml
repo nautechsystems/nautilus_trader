@@ -22,7 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-streaming = ["nautilus-persistence"]
+streaming = ["dep:serde_json", "nautilus-persistence"]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
@@ -70,6 +70,7 @@ ustr = { workspace = true }
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

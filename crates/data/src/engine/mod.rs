@@ -37,6 +37,9 @@ mod handlers;
 #[cfg(feature = "defi")]
 pub mod pool;
 
+#[cfg(feature = "streaming")]
+mod streaming;
+
 use std::{
     any::{Any, type_name},
     cell::{Ref, RefCell},
@@ -102,7 +105,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use streaming::CatalogMap;
 use ustr::Ustr;
 
 #[cfg(feature = "defi")]
@@ -134,7 +137,7 @@ pub struct DataEngine {
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
     #[cfg(feature = "streaming")]
-    catalogs: AHashMap<Ustr, ParquetDataCatalog>,
+    catalogs: CatalogMap,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
@@ -197,7 +200,7 @@ impl DataEngine {
             clients: IndexMap::new(),
             default_client: None,
             #[cfg(feature = "streaming")]
-            catalogs: AHashMap::new(),
+            catalogs: CatalogMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
@@ -362,21 +365,6 @@ impl DataEngine {
     #[must_use]
     pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
         Rc::clone(&self.cache)
-    }
-
-    /// Registers the `catalog` with the engine with an optional specific `name`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a catalog with the same `name` has already been registered.
-    #[cfg(feature = "streaming")]
-    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<&str>) {
-        let name = Ustr::from(name.unwrap_or("catalog_0"));
-
-        check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
-
-        self.catalogs.insert(name, catalog);
-        log::info!("Registered catalog <{name}>");
     }
 
     /// Registers the `client` with the engine with an optional venue `routing`.
@@ -930,6 +918,9 @@ impl DataEngine {
             }
             return Ok(());
         }
+
+        #[cfg(feature = "streaming")]
+        let cmd = self.subscribe_command_with_prefilled_start_ns(cmd)?;
 
         if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe(cmd);
