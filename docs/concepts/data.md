@@ -1443,7 +1443,7 @@ The NautilusTrader data catalog provides market data management:
 
 - **Dual Backend**: Rust performance + Python flexibility.
 - **Multi-Protocol**: Local, S3, GCS, Azure storage.
-- **Streaming**: Feather → Parquet conversion pipeline.
+- **Streaming**: Feather -> Parquet conversion pipeline.
 - **Operations**: Reset file names, consolidate data, period-based organization.
 
 **Key use cases**:

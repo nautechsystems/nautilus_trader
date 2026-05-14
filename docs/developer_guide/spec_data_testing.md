@@ -656,7 +656,7 @@ Test instrument status and close event subscriptions.
 
 **Considerations:**
 
-- Status events may only fire on state changes (e.g. trading halt → resume).
+- Status events may only fire on state changes (e.g. trading halt -> resume).
 - During normal trading hours, a `Trading` status may be received on subscribe.
 
 **Python config:**

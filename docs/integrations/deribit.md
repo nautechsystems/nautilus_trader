@@ -459,7 +459,7 @@ Deribit uses API key authentication with HMAC-SHA256 signatures for private endp
 To create API credentials:
 
 1. Log into your Deribit account at [deribit.com](https://www.deribit.com) (or [test.deribit.com](https://test.deribit.com) for testnet).
-2. Navigate to **Account** → **API**.
+2. Navigate to **Account** -> **API**.
 3. Click **Add new key** and configure permissions:
    - Enable **read** for market data access
    - Enable **trade** for order execution

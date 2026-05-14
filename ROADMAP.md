@@ -70,8 +70,11 @@ we set clear expectations, focus community efforts, and support a sustainable op
 
 ## Community-contributed integrations
 
-New integrations are a major undertaking for the project. They involve more than just the initial code — documentation, tutorials, maintenance, and ongoing user support are all required to make them viable and sustainable.
-Since contributors are not obligated to complete or maintain an integration, we must carefully weigh the long-term impact and commitment before accepting one into the main project.
+New integrations are a major undertaking for the project. They involve more than just the initial code:
+documentation, tutorials, maintenance, and ongoing user support are all required to make them viable
+and sustainable.
+Since contributors are not obligated to complete or maintain an integration, we must carefully weigh
+the long-term impact and commitment before accepting one into the main project.
 
 At present, the project has limited bandwidth to support new official integrations.
 

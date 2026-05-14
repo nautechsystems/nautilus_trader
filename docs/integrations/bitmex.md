@@ -768,7 +768,7 @@ BitMEX API credentials can be provided either directly in the configuration or v
 To generate API keys:
 
 1. Log in to your BitMEX account.
-2. Navigate to Account & Security → API Keys.
+2. Navigate to Account & Security -> API Keys.
 3. Create a new API key with appropriate permissions.
 4. For testnet, use [testnet.bitmex.com](https://testnet.bitmex.com).
 

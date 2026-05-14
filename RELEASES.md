@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Hyperliquid HIP-4 outcome reconciliation via spot balances; `outcomeMeta` settlement dispatch on the Rust client
 - Added Hyperliquid HIP-4 outcome order scaffolding; live placement awaits `splitOutcome` action wiring
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
+- Added Kraken Spot L3 order book support via WebSocket v2 (#4041), thanks @mcgrj
 - Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
 - Added OKX event contracts support
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
@@ -1265,8 +1266,8 @@ This release adds support for Python 3.14 with the following limitations:
 - Renamed `ExecTesterConfig.enable_sells` to `enable_limit_sells`
 - Changed `ParquetDataCatalog.register_data` to now treat `files=[]` as registering no files; pass `files=None` (default) to include all files
 - **Standardized data catalog directory naming**: Order book data directory names now use plural forms to align with the Rust catalog and Tardis Machine conventions; this ensures data written by the Python `StreamingFeatherWriter` can be read by the Rust catalog
-  - `order_book_delta/` → `order_book_deltas/`
-  - `order_book_depth10/` → `order_book_depths/`
+  - `order_book_delta/` -> `order_book_deltas/`
+  - `order_book_depth10/` -> `order_book_depths/`
 
   **Migration**: Rename existing data directories to use plural forms:
   ```bash

@@ -176,8 +176,8 @@ Each instrument defines two precision values:
 
 | Field             | Constrains                           | Example          |
 |-------------------|--------------------------------------|------------------|
-| `price_precision` | Order prices, trigger prices, fills. | `2` → `50000.01` |
-| `size_precision`  | Order quantities, fill quantities.   | `5` → `1.00001`  |
+| `price_precision` | Order prices, trigger prices, fills. | `2` -> `50000.01` |
+| `size_precision`  | Order quantities, fill quantities.   | `5` -> `1.00001`  |
 
 These precisions are paired with minimum increments:
 

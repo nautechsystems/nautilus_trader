@@ -856,8 +856,8 @@ When using L2 order book data (e.g., 100ms throttled depth snapshots) combined w
 **Common misconception**: Users sometimes expect every trade tick to trigger fills. Remember:
 
 - Only trades on the **opposite** side can fill your orders.
-- SELLER trades → potential BUY fills.
-- BUYER trades → potential SELL fills.
+- SELLER trades -> potential BUY fills.
+- BUYER trades -> potential SELL fills.
 - Book UPDATE events move the market but only trigger fills if prices cross your order.
 
 #### Queue position tracking
@@ -906,9 +906,9 @@ venue_config = BacktestVenueConfig(
 
 1. Order book shows 100 units at bid 100.00.
 2. You place a BUY LIMIT at 100.00 for 50 units. Queue ahead = 100.
-3. SELLER trade of 80 units at 100.00 → queue ahead = 20. No fill yet.
-4. SELLER trade of 30 units at 100.00 → queue clears with 10 excess. Fill = 10 units.
-5. Next SELLER trade of 50 units → fill remaining 40 units.
+3. SELLER trade of 80 units at 100.00 -> queue ahead = 20. No fill yet.
+4. SELLER trade of 30 units at 100.00 -> queue clears with 10 excess. Fill = 10 units.
+5. Next SELLER trade of 50 units -> fill remaining 40 units.
 
 **Limitations:**
 
@@ -972,7 +972,7 @@ granular data such as quotes, trades, or bars (although the simulation will only
 :::warning
 When using bars for execution simulation (enabled by default with `bar_execution=True` in venue configurations),
 Nautilus strictly expects the initialization timestamp (`ts_init`) of each bar to represent its **closing time**.
-This ensures accurate chronological processing, prevents look-ahead bias, and aligns market updates (Open → High → Low → Close) with the moment the bar is complete.
+This ensures accurate chronological processing, prevents look-ahead bias, and aligns market updates (Open -> High -> Low -> Close) with the moment the bar is complete.
 
 The event timestamp (`ts_event`) can represent either the open or close time of the bar:
 
@@ -1022,7 +1022,7 @@ In these cases, bars will still be received by strategies for analytics and deci
 
 2. **Price processing**:
    - The platform converts each bar's OHLC prices into a sequence of market updates.
-   - By default, updates follow the order: Open → High → Low → Close (configurable via `bar_adaptive_high_low_ordering`).
+   - By default, updates follow the order: Open -> High -> Low -> Close (configurable via `bar_adaptive_high_low_ordering`).
    - If you provide multiple timeframes (like both 1-minute and 5-minute bars), the platform uses the more granular data for highest accuracy.
 
 3. **Executions**:
@@ -1051,13 +1051,13 @@ How these price points are sequenced can be controlled via the `bar_adaptive_hig
 Nautilus supports two modes of bar processing:
 
 1. **Fixed ordering** (`bar_adaptive_high_low_ordering=False`, default)
-   - Processes every bar in a fixed sequence: `Open → High → Low → Close`.
+   - Processes every bar in a fixed sequence: `Open -> High -> Low -> Close`.
    - Simple and deterministic approach.
 
 2. **Adaptive ordering** (`bar_adaptive_high_low_ordering=True`)
    - Uses bar structure to estimate likely price path:
-     - If Open is closer to High: processes as `Open → High → Low → Close`.
-     - If Open is closer to Low: processes as `Open → Low → High → Close`.
+     - If Open is closer to High: processes as `Open -> High -> Low -> Close`.
+     - If Open is closer to Low: processes as `Open -> Low -> High -> Close`.
    - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order fills first.
 
@@ -1310,7 +1310,7 @@ Also verify that:
 
 ## Accounts
 
-Every backtest venue is attached with one of three `account_type` values —
+Every backtest venue is attached with one of three `account_type` values:
 `CASH`, `MARGIN`, or `BETTING`. For the full data model, query API, and margin
 model reference, see [Accounting](accounting.md).
 

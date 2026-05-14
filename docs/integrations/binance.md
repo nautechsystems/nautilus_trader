@@ -803,7 +803,7 @@ Download the [Binance Asymmetric Key Generator](https://github.com/binance/asymm
 
 **Registering with Binance**
 
-1. Log in to Binance and go to **Profile** → **API Management**
+1. Log in to Binance and go to **Profile** -> **API Management**
 2. Click **Create API** and select **Self-generated**
 3. Paste the contents of your public key file (including the `-----BEGIN PUBLIC KEY-----` header/footer)
 4. Configure permissions (Enable Spot & Margin Trading, etc.)

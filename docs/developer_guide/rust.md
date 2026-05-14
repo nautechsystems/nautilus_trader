@@ -1151,9 +1151,9 @@ This section documents best practices for handling Python objects in Rust callba
 
 **Problem**: Using `Arc<PyObject>` in callback-holding structs creates circular references:
 
-1. **Rust `Arc` holds Python objects** → increases Python reference count.
-2. **Python objects might reference Rust objects** → creates cycles.
-3. **Neither side can be garbage collected** → memory leak.
+1. **Rust `Arc` holds Python objects** -> increases Python reference count.
+2. **Python objects might reference Rust objects** -> creates cycles.
+3. **Neither side can be garbage collected** -> memory leak.
 
 **Example of problematic pattern**:
 

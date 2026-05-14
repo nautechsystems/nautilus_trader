@@ -57,9 +57,9 @@ Inherits from `BaseContract` to use Multicall3 for efficient batch operations. F
 
 **Error Types:**
 
-1. **`CallFailed`** - Contract missing or function not implemented → Skip token
-2. **`DecodingError`** - Raw bytes instead of ABI encoding (e.g., `0x5269636f...`) → Skip token
-3. **`EmptyTokenField`** - Function returns empty string → Skip if enforced
+1. **`CallFailed`** - Contract missing or function not implemented -> Skip token
+2. **`DecodingError`** - Raw bytes instead of ABI encoding (e.g., `0x5269636f...`) -> Skip token
+3. **`EmptyTokenField`** - Function returns empty string -> Skip if enforced
 
 **Best Practices:**
 

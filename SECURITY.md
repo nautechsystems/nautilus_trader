@@ -98,8 +98,13 @@ Detection lag for each upgrade is gated by the `exclude-newer` cooldown describe
 above; the cooldown can be bypassed when a CVE warrants immediate response.
 
 - **1.227.0**:
-  - [GHSA-mf9v-mfxr-j63j](https://github.com/urllib3/urllib3/security/advisories/GHSA-mf9v-mfxr-j63j) — `urllib3` decompression-bomb safeguard bypass via `HTTPResponse.drain_conn()` after partial decompression, and via the second `read(amt=N)`/`stream(amt=N)` call when Brotli-decompressed. Upgraded `urllib3` to v2.7.0.
-  - [GHSA-qccp-gfcp-xxvc](https://github.com/urllib3/urllib3/security/advisories/GHSA-qccp-gfcp-xxvc) — `urllib3` pools created via `ProxyManager.connection_from_url` not stripping headers listed in `Retry.remove_headers_on_redirect` when redirecting cross-host. Upgraded `urllib3` to v2.7.0.
+  - [GHSA-mf9v-mfxr-j63j](https://github.com/urllib3/urllib3/security/advisories/GHSA-mf9v-mfxr-j63j):
+    `urllib3` decompression-bomb safeguard bypass via `HTTPResponse.drain_conn()` after partial
+    decompression, and via the second `read(amt=N)`/`stream(amt=N)` call when Brotli-decompressed.
+    Upgraded `urllib3` to v2.7.0.
+  - [GHSA-qccp-gfcp-xxvc](https://github.com/urllib3/urllib3/security/advisories/GHSA-qccp-gfcp-xxvc):
+    `urllib3` pools created via `ProxyManager.connection_from_url` not stripping headers listed in
+    `Retry.remove_headers_on_redirect` when redirecting cross-host. Upgraded `urllib3` to v2.7.0.
 
 ## Verifying releases
 

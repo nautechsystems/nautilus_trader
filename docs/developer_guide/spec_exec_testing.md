@@ -132,7 +132,7 @@ Test market order submission and fills. Market orders should execute immediately
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
 | **Action**         | ExecTester opens a long position via `open_position_on_start_qty`.     |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
 | **Skip when**      | Adapter does not support market orders.                                |
 
@@ -170,7 +170,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
 | **Action**         | ExecTester opens a short position via negative `open_position_on_start_qty`. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Position opened with side=SHORT, quantity matches config, fill price within market range. |
 | **Skip when**      | Adapter does not support market orders or short selling.               |
 
@@ -201,7 +201,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
 | **Action**         | Open position with `open_position_time_in_force=IOC`.                  |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.            |
 | **Skip when**      | No IOC support.                                                        |
 
@@ -234,7 +234,7 @@ config.open_position_time_in_force = TimeInForce::Ioc;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
 | **Action**         | Open position with `open_position_time_in_force=FOK`.                  |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.            |
 | **Skip when**      | No FOK support.                                                        |
 
@@ -272,7 +272,7 @@ config.open_position_time_in_force = TimeInForce::Fok;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity. |
 | **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Order submitted with quote currency quantity; fill quantity is in base currency. |
 | **Skip when**      | Adapter does not support quote quantity orders.                        |
 
@@ -305,7 +305,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("100
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open position from TC-E01 or TC-E02.                                   |
 | **Action**         | Stop the strategy; ExecTester closes position via market order.        |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (closing order). |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (closing order). |
 | **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.          |
 | **Skip when**      | Adapter does not support market orders.                                |
 
@@ -363,7 +363,7 @@ Test limit order submission, acceptance, and behavior across time-in-force optio
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.        |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
 | **Skip when**      | Never.                                                                 |
 
@@ -398,7 +398,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.       |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
 | **Skip when**      | Never.                                                                 |
 
@@ -427,7 +427,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places both a limit buy and limit sell.                     |
-| **Event sequence** | Two independent sequences: each `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Event sequence** | Two independent sequences: each `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.              |
 | **Skip when**      | Never.                                                                 |
 
@@ -456,7 +456,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).    |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Order fills immediately; position opened.                              |
 | **Skip when**      | Adapter does not support IOC TIF.                                      |
 
@@ -472,7 +472,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Submit a limit buy IOC well below the market (passive price).          |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
 | **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
 | **Skip when**      | Adapter does not support IOC TIF.                                      |
 
@@ -486,7 +486,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing, sufficient book depth. |
 | **Action**         | Submit a limit buy FOK at aggressive price with quantity within top‑of‑book depth. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Order fills completely in a single fill event.                         |
 | **Skip when**      | Adapter does not support FOK TIF.                                      |
 
@@ -500,7 +500,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Submit a limit buy FOK at passive price (well below market).           |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
 | **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
 | **Skip when**      | Adapter does not support FOK TIF.                                      |
 
@@ -510,7 +510,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Place limit buy with `order_expire_time_delta_mins` set (e.g., 60 minutes). |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.              |
 | **Skip when**      | Adapter does not support GTD TIF.                                      |
 
@@ -556,7 +556,7 @@ config.order_expire_time_delta_mins = Some(60);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.      |
 | **Action**         | Submit limit buy with DAY TIF.                                         |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
 | **Skip when**      | Adapter does not support DAY TIF.                                      |
 
@@ -588,7 +588,7 @@ Test stop and conditional order types. These orders rest on the venue until a tr
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a stop‑market buy above the current ask.             |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY.  |
 | **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
@@ -629,7 +629,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a stop‑market sell below the current bid.            |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=SELL. |
 | **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
@@ -664,7 +664,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a stop‑limit buy with trigger price above ask and limit offset. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Stop‑limit order accepted with correct trigger price, limit price, and side=BUY. |
 | **Skip when**      | Adapter does not support `StopLimit` orders.                           |
 
@@ -705,7 +705,7 @@ config.stop_limit_offset_ticks = Some(50);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places a stop‑limit sell with trigger price below bid.      |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Stop‑limit order accepted with correct trigger price, limit price, and side=SELL. |
 | **Skip when**      | Adapter does not support `StopLimit` orders.                           |
 
@@ -742,7 +742,7 @@ config.stop_limit_offset_ticks = Some(50);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Place MIT buy with trigger below current bid (buy on dip).             |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
 | **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
 
@@ -752,7 +752,7 @@ config.stop_limit_offset_ticks = Some(50);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Place MIT sell with trigger above current ask (sell on rally).         |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
 | **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
 
@@ -762,7 +762,7 @@ config.stop_limit_offset_ticks = Some(50);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Place LIT buy with trigger below bid and limit price offset.           |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
 | **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
 
@@ -772,7 +772,7 @@ config.stop_limit_offset_ticks = Some(50);
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | Place LIT sell with trigger above ask and limit price offset.          |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
 | **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
 
@@ -798,7 +798,7 @@ Test order modification (amend) and cancel-replace workflows.
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open GTC limit buy from TC-E10.                                        |
 | **Action**         | ExecTester modifies limit buy to a new price as market moves (`modify_orders_to_maintain_tob_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
 | **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
 | **Skip when**      | Adapter does not support order modification.                           |
 
@@ -836,7 +836,7 @@ config.modify_orders_to_maintain_tob_offset = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open GTC limit sell from TC-E11.                                       |
 | **Action**         | ExecTester modifies limit sell to new price as market moves.           |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
 | **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
 | **Skip when**      | Adapter does not support order modification.                           |
 
@@ -867,7 +867,7 @@ config.modify_orders_to_maintain_tob_offset = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open GTC limit buy.                                                    |
 | **Action**         | ExecTester cancels and resubmits limit buy at new price as market moves. |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
 | **Skip when**      | Never (cancel‑replace is always available).                            |
 
@@ -903,7 +903,7 @@ config.cancel_replace_orders_to_maintain_tob_offset = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open GTC limit sell.                                                   |
 | **Action**         | ExecTester cancels and resubmits limit sell at new price.              |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
 | **Skip when**      | Never.                                                                 |
 
@@ -934,7 +934,7 @@ config.cancel_replace_orders_to_maintain_tob_offset = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                 |
 | **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                 |
 | **Pass criteria**  | `OrderUpdated` event logged with the new trigger price; order exits `PendingUpdate`. |
 | **Skip when**      | Adapter does not support modify, or no stop order support.             |
 
@@ -963,7 +963,7 @@ config.modify_stop_orders_to_maintain_offset = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open stop order.                                                       |
 | **Action**         | ExecTester cancels and resubmits stop at new trigger price.            |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled` -> `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.    |
 | **Skip when**      | No stop order support.                                                 |
 
@@ -1021,7 +1021,7 @@ Test order cancellation workflows.
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                            |
 | **Action**         | Stop the strategy; ExecTester cancels the open limit order.            |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled`.                                |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                                |
 | **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining.        |
 | **Skip when**      | Never.                                                                 |
 
@@ -1057,7 +1057,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).             |
 | **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each order: `OrderPendingCancel` → `OrderCanceled`.                |
+| **Event sequence** | For each order: `OrderPendingCancel` -> `OrderCanceled`.                |
 | **Pass criteria**  | All open orders canceled; no open orders remaining.                    |
 | **Skip when**      | Never.                                                                 |
 
@@ -1088,7 +1088,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Multiple open orders.                                                  |
 | **Action**         | Stop with `use_individual_cancels_on_stop=True`.                       |
-| **Event sequence** | Individual `OrderPendingCancel` → `OrderCanceled` for each order.      |
+| **Event sequence** | Individual `OrderPendingCancel` -> `OrderCanceled` for each order.      |
 | **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status.    |
 | **Skip when**      | Never.                                                                 |
 
@@ -1119,7 +1119,7 @@ config.use_individual_cancels_on_stop = true;
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                   |
 | **Action**         | Stop with `use_batch_cancel_on_stop=True`.                             |
-| **Event sequence** | Batch `OrderPendingCancel` → `OrderCanceled` for all orders.           |
+| **Event sequence** | Batch `OrderPendingCancel` -> `OrderCanceled` for all orders.           |
 | **Pass criteria**  | All orders canceled via single batch request; all reach CANCELED status. |
 | **Skip when**      | Adapter does not support batch cancel.                                 |
 
@@ -1178,7 +1178,7 @@ Test bracket order submission (entry + take-profit + stop-loss).
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester submits a bracket order: limit buy entry + take‑profit sell + stop‑loss sell. |
-| **Event sequence** | Entry: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`; TP and SL: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Event sequence** | Entry: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`; TP and SL: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry. |
 | **Skip when**      | Adapter does not support bracket orders.                               |
 
@@ -1261,7 +1261,7 @@ Test order-level flags and special parameters.
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places limit buy with `use_post_only=True` at passive price. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order accepted as a maker order; post‑only flag acknowledged by venue. |
 | **Skip when**      | Adapter does not support post‑only flag.                               |
 
@@ -1292,7 +1292,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open position (from TC-E01).                                           |
 | **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce‑only flag. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (with reduce‑only). |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (with reduce‑only). |
 | **Pass criteria**  | Closing order has reduce‑only flag; position fully closed.             |
 | **Skip when**      | Adapter does not support reduce‑only flag.                             |
 
@@ -1327,7 +1327,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, adapter supports display quantity.                  |
 | **Action**         | Place limit order with `order_display_qty` < `order_qty`.              |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order accepted with display quantity set; only display qty visible on the book. |
 | **Skip when**      | Adapter does not support display quantity / iceberg orders.            |
 
@@ -1358,7 +1358,7 @@ config.order_display_qty = Some(Quantity::from("0.1"));
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, adapter accepts additional parameters.              |
 | **Action**         | Place order with `order_params` dict containing adapter‑specific parameters. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.               |
 | **Pass criteria**  | Order accepted; adapter‑specific parameters passed through to venue.   |
 | **Skip when**      | N/A (adapter‑specific).                                                |
 
@@ -1386,7 +1386,7 @@ Test that the adapter correctly handles and reports order rejections.
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places post‑only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
 | **Pass criteria**  | Order rejected by venue; `OrderRejected` event received with reason indicating post‑only violation. |
 | **Skip when**      | Adapter does not support post‑only flag.                               |
 
@@ -1424,7 +1424,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, no open position for the instrument.                |
 | **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
 | **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce‑only violation. |
 | **Skip when**      | Adapter does not support reduce‑only flag.                             |
 
@@ -1511,7 +1511,7 @@ Test strategy lifecycle behavior and state management on start and stop.
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded, no existing position.            |
 | **Action**         | Strategy starts with `open_position_on_start_qty` set.                 |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | Position opened on start; market order submitted and filled before limit order maintenance begins. |
 | **Skip when**      | Adapter does not support market orders.                                |
 
@@ -1538,7 +1538,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open limit orders from the strategy session.                           |
 | **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each open order: `OrderPendingCancel` → `OrderCanceled`.           |
+| **Event sequence** | For each open order: `OrderPendingCancel` -> `OrderCanceled`.           |
 | **Pass criteria**  | All strategy‑owned open orders canceled on stop.                       |
 | **Skip when**      | Never.                                                                 |
 
@@ -1548,7 +1548,7 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open position from the strategy session.                               |
 | **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).       |
-| **Event sequence** | Closing order: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Event sequence** | Closing order: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
 | **Pass criteria**  | All strategy‑owned positions closed; net position = 0.                 |
 | **Skip when**      | Adapter does not support market orders.                                |
 
@@ -1674,7 +1674,7 @@ reasonable liquidity for fills.
 |--------------------|-----------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded, quotes flowing.                |
 | **Action**         | ExecTester places a limit buy on the option at a passive price.             |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.                    |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                    |
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
@@ -1696,7 +1696,7 @@ ExecTesterConfig(
 |--------------------|-----------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded, quotes flowing.                |
 | **Action**         | ExecTester places a limit sell on the option at a passive price.            |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.                    |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                    |
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
@@ -1718,7 +1718,7 @@ ExecTesterConfig(
 |--------------------|---------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded.                        |
 | **Action**         | Place limit order with adapter‑specific pricing via `order_params`. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.            |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.            |
 | **Pass criteria**  | Order accepted; venue acknowledges the alternative pricing mode.    |
 | **Skip when**      | Adapter does not support alternative pricing modes for options.     |
 
@@ -1747,7 +1747,7 @@ ExecTesterConfig(
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded.                           |
 | **Action**         | Submit an order type the venue does not support for options (e.g. market order). |
-| **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` → `OrderRejected` (post‑submission). |
+| **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` -> `OrderRejected` (post‑submission). |
 | **Pass criteria**  | Order does not fill. Denial or rejection reason references the unsupported order type. |
 | **Skip when**      | Adapter does not support options.                                      |
 
@@ -1766,7 +1766,7 @@ ExecTesterConfig(
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded.                           |
 | **Action**         | Submit a conditional order on an option instrument.                    |
-| **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` → `OrderRejected` (post‑submission). |
+| **Event sequence** | Adapter‑dependent: `OrderDenied` (pre‑submission) or `OrderSubmitted` -> `OrderRejected` (post‑submission). |
 | **Pass criteria**  | Order does not fill. Reason references unsupported conditional order type. |
 | **Skip when**      | Adapter does not support options, or adapter supports conditionals for options. |
 
@@ -1784,7 +1784,7 @@ ExecTesterConfig(
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, option instrument loaded, sufficient book depth.    |
 | **Action**         | Place a limit order with `TimeInForce::Fok` on an option instrument.   |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` or `OrderCanceled`. |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` or `OrderCanceled`. |
 | **Pass criteria**  | Order fills completely or is canceled. No partial fills.               |
 | **Skip when**      | Adapter does not support FOK for options.                              |
 
@@ -1800,7 +1800,7 @@ ExecTesterConfig(
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Open limit order from TC-E90 or TC-E91.                                |
 | **Action**         | Cancel the open limit order.                                           |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled`.                                 |
+| **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                                 |
 | **Pass criteria**  | Order canceled; no longer appears in open orders on the venue.         |
 | **Skip when**      | Adapter does not support options.                                      |
 
@@ -1835,13 +1835,13 @@ the Rust builder uses equivalent defaults.
 | `order_expire_time_delta_mins`                  | PositiveInt?      | None            | 2              |
 | `order_params`                                  | dict?             | None            | 7, 10          |
 | `client_id`                                     | ClientId?         | None            | All            |
-| `subscribe_quotes`                              | bool              | True            | —              |
-| `subscribe_trades`                              | bool              | True            | —              |
-| `subscribe_book`                                | bool              | False           | —              |
-| `book_type`                                     | BookType          | L2_MBP          | —              |
-| `book_depth`                                    | PositiveInt?      | None            | —              |
-| `book_interval_ms`                              | PositiveInt       | 1000            | —              |
-| `book_levels_to_print`                          | PositiveInt       | 10              | —              |
+| `subscribe_quotes`                              | bool              | True            |                |
+| `subscribe_trades`                              | bool              | True            |                |
+| `subscribe_book`                                | bool              | False           |                |
+| `book_type`                                     | BookType          | L2_MBP          |                |
+| `book_depth`                                    | PositiveInt?      | None            |                |
+| `book_interval_ms`                              | PositiveInt       | 1000            |                |
+| `book_levels_to_print`                          | PositiveInt       | 10              |                |
 | `open_position_on_start_qty`                    | Decimal?          | None            | 1, 9           |
 | `open_position_time_in_force`                   | TimeInForce       | GTC             | 1              |
 | `enable_limit_buys`                             | bool              | True            | 2, 4, 5, 6     |
@@ -1871,8 +1871,8 @@ the Rust builder uses equivalent defaults.
 | `reduce_only_on_stop`                           | bool              | True            | 7, 9           |
 | `use_individual_cancels_on_stop`                | bool              | False           | 5              |
 | `use_batch_cancel_on_stop`                      | bool              | False           | 5              |
-| `dry_run`                                       | bool              | False           | —              |
-| `log_data`                                      | bool              | True            | —              |
+| `dry_run`                                       | bool              | False           |                |
+| `log_data`                                      | bool              | True            |                |
 | `test_reject_post_only`                         | bool              | False           | 8              |
 | `test_reject_reduce_only`                       | bool              | False           | 8              |
 | `can_unsubscribe`                               | bool              | True            | 9              |

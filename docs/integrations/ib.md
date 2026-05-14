@@ -288,10 +288,10 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 **Examples of MIC Conversion:**
 
-- `CME` → `XCME` (Chicago Mercantile Exchange)
-- `NASDAQ` → `XNAS` (Nasdaq Stock Market)
-- `NYSE` → `XNYS` (New York Stock Exchange)
-- `LSE` → `XLON` (London Stock Exchange)
+- `CME` -> `XCME` (Chicago Mercantile Exchange)
+- `NASDAQ` -> `XNAS` (Nasdaq Stock Market)
+- `NYSE` -> `XNYS` (New York Stock Exchange)
+- `LSE` -> `XLON` (London Stock Exchange)
 
 #### `symbol_to_mic_venue`
 
@@ -532,8 +532,8 @@ For continuous futures contracts (using `secType='CONTFUT'`), the adapter create
 
 ```python
 # Continuous futures examples
-IBContract(secType='CONTFUT', exchange='CME', symbol='ES')  # → ES.CME
-IBContract(secType='CONTFUT', exchange='NYMEX', symbol='CL') # → CL.NYMEX
+IBContract(secType='CONTFUT', exchange='CME', symbol='ES')  # -> ES.CME
+IBContract(secType='CONTFUT', exchange='NYMEX', symbol='CL') # -> CL.NYMEX
 
 # With MIC venue conversion enabled
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
