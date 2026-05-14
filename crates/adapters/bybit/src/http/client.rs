@@ -54,7 +54,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::BybitHttpError,
+    error::{BybitHttpError, BybitSubmitOrderError},
     models::{
         BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
         BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
@@ -2495,7 +2495,7 @@ impl BybitHttpClient {
         let order_id = response
             .result
             .order_id
-            .ok_or_else(|| anyhow::anyhow!("No order_id in response"))?;
+            .ok_or(BybitSubmitOrderError::MissingOrderId)?;
 
         let order = self
             .query_order_by_id(
@@ -2504,14 +2504,18 @@ impl BybitHttpClient {
                 BYBIT_ORDER_REALTIME,
                 "after submission",
             )
-            .await?;
+            .await
+            .map_err(|source| BybitSubmitOrderError::PostSubmitLookup { source })?;
 
         // Only bail on rejection if there are no fills
         // If the order has fills (cum_exec_qty > 0), let the parser remap Rejected -> Canceled
         if order.order_status == crate::common::enums::BybitOrderStatus::Rejected
             && (order.cum_exec_qty.as_str() == "0" || order.cum_exec_qty.is_empty())
         {
-            anyhow::bail!("Order rejected: {}", order.reject_reason);
+            return Err(BybitSubmitOrderError::Rejected {
+                reason: order.reject_reason.to_string(),
+            }
+            .into());
         }
 
         let ts_init = self.generate_ts_init();

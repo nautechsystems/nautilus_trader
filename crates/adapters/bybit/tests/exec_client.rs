@@ -53,7 +53,10 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     live::runner::set_exec_event_sender,
-    messages::{ExecutionEvent, execution::ExecutionReport},
+    messages::{
+        ExecutionEvent,
+        execution::{ExecutionReport, SubmitOrder},
+    },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -61,7 +64,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
-    events::AccountState,
+    events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
     },
@@ -80,6 +83,9 @@ struct TestServerState {
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
+    empty_orders_realtime: Arc<AtomicBool>,
+    rejected_orders_realtime: Arc<AtomicBool>,
+    orders_realtime_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
     switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -95,6 +101,9 @@ impl Default for TestServerState {
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
+            empty_orders_realtime: Arc::new(AtomicBool::new(false)),
+            rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
+            orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
             switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -191,7 +200,10 @@ async fn handle_get_positions(headers: HeaderMap) -> impl IntoResponse {
     Json(positions).into_response()
 }
 
-async fn handle_get_orders_realtime(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_orders_realtime(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -204,7 +216,48 @@ async fn handle_get_orders_realtime(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+
+    if state.empty_orders_realtime.load(Ordering::Relaxed) {
+        state
+            .orders_realtime_requests
+            .fetch_add(1, Ordering::Relaxed);
+        return Json(json!({
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "category": "linear",
+                "list": [],
+                "nextPageCursor": ""
+            },
+            "retExtInfo": {},
+            "time": 1704470400123i64
+        }))
+        .into_response();
+    }
+
+    if state.rejected_orders_realtime.load(Ordering::Relaxed) {
+        let mut orders = load_test_data("http_get_orders_realtime.json");
+        let order = orders
+            .get_mut("result")
+            .and_then(|result| result.get_mut("list"))
+            .and_then(Value::as_array_mut)
+            .and_then(|list| list.first_mut())
+            .expect("orders realtime fixture has first order");
+        order["orderId"] = json!("test-order-id-12345");
+        order["orderStatus"] = json!("Rejected");
+        order["cumExecQty"] = json!("0");
+        order["rejectReason"] = json!("EC_PostOnlyWillTakeLiquidity");
+
+        state
+            .orders_realtime_requests
+            .fetch_add(1, Ordering::Relaxed);
+        return Json(orders).into_response();
+    }
+
     let orders = load_test_data("http_get_orders_realtime.json");
+    state
+        .orders_realtime_requests
+        .fetch_add(1, Ordering::Relaxed);
     Json(orders).into_response()
 }
 
@@ -613,6 +666,13 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
         margin_mode: None,
         transport_backend: Default::default(),
     }
+}
+
+fn create_test_demo_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
+    let mut config = create_test_exec_config(addr);
+    config.environment = BybitEnvironment::Demo;
+    config.max_retries = 0;
+    config
 }
 
 fn create_test_execution_client(
@@ -1191,6 +1251,257 @@ async fn test_exec_client_submit_order_list_demo() {
     }
 
     assert_eq!(submitted_count, 2, "Expected 2 OrderSubmitted events");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_submit_post_lookup_failure_does_not_reject() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    state.empty_orders_realtime.store(true, Ordering::Relaxed);
+    let order_lookup_requests = state.orders_realtime_requests.load(Ordering::Relaxed);
+
+    let cid = ClientOrderId::from("test-unknown-submit-outcome");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+
+    let cmd = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        cid,
+        init,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let submitted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderSubmitted")
+        .expect("channel closed");
+    assert!(
+        matches!(submitted, ExecutionEvent::Order(ref event) if event.to_string().contains("OrderSubmitted")),
+        "Expected OrderSubmitted, was {submitted:?}",
+    );
+
+    wait_until_async(
+        || async { state.orders_realtime_requests.load(Ordering::Relaxed) > order_lookup_requests },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reject_window = tokio::time::sleep(Duration::from_millis(300));
+    tokio::pin!(reject_window);
+
+    loop {
+        tokio::select! {
+            () = &mut reject_window => break,
+            event = rx.recv() => {
+                let event = event.expect("channel closed");
+                assert!(
+                    !matches!(event, ExecutionEvent::Order(ref order_event) if order_event.to_string().contains("OrderRejected")),
+                    "Unknown submit outcome must not emit OrderRejected: {event:?}",
+                );
+            }
+        }
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *BYBIT_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_demo_exec_config(addr);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    state
+        .rejected_orders_realtime
+        .store(true, Ordering::Relaxed);
+    let order_lookup_requests = state.orders_realtime_requests.load(Ordering::Relaxed);
+
+    let cid = ClientOrderId::from("test-confirmed-submit-reject");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+
+    let cmd = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        cid,
+        init,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let submitted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderSubmitted")
+        .expect("channel closed");
+    assert!(
+        matches!(submitted, ExecutionEvent::Order(OrderEventAny::Submitted(ref event)) if event.client_order_id == cid),
+        "Expected OrderSubmitted for {cid}, was {submitted:?}",
+    );
+
+    wait_until_async(
+        || async { state.orders_realtime_requests.load(Ordering::Relaxed) > order_lookup_requests },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let rejected = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderRejected")
+        .expect("channel closed");
+    let ExecutionEvent::Order(OrderEventAny::Rejected(event)) = rejected else {
+        panic!("Expected OrderRejected, was {rejected:?}");
+    };
+
+    assert_eq!(event.client_order_id, cid);
+    assert_eq!(event.reason.to_string(), "EC_PostOnlyWillTakeLiquidity");
+    assert_eq!(event.reconciliation, 0);
+    assert_eq!(event.due_post_only, 0);
 
     client.disconnect().await.unwrap();
 }

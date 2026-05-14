@@ -72,7 +72,7 @@ use crate::{
         symbol::BybitSymbol,
     },
     config::BybitExecClientConfig,
-    http::client::BybitHttpClient,
+    http::{client::BybitHttpClient, error::BybitSubmitOrderError},
     websocket::{
         client::BybitWebSocketClient,
         dispatch::{
@@ -523,6 +523,15 @@ impl BybitExecutionClient {
             bbo_level: tp_sl.bbo_level.clone(),
         })
     }
+}
+
+fn submit_rejection_reason(error: &anyhow::Error) -> Option<&str> {
+    error.chain().find_map(|cause| {
+        let BybitSubmitOrderError::Rejected { reason } = cause.downcast_ref()? else {
+            return None;
+        };
+        Some(reason.as_str())
+    })
 }
 
 #[async_trait(?Send)]
@@ -1210,18 +1219,26 @@ impl ExecutionClient for BybitExecutionClient {
                     .await;
 
                 if let Err(e) = result {
-                    dispatch_state.order_identities.remove(&client_order_id);
-                    dispatch_state.order_snapshots.remove(&client_order_id);
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
+                    if let Some(reason) = submit_rejection_reason(&e) {
+                        dispatch_state.order_identities.remove(&client_order_id);
+                        dispatch_state.order_snapshots.remove(&client_order_id);
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            reason,
+                            ts_event,
+                            false,
+                        );
+                        anyhow::bail!("submit order rejected: {reason}");
+                    }
+
+                    log::error!(
+                        "Submit failure without confirmed venue rejection for {client_order_id}: \
+                         {e}; awaiting reconciliation",
                     );
-                    anyhow::bail!("submit order failed: {e}");
+                    return Ok(());
                 }
 
                 Ok(())
@@ -1246,18 +1263,10 @@ impl ExecutionClient for BybitExecutionClient {
                     );
                 }
                 Err(e) => {
-                    dispatch_state.order_identities.remove(&client_order_id);
-                    dispatch_state.order_snapshots.remove(&client_order_id);
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
+                    log::error!(
+                        "Submit failure without confirmed venue rejection for {client_order_id}: \
+                         {e}; awaiting reconciliation",
                     );
-                    anyhow::bail!("submit order failed: {e}");
                 }
             }
 
@@ -1464,16 +1473,24 @@ impl ExecutionClient for BybitExecutionClient {
                         )
                         .await
                     {
-                        dispatch_state.order_identities.remove(&cid);
-                        dispatch_state.order_snapshots.remove(&cid);
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            cid,
-                            &format!("submit-order-error: {e}"),
-                            ts_event,
-                            false,
+                        if let Some(reason) = submit_rejection_reason(&e) {
+                            dispatch_state.order_identities.remove(&cid);
+                            dispatch_state.order_snapshots.remove(&cid);
+                            let ts_event = clock.get_time_ns();
+                            emitter.emit_order_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                cid,
+                                reason,
+                                ts_event,
+                                false,
+                            );
+                            continue;
+                        }
+
+                        log::error!(
+                            "Submit failure without confirmed venue rejection for {cid}: {e}; \
+                             awaiting reconciliation",
                         );
                     }
                 }
@@ -1522,24 +1539,10 @@ impl ExecutionClient for BybitExecutionClient {
                     }
                 }
                 Err(e) => {
-                    for cid in &client_order_ids {
-                        dispatch_state.order_identities.remove(cid);
-                        dispatch_state.order_snapshots.remove(cid);
-                    }
-
-                    let ts_event = clock.get_time_ns();
-
-                    for cid in &client_order_ids {
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            *cid,
-                            &format!("submit-order-list-error: {e}"),
-                            ts_event,
-                            false,
-                        );
-                    }
-                    anyhow::bail!("submit order list failed: {e}");
+                    log::error!(
+                        "Submit order list failure without confirmed venue rejection: {e}; \
+                         awaiting reconciliation",
+                    );
                 }
             }
             Ok(())
@@ -1932,14 +1935,23 @@ impl BybitExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, time::Duration};
 
-    use nautilus_common::cache::Cache;
+    use nautilus_common::{
+        cache::Cache,
+        clients::ExecutionClient,
+        messages::{
+            ExecutionEvent,
+            execution::{SubmitOrder, SubmitOrderList},
+        },
+    };
+    use nautilus_core::UUID4;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::{AccountType, OrderStatus},
-        identifiers::{ClientOrderId, PositionId, TraderId, VenueOrderId},
-        orders::builder::OrderTestBuilder,
+        events::OrderEventAny,
+        identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
+        orders::{OrderList, builder::OrderTestBuilder},
         types::Quantity,
     };
     use rstest::rstest;
@@ -1969,6 +1981,191 @@ mod tests {
         };
 
         (BybitExecutionClient::new(core, config).unwrap(), cache)
+    }
+
+    async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {
+        for _ in 0..20 {
+            if client
+                .pending_tasks
+                .lock()
+                .expect(MUTEX_POISONED)
+                .iter()
+                .all(tokio::task::JoinHandle::is_finished)
+            {
+                return;
+            }
+
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+
+        panic!("timed out waiting for spawned Bybit execution tasks");
+    }
+
+    fn assert_next_submitted(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        client_order_id: ClientOrderId,
+    ) {
+        let event = rx.try_recv().expect("expected OrderSubmitted event");
+        assert!(
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(ref submitted)) if submitted.client_order_id == client_order_id),
+            "expected OrderSubmitted for {client_order_id}, was {event:?}",
+        );
+    }
+
+    fn assert_no_order_rejected(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>) {
+        while let Ok(event) = rx.try_recv() {
+            assert!(
+                !matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
+                "unexpected OrderRejected event: {event:?}",
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ws_submit_failure_keeps_order_in_flight_for_reconciliation() {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let client_order_id = ClientOrderId::from("O-WS-SEND-FAIL");
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10000.00"))
+            .build();
+        let init = order.init_event().clone();
+        let trader_id = order.trader_id();
+        let strategy_id = order.strategy_id();
+
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+
+        let command = SubmitOrder::new(
+            trader_id,
+            Some(*BYBIT_CLIENT_ID),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_order(command).unwrap();
+
+        assert_next_submitted(&mut rx, client_order_id);
+        wait_for_spawned_tasks(&client).await;
+
+        assert!(
+            client
+                .dispatch_state
+                .order_identities
+                .contains_key(&client_order_id)
+        );
+        assert!(
+            client
+                .dispatch_state
+                .order_snapshots
+                .contains_key(&client_order_id)
+        );
+        assert_no_order_rejected(&mut rx);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ws_submit_order_list_failure_keeps_orders_in_flight_for_reconciliation() {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let strategy_id = StrategyId::from("S-001");
+        let client_order_id_1 = ClientOrderId::from("O-WS-LIST-SEND-FAIL-1");
+        let client_order_id_2 = ClientOrderId::from("O-WS-LIST-SEND-FAIL-2");
+
+        let mut builder_1 = OrderTestBuilder::new(OrderType::Limit);
+        let order_1 = builder_1
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id_1)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10000.00"))
+            .build();
+        let init_1 = order_1.init_event().clone();
+        let trader_id = order_1.trader_id();
+
+        let mut builder_2 = OrderTestBuilder::new(OrderType::Limit);
+        let order_2 = builder_2
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id_2)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10001.00"))
+            .build();
+        let init_2 = order_2.init_event().clone();
+
+        cache
+            .borrow_mut()
+            .add_order(order_1, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order_2, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-WS-SEND-FAIL"),
+            instrument_id,
+            strategy_id,
+            vec![client_order_id_1, client_order_id_2],
+            UnixNanos::default(),
+        );
+        let command = SubmitOrderList::new(
+            trader_id,
+            Some(*BYBIT_CLIENT_ID),
+            strategy_id,
+            order_list,
+            vec![init_1, init_2],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_order_list(command).unwrap();
+
+        assert_next_submitted(&mut rx, client_order_id_1);
+        assert_next_submitted(&mut rx, client_order_id_2);
+        wait_for_spawned_tasks(&client).await;
+
+        for client_order_id in [client_order_id_1, client_order_id_2] {
+            assert!(
+                client
+                    .dispatch_state
+                    .order_identities
+                    .contains_key(&client_order_id)
+            );
+            assert!(
+                client
+                    .dispatch_state
+                    .order_snapshots
+                    .contains_key(&client_order_id)
+            );
+        }
+        assert_no_order_rejected(&mut rx);
     }
 
     fn sample_order_status_report(
@@ -2203,5 +2400,34 @@ mod tests {
     fn test_is_low_margin_error(#[case] msg: &str, #[case] expected: bool) {
         let err = anyhow::anyhow!("{msg}");
         assert_eq!(BybitExecutionClient::is_low_margin_error(&err), expected);
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_matches_confirmed_rejection() {
+        let err = anyhow::Error::from(BybitSubmitOrderError::Rejected {
+            reason: "EC_PostOnlyWillTakeLiquidity".to_string(),
+        });
+
+        assert_eq!(
+            submit_rejection_reason(&err),
+            Some("EC_PostOnlyWillTakeLiquidity"),
+        );
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_ignores_post_submit_lookup_failure() {
+        let err = anyhow::Error::from(BybitSubmitOrderError::PostSubmitLookup {
+            source: anyhow::anyhow!("No order returned after submission"),
+        })
+        .context("Submit order failed");
+
+        assert_eq!(submit_rejection_reason(&err), None);
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_ignores_missing_order_id() {
+        let err = anyhow::Error::from(BybitSubmitOrderError::MissingOrderId);
+
+        assert_eq!(submit_rejection_reason(&err), None);
     }
 }

@@ -1079,9 +1079,17 @@ class BybitExecutionClient(LiveExecutionClient):
                     bbo_level=tp_sl.get("bbo_level"),
                 )
         except Exception as e:
-            self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
-            self._order_position_ids.pop(order.client_order_id, None)
             error_msg = str(e)
+            if not _is_confirmed_submit_rejection_error(e):
+                self._log.error(
+                    f"Submit failure without confirmed venue rejection for {order.client_order_id}: "
+                    f"{error_msg}; awaiting reconciliation",
+                )
+                return
+
+            self._log.error(f"Order rejected by venue {order.client_order_id}: {e}")
+            self._order_position_ids.pop(order.client_order_id, None)
+
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1216,14 +1224,23 @@ class BybitExecutionClient(LiveExecutionClient):
                     bbo_level=tp_sl.get("bbo_level"),
                 )
             except Exception as e:
-                self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
+                error_msg = str(e)
+                if not _is_confirmed_submit_rejection_error(e):
+                    self._log.error(
+                        f"Submit failure without confirmed venue rejection for {order.client_order_id}: "
+                        f"{error_msg}; awaiting reconciliation",
+                    )
+                    continue
+
+                self._log.error(f"Order rejected by venue {order.client_order_id}: {e}")
                 self._order_position_ids.pop(order.client_order_id, None)
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    reason=str(e),
+                    reason=error_msg,
                     ts_event=self._clock.timestamp_ns(),
+                    due_post_only="EC_PostOnlyWillTakeLiquidity" in error_msg,
                 )
 
     async def _submit_order_list_ws(
@@ -1337,18 +1354,10 @@ class BybitExecutionClient(LiveExecutionClient):
                     order_params,
                 )
             except Exception as e:
-                self._log.error(f"Failed to batch place orders: {e}")
-
-                for order in orders:
-                    if not order.is_closed:
-                        self._order_position_ids.pop(order.client_order_id, None)
-                        self.generate_order_rejected(
-                            strategy_id=order.strategy_id,
-                            instrument_id=order.instrument_id,
-                            client_order_id=order.client_order_id,
-                            reason=str(e),
-                            ts_event=self._clock.timestamp_ns(),
-                        )
+                self._log.error(
+                    f"Submit order list failure without confirmed venue rejection: {e}; "
+                    "awaiting reconciliation",
+                )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -2023,6 +2032,10 @@ _BYBIT_BBO_ORDER_TYPES: frozenset[OrderType] = frozenset(
         OrderType.LIMIT_IF_TOUCHED,
     },
 )
+
+
+def _is_confirmed_submit_rejection_error(exc: BaseException) -> bool:
+    return str(exc).startswith("Order rejected: ")
 
 
 def _validate_price_string(key: str, val: str) -> str:
