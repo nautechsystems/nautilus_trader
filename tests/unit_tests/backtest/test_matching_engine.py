@@ -1663,6 +1663,7 @@ class TestOrderMatchingEngine:
             quantity=self.instrument.make_qty(50.0),
         )
         matching_engine_l2.process_order(order, self.account_id)
+        matching_engine_l2.fill_limit_order(order)
 
         # Act
         matching_engine_l2.iterate(timestamp_ns=1)
@@ -1674,6 +1675,94 @@ class TestOrderMatchingEngine:
         assert len(filled_events) == 1, (
             f"Expected exactly 1 fill (initial), but got {len(filled_events)} "
             f"(duplicate fill on subsequent iterate)"
+        )
+
+        for message in messages:
+            order.apply(message)
+
+        matching_engine_l2.iterate(timestamp_ns=2)
+        matching_engine_l2.fill_limit_order(order)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1, (
+            f"Expected exactly 1 fill after applying closure, but got {len(filled_events)} "
+            f"(duplicate fill on closed order)"
+        )
+
+    def test_closed_market_order_not_refilled_after_cached_guard_purged(self) -> None:
+        matching_engine_l2 = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        bid_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("90.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=100,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine_l2.process_order_book_delta(bid_delta)
+
+        ask_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("50.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine_l2.process_order_book_delta(ask_delta)
+
+        order = TestExecStubs.make_submitted_order(
+            TestExecStubs.market_order(
+                instrument=self.instrument,
+                order_side=OrderSide.BUY,
+                quantity=self.instrument.make_qty(50.0),
+            ),
+        )
+        matching_engine_l2.process_order(order, self.account_id)
+        matching_engine_l2.iterate(timestamp_ns=1)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1
+
+        for message in messages:
+            order.apply(message)
+
+        matching_engine_l2.iterate(timestamp_ns=2)
+        matching_engine_l2.fill_market_order(order)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1, (
+            f"Expected exactly 1 fill after applying closure, but got {len(filled_events)} "
+            f"(duplicate market fill on closed order)"
         )
 
     def test_liquidity_consumption_tracks_fills_at_price_level(self):

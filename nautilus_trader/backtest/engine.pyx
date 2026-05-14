@@ -5748,6 +5748,7 @@ cdef class OrderMatchingEngine:
 
         """
         self._clock.set_time(timestamp_ns)
+        self._purge_closed_cached_filled_qty()
 
         cdef Price_t bid
         cdef Price_t ask
@@ -5798,6 +5799,19 @@ cdef class OrderMatchingEngine:
         self._has_targets = False
 
         self.check_instrument_expiration(timestamp_ns)
+        self._purge_closed_cached_filled_qty()
+
+    cdef void _purge_closed_cached_filled_qty(self):
+        cdef list[ClientOrderId] client_order_ids = list(self._cached_filled_qty.keys())
+        cdef ClientOrderId client_order_id
+        cdef Order order
+
+        for client_order_id in client_order_ids:
+            order = self.cache.order(client_order_id)
+            if order is None:
+                order = self._core.get_order(client_order_id)
+            if order is None or order.is_closed_c():
+                self._cached_filled_qty.pop(client_order_id, None)
 
     cpdef void check_instrument_expiration(self, uint64_t timestamp_ns):
         """Run instrument expiration at timestamp_ns (option exercise/expiry or futures close)."""
@@ -6100,6 +6114,11 @@ cdef class OrderMatchingEngine:
             The order to fill.
 
         """
+        if order.is_closed_c():
+            self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
+            return
+
         # Convert quote-denominated quantity at fill time for trigger-style market
         # orders that skipped conversion at submission. Idempotent: orders already
         # converted have `is_quote_quantity=False`.
@@ -6501,6 +6520,11 @@ cdef class OrderMatchingEngine:
 
         """
         Condition.is_true(order.has_price_c(), "order has no limit `price`")
+
+        if order.is_closed_c():
+            self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
+            return
 
         # Convert quote-denominated quantity at fill time for orders that entered
         # this path still carrying a quote notional (e.g. trailing-stop-limit with

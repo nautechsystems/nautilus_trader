@@ -8110,8 +8110,137 @@ fn test_fully_filled_limit_order_removed_from_core(
     );
     assert_eq!(
         engine.cached_filled_qty_len(),
+        1,
+        "cached_filled_qty should stay until the fill event closes the cached order",
+    );
+}
+
+#[rstest]
+fn test_closed_filled_order_purges_cached_fill_qty_after_cache_update(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("5.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1501.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut limit_order, account_id);
+    assert_eq!(engine.cached_filled_qty_len(), 1);
+
+    let fill_event = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .find(|event| matches!(event, OrderEventAny::Filled(_)))
+        .unwrap()
+        .clone();
+    cache.borrow_mut().update_order(&fill_event).unwrap();
+
+    engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+
+    assert_eq!(
+        engine.cached_filled_qty_len(),
         0,
-        "cached_filled_qty should be cleared after full fill",
+        "closed cached orders should purge filled-quantity guards without core membership",
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.fill_limit_order(client_order_id);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "closed orders should not fill again after their cached guard is purged",
+    );
+}
+
+#[rstest]
+fn test_closed_filled_market_order_does_not_fill_after_cache_update(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("5.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut market_order, account_id);
+    assert_eq!(engine.cached_filled_qty_len(), 1);
+
+    let fill_event = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .find(|event| matches!(event, OrderEventAny::Filled(_)))
+        .unwrap()
+        .clone();
+    cache.borrow_mut().update_order(&fill_event).unwrap();
+
+    engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+
+    assert_eq!(
+        engine.cached_filled_qty_len(),
+        0,
+        "closed cached market orders should purge filled-quantity guards without core membership",
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.fill_market_order(client_order_id);
+
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "closed market orders should not fill again after their cached guard is purged",
     );
 }
 
@@ -8220,8 +8349,8 @@ fn test_fully_filled_market_to_limit_not_in_core(
     );
     assert_eq!(
         engine.cached_filled_qty_len(),
-        0,
-        "cached_filled_qty should be cleared after MarketToLimit full fill",
+        1,
+        "cached_filled_qty should stay until the fill event closes the cached order",
     );
 }
 

@@ -511,6 +511,7 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns, AggressorSide aggressor_side=*)
+    cdef void _purge_closed_cached_filled_qty(self)
     cpdef list[tuple[Price, Quantity]] determine_limit_price_and_volume(self, Order order)
     cpdef list[tuple[Price, Quantity]] determine_market_price_and_volume(self, Order order)
     cdef list[tuple[Price, Quantity]] determine_market_fills_with_simulation(self, Order order)

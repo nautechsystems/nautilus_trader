@@ -98,6 +98,7 @@ Released on TBD (UTC).
 - Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
 - Fixed `MessageBus` late wildcard subscriptions missing events on already-cached topics (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
+- Fixed `OrderMatchingEngine` duplicate fills from closed matching-core orders (#4075)
 - Fixed `OrderMatchingEngine.reset` leaking `OrderBook.ts_last` across resets (Python) (#3992), thanks @YeeTsai
 - Fixed sandbox tick-size precision race that could panic on stale ticks (#3994), thanks @graceyangfan
 - Fixed matching engine and sandbox handling of stale-precision quote and trade ticks (#4044), thanks @graceyangfan
@@ -219,6 +220,7 @@ Released on TBD (UTC).
 - Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
+- Ported Interactive Brokers adapter hardening fixes to Rust (#4073)
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.51.0
 - Upgraded `redis` crate to v1.2.1
