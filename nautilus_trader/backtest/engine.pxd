@@ -277,6 +277,13 @@ cdef class SimulatedExchange:
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
     cdef dict[InstrumentId, float] settlement_prices
     """Optional instrument_id -> settlement price for instrument expiration."""
+    cdef readonly bint liquidation_enabled
+    """If liquidation of positions should be triggered when maintenance margin is breached.\n\n:returns: `bool`"""
+    cdef readonly object liquidation_trigger_ratio
+    """Ratio of equity to maintenance margin at which liquidation is triggered.\n\n:returns: `Decimal`"""
+    cdef readonly bint liquidation_cancel_open_orders
+    """If open orders should be cancelled before closing positions during liquidation.\n\n:returns: `bool`"""
+    cdef set _liquidated_accounts
 
     cdef dict[InstrumentId, OrderMatchingEngine] _matching_engines
     cdef bint _has_next_instrument_expiration
@@ -327,6 +334,7 @@ cdef class SimulatedExchange:
     cpdef void _process_instrument_expiration_time_event(self, TimeEvent event)
 
     cdef void _process_instrument_expirations(self, uint64_t ts_now)
+    cdef void _process_margin_liquidations(self, uint64_t ts_now)
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine)
     cdef void _set_instrument_expiration_timer(self, OrderMatchingEngine matching_engine)
     cdef void _set_instrument_expiration_timers(self)
@@ -462,6 +470,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_status(self, MarketStatusAction status)
     cpdef void process_instrument_close(self, InstrumentClose close)
     cpdef void check_instrument_expiration(self, uint64_t timestamp_ns)
+    cpdef void liquidate_open_positions(self, uint64_t ts_now, bint cancel_open_orders)
     cdef void _process_option_expiry(self, uint64_t ts_now)
     cdef Instrument _get_option_underlying_instrument(self)
     cdef bint _option_should_exercise(self, Price underlying_price)

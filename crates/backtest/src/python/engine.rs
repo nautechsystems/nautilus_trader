@@ -54,6 +54,7 @@ use nautilus_trading::{
 };
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 use super::node::create_config_instance;
 use crate::{
@@ -121,6 +122,9 @@ impl PyBacktestEngine {
             oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
             settlement_prices = None,
+            liquidation_enabled = false,
+            liquidation_trigger_ratio = None,
+            liquidation_cancel_open_orders = true,
         )
     )]
     #[expect(clippy::too_many_arguments)]
@@ -158,6 +162,9 @@ impl PyBacktestEngine {
         oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, Price>>,
+        liquidation_enabled: bool,
+        liquidation_trigger_ratio: Option<Decimal>,
+        liquidation_cancel_open_orders: bool,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
@@ -226,6 +233,13 @@ impl PyBacktestEngine {
             .queue_position(queue_position)
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
+            .liquidation_enabled(liquidation_enabled)
+            .liquidation_trigger_ratio(
+                liquidation_trigger_ratio
+                    .and_then(|d| d.to_f64())
+                    .unwrap_or(1.0),
+            )
+            .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build();
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;

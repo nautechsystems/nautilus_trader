@@ -23,6 +23,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -41,7 +42,7 @@ use nautilus_execution::{
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
 };
 use nautilus_model::{
-    accounts::{AccountAny, margin_model::MarginModelAny},
+    accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{
         Bar, Data, InstrumentClose, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
         OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
@@ -156,6 +157,10 @@ pub struct SimulatedExchange {
     queue_position: bool,
     oto_full_trigger: bool,
     price_protection_points: u32,
+    liquidation_enabled: bool,
+    liquidation_trigger_ratio: f64,
+    liquidation_cancel_open_orders: bool,
+    liquidated_accounts: AHashSet<(AccountId, Currency)>,
 }
 
 impl Debug for SimulatedExchange {
@@ -236,6 +241,10 @@ impl SimulatedExchange {
             queue_position: config.queue_position,
             oto_full_trigger: config.oto_full_trigger,
             price_protection_points: config.price_protection_points,
+            liquidation_enabled: config.liquidation_enabled,
+            liquidation_trigger_ratio: config.liquidation_trigger_ratio,
+            liquidation_cancel_open_orders: config.liquidation_cancel_open_orders,
+            liquidated_accounts: AHashSet::new(),
         })
     }
 
@@ -1002,6 +1011,7 @@ impl SimulatedExchange {
         self.settlement_prices.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
+        self.liquidated_accounts.clear();
 
         log::info!("Resetting exchange state");
     }
@@ -1010,6 +1020,85 @@ impl SimulatedExchange {
     pub fn log_diagnostics(&self) {
         for module in &self.modules {
             module.log_diagnostics();
+        }
+    }
+
+    /// Checks if any margin accounts have breached maintenance margin and liquidates open
+    /// positions when the trigger threshold is met.
+    pub fn process_liquidations(&mut self, ts_now: UnixNanos) {
+        if !self.liquidation_enabled {
+            return;
+        }
+        if self.frozen_account {
+            return;
+        }
+
+        let account = {
+            let cache = self.cache.borrow();
+            cache.account_for_venue(&self.id).cloned()
+        };
+        let Some(account) = account else { return };
+        let AccountAny::Margin(margin_account) = &account else { return };
+        let account_id = margin_account.id();
+
+        let currencies: Vec<Currency> = margin_account.currencies();
+
+        for currency in currencies {
+            if self.liquidated_accounts.contains(&(account_id, currency)) {
+                continue;
+            }
+
+            let Some(balance) = margin_account.balance(Some(currency)) else {
+                continue;
+            };
+            let balance_f64 = balance.total.as_f64();
+
+            let (upnl_f64, all_priced) = {
+                let cache = self.cache.borrow();
+                let positions = cache.positions_open(Some(&self.id), None, None, None, None);
+                let mut upnl = 0.0_f64;
+                let mut all_priced = true;
+                for p in positions.iter().filter(|p| p.settlement_currency == currency) {
+                    match cache.calculate_unrealized_pnl(p) {
+                        Some(pnl) => upnl += pnl.as_f64(),
+                        None => {
+                            all_priced = false;
+                            break;
+                        }
+                    }
+                }
+                (upnl, all_priced)
+            };
+
+            if !all_priced {
+                continue; // defer until all positions are priced
+            }
+
+            let equity = balance_f64 + upnl_f64;
+            let maintenance = margin_account.total_maintenance_margin(currency).as_f64();
+
+            if maintenance == 0.0 {
+                continue;
+            }
+
+            let threshold = maintenance * self.liquidation_trigger_ratio;
+
+            if equity > threshold {
+                continue;
+            }
+
+            log::warn!(
+                "LIQUIDATION triggered for account {} currency {}: equity={:.4} <= threshold={:.4} (maintenance={:.4} x ratio={})",
+                account_id, currency, equity, threshold, maintenance, self.liquidation_trigger_ratio
+            );
+
+            self.liquidated_accounts.insert((account_id, currency));
+
+            for matching_engine in self.matching_engines.values_mut() {
+                matching_engine.liquidate_open_positions(ts_now, self.liquidation_cancel_open_orders);
+            }
+
+            break;
         }
     }
 

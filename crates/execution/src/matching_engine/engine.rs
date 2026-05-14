@@ -2487,6 +2487,112 @@ impl OrderMatchingEngine {
         )
     }
 
+    /// Liquidates all open positions for this instrument.
+    ///
+    /// Cancels open orders if `cancel_open_orders` is true, then closes every open
+    /// position at best bid/ask or the settlement price, emitting accepted and filled
+    /// events for each synthetic close order.
+    pub fn liquidate_open_positions(&mut self, ts_now: UnixNanos, cancel_open_orders: bool) {
+        if cancel_open_orders {
+            let open_orders: Vec<RestingOrder> = self.get_open_orders();
+            for order_info in &open_orders {
+                let order = {
+                    let cache = self.cache.borrow();
+                    cache.order(&order_info.client_order_id).cloned()
+                };
+                if let Some(order) = order {
+                    self.cancel_order(&order, None);
+                }
+            }
+        }
+
+        let instrument_id = self.instrument.id();
+        let positions: Vec<(TraderId, StrategyId, PositionId, OrderSide, Quantity)> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|pos| {
+                    let closing_side = match pos.side {
+                        PositionSide::Long => OrderSide::Sell,
+                        PositionSide::Short => OrderSide::Buy,
+                        _ => OrderSide::NoOrderSide,
+                    };
+                    (
+                        pos.trader_id,
+                        pos.strategy_id,
+                        pos.id,
+                        closing_side,
+                        pos.quantity,
+                    )
+                })
+                .collect()
+        };
+
+        for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
+            let fill_price = if closing_side == OrderSide::Sell {
+                self.best_bid_price().or(self.settlement_price)
+            } else {
+                self.best_ask_price().or(self.settlement_price)
+            };
+
+            let Some(fill_price) = fill_price else {
+                log::warn!(
+                    "LIQUIDATION: no price available for {} position {position_id}, skipping",
+                    instrument_id
+                );
+                continue;
+            };
+
+            let client_order_id = ClientOrderId::from(
+                format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
+            );
+            let order = OrderAny::Market(MarketOrder::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                closing_side,
+                quantity,
+                TimeInForce::Gtc,
+                UUID4::new(),
+                ts_now,
+                true, // reduce_only
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![Ustr::from(&format!(
+                    "LIQUIDATION_{}_CLOSE",
+                    self.venue
+                ))]),
+            ));
+
+            if self
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), Some(position_id), None, false)
+                .is_err()
+            {
+                log::debug!("Liquidation order already in cache: {client_order_id}");
+            }
+
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            self.generate_order_accepted(&order, venue_order_id);
+            self.apply_fills(
+                &order,
+                &[(fill_price, quantity)],
+                LiquiditySide::Taker,
+                Some(position_id),
+                None,
+            );
+        }
+    }
+
     /// Processes a new order submission.
     ///
     /// Validates the order against instrument precision, expiration, and contingency

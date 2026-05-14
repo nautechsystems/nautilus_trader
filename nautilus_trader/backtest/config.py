@@ -136,6 +136,13 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         Map of instrument ID to settlement price for expiring instruments.
         For futures, positions close at this price instead of market.
         For options, the option leg settles at this price.
+    liquidation_enabled : bool, default False
+        If liquidation of positions should be triggered when maintenance margin is breached.
+    liquidation_trigger_ratio : float, default 1.0
+        Ratio of equity to maintenance margin at which liquidation is triggered
+        (default 1.0 means equity <= maintenance_margin).
+    liquidation_cancel_open_orders : bool, default True
+        If open orders should be cancelled before closing positions during liquidation.
 
     """
 
@@ -170,6 +177,12 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     frozen_account: bool = False
     price_protection_points: NonNegativeInt = 0
     settlement_prices: dict[InstrumentId, float] | None = None
+    liquidation_enabled: bool = False
+    """If liquidation of positions should be triggered when maintenance margin is breached."""
+    liquidation_trigger_ratio: float = 1.0
+    """Ratio of equity to maintenance margin at which liquidation is triggered (default 1.0 means equity <= maintenance_margin)."""
+    liquidation_cancel_open_orders: bool = True
+    """If open orders should be cancelled before closing positions during liquidation."""
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
