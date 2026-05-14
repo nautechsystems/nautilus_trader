@@ -12,9 +12,14 @@ runs:
       # https://github.com/actions/cache/tree/main/restore
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
-        path: tests/test_data/large
-        key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
-        restore-keys: large-files-
+        # Cache only the large binary files. The tracked JSON manifests must
+        # stay from the checked-out commit, otherwise restore-key fallbacks can
+        # overwrite new checksums with stale cached manifests.
+        path: |
+          tests/test_data/large/*.csv
+          tests/test_data/large/*.parquet
+        key: large-files-v2-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        restore-keys: large-files-v2-
         enableCrossOsArchive: true
 
     - name: Save test data to cache
@@ -24,6 +29,8 @@ runs:
       # https://github.com/actions/cache/tree/main/save
       uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
-        path: tests/test_data/large
-        key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+        path: |
+          tests/test_data/large/*.csv
+          tests/test_data/large/*.parquet
+        key: large-files-v2-${{ hashFiles('tests/test_data/large/checksums.json') }}
         enableCrossOsArchive: true
