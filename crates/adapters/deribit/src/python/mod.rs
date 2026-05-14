@@ -30,14 +30,13 @@ pub mod websocket;
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::data::ensure_rust_extractor_registered;
-use nautilus_serialization::ensure_custom_data_registered;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
     common::consts::DERIBIT,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
-    data_types::DeribitVolatilityIndex,
+    data_types::{DeribitVolatilityIndex, register_deribit_custom_data},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
 
@@ -150,7 +149,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )));
     }
 
-    ensure_custom_data_registered::<DeribitVolatilityIndex>();
+    register_deribit_custom_data();
     let _result = ensure_rust_extractor_registered::<DeribitVolatilityIndex>();
 
     Ok(())

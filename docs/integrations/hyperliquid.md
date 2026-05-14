@@ -504,16 +504,17 @@ instrument_provider=InstrumentProviderConfig(
 The adapter supports the following data subscriptions. All perpetual data types
 (mark prices, index prices, funding rates) apply to both standard and HIP-3 perps.
 
-| Data type         | Subscription | Snapshot | Historical | Nautilus type       | Notes                                      |
-|-------------------|--------------|----------|------------|---------------------|--------------------------------------------|
-| Trade ticks       | ✓            | -        | -          | `TradeTick`         | Via WebSocket trades channel.              |
-| Quote ticks       | ✓            | -        | -          | `QuoteTick`         | Best bid/offer from WebSocket.             |
-| Order book deltas | ✓            | ✓        | -          | `OrderBookDelta`    | L2 depth. Each message is a full snapshot. |
-| Order book depth  | ✓            | -        | -          | `OrderBookDepth10`  | Top-10 L2 snapshots from the `l2Book` feed.|
-| Bars              | ✓            | -        | ✓          | `Bar`               | See supported intervals below.             |
-| Mark prices       | ✓            | -        | -          | `MarkPriceUpdate`   | Perpetual mark price ticks.                |
-| Index prices      | ✓            | -        | -          | `IndexPriceUpdate`  | Underlying index reference prices.         |
-| Funding rates     | ✓            | -        | ✓          | `FundingRateUpdate` | `fundingHistory` info endpoint.            |
+| Data type         | Sub. | Snapshot | Hist. | Nautilus type        | Notes                         |
+|-------------------|------|----------|-------|----------------------|-------------------------------|
+| Trade ticks       | ✓    | -        | -     | `TradeTick`          | WebSocket trades.             |
+| Quote ticks       | ✓    | -        | -     | `QuoteTick`          | Best bid/offer.               |
+| Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`     | L2 snapshots.                 |
+| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`   | Top-10 L2 snapshots.          |
+| Bars              | ✓    | -        | ✓     | `Bar`                | Supported intervals below.    |
+| Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`    | Perpetual mark price ticks.   |
+| Index prices      | ✓    | -        | -     | `IndexPriceUpdate`   | Underlying reference prices.  |
+| Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`  | `fundingHistory` endpoint.    |
+| All mids          | ✓    | -        | -     | `HyperliquidAllMids` | Custom data from `allMids`.   |
 
 :::note
 Historical quote and trade requests are not supported. Hyperliquid does not publish
@@ -538,6 +539,31 @@ self.subscribe_order_book_deltas(
 ```
 
 Omitting both params subscribes to the full-depth book.
+
+### Hyperliquid specific data
+
+The adapter emits `HyperliquidAllMids` custom data from the WebSocket `allMids`
+feed. Each update carries all currently reported mid prices in one payload.
+
+| Field      | Type             | Description                                             |
+|------------|------------------|---------------------------------------------------------|
+| `mids`     | `dict[str, str]` | Instrument ID to mid price mapping.                     |
+| `ts_event` | `int`            | UNIX timestamp in nanoseconds when the update occurred. |
+| `ts_init`  | `int`            | UNIX timestamp in nanoseconds when the object was built. |
+
+Subscribe from an actor or strategy with `DataType(HyperliquidAllMids)`.
+For HIP-3 dex-specific streams, pass the venue dex in `metadata["dex"]`:
+
+```python
+from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
+from nautilus_trader.model.data import DataType
+
+self.subscribe_data(
+    data_type=DataType(HyperliquidAllMids, metadata={"dex": "hyperliquid"}),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+```
 
 ### Supported bar intervals
 

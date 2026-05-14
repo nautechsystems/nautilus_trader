@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader._libnautilus.deribit import DeribitVolatilityIndex
+from nautilus_trader._libnautilus.hyperliquid import HyperliquidAllMids
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarAggregation
@@ -62,6 +64,32 @@ def test_get_arrow_schema_map_bar():
 
     assert isinstance(schema, dict)
     assert len(schema) > 0
+
+
+def test_deribit_volatility_index_arrow_methods_available():
+    dvol = DeribitVolatilityIndex(
+        index_name="btc_usd",
+        volatility=72.5,
+        ts_event=1_000,
+        ts_init=1_001,
+    )
+
+    assert hasattr(dvol, "encode_record_batch_py")
+    assert hasattr(DeribitVolatilityIndex, "decode_record_batch_py")
+    assert dvol.index_name == "btc_usd"
+    assert dvol.volatility == 72.5
+    assert dvol.ts_event == 1_000
+    assert dvol.ts_init == 1_001
+
+
+def test_hyperliquid_all_mids_arrow_methods_available():
+    all_mids = HyperliquidAllMids(mids={}, ts_event=1_000, ts_init=1_001)
+
+    assert hasattr(all_mids, "encode_record_batch_py")
+    assert hasattr(HyperliquidAllMids, "decode_record_batch_py")
+    assert all_mids.mids == {}
+    assert all_mids.ts_event == 1_000
+    assert all_mids.ts_init == 1_001
 
 
 def test_quotes_to_arrow_record_batch_bytes():

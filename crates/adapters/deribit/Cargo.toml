@@ -22,6 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+arrow = ["dep:arrow", "nautilus-serialization"]
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -44,14 +45,14 @@ python = [
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-
-[package.metadata.cargo-machete]
-ignored = ["arrow"] # Used by `custom_data` macro expansion
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
@@ -60,13 +61,14 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-persistence-macros = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
-arrow = { workspace = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -87,6 +89,7 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

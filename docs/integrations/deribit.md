@@ -182,28 +182,28 @@ Below are the order types, execution instructions, and time-in-force options sup
 
 ### Order types
 
-| Order Type    | Supported | Notes                                    |
-|---------------|-----------|------------------------------------------|
-| `MARKET`      | ✓         | Immediate execution at market price.     |
-| `LIMIT`       | ✓         | Execution at specified price or better.  |
-| `STOP_MARKET` | ✓         | Conditional market order on trigger.     |
-| `STOP_LIMIT`  | ✓         | Conditional limit order on trigger.      |
+| Order Type    | Supported | Notes                                   |
+|---------------|-----------|-----------------------------------------|
+| `MARKET`      | ✓         | Immediate execution at market price.    |
+| `LIMIT`       | ✓         | Execution at specified price or better. |
+| `STOP_MARKET` | ✓         | Conditional market order on trigger.    |
+| `STOP_LIMIT`  | ✓         | Conditional limit order on trigger.     |
 
 ### Execution instructions
 
 | Instruction    | Supported | Notes                                           |
-|----------------|-----------|------------------------------------------------|
+|----------------|-----------|-------------------------------------------------|
 | `post_only`    | ✓         | Order will be rejected if it would take liquidity. Uses `reject_post_only=true`. |
 | `reduce_only`  | ✓         | Order can only reduce an existing position.     |
 
 ### Time in force
 
-| Time in force | Supported | Notes                                               |
-|---------------|-----------|-----------------------------------------------------|
-| `GTC`         | ✓         | Good Till Canceled (`good_til_cancelled`).          |
+| Time in force | Supported | Notes                                                 |
+|---------------|-----------|-------------------------------------------------------|
+| `GTC`         | ✓         | Good Till Canceled (`good_til_cancelled`).            |
 | `GTD`         | ✓         | Good Till Day - expires at 8:00 UTC (`good_til_day`). |
-| `IOC`         | ✓         | Immediate or Cancel (`immediate_or_cancel`).        |
-| `FOK`         | ✓         | Fill or Kill (`fill_or_kill`).                      |
+| `IOC`         | ✓         | Immediate or Cancel (`immediate_or_cancel`).          |
+| `FOK`         | ✓         | Fill or Kill (`fill_or_kill`).                        |
 
 :::note
 **GTD on Deribit**: Unlike other exchanges where GTD accepts an arbitrary expiry time,
@@ -215,11 +215,11 @@ will be logged as warnings and the order will use the exchange's fixed expiry be
 
 Conditional orders (stop orders) support different trigger price sources:
 
-| Trigger Type  | Supported | Notes                                    |
-|---------------|-----------|------------------------------------------|
-| `last_price`  | ✓         | Uses the last traded price (default).    |
-| `mark_price`  | ✓         | Uses the mark price.                     |
-| `index_price` | ✓         | Uses the underlying index price.         |
+| Trigger Type  | Supported | Notes                                 |
+|---------------|-----------|---------------------------------------|
+| `last_price`  | ✓         | Uses the last traded price (default). |
+| `mark_price`  | ✓         | Uses the mark price.                  |
+| `index_price` | ✓         | Uses the underlying index price.      |
 
 ```python
 # Example: Stop loss using mark price trigger
@@ -286,12 +286,12 @@ This provides several advantages:
 
 ### Order querying
 
-| Feature              | Supported | Notes                              |
-|----------------------|-----------|------------------------------------|
-| Query open orders    | ✓         | List all active orders.            |
-| Query order history  | ✓         | Historical order data.             |
-| Order status updates | ✓         | Real‑time order state changes.     |
-| Trade history        | ✓         | Execution and fill reports.        |
+| Feature              | Supported | Notes                             |
+|----------------------|-----------|-----------------------------------|
+| Query open orders    | ✓         | List all active orders.           |
+| Query order history  | ✓         | Historical order data.            |
+| Order status updates | ✓         | Real‑time order state changes.    |
+| Trade history        | ✓         | Execution and fill reports.       |
 
 ### Contingent orders
 
@@ -331,6 +331,33 @@ Upstream references:
 Deribit exchanges funding continuously (every few seconds) rather than at fixed intervals
 like most other exchanges. The `interval` field on `FundingRateUpdate` is `None` for
 Deribit because this continuous model does not map to a discrete period.
+
+## Deribit specific data
+
+The adapter emits `DeribitVolatilityIndex` custom data from Deribit's
+`deribit_volatility_index.{index_name}` WebSocket channel. Deribit provides
+volatility index streams such as `btc_usd` and `eth_usd`.
+
+| Field        | Type    | Description                                              |
+|--------------|---------|----------------------------------------------------------|
+| `index_name` | `str`   | Deribit volatility index name, for example `btc_usd`.    |
+| `volatility` | `float` | Current volatility index value.                          |
+| `ts_event`   | `int`   | UNIX timestamp in nanoseconds when the update occurred.  |
+| `ts_init`    | `int`   | UNIX timestamp in nanoseconds when the object was built. |
+
+Subscribe from an actor or strategy with `DataType(DeribitVolatilityIndex)`.
+The `index_name` metadata key is required:
+
+```python
+from nautilus_trader.adapters.deribit.constants import DERIBIT_CLIENT_ID
+from nautilus_trader.adapters.deribit.data import DeribitVolatilityIndex
+from nautilus_trader.model.data import DataType
+
+self.subscribe_data(
+    data_type=DataType(DeribitVolatilityIndex, metadata={"index_name": "btc_usd"}),
+    client_id=DERIBIT_CLIENT_ID,
+)
+```
 
 ## Rate limiting
 
@@ -372,10 +399,10 @@ continuously at a fixed rate. Each second, credits "drip" back into your sub-acc
 
 **Matching engine requests (default tier):**
 
-| Parameter      | Value          | Notes                              |
-|----------------|----------------|------------------------------------|
-| Sustained rate | 5 requests/sec | Continuous rate limit.             |
-| Burst capacity | 20 requests    | Maximum burst before throttling.   |
+| Parameter      | Value          | Notes                            |
+|----------------|----------------|----------------------------------|
+| Sustained rate | 5 requests/sec | Continuous rate limit.           |
+| Burst capacity | 20 requests    | Maximum burst before throttling. |
 
 Higher matching engine limits are available for market makers and high-volume traders based on
 7-day trading volume tiers.
@@ -409,10 +436,10 @@ Repeated violations may result in temporary throttling.
 The adapter uses **separate WebSocket sessions** for data and execution clients, each with its own
 authentication scope:
 
-| Client           | Session Name         | Purpose                                              |
-|------------------|----------------------|------------------------------------------------------|
-| Data client      | `nautilus-data`      | Market data subscriptions (raw feeds require auth).  |
-| Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel).          |
+| Client           | Session Name         | Purpose                                             |
+|------------------|----------------------|-----------------------------------------------------|
+| Data client      | `nautilus-data`      | Market data subscriptions (raw feeds require auth). |
+| Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel).         |
 
 **Authentication flow:**
 

@@ -66,12 +66,14 @@ use super::{
         parse_user_order_msg, parse_user_trade_msg, resolution_to_bar_type,
     },
 };
-use crate::common::{
-    consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
-    enums::DeribitInstrumentState,
-    parse::parse_portfolio_to_account_state,
+use crate::{
+    common::{
+        consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
+        enums::DeribitInstrumentState,
+        parse::parse_portfolio_to_account_state,
+    },
+    data_types::DeribitVolatilityIndex,
 };
-use crate::data_types::DeribitVolatilityIndex;
 
 /// Type of pending request for request ID correlation.
 #[derive(Debug, Clone)]

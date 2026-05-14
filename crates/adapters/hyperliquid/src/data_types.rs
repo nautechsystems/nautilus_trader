@@ -25,7 +25,14 @@ use nautilus_model::{identifiers::InstrumentId, types::Price};
 use nautilus_persistence_macros::custom_data;
 
 /// Hyperliquid all mid prices snapshot from the `allMids` WebSocket channel.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")]
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+)]
 pub struct HyperliquidAllMids {
     /// Mapping of instrument ID to mid price for all tradable coins.
     #[custom_data_field(json)]
@@ -36,10 +43,14 @@ pub struct HyperliquidAllMids {
     pub ts_init: UnixNanos,
 }
 
-/// Registers Hyperliquid custom data types for JSON serialization.
+/// Registers Hyperliquid custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_hyperliquid_custom_data() {
+    #[cfg(feature = "arrow")]
+    nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
+
+    #[cfg(not(feature = "arrow"))]
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
 }
 
@@ -53,5 +64,22 @@ mod tests {
     fn test_register_hyperliquid_custom_data_is_idempotent() {
         register_hyperliquid_custom_data();
         register_hyperliquid_custom_data();
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_hyperliquid_all_mids_arrow_schema() {
+        use arrow::datatypes::DataType;
+        use nautilus_serialization::arrow::ArrowSchemaProvider;
+
+        let schema = HyperliquidAllMids::get_schema(None);
+
+        assert_eq!(schema.fields().len(), 3);
+        assert_eq!(schema.field(0).name(), "mids");
+        assert_eq!(schema.field(0).data_type(), &DataType::Utf8);
+        assert_eq!(schema.field(1).name(), "ts_event");
+        assert_eq!(schema.field(1).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(2).name(), "ts_init");
+        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
     }
 }

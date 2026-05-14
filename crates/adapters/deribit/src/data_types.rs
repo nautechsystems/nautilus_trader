@@ -24,7 +24,8 @@ use nautilus_persistence_macros::custom_data;
 /// Deribit volatility index (DVOL) update.
 ///
 /// Emitted from the `deribit_volatility_index.{index_name}` WebSocket channel.
-#[custom_data(pyo3)]
+#[cfg_attr(feature = "arrow", custom_data(pyo3))]
+#[cfg_attr(not(feature = "arrow"), custom_data(pyo3, no_arrow))]
 pub struct DeribitVolatilityIndex {
     /// The index identifier (for example `"btc_usd"` or `"eth_usd"`).
     pub index_name: String,
@@ -36,11 +37,15 @@ pub struct DeribitVolatilityIndex {
     pub ts_init: UnixNanos,
 }
 
-/// Registers Deribit custom data types for JSON and Arrow encoding.
+/// Registers Deribit custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_deribit_custom_data() {
+    #[cfg(feature = "arrow")]
     nautilus_serialization::ensure_custom_data_registered::<DeribitVolatilityIndex>();
+
+    #[cfg(not(feature = "arrow"))]
+    let _ = nautilus_model::data::ensure_custom_data_json_registered::<DeribitVolatilityIndex>();
 }
 
 #[cfg(test)]
@@ -53,5 +58,24 @@ mod tests {
     fn test_register_deribit_custom_data_is_idempotent() {
         register_deribit_custom_data();
         register_deribit_custom_data();
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_deribit_volatility_index_arrow_schema() {
+        use arrow::datatypes::DataType;
+        use nautilus_serialization::arrow::ArrowSchemaProvider;
+
+        let schema = DeribitVolatilityIndex::get_schema(None);
+
+        assert_eq!(schema.fields().len(), 4);
+        assert_eq!(schema.field(0).name(), "index_name");
+        assert_eq!(schema.field(0).data_type(), &DataType::Utf8);
+        assert_eq!(schema.field(1).name(), "volatility");
+        assert_eq!(schema.field(1).data_type(), &DataType::Float64);
+        assert_eq!(schema.field(2).name(), "ts_event");
+        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(3).name(), "ts_init");
+        assert_eq!(schema.field(3).data_type(), &DataType::UInt64);
     }
 }

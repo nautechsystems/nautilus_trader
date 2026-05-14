@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
+- Added Deribit DVOL custom data subscriptions (#4069), thanks @graceyangfan
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Hyperliquid HIP-4 outcome instruments: `+E`/`#E` encoding, USDH settlement, and per-side BinaryOption modeling
 - Added Hyperliquid HIP-4 outcome reconciliation via spot balances; `outcomeMeta` settlement dispatch on the Rust client
@@ -143,6 +144,7 @@ Released on TBD (UTC).
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
 - Fixed Deribit cross-margin balance overcounting; now reports `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
 - Fixed Deribit subscriptions silently dropping data for uncached instruments (#4035), thanks for reporting @linimin
+- Fixed Deribit and Hyperliquid custom data builds without the `arrow` feature
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
@@ -227,6 +229,7 @@ Released on TBD (UTC).
 - Added Bybit hedge-mode docs with official `positionIdx` API links
 - Added Bybit BBO order docs with params and examples
 - Added Databento docs for price precision precedence and publisher mappings
+- Added Deribit DVOL and Hyperliquid `allMids` adapter docs
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 - Added Rust shared-mutability storage guide with `Rc<RefCell<T>>` decision tree to the developer guide
