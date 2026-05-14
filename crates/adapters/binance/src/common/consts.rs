@@ -301,6 +301,9 @@ pub const BINANCE_GTX_ORDER_REJECT_CODE: i64 = -5022;
 /// "Order would immediately match and take." to indicate a post-only rejection.
 pub const BINANCE_NEW_ORDER_REJECTED_CODE: i64 = -2010;
 
+/// Binance error code returned when an order is not found.
+pub const BINANCE_NO_SUCH_ORDER_CODE: i64 = -2013;
+
 /// Binance Spot LIMIT_MAKER rejection message.
 ///
 /// This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.

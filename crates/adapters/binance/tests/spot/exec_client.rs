@@ -15,7 +15,17 @@
 
 //! Integration tests for the Binance Spot execution client.
 
-use std::{cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    net::SocketAddr,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -38,8 +48,10 @@ use nautilus_common::{
     clients::ExecutionClient,
     live::runner::set_exec_event_sender,
     messages::{
-        ExecutionEvent,
-        execution::{CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, SubmitOrder},
+        ExecutionEvent, ExecutionReport,
+        execution::{
+            CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        },
     },
     testing::wait_until_async,
 };
@@ -396,7 +408,17 @@ fn unauthorized_response() -> impl IntoResponse {
     )
 }
 
-fn create_exec_test_router() -> Router {
+fn no_such_order_response() -> impl IntoResponse {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Body::from(r#"{"code":-2013,"msg":"Order does not exist."}"#),
+    )
+}
+
+fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Router {
+    let order_query_count_for_order_route = order_query_count;
+
     Router::new()
         .route(
             "/api/v3/ping",
@@ -507,6 +529,20 @@ fn create_exec_test_router() -> Router {
                     .into_response()
                 },
             )
+            .get(move |headers: HeaderMap| {
+                let order_query_count = order_query_count_for_order_route.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return unauthorized_response().into_response();
+                    }
+
+                    if let Some(count) = order_query_count {
+                        count.fetch_add(1, Ordering::SeqCst);
+                    }
+
+                    no_such_order_response().into_response()
+                }
+            })
             .delete(
                 |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| async move {
                     if !has_auth_headers(&headers) {
@@ -540,7 +576,13 @@ fn create_exec_test_router() -> Router {
 }
 
 async fn start_exec_test_server() -> SocketAddr {
-    let router = create_exec_test_router();
+    start_exec_test_server_with_order_query_count(None).await
+}
+
+async fn start_exec_test_server_with_order_query_count(
+    order_query_count: Option<Arc<AtomicUsize>>,
+) -> SocketAddr {
+    let router = create_exec_test_router(order_query_count);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -1012,4 +1054,55 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_missing_order_emits_no_order_report() {
+    let order_query_count = Arc::new(AtomicUsize::new(0));
+    let addr = start_exec_test_server_with_order_query_count(Some(order_query_count.clone())).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let query_cmd = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BINANCE_CLIENT_ID),
+        StrategyId::from("TEST-STRATEGY"),
+        InstrumentId::from("BTCUSDT.BINANCE"),
+        ClientOrderId::new("missing-order-001"),
+        Some(VenueOrderId::from("99999")),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.query_order(query_cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let order_query_count = order_query_count.clone();
+            async move { order_query_count.load(Ordering::SeqCst) > 0 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut emitted_order_report = false;
+
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))) {
+            emitted_order_report = true;
+        }
+    }
+
+    assert!(!emitted_order_report);
 }

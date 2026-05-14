@@ -128,6 +128,7 @@ Released on TBD (UTC).
 - Fixed `DataEngine::reset` leaking book and option-chain state across resets (Rust)
 - Fixed `DataActor` composite book delta subscriptions not receiving per-underlying publishes (Rust)
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
+- Fixed Binance Spot inflight REST polls for pruned IOC orders (#4072), thanks for reporting @marcelmdn
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Bybit ambiguous submit failures to await reconciliation, thanks for reporting @shorino
 - Fixed Bybit BBO orders not reconciling the venue-resolved price (Python emitted `OrderUpdated` without a preceding `OrderAccepted`; Rust emitted `OrderAccepted` but never reconciled the cached price)

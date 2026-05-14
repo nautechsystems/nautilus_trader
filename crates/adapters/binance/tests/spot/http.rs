@@ -644,6 +644,14 @@ fn unauthorized_response() -> impl IntoResponse {
     )
 }
 
+fn no_such_order_response() -> impl IntoResponse {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Body::from(r#"{"code":-2013,"msg":"Order does not exist."}"#),
+    )
+}
+
 fn create_router(state: Arc<TestServerState>) -> Router {
     let ping_state = state.clone();
     let time_state = state.clone();
@@ -987,6 +995,11 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             .get("orderId")
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(12345);
+
+                        if order_id == 99999 {
+                            return no_such_order_response().into_response();
+                        }
+
                         let client_order_id = params
                             .get("origClientOrderId")
                             .cloned()
@@ -1801,10 +1814,35 @@ async fn test_domain_request_order_status() {
     let report = client
         .request_order_status_report(account_id, instrument_id, Some(venue_order_id), None)
         .await
+        .unwrap()
         .unwrap();
 
     assert_eq!(report.venue_order_id, venue_order_id);
     assert_eq!(report.instrument_id, instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_request_order_status_returns_none_for_missing_order() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let client = create_domain_client_with_instruments(
+        base_url,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+    )
+    .await;
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let venue_order_id = VenueOrderId::from("99999");
+
+    let report = client
+        .request_order_status_report(account_id, instrument_id, Some(venue_order_id), None)
+        .await
+        .unwrap();
+
+    assert!(report.is_none());
 }
 
 #[rstest]
