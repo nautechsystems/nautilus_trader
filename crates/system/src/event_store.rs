@@ -39,7 +39,7 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::CacheSnapshotRef,
+    cache::{Cache, CacheSnapshotRef},
     clock::Clock,
     enums::Environment,
     msgbus::{self, BusTap, Endpoint, MStr, MessagingSwitchboard},
@@ -51,9 +51,11 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_static},
 };
 use nautilus_event_store::{
-    BusCaptureAdapter, CaptureError, EntryDraft, EventStore, EventStoreError, EventStoreWriter,
-    HaltCallback, HaltReason, Headers, RedbBackend, RegisteredComponents, RunId, RunManifest,
-    RunStatus, ScanDirection, Topic, WriterConfig, compute_snapshot_content_hash, default_registry,
+    BusCaptureAdapter, CacheReplayError, CacheReplayReport, CaptureError, EntryDraft, EventStore,
+    EventStoreError, EventStoreReader, EventStoreWriter, HaltCallback, HaltReason, Headers,
+    RedbBackend, RegisteredComponents, RunId, RunManifest, RunStatus, ScanDirection,
+    SnapshotAnchor, Topic, WriterConfig, compute_snapshot_content_hash, default_registry,
+    restore_cache_snapshot_and_replay_tail,
 };
 use nautilus_execution::engine::SnapshotAnchorer;
 use ustr::Ustr;
@@ -383,6 +385,9 @@ pub enum KernelError {
     /// The event-store boot path failed.
     #[error("event store boot failed: {0}")]
     EventStoreBoot(#[from] BootError),
+    /// Cache state reconstruction from a recovered event-store run failed.
+    #[error("event store cache replay failed: {0}")]
+    CacheReplay(#[from] CacheReplayError),
     /// The writer signaled fail-stop after the kernel was already started.
     #[error("event store halted: {0:?}")]
     EventStoreHalted(HaltReason),
@@ -504,6 +509,48 @@ impl KernelEventStore {
         Ok(())
     }
 
+    /// Restores cache state from the recovered parent run, when one exists.
+    ///
+    /// This is a bootstrap-only reconstruction path. It opens the sealed parent run for
+    /// read-only replay, restores the cache-owned snapshot blob, then replays only the
+    /// entries after the snapshot anchor directly into [`Cache`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KernelError::CacheReplay`] when the parent reader, snapshot restore, decode,
+    /// or cache apply step fails.
+    pub fn restore_parent_cache(
+        &self,
+        instance_id: UUID4,
+        cache: &mut Cache,
+    ) -> Result<Option<CacheReplayReport>, KernelError> {
+        let Some(config) = self.config.as_ref() else {
+            return Ok(None);
+        };
+        let Some(parent_run_id) = self.parent_run_id.as_deref() else {
+            return Ok(None);
+        };
+
+        let backend = RedbBackend::open_sealed(
+            config.base_dir.clone(),
+            &instance_id.to_string(),
+            parent_run_id,
+        )
+        .map_err(CacheReplayError::from)?;
+        let reader = EventStoreReader::new(backend);
+        let report = restore_cache_snapshot_tail(cache, &reader)?;
+
+        log::info!(
+            "Restored cache from event-store parent run {parent_run_id}: from_seq={}, to_seq={}, applied={}, ignored={}",
+            report.plan.from_seq,
+            report.plan.to_seq,
+            report.applied_entries,
+            report.ignored_entries,
+        );
+
+        Ok(Some(report))
+    }
+
     /// Seals the open session by writing `RunEnded` and updating the manifest to
     /// `Ended`. Idempotent: a closed or absent session makes this a no-op. Halted
     /// sessions skip the close (the recovery sweep on next boot owns the seal).
@@ -606,6 +653,45 @@ impl Drop for KernelEventStore {
             .unwrap_or_default();
         self.seal(ts);
     }
+}
+
+fn restore_cache_snapshot_tail<B>(
+    cache: &mut Cache,
+    reader: &EventStoreReader<B>,
+) -> Result<CacheReplayReport, CacheReplayError>
+where
+    B: EventStore,
+{
+    restore_cache_snapshot_and_replay_tail(cache, reader, restore_cache_snapshot_blob)
+}
+
+fn restore_cache_snapshot_blob(
+    cache: &mut Cache,
+    anchor: Option<&SnapshotAnchor>,
+) -> Result<(), CacheReplayError> {
+    let Some(anchor) = anchor else {
+        return Ok(());
+    };
+
+    let blob = cache
+        .load_snapshot_blob(&anchor.blob_ref)
+        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))?
+        .ok_or_else(|| CacheReplayError::snapshot_restore(anchor, "snapshot blob not found"))?;
+    let actual_hash = compute_snapshot_content_hash(blob.as_ref());
+
+    if actual_hash != anchor.content_hash {
+        return Err(CacheReplayError::snapshot_restore(
+            anchor,
+            format!(
+                "content_hash mismatch: expected {}, actual {actual_hash}",
+                anchor.content_hash
+            ),
+        ));
+    }
+
+    cache
+        .restore_snapshot_blob(&anchor.blob_ref, blob)
+        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))
 }
 
 /// Sweeps `<base_dir>/<instance_id>/` for crashed predecessor runs and seals each one.
@@ -1039,6 +1125,23 @@ mod tests {
             recover_predecessors(tmp.path(), INSTANCE_ID).expect("recover empty directory");
         assert!(outcome.recovered.is_empty());
         assert!(outcome.parent_run_id.is_none());
+    }
+
+    #[rstest]
+    fn restore_cache_snapshot_blob_rejects_hash_mismatch() {
+        let mut cache = Cache::default();
+        let blob = Bytes::from_static(b"snapshot");
+        let anchor = SnapshotAnchor::new(0, "cache://position-snapshots/P-1/0", "blake3:bad");
+
+        cache
+            .add(&anchor.blob_ref, blob)
+            .expect("seed snapshot blob");
+        let err = restore_cache_snapshot_blob(&mut cache, Some(&anchor)).expect_err("hash error");
+
+        assert!(
+            err.to_string().contains("content_hash mismatch"),
+            "err was: {err}",
+        );
     }
 
     #[rstest]

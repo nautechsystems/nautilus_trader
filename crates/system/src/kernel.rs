@@ -441,6 +441,15 @@ impl NautilusKernel {
             let components = self.collect_registered_components();
             let environment = self.config.environment();
 
+            if self.load_state()
+                && let Err(e) = self
+                    .event_store
+                    .restore_parent_cache(self.instance_id, &mut self.cache.borrow_mut())
+            {
+                log::error!("Failed to restore cache from event-store parent run: {e}");
+                return;
+            }
+
             if let Err(e) = self
                 .event_store
                 .open(self.instance_id, &components, environment)

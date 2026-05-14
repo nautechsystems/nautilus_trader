@@ -28,20 +28,27 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::UUID4;
-use nautilus_event_store::{EventStore, RedbBackend, RunStatus, compute_snapshot_content_hash};
+use nautilus_common::cache::Cache;
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_event_store::{
+    AppendEntry, EventStore, EventStoreEntry, Headers, PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend,
+    RegisteredComponents, RunManifest, RunStatus, SnapshotAnchor, Topic, compute_entry_hash,
+    compute_snapshot_content_hash, encode_account_state,
+};
 use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
 };
 use nautilus_model::{
     accounts::CashAccount,
     enums::{OmsType, OrderSide, OrderType},
+    events::{AccountState, account::stubs::cash_account_state_million_usd},
     identifiers::{
         AccountId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
     instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
     orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
     stubs::TestDefault,
     types::Quantity,
 };
@@ -50,6 +57,7 @@ use nautilus_system::{
 };
 use rstest::rstest;
 use tempfile::TempDir;
+use ustr::Ustr;
 
 static KERNEL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -76,6 +84,54 @@ fn config_with(base_dir: PathBuf) -> EventStoreConfig {
         halt_threshold: Duration::from_secs(2),
         run_started_timeout: Duration::from_secs(2),
     }
+}
+
+fn running_manifest(config: &EventStoreConfig, instance_id: UUID4, run_id: &str) -> RunManifest {
+    RunManifest {
+        run_id: run_id.to_string(),
+        parent_run_id: None,
+        instance_id: instance_id.to_string(),
+        binary_hash: config.identity.binary_hash.clone(),
+        schema_version: config.identity.schema_version,
+        crate_versions: config.identity.crate_versions.clone(),
+        feature_flags: config.identity.feature_flags.clone(),
+        adapter_versions: config.identity.adapter_versions.clone(),
+        config_hash: config.identity.config_hash.clone(),
+        registered_components: RegisteredComponents::default(),
+        seed: config.identity.seed,
+        start_ts_init: UnixNanos::from(1),
+        end_ts_init: None,
+        high_watermark: 0,
+        status: RunStatus::Running,
+    }
+}
+
+fn append_account_state(seq: u64, state: &AccountState) -> AppendEntry {
+    let encoded = encode_account_state(state).expect("encode account state");
+    let topic = Topic::from("events.account.SIM");
+    let ts = UnixNanos::from(seq);
+    let headers = Headers::empty();
+    let hash = compute_entry_hash(
+        seq,
+        ts,
+        ts,
+        topic.as_ref(),
+        PAYLOAD_TYPE_ACCOUNT_STATE,
+        &encoded.payload,
+        &headers,
+    );
+    let entry = EventStoreEntry::new(
+        hash,
+        seq,
+        headers,
+        topic,
+        Ustr::from(PAYLOAD_TYPE_ACCOUNT_STATE),
+        encoded.payload,
+        ts,
+        ts,
+    );
+
+    AppendEntry::without_indices(entry)
 }
 
 fn setup_netting_snapshot_engine(
@@ -316,4 +372,174 @@ fn kernel_start_installs_snapshot_anchorer_for_execution_snapshots() {
             .is_some(),
         "anchor must point to an existing durable event",
     );
+}
+
+#[rstest]
+fn kernel_start_restores_parent_cache_snapshot_and_replays_tail() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let parent_run_id = "parent-run";
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let position_id = PositionId::new("P-KERNEL-RESTORE-1");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new("T-KERNEL-RESTORE-1")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    let mut snapshot_cache = Cache::default();
+    let snapshot_ref = snapshot_cache
+        .snapshot_position(&position)
+        .expect("snapshot position");
+    let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+    let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, parent_run_id))
+            .expect("open parent run");
+        backend
+            .append_batch(&[append_account_state(1, &anchored_state)])
+            .expect("append anchored state");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(
+                1,
+                snapshot_ref.blob_ref.clone(),
+                compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+            ))
+            .expect("record snapshot anchor");
+        backend
+            .append_batch(&[append_account_state(2, &replayed_state)])
+            .expect("append replay tail");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store_config(config)
+        .build()
+        .expect("kernel");
+    kernel
+        .cache
+        .borrow_mut()
+        .add(&snapshot_ref.blob_ref, snapshot_ref.blob.clone())
+        .expect("seed cache-owned snapshot blob");
+
+    kernel.start();
+
+    {
+        let cache = kernel.cache.borrow();
+        let frames = cache
+            .position_snapshot_bytes(&position.id)
+            .expect("restored position snapshot");
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].as_slice(), snapshot_ref.blob.as_ref());
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
+}
+
+#[rstest]
+#[case::missing_blob(false, false)]
+#[case::hash_mismatch(true, true)]
+fn kernel_start_restore_failure_does_not_open_new_run(
+    #[case] seed_blob: bool,
+    #[case] bad_hash: bool,
+) {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let parent_run_id = "parent-run";
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new("T-KERNEL-RESTORE-FAILURE-1")),
+        Some(PositionId::new("P-KERNEL-RESTORE-FAILURE-1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    let mut snapshot_cache = Cache::default();
+    let snapshot_ref = snapshot_cache
+        .snapshot_position(&position)
+        .expect("snapshot position");
+    let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+    let content_hash = if bad_hash {
+        "blake3:bad".to_string()
+    } else {
+        compute_snapshot_content_hash(snapshot_ref.blob.as_ref())
+    };
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, parent_run_id))
+            .expect("open parent run");
+        backend
+            .append_batch(&[append_account_state(1, &anchored_state)])
+            .expect("append anchored state");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(
+                1,
+                snapshot_ref.blob_ref.clone(),
+                content_hash,
+            ))
+            .expect("record snapshot anchor");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store_config(config.clone())
+        .build()
+        .expect("kernel");
+
+    if seed_blob {
+        kernel
+            .cache
+            .borrow_mut()
+            .add(&snapshot_ref.blob_ref, snapshot_ref.blob)
+            .expect("seed cache-owned snapshot blob");
+    }
+
+    kernel.start();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+
+    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
+    assert!(kernel.event_store().run_id().is_none());
+    assert_eq!(manifests.len(), 1);
+    assert_eq!(manifests[0].run_id, parent_run_id);
 }

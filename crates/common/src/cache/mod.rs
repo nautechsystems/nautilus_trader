@@ -34,6 +34,7 @@ use std::{
     collections::VecDeque,
     fmt::{Debug, Display},
     rc::Rc,
+    str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -2773,6 +2774,7 @@ impl Cache {
         );
         let snapshot_blob = Bytes::from(position_serialized);
 
+        self.add(&blob_ref, snapshot_blob.clone())?;
         self.position_snapshots
             .entry(position_id)
             .or_default()
@@ -2780,6 +2782,73 @@ impl Cache {
 
         log::debug!("Snapshot {copied_position}");
         Ok(CacheSnapshotRef::new(blob_ref, snapshot_blob))
+    }
+
+    /// Loads the cache-owned snapshot blob stored under `blob_ref`.
+    ///
+    /// The cache first checks in-memory snapshot state. When the blob is not present and a
+    /// database adapter exists, the generic cache entries are loaded and checked for the same
+    /// opaque reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading generic cache entries from the backing database fails.
+    pub fn load_snapshot_blob(&mut self, blob_ref: &str) -> anyhow::Result<Option<Bytes>> {
+        if let Some(blob) = self.snapshot_blob(blob_ref) {
+            return Ok(Some(blob));
+        }
+
+        if self.database.is_some() {
+            self.cache_general()?;
+        }
+
+        Ok(self.snapshot_blob(blob_ref))
+    }
+
+    /// Restores the cache-owned snapshot blob stored under `blob_ref`.
+    ///
+    /// Only cache-owned `cache://position-snapshots/...` blobs are currently supported.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the blob reference is unsupported, malformed, skips earlier
+    /// snapshot frames, conflicts with an existing frame, or does not decode to the expected
+    /// position snapshot.
+    pub fn restore_snapshot_blob(&mut self, blob_ref: &str, blob: Bytes) -> anyhow::Result<()> {
+        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref)?;
+        validate_position_snapshot_blob(&position_id, blob.as_ref())?;
+
+        let frames = self.position_snapshots.entry(position_id).or_default();
+        match frames.get(snapshot_index) {
+            Some(existing) if existing == &blob => {}
+            Some(_) => {
+                anyhow::bail!(
+                    "position snapshot frame {snapshot_index} for {position_id} already exists with different bytes"
+                );
+            }
+            None if frames.len() == snapshot_index => frames.push(blob.clone()),
+            None => {
+                anyhow::bail!(
+                    "position snapshot blob_ref {blob_ref} skips missing frame {}",
+                    frames.len()
+                );
+            }
+        }
+
+        self.general.insert(blob_ref.to_string(), blob);
+        Ok(())
+    }
+
+    fn snapshot_blob(&self, blob_ref: &str) -> Option<Bytes> {
+        if let Some(blob) = self.general.get(blob_ref) {
+            return Some(blob.clone());
+        }
+
+        let (position_id, snapshot_index) = parse_position_snapshot_blob_ref(blob_ref).ok()?;
+        self.position_snapshots
+            .get(&position_id)
+            .and_then(|frames| frames.get(snapshot_index))
+            .cloned()
     }
 
     /// Creates a snapshot of the `position` state in the database.
@@ -5453,4 +5522,45 @@ impl Cache {
 
         log::debug!("Completed own books audit in {:?}", start.elapsed());
     }
+}
+
+fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {
+    let Some(rest) = blob_ref.strip_prefix("cache://position-snapshots/") else {
+        anyhow::bail!("unsupported cache snapshot blob_ref {blob_ref}");
+    };
+
+    let Some((position_id, snapshot_index)) = rest.rsplit_once('/') else {
+        anyhow::bail!("malformed position snapshot blob_ref {blob_ref}");
+    };
+
+    if position_id.is_empty() {
+        anyhow::bail!("position snapshot blob_ref {blob_ref} has empty position id");
+    }
+
+    let snapshot_index = snapshot_index.parse::<usize>().map_err(|e| {
+        anyhow::anyhow!("position snapshot blob_ref {blob_ref} has invalid frame index: {e}")
+    })?;
+
+    Ok((PositionId::new(position_id), snapshot_index))
+}
+
+fn validate_position_snapshot_blob(position_id: &PositionId, blob: &[u8]) -> anyhow::Result<()> {
+    let snapshot = serde_json::from_slice::<Position>(blob)?;
+    let expected_prefix = format!("{}-", position_id.as_str());
+
+    let Some(snapshot_uuid) = snapshot.id.as_str().strip_prefix(&expected_prefix) else {
+        anyhow::bail!(
+            "position snapshot id {} does not match blob_ref position {position_id}",
+            snapshot.id
+        );
+    };
+
+    if UUID4::from_str(snapshot_uuid).is_err() {
+        anyhow::bail!(
+            "position snapshot id {} does not match blob_ref position {position_id}",
+            snapshot.id
+        );
+    }
+
+    Ok(())
 }

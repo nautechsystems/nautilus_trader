@@ -19,7 +19,7 @@
 use std::sync::Arc;
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use bytes::Bytes;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
@@ -29,8 +29,8 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        QuoteTick, TradeTick,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, LiquiditySide, MarketStatusAction,
@@ -39,11 +39,12 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
-        OrderRejected, OrderReleased, OrderSubmitted, OrderUpdated,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
-        StrategyId, Symbol, TradeId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
+        OrderListId, PositionId, StrategyId, Symbol, TradeId, Venue, VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
@@ -57,8 +58,15 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
+use ustr::Ustr;
 
-use crate::cache::{Cache, CacheConfig, CacheView, OrderRef};
+use crate::{
+    cache::{
+        Cache, CacheConfig, CacheView, OrderRef,
+        database::{CacheDatabaseAdapter, CacheMap},
+    },
+    signal::Signal,
+};
 
 #[fixture]
 fn cache() -> Cache {
@@ -4498,6 +4506,13 @@ fn test_position_snapshots_round_trip(mut cache: Cache) {
         format!("cache://position-snapshots/{}/0", position_id.as_str()),
     );
     assert_eq!(first_ref.blob.as_ref(), frames[0].as_slice());
+    assert_eq!(
+        cache
+            .load_snapshot_blob(&first_ref.blob_ref)
+            .unwrap()
+            .unwrap(),
+        first_ref.blob,
+    );
 
     // All snapshots round-trip via position_snapshots()
     let snapshots = cache.position_snapshots(Some(&position_id), None);
@@ -4542,6 +4557,474 @@ fn snapshot_test_position() -> Position {
         None,
     );
     Position::new(&audusd_sim, fill.into())
+}
+
+#[derive(Default)]
+struct SnapshotBlobTestDatabase {
+    general: AHashMap<String, Bytes>,
+    fail_add: bool,
+}
+
+impl SnapshotBlobTestDatabase {
+    fn with_general(key: String, value: Bytes) -> Self {
+        let mut general = AHashMap::new();
+        general.insert(key, value);
+        Self {
+            general,
+            fail_add: false,
+        }
+    }
+
+    fn fail_add() -> Self {
+        Self {
+            general: AHashMap::new(),
+            fail_add: true,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
+    fn close(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        Ok(CacheMap::default())
+    }
+
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(self.general.clone())
+    }
+
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_currency(&self, _code: &Ustr) -> anyhow::Result<Option<Currency>> {
+        Ok(None)
+    }
+
+    async fn load_instrument(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        Ok(None)
+    }
+
+    async fn load_synthetic(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        Ok(None)
+    }
+
+    async fn load_account(&self, _account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+        Ok(None)
+    }
+
+    async fn load_order(
+        &self,
+        _client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
+        Ok(None)
+    }
+
+    async fn load_position(&self, _position_id: &PositionId) -> anyhow::Result<Option<Position>> {
+        Ok(None)
+    }
+
+    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_signals(&self, _name: &str) -> anyhow::Result<Vec<Signal>> {
+        Ok(Vec::new())
+    }
+
+    fn load_custom_data(&self, _data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        Ok(Vec::new())
+    }
+
+    fn load_order_snapshot(
+        &self,
+        _client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_position_snapshot(
+        &self,
+        _position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_quotes(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_trades(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_funding_rates(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        Ok(Vec::new())
+    }
+
+    fn load_bars(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        Ok(Vec::new())
+    }
+
+    fn add(&self, _key: String, _value: Bytes) -> anyhow::Result<()> {
+        if self.fail_add {
+            anyhow::bail!("add failed");
+        }
+        Ok(())
+    }
+
+    fn add_currency(&self, _currency: &Currency) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order(&self, _order: &OrderAny, _client_id: Option<ClientId>) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order_snapshot(&self, _snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_position(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_position_snapshot(&self, _snapshot: &PositionSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_signal(&self, _signal: &Signal) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_custom_data(&self, _data: &CustomData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_funding_rate(&self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_strategy(&self, _component_id: &StrategyId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_order(&self, _client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_position(&self, _position_id: &PositionId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_account_event(&self, _account_id: &AccountId, _event_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_venue_order_id(
+        &self,
+        _client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_order_position(
+        &self,
+        _client_order_id: ClientOrderId,
+        _position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_actor(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_strategy(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_order(&self, _order_event: &OrderEventAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let snapshot_ref = cache.snapshot_position(&position).unwrap();
+    let mut restored = Cache::default();
+
+    restored
+        .restore_snapshot_blob(&snapshot_ref.blob_ref, snapshot_ref.blob.clone())
+        .unwrap();
+    restored
+        .restore_snapshot_blob(&snapshot_ref.blob_ref, snapshot_ref.blob.clone())
+        .unwrap();
+
+    let frames = restored.position_snapshot_bytes(&position.id).unwrap();
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].as_slice(), snapshot_ref.blob.as_ref());
+    assert_eq!(
+        restored
+            .load_snapshot_blob(&snapshot_ref.blob_ref)
+            .unwrap()
+            .unwrap(),
+        snapshot_ref.blob,
+    );
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_rejects_wrong_position(mut cache: Cache) {
+    let mut position = snapshot_test_position();
+    position.id = PositionId::new("OTHER-POSITION-1");
+    let blob = Bytes::from(serde_json::to_vec(&position).unwrap());
+
+    let err = cache
+        .restore_snapshot_blob("cache://position-snapshots/P-1/0", blob)
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("does not match blob_ref position"),
+        "err was: {err}",
+    );
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_rejects_position_id_prefix_collision(mut cache: Cache) {
+    let mut source_cache = Cache::default();
+    let mut position = snapshot_test_position();
+    position.id = PositionId::new("P-1-EXTRA");
+    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+
+    let err = cache
+        .restore_snapshot_blob("cache://position-snapshots/P-1/0", snapshot_ref.blob)
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("does not match blob_ref position"),
+        "err was: {err}",
+    );
+}
+
+#[rstest]
+fn test_snapshot_position_failed_persist_does_not_advance_frame_count() {
+    let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::fail_add())));
+    let position = snapshot_test_position();
+
+    let err = cache
+        .snapshot_position(&position)
+        .expect_err("database add failure");
+
+    assert!(err.to_string().contains("add failed"), "err was: {err}");
+    assert_eq!(cache.position_snapshot_count(&position.id), 0);
+    assert!(cache.position_snapshot_bytes(&position.id).is_none());
+}
+
+#[rstest]
+fn test_load_snapshot_blob_loads_from_database_when_not_in_memory() {
+    let mut source_cache = Cache::default();
+    let position = snapshot_test_position();
+    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let mut cache = Cache::new(
+        None,
+        Some(Box::new(SnapshotBlobTestDatabase::with_general(
+            snapshot_ref.blob_ref.clone(),
+            snapshot_ref.blob.clone(),
+        ))),
+    );
+
+    let loaded = cache
+        .load_snapshot_blob(&snapshot_ref.blob_ref)
+        .expect("load snapshot blob");
+
+    assert_eq!(loaded, Some(snapshot_ref.blob));
+}
+
+#[rstest]
+#[case::unsupported_scheme(
+    "file://position-snapshots/P-1/0",
+    "unsupported cache snapshot blob_ref"
+)]
+#[case::missing_frame_separator(
+    "cache://position-snapshots/P-1",
+    "malformed position snapshot blob_ref"
+)]
+#[case::empty_position_id("cache://position-snapshots//0", "has empty position id")]
+#[case::non_numeric_index(
+    "cache://position-snapshots/P-1/not-a-number",
+    "has invalid frame index"
+)]
+fn test_restore_position_snapshot_blob_rejects_malformed_refs(
+    #[case] blob_ref: &str,
+    #[case] expected: &str,
+) {
+    let mut source_cache = Cache::default();
+    let position = snapshot_test_position();
+    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let mut cache = Cache::default();
+
+    let err = cache
+        .restore_snapshot_blob(blob_ref, snapshot_ref.blob)
+        .expect_err("invalid blob_ref");
+
+    assert!(err.to_string().contains(expected), "err was: {err}");
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_rejects_skipped_frame() {
+    let mut source_cache = Cache::default();
+    let position = snapshot_test_position();
+    let snapshot_ref = source_cache.snapshot_position(&position).unwrap();
+    let mut cache = Cache::default();
+
+    let err = cache
+        .restore_snapshot_blob("cache://position-snapshots/P-1/1", snapshot_ref.blob)
+        .expect_err("skipped frame");
+
+    assert!(
+        err.to_string().contains("skips missing frame 0"),
+        "err was: {err}",
+    );
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_rejects_conflicting_frame_bytes() {
+    let mut source_cache = Cache::default();
+    let position = snapshot_test_position();
+    let first_ref = source_cache.snapshot_position(&position).unwrap();
+    let second_ref = source_cache.snapshot_position(&position).unwrap();
+    let mut cache = Cache::default();
+
+    cache
+        .restore_snapshot_blob(&first_ref.blob_ref, first_ref.blob)
+        .expect("restore first frame");
+    let err = cache
+        .restore_snapshot_blob(&first_ref.blob_ref, second_ref.blob)
+        .expect_err("conflicting frame");
+
+    assert!(
+        err.to_string()
+            .contains("already exists with different bytes"),
+        "err was: {err}",
+    );
+}
+
+#[rstest]
+fn test_restore_position_snapshot_blob_rejects_invalid_json() {
+    let mut cache = Cache::default();
+
+    let err = cache
+        .restore_snapshot_blob(
+            "cache://position-snapshots/P-1/0",
+            Bytes::from_static(b"not-json"),
+        )
+        .expect_err("invalid json");
+
+    assert!(err.to_string().contains("expected"), "err was: {err}");
 }
 
 #[rstest]
