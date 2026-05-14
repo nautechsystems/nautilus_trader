@@ -1186,7 +1186,7 @@ impl DataEngine {
             DataResponse::ForwardPrices(r) => {
                 return self.handle_forward_prices_response(&correlation_id, r);
             }
-            _ => todo!("Handle other response types"),
+            DataResponse::Data(_) => {}
         }
 
         msgbus::send_response(&correlation_id, &resp);

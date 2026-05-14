@@ -38,22 +38,22 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        CustomDataResponse, DataCommand, DataResponse, InstrumentResponse, RequestBars,
+        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+        RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus, TypedHandler, TypedIntoHandler,
-        stubs::get_typed_message_saving_handler,
+        stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
     testing::wait_until,
@@ -74,12 +74,14 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DEPTH10_LEN, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
-        InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
-        QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API,
+        OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionGreeks, StrikeRange},
-        stubs::{OrderBookDeltaTestBuilder, stub_delta, stub_deltas, stub_depth10},
+        stubs::{
+            OrderBookDeltaTestBuilder, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
+        },
     },
     enums::{
         AggressorSide, AssetClass, BookType, GreeksConvention, MarketStatusAction, OptionKind,
@@ -9646,8 +9648,6 @@ fn test_response_increments_response_count(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
 ) {
-    use nautilus_common::messages::data::{DataResponse, InstrumentResponse};
-
     let mut data_engine = data_engine.borrow_mut();
 
     let resp = InstrumentResponse::new(
@@ -9666,6 +9666,118 @@ fn test_response_increments_response_count(
 
     data_engine.reset();
     assert_eq!(data_engine.response_count(), 0);
+}
+
+#[rstest]
+fn test_custom_data_response_is_forwarded_with_metadata(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let correlation_id = UUID4::new();
+    let data_type = DataType::new(
+        "CustomFeed",
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let params = serde_json::from_value(json!({"source": "params"})).unwrap();
+    let start = UnixNanos::from(1_000);
+    let end = UnixNanos::from(2_000);
+    let ts_init = UnixNanos::from(3_000);
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-data-response")));
+    msgbus::register_response_handler(&correlation_id, handler);
+
+    let resp = CustomDataResponse::new(
+        correlation_id,
+        client_id,
+        Some(venue),
+        data_type.clone(),
+        "custom-payload".to_string(),
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    );
+    data_engine.response(DataResponse::Data(resp));
+
+    let responses = saver.get_messages();
+    assert_eq!(responses.len(), 1);
+
+    let forwarded = &responses[0];
+    assert_eq!(forwarded.correlation_id, correlation_id);
+    assert_eq!(forwarded.client_id, client_id);
+    assert_eq!(forwarded.venue, Some(venue));
+    assert_eq!(forwarded.data_type, data_type);
+    assert_eq!(forwarded.start, Some(start));
+    assert_eq!(forwarded.end, Some(end));
+    assert_eq!(forwarded.ts_init, ts_init);
+    assert_eq!(
+        forwarded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("source")),
+        Some("params")
+    );
+    assert_eq!(
+        forwarded
+            .data
+            .as_ref()
+            .downcast_ref::<String>()
+            .map(String::as_str),
+        Some("custom-payload")
+    );
+    assert_eq!(data_engine.response_count(), 1);
+    assert_eq!(stub_msgbus.borrow().res_count(), 1);
+}
+
+#[rstest]
+fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let correlation_id = UUID4::new();
+    let payload = stub_custom_data(
+        4_000,
+        42,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let data_type = payload.data_type.clone();
+    let params = serde_json::from_value(json!({"source": "params"})).unwrap();
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-response-only")));
+    msgbus::register_response_handler(&correlation_id, response_handler);
+
+    let (topic_handler, topic_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("custom-topic")));
+    let topic = switchboard::get_custom_topic(&data_type);
+    msgbus::subscribe_any(topic.into(), topic_handler, None);
+
+    let resp = CustomDataResponse::new(
+        correlation_id,
+        client_id,
+        Some(venue),
+        data_type,
+        payload.clone(),
+        None,
+        None,
+        UnixNanos::from(5_000),
+        Some(params),
+    );
+    data_engine.response(DataResponse::Data(resp));
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].data.as_ref().downcast_ref::<CustomData>(),
+        Some(&payload)
+    );
+    assert!(topic_saver.get_messages().is_empty());
 }
 
 #[cfg(feature = "defi")]
