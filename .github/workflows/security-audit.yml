@@ -4,7 +4,9 @@ name: security-audit
 #
 # Triggers:
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
-#   - Pull requests: a path-filtered gate job decides whether the audit jobs run.
+#   - Pull requests: GitHub path filters create a workflow run only when
+#     audit-relevant paths change. The gate job remains as a second check
+#     before the audit jobs run.
 #   - Pushes to develop / master / test-security: GitHub path filters create a
 #     workflow run only when audit-relevant paths change. The gate job remains as
 #     a second check before the audit jobs run.
@@ -22,9 +24,7 @@ env:
 
 on:
   pull_request:
-  push:
-    branches: [develop, master, test-security]
-    paths:
+    paths: &security_audit_paths
       # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.lock
       - Cargo.toml
@@ -46,6 +46,9 @@ on:
       - scripts/ci/security-audit-gate.sh
       - .github/actions/cargo-tool-install/**
       - .github/workflows/security-audit.yml
+  push:
+    branches: [develop, master, test-security]
+    paths: *security_audit_paths
   schedule:
     - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger

@@ -22,7 +22,7 @@ set -euo pipefail
 #   PUSH_BEFORE_SHA  - github.event.before (push only)
 #   PUSH_AFTER_SHA   - github.event.after  (push only)
 #
-# Audit-relevant paths. Keep in sync with the `push.paths` list in
+# Audit-relevant paths. Keep in sync with the `security_audit_paths` anchor in
 # .github/workflows/security-audit.yml.
 #   - Lock files                Cargo.lock, uv.lock, python/uv.lock
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
