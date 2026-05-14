@@ -37,10 +37,12 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment, websocket::client::HyperliquidWebSocketClient,
+    common::enums::HyperliquidEnvironment,
+    data_types::HyperliquidAllMids,
+    websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, Data},
     identifiers::{AccountId, InstrumentId},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -153,6 +155,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     });
 
     let book_payload = load_json("ws_book_data.json");
+    let allmids_payload = load_json("ws_allmids.json");
 
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
@@ -218,6 +221,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                                 "time": 1703875200000u64
                                             }
                                         }),
+                                        "allMids" => allmids_payload.clone(),
                                         _ => json!({"channel": sub_type, "data": {}}),
                                     };
 
@@ -1364,6 +1368,118 @@ async fn test_candle_subscription_survives_reconnection() {
         let has_btc = sub.get("coin").is_some_and(|c| c.as_str() == Some("BTC"));
         assert!(has_btc, "expected candle subscription for BTC coin");
     }
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_all_mids_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    client
+        .subscribe_all_mids()
+        .await
+        .expect("subscribe allMids failed");
+
+    // Wait for subscription to be recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, _)| t == "allMids")
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Receive allMids data
+    let msg = tokio::time::timeout(Duration::from_secs(5), client.next_event())
+        .await
+        .expect("timeout waiting for allMids message")
+        .expect("no message received");
+
+    match msg {
+        NautilusWsMessage::CustomData(data) => {
+            if let Data::Custom(custom) = data {
+                let all_mids = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllMids>()
+                    .expect("expected HyperliquidAllMids");
+                assert_eq!(all_mids.mids.len(), 3);
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+                );
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
+                );
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("SOL-USD-PERP.HYPERLIQUID"))
+                );
+            } else {
+                panic!("expected CustomData, found {data:?}");
+            }
+        }
+        other => panic!("unexpected message type: {other:?}"),
+    }
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_all_mids_subscription_with_dex() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    client
+        .subscribe_all_mids_with_dex(Some("hyperliquid"))
+        .await
+        .expect("subscribe allMids with dex failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, _)| t == "allMids")
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await;
+    let (_, subscription) = subscriptions
+        .iter()
+        .find(|(t, _)| t == "allMids")
+        .expect("expected allMids subscription");
+    assert_eq!(
+        subscription.get("dex").and_then(|value| value.as_str()),
+        Some("hyperliquid"),
+    );
 
     client.disconnect().await.expect("close failed");
 }
