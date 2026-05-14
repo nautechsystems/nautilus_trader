@@ -15,7 +15,7 @@
 
 use ahash::AHashMap;
 use nautilus_common::messages::data::{
-    SubscribeBars, SubscribeCommand, SubscribeQuotes, SubscribeTrades,
+    SubscribeBars, SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
 };
 use nautilus_core::{
     Params,
@@ -76,6 +76,19 @@ impl DataEngine {
                     self.params_with_prefilled_start_ns(cmd.params.as_ref(), "bars", &identifier)?;
                 Ok(SubscribeCommand::Bars(SubscribeBars { params, ..cmd }))
             }
+            SubscribeCommand::Data(cmd) if Self::is_start_ns_missing(cmd.params.as_ref()) => {
+                let type_name = cmd.data_type.type_name().to_string();
+                let identifier = cmd.data_type.identifier().map(String::from);
+                let params = self.params_with_custom_data_prefilled_start_ns(
+                    cmd.params.as_ref(),
+                    &type_name,
+                    identifier.as_deref(),
+                )?;
+                Ok(SubscribeCommand::Data(SubscribeCustomData {
+                    params,
+                    ..cmd
+                }))
+            }
             _ => Ok(cmd),
         }
     }
@@ -90,16 +103,31 @@ impl DataEngine {
         data_cls: &str,
         identifier: &str,
     ) -> anyhow::Result<Option<Params>> {
-        let start_ns = self
-            .catalog_last_timestamp(data_cls, identifier)?
-            .map_or(Value::Null, |last_timestamp| {
-                Value::from(last_timestamp.saturating_add(1))
-            });
+        let last_timestamp = self.catalog_last_timestamp(data_cls, identifier)?;
+
+        Ok(Some(Self::params_with_start_ns(params, last_timestamp)))
+    }
+
+    fn params_with_custom_data_prefilled_start_ns(
+        &self,
+        params: Option<&Params>,
+        type_name: &str,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<Option<Params>> {
+        let last_timestamp = self.catalog_custom_data_last_timestamp(type_name, identifier)?;
+
+        Ok(Some(Self::params_with_start_ns(params, last_timestamp)))
+    }
+
+    fn params_with_start_ns(params: Option<&Params>, last_timestamp: Option<u64>) -> Params {
+        let start_ns = last_timestamp.map_or(Value::Null, |last_timestamp| {
+            Value::from(last_timestamp.saturating_add(1))
+        });
         let mut params = params.cloned().unwrap_or_else(Params::new);
 
         params.insert("start_ns".to_string(), start_ns);
 
-        Ok(Some(params))
+        params
     }
 
     fn catalog_last_timestamp(
@@ -111,6 +139,29 @@ impl DataEngine {
             if let Some(last_timestamp) =
                 catalog.query_last_timestamp(data_cls, Some(identifier))?
             {
+                return Ok(Some(last_timestamp));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn catalog_custom_data_last_timestamp(
+        &self,
+        type_name: &str,
+        identifier: Option<&str>,
+    ) -> anyhow::Result<Option<u64>> {
+        for catalog in self.catalogs.values() {
+            let last_timestamp = if let Some(identifier) = identifier {
+                let directory = catalog.make_path_custom_data(type_name, Some(identifier))?;
+                let intervals = catalog.get_directory_intervals(&directory)?;
+                intervals.last().map(|(_, last_timestamp)| *last_timestamp)
+            } else {
+                let data_cls = format!("custom/{type_name}");
+                catalog.query_last_timestamp(&data_cls, None)?
+            };
+
+            if let Some(last_timestamp) = last_timestamp {
                 return Ok(Some(last_timestamp));
             }
         }

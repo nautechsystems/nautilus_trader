@@ -96,7 +96,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 #[cfg(feature = "streaming")]
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
 use rstest::*;
 use serde_json::json;
 use ustr::Ustr;
@@ -329,6 +329,49 @@ fn register_bar_catalog(
             None,
         )
         .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn write_custom_catalog_file(
+    catalog_dir: &CatalogTempDir,
+    catalog: &ParquetDataCatalog,
+    type_name: &str,
+    identifier: Option<&str>,
+    start_timestamp: u64,
+    end_timestamp: u64,
+) {
+    let directory = catalog
+        .make_path_custom_data(type_name, identifier)
+        .unwrap();
+    let directory_path = catalog_dir.path().join(directory);
+    std::fs::create_dir_all(&directory_path).unwrap();
+
+    let filename = timestamps_to_filename(
+        UnixNanos::from(start_timestamp),
+        UnixNanos::from(end_timestamp),
+    );
+    std::fs::write(directory_path.join(filename), b"").unwrap();
+}
+
+#[cfg(feature = "streaming")]
+fn register_custom_catalog(
+    data_engine: &mut DataEngine,
+    data_type: &DataType,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("custom");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        data_type.type_name(),
+        data_type.identifier(),
+        last_timestamp,
+        last_timestamp,
+    );
+
     data_engine.register_catalog(catalog, None);
     catalog_dir
 }
@@ -2675,6 +2718,255 @@ fn test_catalog_start_ns_prefill_skips_internal_bars(
             .params
             .as_ref()
             .is_none_or(|params| !params.contains_key("start_ns"))
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_from_catalog(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//AUDUSD".to_string()));
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 5_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(5_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_sets_null_without_catalog_hit(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//MISSING".to_string()));
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-custom");
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    let null_value = json!(null);
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get("start_ns")),
+        Some(&null_value)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_without_identifier_merges_catalog_intervals(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let type_name = "CustomFeed";
+    let catalog_dir = CatalogTempDir::new("custom-no-identifier");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        type_name,
+        Some("SIM//AUDUSD"),
+        1_000,
+        10_000,
+    );
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        type_name,
+        Some("SIM//EURUSD"),
+        5_000,
+        6_000,
+    );
+    data_engine.register_catalog(catalog, None);
+    let data_type = DataType::new(type_name, None, None);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(10_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_preserves_existing_start_ns(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//AUDUSD".to_string()));
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 6_000);
+    let params: Params = serde_json::from_value(json!({"start_ns": 42})).unwrap();
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(42)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_preserves_command_metadata(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let metadata = serde_json::from_value(json!({
+        "instrument_id": "IGNORED.SIM",
+        "source": "metadata",
+    }))
+    .unwrap();
+    let data_type = DataType::new(
+        "CustomMetadataFeed",
+        Some(metadata),
+        Some("SIM//METADATA".to_string()),
+    );
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 7_000);
+    let command_id = UUID4::new();
+    let ts_init = UnixNanos::from(123);
+    let correlation_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({"source": "params"})).unwrap();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        command_id,
+        ts_init,
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+
+    assert_eq!(recorded.client_id, Some(client_id));
+    assert_eq!(recorded.venue, Some(venue));
+    assert_eq!(recorded.data_type.type_name(), data_type.type_name());
+    assert_eq!(recorded.data_type.metadata(), data_type.metadata());
+    assert_eq!(recorded.data_type.identifier(), data_type.identifier());
+    assert_eq!(recorded.command_id, command_id);
+    assert_eq!(recorded.ts_init, ts_init);
+    assert_eq!(recorded.correlation_id, Some(correlation_id));
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(7_001)
+    );
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("source")),
+        Some("params")
     );
 }
 
