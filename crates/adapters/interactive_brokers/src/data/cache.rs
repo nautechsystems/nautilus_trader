@@ -25,6 +25,28 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+fn checked_quantity(size: f64, precision: u8) -> Option<Quantity> {
+    let quantity = match Quantity::new_checked(size, precision) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            tracing::warn!("Ignoring invalid IB quote size {size}: {e}");
+            return None;
+        }
+    };
+
+    let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
+    if (quantity.as_f64() - size).abs() > tolerance {
+        tracing::warn!(
+            "Ignoring unrepresentable IB quote size {} with precision {}",
+            size,
+            precision
+        );
+        return None;
+    }
+
+    Some(quantity)
+}
+
 /// Quote cache that accumulates IB tick updates to build complete quotes.
 ///
 /// Interactive Brokers sends individual tick price and size updates (bid price,
@@ -161,6 +183,8 @@ impl QuoteCache {
         ts_init: UnixNanos,
         ignore_size_only: bool,
     ) -> Option<QuoteTick> {
+        checked_quantity(size, size_precision)?;
+
         let cached = self
             .quotes
             .entry(instrument_id)
@@ -229,6 +253,8 @@ impl QuoteCache {
         ts_init: UnixNanos,
         ignore_size_only: bool,
     ) -> Option<QuoteTick> {
+        checked_quantity(size, size_precision)?;
+
         let cached = self
             .quotes
             .entry(instrument_id)
@@ -281,13 +307,16 @@ impl QuoteCache {
         let bid_size = cached.bid_size.unwrap_or(0.0);
         let ask_size = cached.ask_size.unwrap_or(0.0);
 
+        let bid_qty = checked_quantity(bid_size, size_precision)?;
+        let ask_qty = checked_quantity(ask_size, size_precision)?;
+
         // Build the quote
         let quote = QuoteTick::new(
             instrument_id,
             Price::new(bid_price, price_precision),
             Price::new(ask_price, price_precision),
-            Quantity::new(bid_size, size_precision),
-            Quantity::new(ask_size, size_precision),
+            bid_qty,
+            ask_qty,
             ts_event,
             ts_init,
         );
@@ -531,6 +560,42 @@ mod tests {
             UnixNanos::new(3),
             UnixNanos::new(3),
             true,
+        );
+
+        assert!(quote.is_none());
+        let last_quote = cache.get_last_quote(&instrument_id).unwrap();
+        assert_eq!(last_quote.bid_size.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_quote_cache_drops_unrepresentable_size() {
+        let mut cache = QuoteCache::new();
+        let instrument_id = instrument_id();
+
+        cache.update_bid_price(
+            instrument_id,
+            100.0,
+            2,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_ask_price(
+            instrument_id,
+            101.0,
+            2,
+            0,
+            UnixNanos::new(2),
+            UnixNanos::new(2),
+        );
+
+        let quote = cache.update_bid_size(
+            instrument_id,
+            0.5,
+            2,
+            0,
+            UnixNanos::new(3),
+            UnixNanos::new(3),
         );
 
         assert!(quote.is_none());

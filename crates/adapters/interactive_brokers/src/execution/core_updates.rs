@@ -701,7 +701,7 @@ impl InteractiveBrokersExecutionClient {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn handle_execution_data(
         exec_data: &ExecutionData,
-        _order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
@@ -717,14 +717,27 @@ impl InteractiveBrokersExecutionClient {
         pending_combo_fill_avgs: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
     ) -> anyhow::Result<()> {
-        let client_order_id = {
+        let mapped_client_order_id = {
             let map = venue_order_id_map
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
             map.get(&exec_data.execution.order_id).copied()
         };
 
-        let Some(client_order_id) = client_order_id else {
+        let client_order_id = if let Some(client_order_id) = mapped_client_order_id {
+            client_order_id
+        } else if !exec_data.execution.order_reference.is_empty() {
+            let client_order_id = ClientOrderId::from(exec_data.execution.order_reference.as_str());
+            order_id_map
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
+                .insert(client_order_id, exec_data.execution.order_id);
+            venue_order_id_map
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
+                .insert(exec_data.execution.order_id, client_order_id);
+            client_order_id
+        } else {
             tracing::debug!(
                 "Execution data for unknown order ID: {}",
                 exec_data.execution.order_id

@@ -31,7 +31,7 @@ use crate::{
     common::{
         enums::IbAction,
         parse::{
-            create_spread_instrument_id, determine_venue_from_contract,
+            create_spread_instrument_id, determine_venue_from_contract, exchange_to_mic_venue,
             instrument_id_to_ib_contract, is_spread_instrument_id,
             parse_spread_instrument_id_to_legs, possible_exchanges_for_venue,
         },
@@ -167,6 +167,10 @@ impl InteractiveBrokersInstrumentProvider {
         contract: &Contract,
         contract_details: Option<&ibapi::contracts::ContractDetails>,
     ) -> Venue {
+        if matches!(contract.security_type, SecurityType::Stock) {
+            return Venue::from(self.resolve_stock_exchange_from_contract(contract).as_str());
+        }
+
         let valid_exchanges = contract_details.map(|details| details.valid_exchanges.join(","));
         let venue_str = determine_venue_from_contract(
             contract,
@@ -175,6 +179,57 @@ impl InteractiveBrokersInstrumentProvider {
             valid_exchanges.as_deref(),
         );
         Venue::from(venue_str.as_str())
+    }
+
+    fn resolve_stock_exchange_from_contract(&self, contract: &Contract) -> String {
+        let cached_venue = self.resolve_cached_symbol_venue(contract);
+        if let Some(venue) = cached_venue.as_deref()
+            && Self::is_compatible_cached_stock_venue(venue, contract.primary_exchange.as_str())
+        {
+            return venue.to_string();
+        }
+
+        if !contract.primary_exchange.as_str().is_empty()
+            && contract.primary_exchange.as_str() != "SMART"
+        {
+            return if self.config.convert_exchange_to_mic_venue {
+                exchange_to_mic_venue(contract.primary_exchange.as_str())
+                    .unwrap_or_else(|| contract.primary_exchange.as_str().to_string())
+            } else {
+                contract.primary_exchange.as_str().to_string()
+            };
+        }
+
+        if contract.exchange.as_str() == "SMART"
+            && let Some(venue) = cached_venue
+        {
+            return venue;
+        }
+
+        let exchange = contract.exchange.as_str();
+        if self.config.convert_exchange_to_mic_venue {
+            exchange_to_mic_venue(exchange).unwrap_or_else(|| exchange.to_string())
+        } else {
+            exchange.to_string()
+        }
+    }
+
+    fn is_compatible_cached_stock_venue(venue: &str, primary_exchange: &str) -> bool {
+        if primary_exchange.is_empty() || primary_exchange == "SMART" {
+            return true;
+        }
+
+        venue == primary_exchange
+            || exchange_to_mic_venue(primary_exchange).is_some_and(|mic| mic == venue)
+    }
+
+    fn resolve_cached_symbol_venue(&self, contract: &Contract) -> Option<String> {
+        self.instruments.iter().find_map(|entry| {
+            let instrument = entry.value();
+            let instrument_id = instrument.id();
+            (instrument_id.symbol.as_str() == contract.symbol.as_str())
+                .then(|| instrument_id.venue.to_string())
+        })
     }
 
     /// Get the symbology method from the provider configuration.

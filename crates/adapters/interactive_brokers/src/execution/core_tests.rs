@@ -1087,6 +1087,96 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report() {
     assert!(commission_cache.lock().unwrap().is_empty());
 }
 
+#[tokio::test]
+async fn test_process_order_update_stream_learns_order_ref_from_execution() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7004;
+    let contract_id = 12346;
+    let client_order_id = ClientOrderId::from("O-STREAM-EXEC-REF");
+    let venue_order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let instrument_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let trader_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let strategy_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+    let accepted_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let commission_cache = Arc::new(Mutex::new(AHashMap::new()));
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscription = Subscription::new(update_receiver);
+
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+
+    let mut exec_data = create_test_execution_data(order_id, "exec-stream-002", 100.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    exec_data.execution.order_reference = client_order_id.to_string();
+
+    update_sender
+        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
+        .unwrap();
+    update_sender
+        .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
+            execution_id: String::from("exec-stream-002"),
+            commission: 1.25,
+            currency: String::from("USD"),
+            realized_pnl: None,
+            yields: None,
+            yield_redemption_date: String::new(),
+        })))
+        .unwrap();
+    drop(update_sender);
+
+    InteractiveBrokersExecutionClient::process_order_update_stream(
+        &mut subscription,
+        &order_id_map,
+        &venue_order_id_map,
+        &instrument_provider,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        &commission_cache,
+        &instrument_id_map,
+        &trader_id_map,
+        &strategy_id_map,
+        &spread_fill_tracking,
+        &order_avg_prices,
+        &pending_combo_fills,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+        &accepted_orders,
+        &pending_cancel_orders,
+    )
+    .await;
+
+    let fill_event = exec_receiver.try_recv().unwrap();
+    match fill_event {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.client_order_id, Some(client_order_id));
+            assert_eq!(fill.instrument_id, instrument_id);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+    assert_eq!(
+        venue_order_id_map.lock().unwrap().get(&order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        order_id_map.lock().unwrap().get(&client_order_id),
+        Some(&order_id)
+    );
+}
+
 #[rstest]
 fn test_get_leg_position_edge_cases() {
     // Test with single component (no spread)

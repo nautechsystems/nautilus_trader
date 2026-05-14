@@ -129,10 +129,21 @@ pub async fn get_or_connect(
             .map_err(|e| anyhow::anyhow!("Registry mutex poisoned: {e}"))?;
 
         if let Some((client, ref_count)) = guard.get_mut(&key) {
-            *ref_count += 1;
-            let ref_count_val = *ref_count;
-            let client = Arc::clone(client);
-            (Some(client), ref_count_val)
+            if client.is_connected() {
+                *ref_count += 1;
+                let ref_count_val = *ref_count;
+                let client = Arc::clone(client);
+                (Some(client), ref_count_val)
+            } else {
+                tracing::debug!(
+                    "Removing disconnected shared IB client before reconnect (host={}, port={}, client_id={})",
+                    host,
+                    port,
+                    client_id
+                );
+                guard.remove(&key);
+                (None, 0)
+            }
         } else {
             (None, 0)
         }
