@@ -20,13 +20,15 @@
 //! Applied to a struct with named fields, the macro implements:
 //! - [`CustomDataTrait`] (including `type_name_static`, `from_json` for JSON deserialization)
 //! - [`HasTsInit`]
-//! - [`ArrowSchemaProvider`], [`EncodeToRecordBatch`], [`DecodeDataFromRecordBatch`]
+//! - [`ArrowSchemaProvider`], [`EncodeToRecordBatch`], [`DecodeDataFromRecordBatch`] unless
+//!   `no_arrow` is set
 //! - [`CatalogPathPrefix`], `From<Self> for Data`, `TryFrom<Data>`
 //! - `#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]` on the struct
 //!
 //! Call [`nautilus_serialization::ensure_custom_data_registered::<T>()`] once per type for JSON
-//! and Arrow registration; for Python bindings also call
-//! [`nautilus_model::data::register_rust_extractor::<T>()`].
+//! and Arrow registration; for `no_arrow` types call
+//! [`nautilus_model::data::ensure_custom_data_json_registered::<T>()`] instead. For Python
+//! bindings also call [`nautilus_model::data::register_rust_extractor::<T>()`].
 //!
 //! # Requirements
 //!
@@ -41,6 +43,10 @@
 //!   with constructor and getters; Rust and Python both use constructor `new` (Python __init__ forwards to it).
 //!   Python `__repr__` and `__str__` are generated to use the Rust `Display` implementation.
 //! - `no_display`: Do not generate `repr()` or `Display`; the user may implement them manually.
+//! - `no_arrow`: Do not generate Arrow schema or record batch encode/decode methods. Use this for
+//!   live-only custom data that does not need catalog persistence.
+//! - `stub_module = "nautilus_trader.<module>"`: Generate pyo3-stub-gen metadata for the
+//!   given module. Requires `pyo3`.
 //! - `#[custom_data_field(json)]` on a field: Stores the field as a JSON-backed Arrow
 //!   `Utf8` column. The field type must implement Serde `Serialize` and `Deserialize`.
 //!   Python access uses typed dict conversion for supported `HashMap<K, V>` and
@@ -578,6 +584,8 @@ fn encode_finish_builder(ty: &Type, json: bool) -> Option<TokenStream> {
 struct CustomDataOptions {
     pyo3: bool,
     no_display: bool,
+    no_arrow: bool,
+    stub_module: Option<LitStr>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -591,18 +599,38 @@ struct FieldSpec {
     options: FieldOptions,
 }
 
-fn parse_option_ident(
-    ident: &syn::Ident,
+struct CustomDataOption {
+    ident: Ident,
+    value: Option<LitStr>,
+}
+
+fn parse_custom_data_option(
+    option: &CustomDataOption,
     options: &mut CustomDataOptions,
 ) -> Result<(), syn::Error> {
+    let ident = &option.ident;
     let s = ident.to_string();
-    match s.as_str() {
-        "pyo3" | "python" => options.pyo3 = true,
-        "no_display" => options.no_display = true,
+    match (s.as_str(), &option.value) {
+        ("pyo3" | "python", None) => options.pyo3 = true,
+        ("no_display", None) => options.no_display = true,
+        ("no_arrow", None) => options.no_arrow = true,
+        ("stub_module", Some(module)) => options.stub_module = Some(module.clone()),
+        ("pyo3" | "python" | "no_display" | "no_arrow", Some(_)) => {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "option does not accept a value",
+            ));
+        }
+        ("stub_module", None) => {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "`stub_module` requires a string value",
+            ));
+        }
         _ => {
             return Err(syn::Error::new_spanned(
                 ident,
-                "expected `pyo3`, `python`, or `no_display`; unknown option",
+                "expected `pyo3`, `python`, `no_display`, `no_arrow`, or `stub_module`; unknown option",
             ));
         }
     }
@@ -611,6 +639,32 @@ fn parse_option_ident(
 
 struct OptionIdents {
     idents: Vec<Ident>,
+}
+
+struct CustomDataOptionsInput {
+    options: Vec<CustomDataOption>,
+}
+
+impl Parse for CustomDataOptionsInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut options = Vec::new();
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            let value = if input.parse::<Option<Token![=]>>()?.is_some() {
+                Some(input.parse()?)
+            } else {
+                None
+            };
+            options.push(CustomDataOption { ident, value });
+
+            if input.parse::<Option<Token![,]>>()?.is_none() {
+                break;
+            }
+        }
+
+        Ok(Self { options })
+    }
 }
 
 impl Parse for OptionIdents {
@@ -629,15 +683,24 @@ fn parse_options(attr: &TokenStream) -> Result<CustomDataOptions, syn::Error> {
     let mut options = CustomDataOptions {
         pyo3: false,
         no_display: false,
+        no_arrow: false,
+        stub_module: None,
     };
     let attr_str = attr.to_string();
     let attr_str = attr_str.trim();
     if attr_str.is_empty() {
         return Ok(options);
     }
-    let option_idents: OptionIdents = parse2(attr.clone())?;
-    for ident in &option_idents.idents {
-        parse_option_ident(ident, &mut options)?;
+    let input: CustomDataOptionsInput = parse2(attr.clone())?;
+    for option in &input.options {
+        parse_custom_data_option(option, &mut options)?;
+    }
+
+    if options.stub_module.is_some() && !options.pyo3 {
+        return Err(syn::Error::new_spanned(
+            attr.clone(),
+            "`stub_module` requires `pyo3`",
+        ));
     }
     Ok(options)
 }
@@ -1109,53 +1172,17 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
             }
         }
     };
-    quote! {
-        #[cfg(feature = "python")]
-        use pyo3::prelude::*;
-        /// PyO3 bindings (constructor, getters, to_json, from_json, record batch encode/decode). Only compiled when `feature = "python"`.
-        #[cfg(feature = "python")]
-        #[pyo3::pymethods]
-        #[expect(clippy::needless_pass_by_value)]
-        impl #generics #name #generics {
-            #[expect(clippy::too_many_arguments)]
-            #[new]
-            #[pyo3(signature = (#(#py_new_call_args),*))]
-            fn py_new(#(#py_new_params),*) -> pyo3::PyResult<Self> {
-                #(#py_let_bindings)*
-                Ok(Self::new(#(#py_new_call_args),*))
-            }
-            #(#getters)*
-
-            #repr_str_methods
-
-            /// Serializes to JSON string. Used by CustomData.to_json_bytes and PythonCustomDataWrapper.
-            fn to_json(&self) -> pyo3::PyResult<String> {
-                <#name as nautilus_model::data::CustomDataTrait>::to_json_py(self)
-                    .map_err(nautilus_core::python::to_pyvalue_err)
-            }
-
-            /// Class method for JSON deserialization. Used by register_custom_data_class.
-            #[classmethod]
-            fn from_json(
-                _cls: pyo3::Bound<'_, pyo3::types::PyType>,
-                py: pyo3::Python<'_>,
-                data: &pyo3::Bound<'_, pyo3::PyAny>,
-            ) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-                let json_module = py.import("json")
-                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("import json failed: {e}")))?;
-                let json_str: String = json_module
-                    .call_method1("dumps", (data,))
-                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("json.dumps failed: {e}")))?
-                    .extract()?;
-                let value: serde_json::Value = serde_json::from_str(&json_str)
-                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("serde_json::from_str failed: {e}")))?;
-                let arc = <#name as nautilus_model::data::CustomDataTrait>::from_json(value)
-                    .map_err(nautilus_core::python::to_pyvalue_err)?;
-                let inner = arc.as_any().downcast_ref::<#name>()
-                    .ok_or_else(|| nautilus_core::python::to_pyvalue_err("from_json downcast failed"))?;
-                Ok(pyo3::Py::new(py, inner.clone())?.into_any())
-            }
-
+    let stub_pymethods_attr = if ctx.options.stub_module.is_some() {
+        quote! {
+            #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
+        }
+    } else {
+        quote! {}
+    };
+    let record_batch_methods = if ctx.options.no_arrow {
+        quote! {}
+    } else {
+        quote! {
             /// Decodes a RecordBatch from a PyArrow batch into a list of instances.
             /// Class method: call via MarketTickData.decode_record_batch_py(metadata, batch).
             #[pyo3(signature = (metadata, py_batch))]
@@ -1228,6 +1255,58 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
 
                 Ok(py_batch.into_any().unbind())
             }
+        }
+    };
+    quote! {
+        #[cfg(feature = "python")]
+        use pyo3::prelude::*;
+        /// PyO3 bindings (constructor, getters, JSON, and optional record batch encode/decode).
+        /// Only compiled when `feature = "python"`.
+        #[cfg(feature = "python")]
+        #[pyo3::pymethods]
+        #stub_pymethods_attr
+        #[expect(clippy::needless_pass_by_value)]
+        impl #generics #name #generics {
+            #[expect(clippy::too_many_arguments)]
+            #[new]
+            #[pyo3(signature = (#(#py_new_call_args),*))]
+            fn py_new(#(#py_new_params),*) -> pyo3::PyResult<Self> {
+                #(#py_let_bindings)*
+                Ok(Self::new(#(#py_new_call_args),*))
+            }
+            #(#getters)*
+
+            #repr_str_methods
+
+            /// Serializes to JSON string. Used by CustomData.to_json_bytes and PythonCustomDataWrapper.
+            fn to_json(&self) -> pyo3::PyResult<String> {
+                <#name as nautilus_model::data::CustomDataTrait>::to_json_py(self)
+                    .map_err(nautilus_core::python::to_pyvalue_err)
+            }
+
+            /// Class method for JSON deserialization. Used by register_custom_data_class.
+            #[classmethod]
+            fn from_json(
+                _cls: pyo3::Bound<'_, pyo3::types::PyType>,
+                py: pyo3::Python<'_>,
+                data: &pyo3::Bound<'_, pyo3::PyAny>,
+            ) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+                let json_module = py.import("json")
+                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("import json failed: {e}")))?;
+                let json_str: String = json_module
+                    .call_method1("dumps", (data,))
+                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("json.dumps failed: {e}")))?
+                    .extract()?;
+                let value: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("serde_json::from_str failed: {e}")))?;
+                let arc = <#name as nautilus_model::data::CustomDataTrait>::from_json(value)
+                    .map_err(nautilus_core::python::to_pyvalue_err)?;
+                let inner = arc.as_any().downcast_ref::<#name>()
+                    .ok_or_else(|| nautilus_core::python::to_pyvalue_err("from_json downcast failed"))?;
+                Ok(pyo3::Py::new(py, inner.clone())?.into_any())
+            }
+
+            #record_batch_methods
         }
     }
 }
@@ -1321,10 +1400,26 @@ pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let repr_impl = gen_repr_impl(&ctx);
     let ts_init_impl = gen_ts_init_impl(&ctx);
     let custom_data_trait_impl = gen_custom_data_trait_impl(&ctx);
-    let custom_data_serialize_impl = gen_custom_data_serialize_impl(&ctx);
-    let arrow_schema_impl = gen_arrow_schema_impl(&ctx);
-    let encode_batch_impl = gen_encode_batch_impl(&ctx);
-    let decode_batch_impl = gen_decode_batch_impl(&ctx);
+    let custom_data_serialize_impl = if options.no_arrow {
+        quote! {}
+    } else {
+        gen_custom_data_serialize_impl(&ctx)
+    };
+    let arrow_schema_impl = if options.no_arrow {
+        quote! {}
+    } else {
+        gen_arrow_schema_impl(&ctx)
+    };
+    let encode_batch_impl = if options.no_arrow {
+        quote! {}
+    } else {
+        gen_encode_batch_impl(&ctx)
+    };
+    let decode_batch_impl = if options.no_arrow {
+        quote! {}
+    } else {
+        gen_decode_batch_impl(&ctx)
+    };
     let (catalog_path_prefix_impl, from_impl, try_from_impl) =
         gen_catalog_path_and_conversions(&ctx);
     let pymethods_impl = gen_pymethods_impl(&ctx);
@@ -1338,6 +1433,13 @@ pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let pyclass_attr_ts: TokenStream = if options.pyo3 {
         quote! {
             #[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
+        }
+    } else {
+        quote! {}
+    };
+    let stub_pyclass_attr_ts: TokenStream = if let Some(module) = &options.stub_module {
+        quote! {
+            #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass(module = #module))]
         }
     } else {
         quote! {}
@@ -1362,6 +1464,7 @@ pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
         #derived_attr
         #(#struct_attrs)*
         #pyclass_attr_ts
+        #stub_pyclass_attr_ts
         #vis struct #name #generics {
             #(#fields_vec),*
         }
@@ -1378,5 +1481,58 @@ pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
         #from_impl
         #try_from_impl
         #pymethods_impl
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn parse_options_accepts_no_arrow_stub_module_with_pyo3() {
+        let options =
+            parse_options(&quote! { pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid" })
+                .expect("parse options");
+
+        assert!(options.pyo3);
+        assert!(options.no_arrow);
+        assert_eq!(
+            options.stub_module.as_ref().map(LitStr::value).as_deref(),
+            Some("nautilus_trader.hyperliquid"),
+        );
+    }
+
+    #[rstest]
+    fn parse_options_rejects_stub_module_without_pyo3() {
+        let err = parse_options_error(&quote! { stub_module = "nautilus_trader.hyperliquid" });
+
+        assert_eq!(err.to_string(), "`stub_module` requires `pyo3`");
+    }
+
+    #[rstest]
+    fn parse_options_rejects_value_for_flag_option() {
+        let err = parse_options_error(&quote! { pyo3, no_arrow = "true" });
+
+        assert_eq!(err.to_string(), "option does not accept a value");
+    }
+
+    #[rstest]
+    fn parse_options_rejects_unknown_option() {
+        let err = parse_options_error(&quote! { pyo3, fake_option });
+
+        assert_eq!(
+            err.to_string(),
+            "expected `pyo3`, `python`, `no_display`, `no_arrow`, or `stub_module`; unknown option",
+        );
+    }
+
+    fn parse_options_error(attr: &TokenStream) -> syn::Error {
+        match parse_options(attr) {
+            Ok(_) => panic!("expected parse_options to fail"),
+            Err(e) => e,
+        }
     }
 }

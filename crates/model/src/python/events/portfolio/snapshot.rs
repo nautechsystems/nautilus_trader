@@ -26,6 +26,15 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PortfolioSnapshot {
+    /// Represents a point-in-time snapshot of portfolio state for a single account,
+    /// emitted periodically while the account holds open positions.
+    ///
+    /// Unlike `AccountState`, which fires only on
+    /// balance or margin changes, `PortfolioSnapshot` carries a continuous
+    /// mark-to-market view by folding open-position valuations into the totals.
+    /// Totals span every venue the account holds positions on, so multi-venue
+    /// accounts (e.g., a prime broker routing across exchanges) produce a single
+    /// account-wide snapshot rather than per-venue slices.
     #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (account_id, account_type, balances, margins, unrealized_pnls, realized_pnls, total_equity, event_id, ts_event, ts_init, base_currency=None))]

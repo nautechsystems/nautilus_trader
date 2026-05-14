@@ -8,6 +8,7 @@ from nautilus_trader import model
 
 __all__ = [
     "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
+    "HyperliquidAllMids",
     "HyperliquidConditionalOrderType",
     "HyperliquidDataClientConfig",
     "HyperliquidDataClientFactory",
@@ -28,6 +29,19 @@ __all__ = [
 ]
 
 HYPERLIQUID_POST_ONLY_WOULD_MATCH: str
+
+@typing.final
+class HyperliquidAllMids:
+    def __init__(self, mids: typing.Any, ts_event: int, ts_init: int) -> None: ...
+    @property
+    def mids(self) -> typing.Any: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class HyperliquidDataClientConfig:
@@ -112,31 +126,31 @@ class HyperliquidHttpClient:
     def get_perp_meta(self) -> typing.Any: ...
     def load_instrument_definitions(
         self,
-        include_spot: bool = ...,
-        include_perps: bool = ...,
-        include_perps_hip3: bool = ...,
-        include_outcomes: bool = ...,
+        include_spot: bool = True,
+        include_perps: bool = True,
+        include_perps_hip3: bool = False,
+        include_outcomes: bool = False,
     ) -> typing.Any: ...
     def request_quote_ticks(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_trade_ticks(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def submit_order(
         self,
@@ -146,16 +160,16 @@ class HyperliquidHttpClient:
         order_type: model.OrderType,
         quantity: model.Quantity,
         time_in_force: model.TimeInForce,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        post_only: bool,
-        reduce_only: bool,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,
@@ -174,7 +188,7 @@ class HyperliquidHttpClient:
     def submit_orders(self, orders: typing.Sequence[typing.Any]) -> typing.Any: ...
     def request_order_status_reports(self, instrument_id: str | None = ...) -> typing.Any: ...
     def request_order_status_report(
-        self, venue_order_id: str | None = ..., client_order_id: str | None = ...
+        self, venue_order_id: str | None = None, client_order_id: str | None = None
     ) -> typing.Any: ...
     def request_fill_reports(self, instrument_id: str | None = ...) -> typing.Any: ...
     def request_position_status_reports(self, instrument_id: str | None = ...) -> typing.Any: ...
@@ -215,6 +229,8 @@ class HyperliquidWebSocketClient:
     def close(self) -> typing.Any: ...
     def subscribe_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def unsubscribe_trades(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def subscribe_all_mids(self) -> typing.Any: ...
+    def subscribe_all_mids_with_dex(self, dex: str | None = ...) -> typing.Any: ...
     def subscribe_book(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def unsubscribe_book(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def subscribe_book_deltas(
@@ -228,6 +244,8 @@ class HyperliquidWebSocketClient:
     def unsubscribe_quotes(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def subscribe_bars(self, bar_type: model.BarType) -> typing.Any: ...
     def unsubscribe_bars(self, bar_type: model.BarType) -> typing.Any: ...
+    def unsubscribe_all_mids(self) -> typing.Any: ...
+    def unsubscribe_all_mids_with_dex(self, dex: str | None = ...) -> typing.Any: ...
     def subscribe_order_updates(self, user: str) -> typing.Any: ...
     def subscribe_user_events(self, user: str) -> typing.Any: ...
     def subscribe_user_fills(self, user: str) -> typing.Any: ...
@@ -278,6 +296,7 @@ class HyperliquidEnvironment(enum.Enum):
 class HyperliquidProductType(enum.Enum):
     PERP = ...
     SPOT = ...
+    OUTCOME = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...

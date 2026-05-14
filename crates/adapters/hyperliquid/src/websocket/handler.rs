@@ -20,14 +20,13 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use crate::data_types::HyperliquidAllMids;
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{
-    AtomicTime, MUTEX_POISONED, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, CustomData, Data},
+    data::{BarType, CustomData, Data, DataType},
     identifiers::AccountId,
     instruments::{Instrument, InstrumentAny},
     types::Price,
@@ -54,6 +53,7 @@ use super::{
         parse_ws_trade_tick,
     },
 };
+use crate::data_types::HyperliquidAllMids;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -298,6 +298,8 @@ impl FeedHandler {
                             match serde_json::from_str::<HyperliquidWsMessage>(&text) {
                                 Ok(msg) => {
                                     let ts_init = self.clock.get_time_ns();
+                                    let all_mids_data_types =
+                                        Self::all_mids_data_types(&self.subscriptions);
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
@@ -313,6 +315,7 @@ impl FeedHandler {
                                         &mut self.index_price_cache,
                                         &mut self.funding_rate_cache,
                                         &mut self.bar_cache,
+                                        &all_mids_data_types,
                                     );
 
                                     if !nautilus_msgs.is_empty() {
@@ -364,6 +367,7 @@ impl FeedHandler {
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
         bar_cache: &mut AHashMap<String, CandleData>,
+        all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
 
@@ -472,10 +476,12 @@ impl FeedHandler {
                 }
 
                 if !mids.is_empty() {
-                    let all_mids = HyperliquidAllMids::new(mids, ts_init, ts_init);
-                    result.push(NautilusWsMessage::CustomData(Data::Custom(
-                        CustomData::from_arc(Arc::new(all_mids)),
-                    )));
+                    for data_type in all_mids_data_types {
+                        let all_mids = HyperliquidAllMids::new(mids.clone(), ts_init, ts_init);
+                        result.push(NautilusWsMessage::CustomData(Data::Custom(
+                            CustomData::new(Arc::new(all_mids), data_type.clone()),
+                        )));
+                    }
                 }
             }
             HyperliquidWsMessage::Bbo { data } => {
@@ -835,6 +841,35 @@ impl FeedHandler {
         }
 
         result
+    }
+
+    fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
+        let mut topics = subscriptions.all_topics();
+        topics.sort_unstable();
+        topics.dedup();
+
+        let all_mids_channel = HyperliquidWsChannel::AllMids.as_str();
+        let all_mids_prefix = format!("{all_mids_channel}:");
+        let mut data_types = Vec::new();
+
+        for topic in topics {
+            if topic == all_mids_channel {
+                data_types.push(DataType::new("HyperliquidAllMids", None, None));
+            } else if let Some(dex) = topic.strip_prefix(&all_mids_prefix) {
+                let mut metadata = Params::new();
+                metadata.insert(
+                    "dex".to_string(),
+                    serde_json::Value::String(dex.to_string()),
+                );
+                data_types.push(DataType::new("HyperliquidAllMids", Some(metadata), None));
+            }
+        }
+
+        if data_types.is_empty() {
+            data_types.push(DataType::new("HyperliquidAllMids", None, None));
+        }
+
+        data_types
     }
 }
 

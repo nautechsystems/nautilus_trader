@@ -141,29 +141,32 @@ class BitmexHttpClient:
     def request_trades(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None,
-        end: datetime.datetime | None,
-        limit: int | None,
-        partial: bool,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        partial: bool = False,
     ) -> typing.Any: ...
     def query_order(
         self,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def request_order_status_reports(
-        self, instrument_id: model.InstrumentId | None, open_only: bool, limit: int | None = ...
+        self,
+        instrument_id: model.InstrumentId | None = None,
+        open_only: bool = False,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_fill_reports(
-        self, instrument_id: model.InstrumentId | None = ..., limit: int | None = ...
+        self, instrument_id: model.InstrumentId | None = None, limit: int | None = None
     ) -> typing.Any: ...
     def request_position_status_reports(self) -> typing.Any: ...
     def submit_order(
@@ -174,30 +177,30 @@ class BitmexHttpClient:
         order_type: model.OrderType,
         quantity: model.Quantity,
         time_in_force: model.TimeInForce,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        trigger_type: model.TriggerType | None,
-        trailing_offset: float | None,
-        trailing_offset_type: model.TrailingOffsetType | None,
-        display_qty: model.Quantity | None,
-        post_only: bool,
-        reduce_only: bool,
-        order_list_id: model.OrderListId | None = ...,
-        contingency_type: model.ContingencyType | None = ...,
-        peg_price_type: str | None = ...,
-        peg_offset_value: float | None = ...,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        trigger_type: model.TriggerType | None = None,
+        trailing_offset: float | None = None,
+        trailing_offset_type: model.TrailingOffsetType | None = None,
+        display_qty: model.Quantity | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        order_list_id: model.OrderListId | None = None,
+        contingency_type: model.ContingencyType | None = None,
+        peg_price_type: str | None = None,
+        peg_offset_value: float | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def cancel_orders(
         self,
         instrument_id: model.InstrumentId,
-        client_order_ids: typing.Sequence[model.ClientOrderId] | None = ...,
-        venue_order_ids: typing.Sequence[model.VenueOrderId] | None = ...,
+        client_order_ids: typing.Sequence[model.ClientOrderId] | None = None,
+        venue_order_ids: typing.Sequence[model.VenueOrderId] | None = None,
     ) -> typing.Any: ...
     def cancel_all_orders(
         self, instrument_id: model.InstrumentId, order_side: model.OrderSide | None = ...
@@ -205,11 +208,11 @@ class BitmexHttpClient:
     def modify_order(
         self,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
-        quantity: model.Quantity | None = ...,
-        price: model.Price | None = ...,
-        trigger_price: model.Price | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
+        quantity: model.Quantity | None = None,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
     ) -> typing.Any: ...
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def cancel_all_requests(self) -> None: ...
@@ -303,7 +306,7 @@ class BitmexWebSocketClient:
         loop_: typing.Any,
         instruments: typing.Sequence[typing.Any],
         callback: typing.Any,
-        trader_id: model.TraderId | None = ...,
+        trader_id: model.TraderId | None = None,
     ) -> typing.Any: ...
     def wait_until_active(self, timeout_secs: float) -> typing.Any: ...
     def close(self) -> typing.Any: ...
@@ -371,19 +374,19 @@ class SubmitBroadcaster:
         order_type: model.OrderType,
         quantity: model.Quantity,
         time_in_force: model.TimeInForce,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        trigger_type: model.TriggerType | None,
-        trailing_offset: float | None,
-        trailing_offset_type: model.TrailingOffsetType | None,
-        display_qty: model.Quantity | None,
-        post_only: bool,
-        reduce_only: bool,
-        order_list_id: model.OrderListId | None = ...,
-        contingency_type: model.ContingencyType | None = ...,
-        submit_tries: int | None = ...,
-        peg_price_type: str | None = ...,
-        peg_offset_value: float | None = ...,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        trigger_type: model.TriggerType | None = None,
+        trailing_offset: float | None = None,
+        trailing_offset_type: model.TrailingOffsetType | None = None,
+        display_qty: model.Quantity | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        order_list_id: model.OrderListId | None = None,
+        contingency_type: model.ContingencyType | None = None,
+        submit_tries: int | None = None,
+        peg_price_type: str | None = None,
+        peg_offset_value: float | None = None,
     ) -> typing.Any: ...
     def get_metrics(self) -> typing.Any: ...
     def get_client_stats(self) -> typing.Any: ...

@@ -25,7 +25,7 @@ use nautilus_model::{identifiers::InstrumentId, types::Price};
 use nautilus_persistence_macros::custom_data;
 
 /// Hyperliquid all mid prices snapshot from the `allMids` WebSocket channel.
-#[custom_data(pyo3)]
+#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")]
 pub struct HyperliquidAllMids {
     /// Mapping of instrument ID to mid price for all tradable coins.
     #[custom_data_field(json)]
@@ -36,11 +36,11 @@ pub struct HyperliquidAllMids {
     pub ts_init: UnixNanos,
 }
 
-/// Registers Hyperliquid custom data types for JSON and Arrow serialization.
+/// Registers Hyperliquid custom data types for JSON serialization.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_hyperliquid_custom_data() {
-    nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
+    let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
 }
 
 #[cfg(test)]

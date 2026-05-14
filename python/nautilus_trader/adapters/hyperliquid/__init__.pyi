@@ -110,31 +110,31 @@ class HyperliquidHttpClient:
     def get_perp_meta(self) -> typing.Any: ...
     def load_instrument_definitions(
         self,
-        include_spot: bool = ...,
-        include_perps: bool = ...,
-        include_perps_hip3: bool = ...,
-        include_outcomes: bool = ...,
+        include_spot: bool = True,
+        include_perps: bool = True,
+        include_perps_hip3: bool = False,
+        include_outcomes: bool = False,
     ) -> typing.Any: ...
     def request_quote_ticks(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_trade_ticks(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def submit_order(
         self,
@@ -144,16 +144,16 @@ class HyperliquidHttpClient:
         order_type: model.OrderType,
         quantity: model.Quantity,
         time_in_force: model.TimeInForce,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        post_only: bool,
-        reduce_only: bool,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,

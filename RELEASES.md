@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Added Hyperliquid HIP-4 outcome instruments: `+E`/`#E` encoding, USDH settlement, and per-side BinaryOption modeling
 - Added Hyperliquid HIP-4 outcome reconciliation via spot balances; `outcomeMeta` settlement dispatch on the Rust client
 - Added Hyperliquid HIP-4 outcome order scaffolding; live placement awaits `splitOutcome` action wiring
+- Added Hyperliquid `allMids` custom data subscriptions with optional dex metadata (#4067), thanks @graceyangfan
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Kraken Spot L3 order book support via WebSocket v2 (#4041), thanks @mcgrj
 - Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
@@ -189,6 +190,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
 - Refined data engine request workflow (#3928), thanks @faysou
+- Improved `#[custom_data]` to support live-only JSON types without Arrow registration
 - Improved `DataEngine.reset` to clear book updaters, snapshotters, option chain managers, and timers (Rust)
 - Improved `DataEngine` to create per-underlying books for composite-symbol book subscriptions (Rust)
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou

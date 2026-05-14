@@ -393,7 +393,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
-    /// Subscribe to all mid prices across markets for a specific dex.
+    /// Subscribe to all mid prices across markets, optionally scoped to a specific dex.
     #[pyo3(name = "subscribe_all_mids_with_dex")]
     fn py_subscribe_all_mids_with_dex<'py>(
         &self,
@@ -588,7 +588,7 @@ impl HyperliquidWebSocketClient {
         })
     }
 
-    /// Unsubscribe from all mid prices across markets for a specific dex.
+    /// Unsubscribe from all mid prices across markets, optionally scoped to a specific dex.
     #[pyo3(name = "unsubscribe_all_mids_with_dex")]
     fn py_unsubscribe_all_mids_with_dex<'py>(
         &self,
