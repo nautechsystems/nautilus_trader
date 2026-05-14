@@ -27,7 +27,7 @@ use std::{
 
 use ahash::AHashSet;
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
     clock::{self, Clock, TestClock},
     messages::{
@@ -53,7 +53,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -8714,6 +8714,214 @@ fn test_own_book_status_integrity_during_transitions() {
         assert!(cache.is_position_open(&position_id));
         assert!(!cache.is_position_closed(&position_id));
     }
+}
+
+fn setup_netting_snapshot_engine(
+    execution_engine: &mut ExecutionEngine,
+    instrument: &CurrencyPair,
+) {
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+}
+
+#[expect(clippy::too_many_arguments)]
+fn process_filled_order(
+    execution_engine: &mut ExecutionEngine,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument: &CurrencyPair,
+    client_order_id: &str,
+    venue_order_id: &str,
+    trade_id: &str,
+    side: OrderSide,
+    quantity: u64,
+    position_id: PositionId,
+) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .quantity(Quantity::from(quantity))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from(venue_order_id),
+    ));
+
+    let instrument_any: InstrumentAny = instrument.clone().into();
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new(trade_id)),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    ));
+}
+
+#[rstest]
+fn test_snapshot_anchorer_runs_on_netting_flip(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    setup_netting_snapshot_engine(&mut execution_engine, &instrument);
+
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-ANCHOR-FLIP-1",
+        "V-ANCHOR-FLIP-1",
+        "T-ANCHOR-FLIP-1",
+        OrderSide::Buy,
+        100_000,
+        position_id,
+    );
+
+    let anchors = Rc::new(RefCell::new(Vec::<CacheSnapshotRef>::new()));
+    let anchors_for_cb = Rc::clone(&anchors);
+    execution_engine.set_snapshot_anchorer(Some(Rc::new(move |snapshot_ref| {
+        anchors_for_cb.borrow_mut().push(snapshot_ref);
+        Ok(())
+    })));
+
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-ANCHOR-FLIP-2",
+        "V-ANCHOR-FLIP-2",
+        "T-ANCHOR-FLIP-2",
+        OrderSide::Sell,
+        150_000,
+        position_id,
+    );
+
+    let cache = execution_engine.cache().borrow();
+    let frames = cache
+        .position_snapshot_bytes(&position_id)
+        .expect("position snapshot");
+    let anchors = anchors.borrow();
+    let position = cache.position(&position_id).expect("position");
+
+    assert_eq!(anchors.len(), 1);
+    assert_eq!(
+        anchors[0].blob_ref,
+        format!("cache://position-snapshots/{}/0", position_id.as_str()),
+    );
+    assert_eq!(anchors[0].blob.as_ref(), frames[0].as_slice());
+    assert_eq!(position.side, PositionSide::Short);
+    assert!(!position.is_closed());
+}
+
+#[rstest]
+fn test_snapshot_anchorer_error_does_not_stop_netting_reopen(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    setup_netting_snapshot_engine(&mut execution_engine, &instrument);
+
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-ANCHOR-REOPEN-1",
+        "V-ANCHOR-REOPEN-1",
+        "T-ANCHOR-REOPEN-1",
+        OrderSide::Buy,
+        100_000,
+        position_id,
+    );
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-ANCHOR-REOPEN-2",
+        "V-ANCHOR-REOPEN-2",
+        "T-ANCHOR-REOPEN-2",
+        OrderSide::Sell,
+        100_000,
+        position_id,
+    );
+
+    let anchors = Rc::new(RefCell::new(Vec::<CacheSnapshotRef>::new()));
+    let anchors_for_cb = Rc::clone(&anchors);
+    execution_engine.set_snapshot_anchorer(Some(Rc::new(move |snapshot_ref| {
+        anchors_for_cb.borrow_mut().push(snapshot_ref);
+        Err(anyhow::anyhow!("anchor write failed"))
+    })));
+
+    process_filled_order(
+        &mut execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-ANCHOR-REOPEN-3",
+        "V-ANCHOR-REOPEN-3",
+        "T-ANCHOR-REOPEN-3",
+        OrderSide::Buy,
+        50_000,
+        position_id,
+    );
+
+    let cache = execution_engine.cache().borrow();
+    let frames = cache
+        .position_snapshot_bytes(&position_id)
+        .expect("position snapshot");
+    let anchors = anchors.borrow();
+    let position = cache.position(&position_id).expect("position");
+
+    assert_eq!(anchors.len(), 1);
+    assert_eq!(
+        anchors[0].blob_ref,
+        format!("cache://position-snapshots/{}/0", position_id.as_str()),
+    );
+    assert_eq!(anchors[0].blob.as_ref(), frames[0].as_slice());
+    assert_eq!(position.side, PositionSide::Long);
+    assert!(!position.is_closed());
 }
 
 fn create_order_status_report(

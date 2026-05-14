@@ -4486,13 +4486,18 @@ fn test_position_snapshots_round_trip(mut cache: Cache) {
     let position_id = position.id;
     let account_id = position.account_id;
 
-    cache.snapshot_position(&position).unwrap();
+    let first_ref = cache.snapshot_position(&position).unwrap();
     cache.snapshot_position(&position).unwrap();
     cache.snapshot_position(&position).unwrap();
 
     // Frames are stored as one entry per call, not concatenated
     let frames = cache.position_snapshot_bytes(&position_id).unwrap();
     assert_eq!(frames.len(), 3);
+    assert_eq!(
+        first_ref.blob_ref,
+        format!("cache://position-snapshots/{}/0", position_id.as_str()),
+    );
+    assert_eq!(first_ref.blob.as_ref(), frames[0].as_slice());
 
     // All snapshots round-trip via position_snapshots()
     let snapshots = cache.position_snapshots(Some(&position_id), None);

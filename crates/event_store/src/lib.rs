@@ -68,8 +68,8 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};
-pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan};
-pub use snapshot::SnapshotAnchor;
+pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
+pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{
     GapRange, IndexDrift, ManifestField, Verifier, VerifyError, VerifyFinding, VerifyReport,
 };

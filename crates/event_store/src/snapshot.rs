@@ -55,6 +55,12 @@ impl SnapshotAnchor {
     }
 }
 
+/// Computes the default cache snapshot content hash recorded in a [`SnapshotAnchor`].
+#[must_use]
+pub fn compute_snapshot_content_hash(bytes: &[u8]) -> String {
+    format!("blake3:{}", blake3::hash(bytes).to_hex())
+}
+
 pub(crate) fn validate_new_anchor(
     anchor: &SnapshotAnchor,
     durable_high_watermark: u64,
@@ -92,6 +98,14 @@ mod tests {
         assert_eq!(anchor.high_watermark, 7);
         assert_eq!(anchor.blob_ref, "cache://snapshots/run-1/7");
         assert_eq!(anchor.content_hash, "blake3:abc");
+    }
+
+    #[rstest]
+    fn compute_snapshot_content_hash_prefixes_blake3_digest() {
+        assert_eq!(
+            compute_snapshot_content_hash(b"snapshot"),
+            format!("blake3:{}", blake3::hash(b"snapshot").to_hex()),
+        );
     }
 
     #[rstest]

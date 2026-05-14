@@ -36,7 +36,7 @@ use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
     clock::Clock,
     generators::position_id::PositionIdGenerator,
@@ -95,6 +95,9 @@ const TIMER_PURGE_CLOSED_ORDERS: &str = "ExecEngine_PURGE_CLOSED_ORDERS";
 const TIMER_PURGE_CLOSED_POSITIONS: &str = "ExecEngine_PURGE_CLOSED_POSITIONS";
 const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 
+/// Callback that anchors cache snapshot metadata in an external store.
+pub type SnapshotAnchorer = Rc<dyn Fn(CacheSnapshotRef) -> anyhow::Result<()>>;
+
 /// Central execution engine responsible for orchestrating order routing and execution.
 ///
 /// The execution engine manages the entire order lifecycle from submission to completion,
@@ -115,6 +118,7 @@ pub struct ExecutionEngine {
     command_count: Cell<u64>,
     event_count: u64,
     report_count: u64,
+    snapshot_anchorer: Option<SnapshotAnchorer>,
 }
 
 impl Debug for ExecutionEngine {
@@ -152,6 +156,7 @@ impl ExecutionEngine {
             command_count: Cell::new(0),
             event_count: 0,
             report_count: 0,
+            snapshot_anchorer: None,
         }
     }
 
@@ -263,6 +268,14 @@ impl ExecutionEngine {
     /// Returns a reference to the configuration.
     pub const fn config(&self) -> &ExecutionEngineConfig {
         &self.config
+    }
+
+    /// Sets the cache snapshot anchorer.
+    ///
+    /// The system event-store integration installs this while a run is open. Passing
+    /// `None` disables anchor recording for later cache snapshots.
+    pub fn set_snapshot_anchorer(&mut self, anchorer: Option<SnapshotAnchorer>) {
+        self.snapshot_anchorer = anchorer;
     }
 
     #[must_use]
@@ -2518,7 +2531,8 @@ impl ExecutionEngine {
                 );
             }
             // Snapshot closed position if reopening (NETTING mode)
-            self.cache.borrow_mut().snapshot_position(position)?;
+            let snapshot_ref = self.cache.borrow_mut().snapshot_position(position)?;
+            self.anchor_snapshot(snapshot_ref);
         } else {
             // HEDGING mode
             log::warn!(
@@ -2527,6 +2541,16 @@ impl ExecutionEngine {
             );
         }
         Ok(())
+    }
+
+    fn anchor_snapshot(&self, snapshot_ref: CacheSnapshotRef) {
+        let Some(anchorer) = &self.snapshot_anchorer else {
+            return;
+        };
+
+        if let Err(e) = anchorer(snapshot_ref) {
+            log::error!("Failed to record cache snapshot anchor: {e}");
+        }
     }
 
     fn update_position(&self, position: &mut Position, fill: OrderFilled) {
@@ -2628,10 +2652,11 @@ impl ExecutionEngine {
             self.update_position(position, fill_split1.unwrap());
 
             // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting
-                && let Err(e) = self.cache.borrow_mut().snapshot_position(position)
-            {
-                log::error!("Failed to snapshot position during flip: {e:?}");
+            if oms_type == OmsType::Netting {
+                match self.cache.borrow_mut().snapshot_position(position) {
+                    Ok(snapshot_ref) => self.anchor_snapshot(snapshot_ref),
+                    Err(e) => log::error!("Failed to snapshot position during flip: {e:?}"),
+                }
             }
         }
 

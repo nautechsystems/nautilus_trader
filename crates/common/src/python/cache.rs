@@ -1120,6 +1120,7 @@ impl PyCache {
         self.0
             .borrow_mut()
             .snapshot_position(&position_obj)
+            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -1572,6 +1573,7 @@ impl Cache {
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.snapshot_position(&position_obj)
+            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 

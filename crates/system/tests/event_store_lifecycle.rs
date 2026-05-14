@@ -21,16 +21,41 @@
 
 #![cfg(feature = "event_store")]
 
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+    time::Duration,
+};
 
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
-use nautilus_event_store::{RedbBackend, RunStatus};
+use nautilus_event_store::{EventStore, RedbBackend, RunStatus, compute_snapshot_content_hash};
+use nautilus_execution::engine::{
+    ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
+};
+use nautilus_model::{
+    accounts::CashAccount,
+    enums::{OmsType, OrderSide, OrderType},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, Venue,
+        VenueOrderId,
+    },
+    instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
+    orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    stubs::TestDefault,
+    types::Quantity,
+};
 use nautilus_system::{
     EventStoreConfig, NautilusKernelBuilder, RetentionMode, RunIdentity, recover_predecessors,
 };
 use rstest::rstest;
 use tempfile::TempDir;
+
+static KERNEL_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_kernel_test() -> MutexGuard<'static, ()> {
+    KERNEL_TEST_LOCK.lock().expect("kernel test lock")
+}
 
 fn config_with(base_dir: PathBuf) -> EventStoreConfig {
     EventStoreConfig {
@@ -53,8 +78,93 @@ fn config_with(base_dir: PathBuf) -> EventStoreConfig {
     }
 }
 
+fn setup_netting_snapshot_engine(
+    execution_engine: &mut ExecutionEngine,
+    instrument: &CurrencyPair,
+) {
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .expect("register stub client");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .expect("add instrument");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .expect("add account");
+}
+
+#[expect(clippy::too_many_arguments)]
+fn process_filled_order(
+    execution_engine: &mut ExecutionEngine,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument: &CurrencyPair,
+    client_order_id: &str,
+    venue_order_id: &str,
+    trade_id: &str,
+    side: OrderSide,
+    quantity: u64,
+    position_id: PositionId,
+) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .quantity(Quantity::from(quantity))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .expect("add order");
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from(venue_order_id),
+    ));
+
+    let accepted_order = execution_engine
+        .cache()
+        .borrow()
+        .order_owned(&order.client_order_id())
+        .expect("accepted order");
+    let instrument_any: InstrumentAny = instrument.clone().into();
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &accepted_order,
+        &instrument_any,
+        Some(TradeId::new(trade_id)),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    ));
+}
+
 #[rstest]
 fn kernel_drop_after_start_seals_run_as_ended() {
+    let _guard = lock_kernel_test();
+
     // Imperative `engine.run()` followed by drop is the dominant backtest pattern;
     // BacktestEngine::end() never calls finalize_stop, and many callers skip
     // dispose(). The kernel's Drop impl is the last-chance seal site, so a normal
@@ -102,4 +212,108 @@ fn kernel_drop_after_start_seals_run_as_ended() {
         outcome.recovered,
     );
     assert!(outcome.parent_run_id.is_none());
+}
+
+#[rstest]
+fn kernel_start_installs_snapshot_anchorer_for_execution_snapshots() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let instrument = audusd_sim();
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_exec_engine_config(ExecutionEngineConfig {
+            snapshot_positions: true,
+            ..Default::default()
+        })
+        .with_event_store_config(config.clone())
+        .build()
+        .expect("kernel");
+
+    {
+        let mut exec_engine = kernel.exec_engine.borrow_mut();
+        setup_netting_snapshot_engine(&mut exec_engine, &instrument);
+    }
+
+    kernel.start();
+    let run_id = kernel
+        .event_store()
+        .run_id()
+        .expect("run open after start")
+        .to_string();
+
+    {
+        let mut exec_engine = kernel.exec_engine.borrow_mut();
+        process_filled_order(
+            &mut exec_engine,
+            trader_id,
+            strategy_id,
+            &instrument,
+            "O-KERNEL-ANCHOR-1",
+            "V-KERNEL-ANCHOR-1",
+            "T-KERNEL-ANCHOR-1",
+            OrderSide::Buy,
+            100_000,
+            position_id,
+        );
+        process_filled_order(
+            &mut exec_engine,
+            trader_id,
+            strategy_id,
+            &instrument,
+            "O-KERNEL-ANCHOR-2",
+            "V-KERNEL-ANCHOR-2",
+            "T-KERNEL-ANCHOR-2",
+            OrderSide::Sell,
+            150_000,
+            position_id,
+        );
+    }
+
+    let snapshot = {
+        let cache = kernel.cache.borrow();
+        let frames = cache
+            .position_snapshot_bytes(&position_id)
+            .expect("position snapshot");
+        assert_eq!(frames.len(), 1);
+        frames[0].clone()
+    };
+
+    kernel.dispose();
+
+    let reader = RedbBackend::open_sealed(&config.base_dir, &instance_id.to_string(), &run_id)
+        .expect("open sealed run");
+    let anchor = reader
+        .latest_snapshot_anchor()
+        .expect("latest snapshot anchor")
+        .expect("anchor present");
+    let durable_high_watermark = reader.high_watermark().expect("high watermark");
+
+    assert_eq!(
+        anchor.blob_ref,
+        format!("cache://position-snapshots/{}/0", position_id.as_str()),
+    );
+    assert_eq!(
+        anchor.content_hash,
+        compute_snapshot_content_hash(&snapshot),
+    );
+    assert!(anchor.high_watermark >= 1);
+    assert!(
+        anchor.high_watermark <= durable_high_watermark,
+        "anchor high_watermark {} exceeded durable high_watermark {}",
+        anchor.high_watermark,
+        durable_high_watermark,
+    );
+    assert!(
+        reader
+            .scan_seq(anchor.high_watermark)
+            .expect("anchor high-watermark seq")
+            .is_some(),
+        "anchor must point to an existing durable event",
+    );
 }

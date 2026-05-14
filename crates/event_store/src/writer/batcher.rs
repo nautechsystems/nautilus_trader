@@ -44,6 +44,7 @@ use crate::{
 use crate::{
     backend::EventStore,
     error::EventStoreError,
+    snapshot::SnapshotAnchor,
     writer::{
         WriterConfig,
         halt::{HaltCallback, HaltReason},
@@ -68,6 +69,15 @@ pub(super) enum WriterMessage {
         run_ended: EntryDraft,
         /// One-shot reply channel for the close result.
         ack: SyncSender<Result<u64, EventStoreError>>,
+    },
+    /// Records a cache snapshot anchor after all pending entries have been flushed.
+    RecordSnapshotAnchor {
+        /// Cache-owned reference to the snapshot blob.
+        blob_ref: String,
+        /// Cache-owned content hash for the snapshot blob.
+        content_hash: String,
+        /// One-shot reply channel for the recorded anchor.
+        ack: SyncSender<Result<SnapshotAnchor, EventStoreError>>,
     },
 }
 
@@ -153,6 +163,25 @@ pub(super) fn run(
                 let _ = ack.send(final_result);
                 return;
             }
+            Ok(WriterMessage::RecordSnapshotAnchor {
+                blob_ref,
+                content_hash,
+                ack,
+            }) => {
+                if !record_snapshot_anchor(
+                    backend.as_mut(),
+                    &mut batch,
+                    &halt,
+                    high_watermark.as_ref(),
+                    blob_ref,
+                    content_hash,
+                    &ack,
+                ) {
+                    return;
+                }
+
+                batch_deadline = None;
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if !batch.is_empty()
                     && !flush(backend.as_mut(), &mut batch, &halt, high_watermark.as_ref())
@@ -171,6 +200,39 @@ pub(super) fn run(
     }
 }
 
+fn record_snapshot_anchor(
+    backend: &mut dyn EventStore,
+    batch: &mut Vec<AppendEntry>,
+    halt: &HaltCallback,
+    high_watermark: &AtomicU64,
+    blob_ref: String,
+    content_hash: String,
+    ack: &SyncSender<Result<SnapshotAnchor, EventStoreError>>,
+) -> bool {
+    if !batch.is_empty() && !flush(backend, batch, halt, high_watermark) {
+        let _ = ack.send(Err(EventStoreError::Backend(
+            "writer fail-stopped before snapshot anchor".to_string(),
+        )));
+
+        return false;
+    }
+
+    let hwm = high_watermark.load(Ordering::Acquire);
+    let anchor = SnapshotAnchor::new(hwm, blob_ref, content_hash);
+    let result = match backend.record_snapshot_anchor(anchor.clone()) {
+        Ok(()) => Ok(anchor),
+        Err(e) => {
+            halt(HaltReason::from_backend_error(&e));
+            Err(e)
+        }
+    };
+
+    let keep_running = result.is_ok();
+    let _ = ack.send(result);
+
+    keep_running
+}
+
 #[cfg(not(madsim))]
 fn drain_pending(rx: &Receiver<WriterMessage>, batch: &mut Vec<AppendEntry>, next_seq: &mut u64) {
     while let Ok(msg) = rx.try_recv() {
@@ -186,6 +248,11 @@ fn drain_pending(rx: &Receiver<WriterMessage>, batch: &mut Vec<AppendEntry>, nex
             WriterMessage::Close { ack, .. } => {
                 let _ = ack.send(Err(EventStoreError::Backend(
                     "writer is already closing".to_string(),
+                )));
+            }
+            WriterMessage::RecordSnapshotAnchor { ack, .. } => {
+                let _ = ack.send(Err(EventStoreError::Backend(
+                    "writer is closing before snapshot anchor".to_string(),
                 )));
             }
         }

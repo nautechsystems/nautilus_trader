@@ -436,6 +436,8 @@ impl NautilusKernel {
 
         #[cfg(feature = "event_store")]
         {
+            self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
+
             let components = self.collect_registered_components();
             let environment = self.config.environment();
 
@@ -446,6 +448,11 @@ impl NautilusKernel {
                 log::error!("Failed to open event-store run: {e}");
                 return;
             }
+
+            let anchorer = self.event_store.snapshot_anchorer();
+            self.exec_engine
+                .borrow_mut()
+                .set_snapshot_anchorer(anchorer);
         }
 
         self.start_engines();
@@ -539,7 +546,10 @@ impl NautilusKernel {
 
         let ts_shutdown = self.clock.borrow().timestamp_ns();
         #[cfg(feature = "event_store")]
-        self.event_store.seal(ts_shutdown);
+        {
+            self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
+            self.event_store.seal(ts_shutdown);
+        }
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
     }
@@ -591,6 +601,7 @@ impl NautilusKernel {
         // back to KernelEventStore::Drop.
         #[cfg(feature = "event_store")]
         {
+            self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
             let ts_dispose = self.clock.borrow().timestamp_ns();
             self.event_store.seal(ts_dispose);
         }

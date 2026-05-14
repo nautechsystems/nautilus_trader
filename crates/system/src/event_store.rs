@@ -39,6 +39,7 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
+    cache::CacheSnapshotRef,
     clock::Clock,
     enums::Environment,
     msgbus::{self, BusTap, Endpoint, MStr, MessagingSwitchboard},
@@ -52,8 +53,9 @@ use nautilus_core::{
 use nautilus_event_store::{
     BusCaptureAdapter, CaptureError, EntryDraft, EventStore, EventStoreError, EventStoreWriter,
     HaltCallback, HaltReason, Headers, RedbBackend, RegisteredComponents, RunId, RunManifest,
-    RunStatus, ScanDirection, Topic, WriterConfig, default_registry,
+    RunStatus, ScanDirection, Topic, WriterConfig, compute_snapshot_content_hash, default_registry,
 };
+use nautilus_execution::engine::SnapshotAnchorer;
 use ustr::Ustr;
 
 const RUN_STARTED_TOPIC: &str = "run.lifecycle.RunStarted";
@@ -305,6 +307,24 @@ impl EventStoreSession {
         self.writer.as_ref().map_or(0, |w| w.high_watermark())
     }
 
+    /// Returns a snapshot anchorer bound to the open writer.
+    ///
+    /// The execution engine installs this callback while the run is open. The callback
+    /// records the cache-owned snapshot reference against the writer's durable
+    /// high-watermark after flushing earlier captured entries.
+    #[must_use]
+    pub fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+        let writer = Arc::clone(self.writer.as_ref()?);
+
+        Some(Rc::new(move |snapshot_ref: CacheSnapshotRef| {
+            let content_hash = compute_snapshot_content_hash(snapshot_ref.blob.as_ref());
+            writer
+                .record_snapshot_anchor(snapshot_ref.blob_ref, content_hash)
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("record snapshot anchor: {e}"))
+        }))
+    }
+
     /// Returns the live bus capture adapter, when one was wired into this run.
     ///
     /// `None` after [`Self::close`] consumes the writer.
@@ -530,6 +550,14 @@ impl KernelEventStore {
     #[must_use]
     pub fn run_id(&self) -> Option<&str> {
         self.session.as_ref().map(EventStoreSession::run_id)
+    }
+
+    /// Returns a snapshot anchorer for the open run, when capture is active.
+    #[must_use]
+    pub fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+        self.session
+            .as_ref()
+            .and_then(EventStoreSession::snapshot_anchorer)
     }
 
     /// Returns whether the writer has signaled fail-stop.
@@ -1086,6 +1114,52 @@ mod tests {
             .expect("manifest present");
         assert_eq!(manifest.status, RunStatus::Ended);
         assert!(manifest.high_watermark >= 2);
+    }
+
+    #[rstest]
+    fn snapshot_anchorer_persists_anchor_for_open_session() {
+        let tmp = TempDir::new().expect("tempdir");
+        let config = make_config(tmp.path().to_path_buf());
+
+        let halt = HaltSignal::new();
+        let mut session = open_run(
+            &config,
+            INSTANCE_ID,
+            build_run_id(UnixNanos::from(4_000)),
+            None,
+            UnixNanos::from(4_000),
+            &RegisteredComponents::default(),
+            halt,
+            get_atomic_clock_static(),
+        )
+        .expect("open run");
+
+        let run_id = session.run_id().to_string();
+
+        {
+            let anchorer = session.snapshot_anchorer().expect("snapshot anchorer");
+            anchorer(CacheSnapshotRef::new(
+                "cache://position-snapshots/P-1/0",
+                Bytes::from_static(b"snapshot"),
+            ))
+            .expect("record snapshot anchor");
+        }
+
+        session.close(UnixNanos::from(4_500)).expect("close");
+
+        let reader =
+            RedbBackend::open_sealed(&config.base_dir, INSTANCE_ID, &run_id).expect("open sealed");
+        let anchor = reader
+            .latest_snapshot_anchor()
+            .expect("latest snapshot anchor")
+            .expect("anchor present");
+
+        assert_eq!(anchor.high_watermark, 1);
+        assert_eq!(anchor.blob_ref, "cache://position-snapshots/P-1/0");
+        assert_eq!(
+            anchor.content_hash,
+            compute_snapshot_content_hash(b"snapshot"),
+        );
     }
 
     #[rstest]

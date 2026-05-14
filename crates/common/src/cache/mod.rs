@@ -79,6 +79,29 @@ use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
 
+/// Cache-owned reference to a snapshot blob.
+///
+/// The cache writes and later fetches the blob; external systems persist this opaque reference
+/// and may hash the bytes before recording a durable anchor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CacheSnapshotRef {
+    /// Opaque cache-owned snapshot location.
+    pub blob_ref: String,
+    /// Snapshot bytes stored under [`Self::blob_ref`].
+    pub blob: Bytes,
+}
+
+impl CacheSnapshotRef {
+    /// Creates a new [`CacheSnapshotRef`].
+    #[must_use]
+    pub fn new(blob_ref: impl Into<String>, blob: impl Into<Bytes>) -> Self {
+        Self {
+            blob_ref: blob_ref.into(),
+            blob: blob.into(),
+        }
+    }
+}
+
 /// Read-only view over the platform cache.
 ///
 /// Adapter-facing code receives this type instead of the mutable cache handle so cache writes stay
@@ -2733,7 +2756,7 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if serializing or storing the position snapshot fails.
-    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
+    pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<CacheSnapshotRef> {
         let position_id = position.id;
 
         let mut copied_position = position.clone();
@@ -2742,14 +2765,21 @@ impl Cache {
 
         // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
         let position_serialized = serde_json::to_vec(&copied_position)?;
+        let snapshot_index = self.position_snapshot_count(&position_id);
+        let blob_ref = format!(
+            "cache://position-snapshots/{}/{}",
+            position_id.as_str(),
+            snapshot_index,
+        );
+        let snapshot_blob = Bytes::from(position_serialized);
 
         self.position_snapshots
             .entry(position_id)
             .or_default()
-            .push(Bytes::from(position_serialized));
+            .push(snapshot_blob.clone());
 
         log::debug!("Snapshot {copied_position}");
-        Ok(())
+        Ok(CacheSnapshotRef::new(blob_ref, snapshot_blob))
     }
 
     /// Creates a snapshot of the `position` state in the database.
