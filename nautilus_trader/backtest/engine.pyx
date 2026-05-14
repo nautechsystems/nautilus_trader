@@ -5768,6 +5768,7 @@ cdef class OrderMatchingEngine:
         cdef Order order
         for order in orders:
             if order.is_closed_c():
+                self._core.delete_order(order)
                 self._cached_filled_qty.pop(order.client_order_id, None)
                 continue
 
@@ -7637,6 +7638,7 @@ cdef class OrderMatchingEngine:
 
         cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
         cdef Quantity leaves_qty = None
+        cdef Quantity total_filled_qty = None
         if cached_filled_qty is None:
             # Clamp the first fill to the order quantity to avoid over-filling
             last_qty = Quantity.from_raw_c(min(order.quantity._mem.raw, last_qty._mem.raw), size_prec)
@@ -7644,7 +7646,8 @@ cdef class OrderMatchingEngine:
         else:
             if order.quantity._mem.raw <= cached_filled_qty._mem.raw:
                 self._core.delete_order(order)
-                self._cached_filled_qty.pop(order.client_order_id, None)
+                if order.is_closed_c():
+                    self._cached_filled_qty.pop(order.client_order_id, None)
                 return
 
             leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - cached_filled_qty._mem.raw, size_prec)
@@ -7676,10 +7679,18 @@ cdef class OrderMatchingEngine:
             liquidity_side=order.liquidity_side,
         )
 
-        if order.is_passive_c() and order.is_closed_c():
+        total_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if (
+            order.is_closed_c()
+            or (
+                total_filled_qty is not None
+                and total_filled_qty._mem.raw >= order.quantity._mem.raw
+            )
+        ):
             # Remove order from market
             self._core.delete_order(order)
-            self._cached_filled_qty.pop(order.client_order_id, None)
+            if order.is_closed_c():
+                self._cached_filled_qty.pop(order.client_order_id, None)
 
         if not self._support_contingent_orders:
             return

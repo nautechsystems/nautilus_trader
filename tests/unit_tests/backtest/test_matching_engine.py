@@ -1668,6 +1668,8 @@ class TestOrderMatchingEngine:
         matching_engine_l2.iterate(timestamp_ns=1)
 
         # Assert
+        assert not matching_engine_l2.order_exists(order.client_order_id)
+
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 1, (
             f"Expected exactly 1 fill (initial), but got {len(filled_events)} "

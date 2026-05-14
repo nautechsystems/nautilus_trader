@@ -2027,6 +2027,76 @@ fn test_process_cancel_skips_already_canceled_order(
 }
 
 #[rstest]
+fn test_iterate_purges_already_canceled_order_from_core(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let cached_order = cache.borrow().order(&client_order_id).unwrap().clone();
+    let canceled_event =
+        TestOrderEventStubs::canceled(&cached_order, account_id, Some(VenueOrderId::from("V1")));
+    cache
+        .borrow_mut()
+        .order_mut(&client_order_id)
+        .unwrap()
+        .apply(canceled_event)
+        .unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    assert!(
+        engine_l2.order_exists(client_order_id),
+        "matching core should still hold the order before iterate runs",
+    );
+
+    engine_l2.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages.is_empty(),
+        "expected no events while purging stale closed order, found {saved_messages:?}",
+    );
+    assert!(
+        !engine_l2.order_exists(client_order_id),
+        "stale closed order should be purged during matching iteration",
+    );
+}
+
+#[rstest]
 fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,

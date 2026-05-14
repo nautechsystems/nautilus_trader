@@ -3444,6 +3444,7 @@ impl OrderMatchingEngine {
             };
 
             if order.is_closed() {
+                let _ = self.core.delete_order(client_order_id);
                 self.cached_filled_qty.swap_remove(&client_order_id);
                 continue;
             }
@@ -4437,7 +4438,7 @@ impl OrderMatchingEngine {
             .get(&order.client_order_id())
             .is_some_and(|qty| qty >= &order.quantity());
 
-        if order.is_passive() && (order.is_closed() || fully_filled) {
+        if order.is_closed() || fully_filled {
             if self.core.order_exists(order.client_order_id()) {
                 let _ = self.core.delete_order(order.client_order_id());
             }
