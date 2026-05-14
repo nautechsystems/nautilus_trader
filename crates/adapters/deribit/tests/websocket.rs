@@ -39,12 +39,14 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
 use nautilus_deribit::{
     common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
+    data_types::DeribitVolatilityIndex,
     websocket::{
         auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
         enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 use nautilus_model::{
+    data::Data,
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -162,6 +164,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     let ticker_payload = load_json("ws_ticker.json");
     let quote_payload = load_json("ws_quote.json");
     let chart_payload = load_json("ws_chart.json");
+    let volatility_index_payload = load_json("ws_volatility_index.json");
 
     // Create a second chart payload with a later timestamp for emit-on-next pattern
     let mut chart_payload_next = chart_payload.clone();
@@ -271,6 +274,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         break;
                                     }
                                     Some(&chart_payload_next)
+                                } else if channel.starts_with("deribit_volatility_index.") {
+                                    Some(&volatility_index_payload)
                                 } else {
                                     None
                                 };
@@ -1004,6 +1009,84 @@ async fn test_quote_subscription_flow() {
     match message {
         NautilusWsMessage::Data(data) => {
             assert!(!data.is_empty(), "expected quote payload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_volatility_index_subscription_flow() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(&instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_volatility_index("btc_usd")
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with("deribit_volatility_index.") && *ok)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let stream = client.stream().unwrap();
+    pin_mut!(stream);
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("no message received")
+        .expect("stream ended unexpectedly");
+
+    match message {
+        NautilusWsMessage::Data(data) => {
+            let custom = data
+                .iter()
+                .find_map(|item| {
+                    if let Data::Custom(custom) = item {
+                        Some(custom)
+                    } else {
+                        None
+                    }
+                })
+                .expect("expected custom data payload");
+            let dvol = custom
+                .data
+                .as_any()
+                .downcast_ref::<DeribitVolatilityIndex>()
+                .expect("expected DeribitVolatilityIndex");
+            assert_eq!(dvol.index_name, "btc_usd");
+            assert_eq!(dvol.volatility, 129.36);
+            assert_eq!(
+                custom
+                    .data_type
+                    .metadata()
+                    .as_ref()
+                    .and_then(|m| m.get("index_name"))
+                    .and_then(|v| v.as_str()),
+                Some("btc_usd"),
+            );
         }
         other => panic!("unexpected message: {other:?}"),
     }

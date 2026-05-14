@@ -73,6 +73,13 @@ where
     });
 }
 
+fn ws_data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
+    match data {
+        Data::Custom(custom) => Py::new(py, custom).map(|obj| obj.into_any()),
+        other => Ok(data_to_pycapsule(py, other)),
+    }
+}
+
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitWebSocketClient {
@@ -267,8 +274,16 @@ impl DeribitWebSocketClient {
                         }
                         NautilusWsMessage::Data(msg) => Python::attach(|py| {
                             for data in msg {
-                                let py_obj = data_to_pycapsule(py, data);
-                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                match ws_data_to_pyobject(py, data) {
+                                    Ok(py_obj) => {
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to convert WebSocket data payload: {e}"
+                                        );
+                                    }
+                                }
                             }
                         }),
                         NautilusWsMessage::Deltas(msg) => Python::attach(|py| {
@@ -1034,6 +1049,40 @@ impl DeribitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_instrument_status(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to volatility index updates for the given index name.
+    #[pyo3(name = "subscribe_volatility_index")]
+    fn py_subscribe_volatility_index<'py>(
+        &self,
+        py: Python<'py>,
+        index_name: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_volatility_index(&index_name)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from volatility index updates for the given index name.
+    #[pyo3(name = "unsubscribe_volatility_index")]
+    fn py_unsubscribe_volatility_index<'py>(
+        &self,
+        py: Python<'py>,
+        index_name: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_volatility_index(&index_name)
                 .await
                 .map_err(to_pyvalue_err)
         })

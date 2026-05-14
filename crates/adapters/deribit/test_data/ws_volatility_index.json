@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "deribit_volatility_index.btc_usd",
+    "data": {
+      "timestamp": 1619777946007,
+      "volatility": 129.36,
+      "index_name": "btc_usd"
+    }
+  }
+}

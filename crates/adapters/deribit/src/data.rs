@@ -34,13 +34,14 @@ use nautilus_common::{
             BarsResponse, BookResponse, ForwardPricesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestForwardPrices,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -67,6 +68,7 @@ use crate::{
         parse::{bar_spec_to_resolution, parse_instrument_kind_currency},
     },
     config::DeribitDataClientConfig,
+    data_types::register_deribit_custom_data,
     http::{
         client::DeribitHttpClient,
         models::{DeribitCurrency, DeribitProductType},
@@ -435,6 +437,8 @@ impl DataClient for DeribitDataClient {
         if self.is_connected() {
             return Ok(());
         }
+
+        register_deribit_custom_data();
 
         // Fetch instruments for each configured product type
         let product_types = if self.config.product_types.is_empty() {
@@ -1020,6 +1024,46 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+        if data_type != "DeribitVolatilityIndex" {
+            log::warn!("Unsupported custom data subscription: {data_type}");
+            return Ok(());
+        }
+
+        let Some(index_name) = cmd
+            .data_type
+            .metadata()
+            .as_ref()
+            .and_then(|m| m.get("index_name"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+        else {
+            log::warn!(
+                "Rejected Deribit volatility index subscription: missing required metadata `index_name`"
+            );
+            return Ok(());
+        };
+
+        log::info!("Subscribing to Deribit volatility index: {index_name}");
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_volatility_index(&index_name).await {
+                log::error!("Failed to subscribe to volatility index {index_name}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
@@ -1368,6 +1412,46 @@ impl DataClient for DeribitDataClient {
         get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_ticker(instrument_id, interval).await {
                 log::error!("Failed to unsubscribe from option greeks for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+        if data_type != "DeribitVolatilityIndex" {
+            log::warn!("Unsupported custom data unsubscription: {data_type}");
+            return Ok(());
+        }
+
+        let Some(index_name) = cmd
+            .data_type
+            .metadata()
+            .as_ref()
+            .and_then(|m| m.get("index_name"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+        else {
+            log::warn!(
+                "Rejected Deribit volatility index unsubscription: missing required metadata `index_name`"
+            );
+            return Ok(());
+        };
+
+        log::info!("Unsubscribing from Deribit volatility index: {index_name}");
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_volatility_index(&index_name).await {
+                log::error!("Failed to unsubscribe from volatility index {index_name}: {e}");
             }
         });
 
