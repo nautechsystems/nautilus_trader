@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -1226,3 +1227,53 @@ class TestPolymarketWebSocketClientConcurrentConnection:
 
         # Should only have ONE send call (the initial subscription message)
         assert len(send_calls) == 1
+        assert json.loads(send_calls[0]) == {
+            "type": "market",
+            "assets_ids": ["token_1", "token_2"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_subscribe_after_initial_frame_snapshot_sends_dynamic_message(self):
+        """
+        Subscriptions added after the initial frame is built need a dynamic subscribe.
+        """
+        client = self.create_client()
+
+        initial_send_started = asyncio.Event()
+        allow_initial_send_finish = asyncio.Event()
+        send_calls = []
+
+        async def connected_ws(*args, **kwargs):
+            mock_ws = MagicMock()
+            mock_ws.is_active.return_value = True
+            return mock_ws
+
+        async def track_send(client_id, msg):
+            send_calls.append((client_id, msg))
+
+            if msg.get("type") == "market":
+                initial_send_started.set()
+                await allow_initial_send_finish.wait()
+
+        with (
+            patch(
+                "nautilus_trader.adapters.polymarket.websocket.client.WebSocketClient.connect",
+                side_effect=connected_ws,
+            ),
+            patch.object(client, "_send", side_effect=track_send),
+        ):
+            task1 = asyncio.create_task(client.subscribe("token_1"))
+            await initial_send_started.wait()
+
+            task2 = asyncio.create_task(client.subscribe("token_2"))
+            await asyncio.sleep(0.02)
+
+            allow_initial_send_finish.set()
+            await asyncio.gather(task1, task2)
+
+        assert len(send_calls) == 2
+        assert send_calls[0] == (0, {"type": "market", "assets_ids": ["token_1"]})
+        assert send_calls[1] == (
+            0,
+            {"assets_ids": ["token_2"], "operation": "subscribe"},
+        )
