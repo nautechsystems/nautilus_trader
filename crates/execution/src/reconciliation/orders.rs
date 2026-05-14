@@ -336,8 +336,7 @@ pub fn reconcile_fill_report(
         );
     }
 
-    // Use order's account_id if available, fallback to report's account_id
-    let account_id = order.account_id().unwrap_or(report.account_id);
+    let account_id = report.account_id;
     let venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
 
     log::info!(

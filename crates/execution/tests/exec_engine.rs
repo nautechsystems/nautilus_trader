@@ -45,10 +45,12 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::CashAccount,
     enums::{
-        ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
     },
-    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated},
+    events::{
+        AccountState, OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
@@ -58,7 +60,7 @@ use nautilus_model::{
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     stubs::{TestDefault, stub_position_long},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::*;
 use rust_decimal::Decimal;
@@ -9088,8 +9090,28 @@ fn create_fill_report(
     last_qty: Quantity,
     last_px: Price,
 ) -> FillReport {
-    FillReport::new(
+    create_fill_report_with_account(
         AccountId::test_default(),
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        trade_id,
+        last_qty,
+        last_px,
+    )
+}
+
+fn create_fill_report_with_account(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    client_order_id: Option<ClientOrderId>,
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+    last_qty: Quantity,
+    last_px: Price,
+) -> FillReport {
+    FillReport::new(
+        account_id,
         instrument_id,
         venue_order_id,
         trade_id,
@@ -9104,6 +9126,25 @@ fn create_fill_report(
         UnixNanos::from(1_000_000),
         None,
     )
+}
+
+fn cash_account_for(account_id: AccountId) -> CashAccount {
+    let state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("0 USD"),
+            Money::from("1000000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+    CashAccount::new(state, true, false)
 }
 
 #[rstest]
@@ -9303,6 +9344,196 @@ fn test_reconcile_fill_report_finds_order_by_venue_order_id(mut execution_engine
     let order = cache.order(&client_order_id).unwrap();
     assert_eq!(order.filled_qty(), Quantity::from(100_000));
     assert_eq!(order.status(), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_reconcile_fill_report_uses_report_account_for_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-ACCOUNT-001");
+    let venue_order_id = VenueOrderId::from("V-ACCOUNT-001");
+    let report_account_id = AccountId::from("A-001");
+    let order_account_id = AccountId::from("B-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(cash_account_for(report_account_id).into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(cash_account_for(order_account_id).into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, order_account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        order_account_id,
+        venue_order_id,
+    ));
+
+    let report = create_fill_report_with_account(
+        report_account_id,
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-ACCOUNT-001"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let report_account_positions = cache.positions(
+        None,
+        Some(&instrument.id()),
+        None,
+        Some(&report_account_id),
+        None,
+    );
+    let order_account_positions = cache.positions(
+        None,
+        Some(&instrument.id()),
+        None,
+        Some(&order_account_id),
+        None,
+    );
+
+    assert_eq!(report_account_positions.len(), 1);
+    assert_eq!(report_account_positions[0].account_id, report_account_id);
+    assert_eq!(report_account_positions[0].instrument_id, instrument.id());
+    assert!(order_account_positions.is_empty());
+}
+
+#[rstest]
+fn test_handle_fill_skips_duplicate_trade_id_already_on_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let account_id = AccountId::test_default();
+    let trade_id = TradeId::from("T-POS-DUP");
+    let order_1_id = ClientOrderId::from("O-POS-DUP-1");
+    let order_2_id = ClientOrderId::from("O-POS-DUP-2");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument_any.clone())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let order_1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(order_1_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let order_2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(order_2_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order_1.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order_2.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    execution_engine.process(&TestOrderEventStubs::submitted(&order_1, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order_1,
+        account_id,
+        VenueOrderId::from("V-POS-DUP-1"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::submitted(&order_2, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order_2,
+        account_id,
+        VenueOrderId::from("V-POS-DUP-2"),
+    ));
+
+    let order_1 = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_1_id)
+        .unwrap()
+        .clone();
+    let fill_1 = TestOrderEventStubs::filled(
+        &order_1,
+        &instrument_any,
+        Some(trade_id),
+        None,
+        Some(Price::from("1.00000")),
+        Some(Quantity::from(50_000)),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USD")),
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&fill_1);
+
+    let order_2 = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_2_id)
+        .unwrap()
+        .clone();
+    let fill_2 = TestOrderEventStubs::filled(
+        &order_2,
+        &instrument_any,
+        Some(trade_id),
+        None,
+        Some(Price::from("1.00000")),
+        Some(Quantity::from(50_000)),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USD")),
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&fill_2);
+
+    let cache = execution_engine.cache().borrow();
+    let order_2 = cache.order(&order_2_id).unwrap();
+    let positions = cache.positions(None, Some(&instrument.id()), None, Some(&account_id), None);
+
+    assert_eq!(order_2.status(), OrderStatus::Accepted);
+    assert_eq!(order_2.filled_qty(), Quantity::from(0));
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(50_000));
+    assert!(positions[0].trade_ids.contains(&trade_id));
 }
 
 fn create_position_report(

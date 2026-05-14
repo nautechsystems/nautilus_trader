@@ -71,7 +71,7 @@ use nautilus_model::{
         PositionOpened,
     },
     identifiers::{
-        ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue, VenueOrderId,
+        ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
@@ -2206,7 +2206,26 @@ impl ExecutionEngine {
             anyhow::bail!("Duplicate fill");
         }
 
+        if let Some(position_id) = fill.position_id
+            && self.position_contains_trade_id(position_id, fill.trade_id)
+        {
+            log::warn!(
+                "Duplicate fill: {} trade_id={} already applied to position {}, skipping",
+                order.client_order_id(),
+                fill.trade_id,
+                position_id
+            );
+            anyhow::bail!("Duplicate position fill");
+        }
+
         self.check_overfill(order, fill)
+    }
+
+    fn position_contains_trade_id(&self, position_id: PositionId, trade_id: TradeId) -> bool {
+        self.cache
+            .borrow()
+            .position(&position_id)
+            .is_some_and(|position| position.trade_ids.contains(&trade_id))
     }
 
     fn update_cached_order(
