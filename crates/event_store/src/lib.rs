@@ -48,6 +48,7 @@ pub mod hash;
 pub mod headers;
 pub mod manifest;
 pub mod reader;
+pub mod replay;
 pub mod snapshot;
 pub mod verifier;
 pub mod writer;
@@ -69,6 +70,10 @@ pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
+pub use replay::{
+    CacheReplayError, CacheReplayReport, apply_cache_replay_entry, replay_cache_snapshot_tail,
+    restore_cache_snapshot_and_replay_tail,
+};
 pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{
     GapRange, IndexDrift, ManifestField, Verifier, VerifyError, VerifyFinding, VerifyReport,
