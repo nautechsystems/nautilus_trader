@@ -1094,7 +1094,8 @@ impl DataEngine {
 
     /// Processes a dynamically-typed data message.
     ///
-    /// Currently supports `InstrumentAny` and `FundingRateUpdate`; unrecognized types are logged as errors.
+    /// Currently supports `InstrumentAny`, funding rates, instrument status, option greeks, and
+    /// custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         self.data_count += 1;
         // TODO: Eventually these can be added to the `Data` enum (C/Cython blocking), process here for now
@@ -1109,11 +1110,11 @@ impl DataEngine {
             let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
             msgbus::publish_option_greeks(topic, option_greeks);
             self.drain_deferred_commands();
+        } else if let Some(custom) = data.downcast_ref::<CustomData>() {
+            self.handle_custom_data(custom);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
-
-        // TODO: Add custom data handling here
     }
 
     /// Processes a `Data` enum instance, dispatching to appropriate handlers.

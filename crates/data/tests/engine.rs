@@ -9780,6 +9780,34 @@ fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
     assert!(topic_saver.get_messages().is_empty());
 }
 
+#[rstest]
+fn test_process_custom_data_through_any_publishes_to_custom_topic(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let custom = stub_custom_data(
+        6_000,
+        99,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let (handler, saver) = get_any_saving_handler::<CustomData>(None);
+    let topic = switchboard::get_custom_topic(&custom.data_type);
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    assert_eq!(data_engine.data_count(), 0);
+
+    data_engine.process(&custom as &dyn Any);
+    assert_eq!(saver.get_messages(), vec![custom.clone()]);
+    assert_eq!(data_engine.data_count(), 1);
+
+    data_engine.process_data(Data::Custom(custom.clone()));
+
+    assert_eq!(saver.get_messages(), vec![custom.clone(), custom]);
+    assert_eq!(data_engine.data_count(), 2);
+}
+
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_execute_defi_command_counters(data_engine: Rc<RefCell<DataEngine>>) {
