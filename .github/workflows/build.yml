@@ -901,6 +901,62 @@ jobs:
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
+  publish-cargo-crates:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # Required for crates.io Trusted Publishing
+    needs:
+      - tag-release
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            crates.io:443
+            index.crates.io:443
+            static.crates.io:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          build-type: "release"
+          rust-cache-save-if: "false"
+
+      - name: Check Cargo crate publish plan
+        run: bash scripts/ci/publish-cargo-crates.sh --check
+
+      - name: Authenticate to crates.io
+        id: crates-io-auth
+        # https://github.com/rust-lang/crates-io-auth-action
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
+
+      - name: Publish Cargo crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          CARGO_PUBLISH_ATTEMPTS: "5"
+          CARGO_PUBLISH_POLL_SECONDS: "5"
+          CARGO_PUBLISH_RETRY_DELAY_SECONDS: "15"
+          CARGO_PUBLISH_SUCCESS_DELAY_SECONDS: "0"
+          CARGO_PUBLISH_WAIT_TIMEOUT_SECONDS: "120"
+          CARGO_PUBLISH_USER_AGENT: >-
+            nautilus-trader-release
+            (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        run: bash scripts/ci/publish-cargo-crates.sh
+
   publish-wheels-master:
     runs-on: ubuntu-latest
     environment: release
@@ -915,6 +971,7 @@ jobs:
       - build-macos
       - build-windows
       - tag-release
+      - publish-cargo-crates
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     env:

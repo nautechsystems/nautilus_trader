@@ -118,9 +118,9 @@ release lifecycle:
   immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing
   via Sigstore cosign, SPDX SBOM generation and Sigstore attestation for container images, and
   hardened CI runners with network egress blocked to an explicit allow-list.
-- **Publish authentication**: PyPI uploads use Trusted Publishing (OIDC) bound to the `release`
-  GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived token
-  scoped to the specific repo, workflow, and environment.
+- **Publish authentication**: PyPI and crates.io uploads use Trusted Publishing (OIDC) bound to the
+  `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived
+  token scoped to the specific repo, workflow, and environment.
 - **GHCR authentication**: Container image pushes to GitHub Container Registry use the short-lived
   `GITHUB_TOKEN` scoped to the workflow run, not a long-lived personal access token.
 - **Post-publish verification**: CI verifies released wheels, sdists, and container images against

@@ -82,6 +82,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`;
   `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No
   `PYPI_*` secret is required.
+- **crates.io Trusted Publishing**: `publish-cargo-crates` publishes Cargo crates via crates.io
+  OIDC trusted publishing. The trusted publisher on crates.io must be configured per crate for
+  repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
+  job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

@@ -107,6 +107,7 @@ env/
 !scripts/cargo-tool-version.sh
 !scripts/check-cargo-cooldown.sh
 !scripts/check-no-build-packages.sh
+!scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-github-action-shas.sh
 !scripts/ci/check-security-audit-result.sh
 !scripts/ci/docker-pull-retry.sh
@@ -116,6 +117,7 @@ env/
 !scripts/ci/install-rust.sh
 !scripts/ci/osv-severity-gate.sh
 !scripts/ci/plan.sh
+!scripts/ci/publish-cargo-crates.sh
 !scripts/ci/publish-cli-r2-prune.sh
 !scripts/ci/publish-cli-r2-upload.sh
 !scripts/ci/publish-cli-r2-verify.sh

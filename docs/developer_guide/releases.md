@@ -11,7 +11,8 @@ NautilusTrader uses a three-branch model:
 - **`master`**: stable releases; triggers the full release pipeline.
 
 Pushing to `master` automatically tags the version from `pyproject.toml`, creates a GitHub
-release, publishes wheels and sdist to PyPI, builds Docker images, and triggers a docs rebuild.
+release, publishes Cargo crates to crates.io, publishes wheels and sdist to PyPI, builds Docker
+images, and triggers a docs rebuild.
 
 ## Versioning
 
@@ -24,12 +25,39 @@ The project maintains two version numbers:
 
 These are bumped independently. The Python version drives the release tag (`v1.223.0`).
 
+## Crates.io publishing
+
+The `build` workflow publishes Cargo crates from the `publish-cargo-crates` job. The job uses
+crates.io Trusted Publishing through GitHub Actions OIDC, so it does not use a persistent cargo
+token. Configure each crate on crates.io with:
+
+| Field       | Value             |
+|-------------|-------------------|
+| Owner       | `nautechsystems`  |
+| Repository  | `nautilus_trader` |
+| Workflow    | `build.yml`       |
+| Environment | `release`         |
+
+Enable Trusted Publishing Only for crates after their trusted publisher is configured. Crates that
+have never been published still need an initial manual publish before crates.io allows the trusted
+publisher configuration.
+
+Do not use `cargo publish --workspace` for CI releases. The release job runs
+`scripts/ci/publish-cargo-crates.sh`, which publishes crates one at a time in dependency order,
+skips versions already present on crates.io, and waits for each new version to appear in the
+crates.io API and sparse index before publishing dependents. The script fails before uploading if a
+publishable crate depends on a local `publish = false` crate that is absent from crates.io.
+Optional local dependencies count as blockers because publishing a public feature that resolves to
+an absent crate would leave that feature unusable.
+
 ## Release checklist
 
 ### Pre-release (on `develop`)
 
 - [ ] Finalize `RELEASES.md`: review all items, remove empty sections
 - [ ] Ensure versions are set in `pyproject.toml` and `Cargo.toml` workspace
+- [ ] Ensure crates.io Trusted Publishing is configured for every crate that CI publishes:
+  `bash scripts/ci/check-crates-io-trusted-publishing.sh`
 - [ ] Ensure all CI checks pass on `develop`
 
 ### Release
@@ -40,6 +68,7 @@ These are bumped independently. The Python version drives the release tag (`v1.2
   - Wheels built for Linux x86/ARM, macOS, Windows
   - `cargo-deny` and `cargo-vet` pass
   - Tag created and GitHub release published
+  - Cargo crates published to crates.io
   - Wheels and sdist published to PyPI
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
