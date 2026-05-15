@@ -70,7 +70,8 @@ release lifecycle:
 
 ### Source and review controls
 
-- **CODEOWNERS**: Critical infrastructure files require Core team review before merge.
+- **CODEOWNERS**: Critical infrastructure files, dependency manifests, and lock files require Core
+  team review before merge.
 - **Branch and tag rulesets**: Protected branches require signed commits and passing CI checks.
   Release tags matching `v*` are immutable after creation.
 - **Source restrictions**: Rust packages are sourced exclusively from crates.io. Git dependencies
@@ -78,6 +79,9 @@ release lifecycle:
 
 ### Dependency intake controls
 
+- **Version pinning and lock files**: Rust dependencies are pinned in `Cargo.lock` with
+  cryptographic checksums. Python dependencies are pinned in `uv.lock` and `python/uv.lock` with
+  integrity hashes. Wildcard version requirements are prohibited.
 - **Dependency and tool cooldown**: Python dependency resolution excludes packages published
   within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to
   explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are
@@ -94,7 +98,7 @@ release lifecycle:
   manifest.
 - **Toolchain pinning**: The uv package manager version is pinned via `required-version` in
   `pyproject.toml` and enforced across CI, Docker, and local development.
-- **License compliance**: Automated checks ensure LGPL-3.0 compatibility.
+- **License compliance**: Automated checks ensure LGPL-3.0-or-later compatibility.
 
 ### Pre-merge and scheduled scanning
 
@@ -102,6 +106,8 @@ release lifecycle:
   Actions auditing, and Unicode control character detection run before changes land.
 - **Dependency auditing**: Automated security scanning runs via cargo-audit, cargo-deny, cargo-vet,
   and OSV Scanner (Rust), pip-audit (Python), and Zizmor (GitHub Actions).
+- **Supply chain provenance**: cargo-vet verifies Rust dependency provenance by importing trusted
+  audit data from organizations including Bytecode Alliance, Google, Mozilla, and Embark Studios.
 - **Code scanning**: CodeQL static analysis covers Python and Rust code. The scheduled security
   audit also uploads Zizmor SARIF results for GitHub Actions workflow findings when token
   permissions allow it.
@@ -115,6 +121,10 @@ release lifecycle:
 - **Publish authentication**: PyPI uploads use Trusted Publishing (OIDC) bound to the `release`
   GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived token
   scoped to the specific repo, workflow, and environment.
+- **GHCR authentication**: Container image pushes to GitHub Container Registry use the short-lived
+  `GITHUB_TOKEN` scoped to the workflow run, not a long-lived personal access token.
+- **Post-publish verification**: CI verifies released wheels, sdists, and container images against
+  the expected Sigstore and GitHub Actions workflow identities after publishing.
 
 ### Runtime cryptography
 
@@ -128,6 +138,26 @@ release lifecycle:
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
 
 For detailed CI/CD security practices, see [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
+
+## Known vulnerability management
+
+Where a known advisory exists in a transitive dependency without an available
+fix, we document the risk assessment, context, and mitigation in our audit
+configuration. Accepted risks are categorized by severity, scope (direct vs.
+transitive, runtime vs. dev-time), and monitored for upstream resolution.
+
+When a new vulnerability is identified in a dependency:
+
+- The nightly security audit flags the advisory automatically.
+- The Core team assesses severity and exposure within the NautilusTrader context.
+- Critical vulnerabilities in direct dependencies are patched or mitigated
+  within 30 days.
+- Users are notified through release notes and, where appropriate, security advisories.
+
+Users who build NautilusTrader from source or extend it with additional
+dependencies are responsible for auditing their own dependency trees. The
+controls described in this policy apply to official NautilusTrader releases and
+the canonical repository.
 
 ## Advisories addressed
 

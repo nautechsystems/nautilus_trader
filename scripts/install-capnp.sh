@@ -4,10 +4,30 @@ set -euo pipefail
 # Read version from tools.toml (single source of truth)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPNP_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" capnp)"
+CURL_RETRIES="${CURL_RETRIES:-5}"
+CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-20}"
+CURL_MAX_TIME="${CURL_MAX_TIME:-300}"
+INSTALL_ATTEMPTS="${INSTALL_ATTEMPTS:-5}"
+
+if ! [[ "$INSTALL_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$INSTALL_ATTEMPTS" -lt 1 ]; then
+  echo "INSTALL_ATTEMPTS must be a positive integer" >&2
+  exit 1
+fi
 
 # Helper to parse capnp version consistently
 get_capnp_version() {
   capnp --version 2> /dev/null | awk '{print $NF}' || echo ""
+}
+
+download_file() {
+  local url="$1"
+
+  curl -fLsS \
+    --retry "$CURL_RETRIES" \
+    --retry-all-errors \
+    --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" \
+    -O "$url"
 }
 
 # Detect OS
@@ -39,7 +59,7 @@ if [[ "${OS_TYPE}" == "Linux" ]]; then
   pushd "$TMP_DIR"
 
   echo "Downloading Cap'n Proto ${CAPNP_VERSION}..."
-  curl --retry 5 --retry-delay 5 -fLsO "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
+  download_file "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
   tar zxf "capnproto-c++-${CAPNP_VERSION}.tar.gz"
   cd "capnproto-c++-${CAPNP_VERSION}"
 
@@ -82,8 +102,7 @@ elif [[ "${OS_TYPE}" == "macOS" ]]; then
   # Try Homebrew first
   if command -v brew &> /dev/null; then
     echo "Trying Homebrew..."
-    MAX_ATTEMPTS=3
-    for ((i = 1; i <= MAX_ATTEMPTS; i++)); do
+    for ((i = 1; i <= INSTALL_ATTEMPTS; i++)); do
       if brew install capnp 2> /dev/null || brew upgrade capnp 2> /dev/null; then
         INSTALLED_VER=$(get_capnp_version)
         if [[ "$INSTALLED_VER" == "$CAPNP_VERSION" ]]; then
@@ -95,8 +114,12 @@ elif [[ "${OS_TYPE}" == "macOS" ]]; then
           break
         fi
       fi
-      echo "Brew install failed, retrying... (Attempt $i/$MAX_ATTEMPTS)"
-      sleep 5
+      if [ "$i" -lt "$INSTALL_ATTEMPTS" ]; then
+        echo "Brew install failed, retrying... (attempt $i/$INSTALL_ATTEMPTS)"
+        sleep $((2 ** i))
+      else
+        echo "Brew install failed (attempt $i/$INSTALL_ATTEMPTS)"
+      fi
     done
   fi
 
@@ -110,7 +133,7 @@ elif [[ "${OS_TYPE}" == "macOS" ]]; then
 
     pushd "$TMP_DIR"
 
-    curl --retry 5 --retry-delay 5 -fLsO "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
+    download_file "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
     tar zxf "capnproto-c++-${CAPNP_VERSION}.tar.gz"
     cd "capnproto-c++-${CAPNP_VERSION}"
 

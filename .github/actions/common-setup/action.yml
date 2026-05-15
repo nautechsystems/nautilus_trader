@@ -232,8 +232,7 @@ runs:
       shell: bash
       run: |
         PREK_VERSION="$(bash scripts/tool-version.sh prek)"
-        curl --proto '=https' --tlsv1.2 -LsSf \
-          "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" | sh
+        bash scripts/ci/install-prek.sh "$PREK_VERSION"
 
     # > --------------------------------------------------
     # > UV

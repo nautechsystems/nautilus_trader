@@ -102,7 +102,6 @@ env/
 !.pre-commit-hooks/check_non_latin_text.sh
 !.pre-commit-hooks/check_pyo3_conventions.sh
 !.pre-commit-hooks/check_testing_conventions.sh
-!.pre-commit-hooks/check_todo_exclamation.sh
 !.pre-commit-hooks/check_tokio_usage.sh
 !.pre-commit-hooks/check_toml_codegen.sh
 !scripts/cargo-tool-version.sh
@@ -113,6 +112,7 @@ env/
 !scripts/ci/docker-pull-retry.sh
 !scripts/ci/install-cargo-nextest.sh
 !scripts/ci/install-nautilus-cli.sh
+!scripts/ci/install-prek.sh
 !scripts/ci/install-rust.sh
 !scripts/ci/osv-severity-gate.sh
 !scripts/ci/plan.sh

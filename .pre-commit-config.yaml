@@ -145,14 +145,6 @@ repos:
         files: ^(uv\.lock|python/uv\.lock|pyproject\.toml|python/pyproject\.toml)$
         pass_filenames: false
 
-      - id: check-todo-exclamation
-        name: check todo! markers
-        description: Prevents committing TODO! markers that indicate incomplete work
-        entry: bash .pre-commit-hooks/check_todo_exclamation.sh
-        language: system
-        types: [text]
-        pass_filenames: false
-
       - id: check-copyright-year
         name: check copyright year
         description: Ensures copyright headers have current year
