@@ -78,6 +78,7 @@ nautilus-trading = { workspace = true }
 
 rstest = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 
 [[example]]
 name = "databento-cme-sandbox"

@@ -22,6 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, TraderId},
     types::{Currency, Money},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
@@ -96,7 +97,8 @@ fn build_stream_config(
 }
 
 /// Configuration for the Betfair live data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.betfair", from_py_object)
@@ -261,7 +263,8 @@ impl BetfairDataConfig {
 }
 
 /// Configuration for the Betfair live execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.betfair", from_py_object)
@@ -634,5 +637,53 @@ mod tests {
 
         let min_notional = config.min_notional().unwrap();
         assert_eq!(min_notional, Some(Money::new(2.0, Currency::GBP())));
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: BetfairDataConfig = toml::from_str(
+            r#"
+account_currency = "USD"
+request_rate_per_second = 10
+stream_heartbeat_ms = 2500
+stream_idle_timeout_ms = 30000
+stream_reconnect_delay_initial_ms = 500
+stream_reconnect_delay_max_ms = 5000
+stream_use_tls = false
+subscription_delay_secs = 1
+subscribe_race_data = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.account_currency, "USD");
+        assert_eq!(config.request_rate_per_second, 10);
+        assert_eq!(config.stream_heartbeat_ms, 2_500);
+        assert!(!config.stream_use_tls);
+        assert!(config.subscribe_race_data);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: BetfairExecConfig = toml::from_str("").unwrap();
+        let expected = BetfairExecConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.account_currency, expected.account_currency);
+        assert_eq!(
+            config.request_rate_per_second,
+            expected.request_rate_per_second,
+        );
+        assert_eq!(
+            config.order_request_rate_per_second,
+            expected.order_request_rate_per_second,
+        );
+        assert_eq!(config.stream_heartbeat_ms, expected.stream_heartbeat_ms);
+        assert_eq!(config.stream_use_tls, expected.stream_use_tls);
+        assert_eq!(
+            config.calculate_account_state,
+            expected.calculate_account_state,
+        );
     }
 }

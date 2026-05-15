@@ -16,6 +16,7 @@
 //! Configuration structures for the Hyperliquid adapter.
 
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     consts::{info_url, ws_url},
@@ -23,7 +24,8 @@ use crate::common::{
 };
 
 /// Configuration for the Hyperliquid data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -100,7 +102,8 @@ impl HyperliquidDataClientConfig {
 }
 
 /// Configuration for the Hyperliquid execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -217,5 +220,43 @@ mod tests {
             ..HyperliquidExecClientConfig::default()
         };
         assert_eq!(config.account_address.as_deref(), Some("0x1234"));
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: HyperliquidDataClientConfig = toml::from_str(
+            r#"
+environment = "testnet"
+http_timeout_secs = 30
+update_instruments_interval_mins = 10
+transport_backend = "tungstenite"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, HyperliquidEnvironment::Testnet);
+        assert_eq!(config.http_timeout_secs, 30);
+        assert_eq!(config.update_instruments_interval_mins, 10);
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: HyperliquidExecClientConfig = toml::from_str("").unwrap();
+        let expected = HyperliquidExecClientConfig::default();
+
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(config.max_retries, expected.max_retries);
+        assert_eq!(config.normalize_prices, expected.normalize_prices);
+        assert_eq!(
+            config.market_order_slippage_bps,
+            expected.market_order_slippage_bps,
+        );
+        assert_eq!(config.transport_backend, expected.transport_backend);
+        assert_eq!(
+            config.outcome_settlement_poll_secs,
+            expected.outcome_settlement_poll_secs,
+        );
     }
 }

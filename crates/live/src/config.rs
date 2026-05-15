@@ -50,7 +50,7 @@ const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveDataEngineConfig {
     /// If time bar aggregators will build and emit bars with no new market updates.
     #[builder(default = true)]
@@ -149,7 +149,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveRiskEngineConfig {
     /// If all pre-trade risk checks should be bypassed.
     #[builder(default)]
@@ -266,7 +266,7 @@ fn parse_rate_limit(input: &str) -> anyhow::Result<RateLimit> {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveExecEngineConfig {
     /// If the cache should be loaded on initialization.
     #[builder(default = true)]
@@ -430,7 +430,7 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct RoutingConfig {
     /// If the client should be registered as the default routing client.
     #[builder(default)]
@@ -449,7 +449,7 @@ pub struct RoutingConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct InstrumentProviderConfig {
     /// Whether to load all instruments on startup.
     #[builder(default)]
@@ -482,7 +482,7 @@ impl Default for InstrumentProviderConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveDataClientConfig {
     /// If `DataClient` will emit bar updates when a new bar opens.
     #[builder(default)]
@@ -505,7 +505,7 @@ pub struct LiveDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveExecClientConfig {
     /// The client's instrument provider configuration.
     #[builder(default)]
@@ -524,7 +524,8 @@ pub struct LiveExecClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveNodeConfig {
     /// The trading environment.
     #[builder(default = Environment::Live)]
@@ -1365,5 +1366,46 @@ mod tests {
                 .to_string()
                 .contains("unknown field `instrument_provider`")
         );
+    }
+
+    #[rstest]
+    fn test_live_node_config_toml_minimal() {
+        let config: LiveNodeConfig = toml::from_str(
+            r#"
+environment = "Live"
+trader_id = "TRADER-042"
+
+[data_engine]
+debug = true
+
+[risk_engine]
+bypass = false
+
+[exec_engine]
+reconciliation = false
+
+[data_clients.hyperliquid]
+handle_revised_bars = true
+
+[exec_clients.hyperliquid]
+routing = { default = true, venues = ["HYPERLIQUID"] }
+instrument_provider = { load_all = true }
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, Environment::Live);
+        assert_eq!(config.trader_id, TraderId::from("TRADER-042"));
+        assert!(config.data_engine.debug);
+        assert!(!config.risk_engine.bypass);
+        assert!(!config.exec_engine.reconciliation);
+        assert!(config.data_clients["hyperliquid"].handle_revised_bars);
+        let exec_client = &config.exec_clients["hyperliquid"];
+        assert!(exec_client.routing.default);
+        assert_eq!(
+            exec_client.routing.venues,
+            Some(vec!["HYPERLIQUID".to_string()]),
+        );
+        assert!(exec_client.instrument_provider.load_all);
     }
 }

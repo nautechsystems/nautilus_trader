@@ -103,6 +103,7 @@ criterion = { workspace = true }
 dashmap = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-deribit --bench websocket`
 [[bench]]

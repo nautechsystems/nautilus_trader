@@ -67,3 +67,4 @@ bytes = { workspace = true }
 rmp-serde = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }

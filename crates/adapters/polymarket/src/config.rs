@@ -19,6 +19,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{enums::SignatureType, urls},
@@ -26,7 +27,12 @@ use crate::{
 };
 
 /// Configuration for the Polymarket data client.
-#[derive(Debug, Clone, bon::Builder)]
+///
+/// `filters` and `new_market_filter` hold `Arc<dyn InstrumentFilter>` trait objects
+/// and are skipped during serialization; they default to empty/`None` and must be
+/// installed programmatically after deserialization.
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -67,8 +73,10 @@ pub struct PolymarketDataClientConfig {
     pub auto_load_debounce_ms: u64,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
+    #[serde(skip)]
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
     /// Optional filter applied to newly discovered markets before instrument emission.
+    #[serde(skip)]
     pub new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
@@ -117,7 +125,11 @@ impl PolymarketDataClientConfig {
 }
 
 /// Configuration for the Polymarket execution client.
-#[derive(Clone, bon::Builder)]
+///
+/// `Debug` is implemented manually to redact secrets, so it is not part of the
+/// derive list.
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -230,5 +242,48 @@ impl PolymarketExecClientConfig {
         self.base_url_data_api
             .clone()
             .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: PolymarketDataClientConfig = toml::from_str(
+            "
+http_timeout_secs = 30
+ws_max_subscriptions = 50
+update_instruments_interval_mins = 5
+subscribe_new_markets = true
+auto_load_debounce_ms = 250
+",
+        )
+        .unwrap();
+
+        assert_eq!(config.http_timeout_secs, 30);
+        assert_eq!(config.ws_max_subscriptions, 50);
+        assert_eq!(config.update_instruments_interval_mins, 5);
+        assert!(config.subscribe_new_markets);
+        assert_eq!(config.auto_load_debounce_ms, 250);
+        assert!(config.filters.is_empty());
+        assert!(config.new_market_filter.is_none());
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: PolymarketExecClientConfig = toml::from_str("").unwrap();
+        let expected = PolymarketExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.signature_type, expected.signature_type);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(config.max_retries, expected.max_retries);
+        assert_eq!(config.ack_timeout_secs, expected.ack_timeout_secs);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

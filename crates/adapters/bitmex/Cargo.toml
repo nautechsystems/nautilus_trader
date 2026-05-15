@@ -98,6 +98,7 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
+toml = { workspace = true }
 
 [[bin]]
 name = "bitmex-http"

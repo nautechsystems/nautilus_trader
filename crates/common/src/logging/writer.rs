@@ -25,6 +25,7 @@ use chrono::{NaiveDate, Utc};
 use log::LevelFilter;
 use nautilus_core::consts::NAUTILUS_PREFIX;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 use crate::logging::logger::LogLine;
 
@@ -117,18 +118,26 @@ impl LogWriter for StderrWriter {
 }
 
 /// File rotation config.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct FileRotateConfig {
     /// Maximum file size in bytes before rotating.
     pub max_file_size: u64,
     /// Maximum number of backup files to keep.
     pub max_backup_count: u32,
     /// Current file size tracking.
+    #[serde(skip)]
     cur_file_size: u64,
     /// Current file creation date.
+    #[serde(skip, default = "today_date")]
     cur_file_creation_date: NaiveDate,
     /// Queue of backup file paths (oldest first).
+    #[serde(skip)]
     backup_files: VecDeque<PathBuf>,
+}
+
+fn today_date() -> NaiveDate {
+    Utc::now().date_naive()
 }
 
 impl PartialEq for FileRotateConfig {
@@ -172,7 +181,8 @@ impl From<(u64, u32)> for FileRotateConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct FileWriterConfig {
     pub directory: Option<String>,
     pub file_name: Option<String>,

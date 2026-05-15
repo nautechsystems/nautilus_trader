@@ -5305,6 +5305,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -5383,6 +5384,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -5430,6 +5432,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -5473,6 +5476,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "uuid",
  "zeroize",
@@ -5513,6 +5517,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "turmoil",
  "ustr",
 ]
@@ -5559,6 +5564,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -5618,6 +5624,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "url",
  "ustr",
  "zeroize",
@@ -5666,6 +5673,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "tokio",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "ustr",
@@ -5830,6 +5838,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -5877,6 +5886,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "tonic",
  "ustr",
 ]
@@ -5983,6 +5993,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "url",
  "ustr",
  "uuid",
@@ -6035,6 +6046,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
 ]
 
@@ -6126,6 +6138,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -6161,6 +6174,7 @@ dependencies = [
  "serde_json",
  "tabled",
  "tokio",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
 ]
 
@@ -6286,6 +6300,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]
@@ -6379,6 +6394,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "url",
  "ustr",
  "uuid",
@@ -6493,6 +6509,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "tokio",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
 ]
 
@@ -6548,6 +6565,7 @@ dependencies = [
  "serde",
  "sysinfo",
  "tempfile",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
 ]
 
@@ -6592,6 +6610,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+ "toml 1.1.2+spec-1.1.0",
  "ustr",
  "zeroize",
 ]

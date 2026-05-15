@@ -55,7 +55,6 @@ pub struct DydxAdapterConfig {
     /// If provided, the client will attempt to connect to each URL in order
     /// until a successful connection is established. This is recommended for
     /// production use in DEX environments where nodes can fail.
-    #[serde(default)]
     #[builder(default = urls::grpc_urls(DydxNetwork::Mainnet).iter().map(|&s| s.to_string()).collect())]
     pub grpc_urls: Vec<String>,
     /// Chain ID (e.g., "dydx-mainnet-1" for mainnet, "dydx-testnet-4" for testnet).
@@ -239,7 +238,7 @@ impl Default for DydxAdapterConfig {
 
 /// Configuration for the dYdX data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
@@ -297,7 +296,7 @@ impl Default for DydxDataClientConfig {
 
 /// Configuration for the dYdX execution client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
@@ -568,5 +567,31 @@ mod tests {
         let config = DydxAdapterConfig::for_network(network);
         assert_eq!(config.grpc_rate_limit_per_second, Some(4));
         assert!(config.grpc_quota().is_some());
+    }
+
+    #[rstest]
+    fn test_adapter_config_toml_requires_url_fields() {
+        // URL fields and chain_id are intentionally required: deserializing a
+        // partial TOML must not silently mix the configured `network` with
+        // mainnet-defaulted URLs. Callers wanting per-network defaults should
+        // use `DydxAdapterConfig::for_network`.
+        let err = toml::from_str::<DydxAdapterConfig>(r#"network = "testnet""#).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("missing field"), "{message}");
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: DydxExecClientConfig = toml::from_str("").unwrap();
+        let expected = DydxExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.network, expected.network);
+        assert_eq!(config.subaccount_number, expected.subaccount_number);
+        assert_eq!(
+            config.grpc_rate_limit_per_second,
+            expected.grpc_rate_limit_per_second,
+        );
     }
 }

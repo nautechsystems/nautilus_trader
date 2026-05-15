@@ -17,6 +17,7 @@
 
 use nautilus_model::enums::AccountType;
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     enums::{CoinbaseEnvironment, CoinbaseMarginType},
@@ -24,7 +25,8 @@ use crate::common::{
 };
 
 /// Configuration for the Coinbase data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
@@ -110,7 +112,8 @@ impl CoinbaseDataClientConfig {
 }
 
 /// Configuration for the Coinbase execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
@@ -272,5 +275,35 @@ mod tests {
     fn test_exec_config_ws_url_uses_user_endpoint() {
         let config = CoinbaseExecClientConfig::default();
         assert!(config.ws_url().contains("user"));
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: CoinbaseDataClientConfig = toml::from_str(
+            r#"
+environment = "Sandbox"
+http_timeout_secs = 5
+update_instruments_interval_mins = 30
+derivatives_poll_interval_secs = 60
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, CoinbaseEnvironment::Sandbox);
+        assert_eq!(config.http_timeout_secs, 5);
+        assert_eq!(config.update_instruments_interval_mins, 30);
+        assert_eq!(config.derivatives_poll_interval_secs, 60);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: CoinbaseExecClientConfig = toml::from_str("").unwrap();
+        let expected = CoinbaseExecClientConfig::default();
+
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(config.max_retries, expected.max_retries);
+        assert_eq!(config.account_type, expected.account_type);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

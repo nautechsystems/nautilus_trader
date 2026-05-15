@@ -59,6 +59,7 @@ use std::{env, str::FromStr};
 
 use ahash::AHashMap;
 use log::LevelFilter;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::writer::FileWriterConfig;
@@ -72,7 +73,8 @@ use super::writer::FileWriterConfig;
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
-#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct LoggerConfig {
     /// Maximum log level for stdout output.
     #[builder(default = LevelFilter::Info)]
@@ -602,5 +604,35 @@ mod tests {
     fn test_from_spec_bypass_logging_false() {
         let config = LoggerConfig::from_spec("bypass_logging=false").unwrap();
         assert!(!config.bypass_logging);
+    }
+
+    #[rstest]
+    fn test_toml_deserialize_minimal() {
+        let config: LoggerConfig = toml::from_str(
+            r#"
+stdout_level = "INFO"
+fileout_level = "DEBUG"
+is_colored = false
+
+[component_level]
+RiskEngine = "ERROR"
+
+[file_config]
+directory = "/var/log/nautilus"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.stdout_level, LevelFilter::Info);
+        assert_eq!(config.fileout_level, LevelFilter::Debug);
+        assert!(!config.is_colored);
+        assert_eq!(
+            config.component_level[&Ustr::from("RiskEngine")],
+            LevelFilter::Error
+        );
+        assert_eq!(
+            config.file_config.as_ref().unwrap().directory.as_deref(),
+            Some("/var/log/nautilus"),
+        );
     }
 }

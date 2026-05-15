@@ -73,6 +73,7 @@ pub struct TardisReplayConfig {
     pub output_path: Option<String>,
     /// The Tardis Machine replay options.
     #[builder(default)]
+    #[serde(default)]
     pub options: Vec<ReplayNormalizedRequestOptions>,
     /// Optional proxy URL for the Tardis HTTP API client.
     /// The Tardis Machine WebSocket transport does not yet support proxying.
@@ -91,7 +92,8 @@ pub struct TardisReplayConfig {
 }
 
 /// Configuration for the Tardis data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
@@ -210,6 +212,39 @@ mod tests {
                 deserialized.as_parquet_compression()
             );
         }
+    }
+
+    #[rstest]
+    fn test_data_client_config_toml_minimal() {
+        let config: TardisDataClientConfig = toml::from_str(
+            r#"
+normalize_symbols = false
+book_snapshot_output = "depth10"
+"#,
+        )
+        .unwrap();
+
+        assert!(!config.normalize_symbols);
+        assert!(matches!(
+            config.book_snapshot_output,
+            BookSnapshotOutput::Depth10
+        ));
+        assert!(config.options.is_empty());
+    }
+
+    #[rstest]
+    fn test_replay_config_omits_options_uses_empty_default() {
+        let config: TardisReplayConfig = toml::from_str(
+            r#"
+tardis_ws_url = "wss://example.com"
+normalize_symbols = false
+"#,
+        )
+        .unwrap();
+
+        assert!(config.options.is_empty());
+        assert_eq!(config.tardis_ws_url.as_deref(), Some("wss://example.com"));
+        assert_eq!(config.normalize_symbols, Some(false));
     }
 
     #[rstest]

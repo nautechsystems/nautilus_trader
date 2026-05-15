@@ -20,6 +20,7 @@ use nautilus_model::{
     identifiers::{AccountId, TraderId},
 };
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     enums::{KrakenEnvironment, KrakenProductType},
@@ -27,7 +28,8 @@ use crate::common::{
 };
 
 /// Configuration for the Kraken data client.
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
@@ -113,7 +115,8 @@ impl KrakenDataClientConfig {
 }
 
 /// Configuration for the Kraken execution client.
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
@@ -258,5 +261,42 @@ mod tests {
         let cfg = KrakenExecClientConfig::default();
         assert!(cfg.use_ws_trade);
         assert_eq!(cfg.ws_request_timeout_secs, 5);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: KrakenDataClientConfig = toml::from_str(
+            r#"
+product_type = "spot"
+environment = "live"
+timeout_secs = 45
+validate_l3_checksum = false
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.product_type, KrakenProductType::Spot);
+        assert_eq!(config.environment, KrakenEnvironment::Live);
+        assert_eq!(config.timeout_secs, 45);
+        assert!(!config.validate_l3_checksum);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: KrakenExecClientConfig = toml::from_str("").unwrap();
+        let expected = KrakenExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.product_type, expected.product_type);
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.timeout_secs, expected.timeout_secs);
+        assert_eq!(config.spot_account_type, expected.spot_account_type);
+        assert_eq!(
+            config.use_spot_position_reports,
+            expected.use_spot_position_reports,
+        );
+        assert_eq!(config.use_ws_trade, expected.use_ws_trade);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

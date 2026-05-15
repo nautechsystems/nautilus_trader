@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added `Portfolio::build_snapshot` and `Portfolio::snapshots` accessors with a bounded per-account ring (Rust)
 - Added `subscribe_portfolio_snapshot` and `publish_portfolio_snapshot` message bus API on `events.portfolio` (Rust)
 - Added `subscribe_positions` message bus function (Rust)
+- Added serde `Deserialize` support for `LiveNodeConfig` and adapter client configs to enable loading from TOML
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
 - Added Bybit hedge-mode venue position IDs for order, position, and fill events

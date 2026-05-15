@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for `SandboxExecutionClient` instances.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.sandbox", from_py_object)
@@ -116,5 +116,29 @@ impl SandboxExecutionClientConfig {
 impl Default for SandboxExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: SandboxExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = SandboxExecutionClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.venue, expected.venue);
+        assert_eq!(config.oms_type, expected.oms_type);
+        assert_eq!(config.account_type, expected.account_type);
+        assert_eq!(config.default_leverage, expected.default_leverage);
+        assert_eq!(config.book_type, expected.book_type);
+        assert_eq!(config.bar_execution, expected.bar_execution);
+        assert_eq!(config.trade_execution, expected.trade_execution);
+        assert_eq!(config.use_position_ids, expected.use_position_ids);
     }
 }

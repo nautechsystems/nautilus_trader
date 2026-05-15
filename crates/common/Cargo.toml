@@ -99,6 +99,7 @@ rstest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
