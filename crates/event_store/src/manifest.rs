@@ -17,6 +17,7 @@
 
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
+pub use nautilus_system::RegisteredComponents;
 use serde::{Deserialize, Serialize};
 
 use crate::wire;
@@ -78,24 +79,6 @@ pub struct RunManifest {
     pub high_watermark: u64,
     /// The lifecycle state of this run.
     pub status: RunStatus,
-}
-
-/// The component manifest captured into `RunStarted`.
-///
-/// Replay binds actors, strategies, algorithms, subscriptions, and command endpoints from
-/// this manifest without consulting external configuration.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegisteredComponents {
-    /// Registered actor ids and their config hashes.
-    pub actors: IndexMap<String, String>,
-    /// Registered strategy ids and their config hashes.
-    pub strategies: IndexMap<String, String>,
-    /// Registered algorithm ids and their config hashes.
-    pub algorithms: IndexMap<String, String>,
-    /// Subscription bindings active at run start.
-    pub subscriptions: Vec<String>,
-    /// Endpoint registrations active at run start.
-    pub endpoints: Vec<String>,
 }
 
 impl RunManifest {

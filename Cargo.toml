@@ -72,7 +72,6 @@ nautilus-common = { path = "crates/common", version = "0.57.0" }
 nautilus-core = { path = "crates/core", version = "0.57.0" }
 nautilus-cryptography = { path = "crates/cryptography", version = "0.57.0" }
 nautilus-data = { path = "crates/data", version = "0.57.0" }
-nautilus-event-store = { path = "crates/event_store", version = "0.57.0" }
 nautilus-execution = { path = "crates/execution", version = "0.57.0" }
 nautilus-indicators = { path = "crates/indicators", version = "0.57.0" }
 nautilus-infrastructure = { path = "crates/infrastructure", version = "0.57.0" }

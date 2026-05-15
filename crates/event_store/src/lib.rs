@@ -46,6 +46,7 @@ pub mod entry;
 pub mod error;
 pub mod hash;
 pub mod headers;
+pub mod kernel;
 pub mod manifest;
 pub mod reader;
 pub mod replay;
@@ -68,7 +69,13 @@ pub use entry::{EventStoreEntry, PayloadType, Topic};
 pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
-pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};
+pub use kernel::{
+    BootError, EventStoreConfig, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError,
+    RecoveredRun, RecoveryOutcome, RetentionMode, RunIdentity, build_run_id, open_run,
+    recover_predecessors,
+};
+pub use manifest::{RunId, RunManifest, RunStatus};
+pub use nautilus_system::RegisteredComponents;
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
 pub use replay::{
     CacheReplayError, CacheReplayReport, apply_cache_replay_entry, replay_cache_snapshot_tail,

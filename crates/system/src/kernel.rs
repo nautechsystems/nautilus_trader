@@ -36,19 +36,18 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
-#[cfg(feature = "event_store")]
-use nautilus_event_store::RegisteredComponents;
 use nautilus_execution::{engine::ExecutionEngine, order_emulator::adapter::OrderEmulatorAdapter};
 use nautilus_model::identifiers::{ClientId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use ustr::Ustr;
 
-#[cfg(feature = "event_store")]
-pub use crate::event_store::KernelError;
-#[cfg(feature = "event_store")]
-use crate::event_store::KernelEventStore;
-use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig, trader::Trader};
+use crate::{
+    builder::NautilusKernelBuilder,
+    config::NautilusKernelConfig,
+    event_store::{EventStoreFactory, KernelEventStore, RegisteredComponents},
+    trader::Trader,
+};
 
 /// Core Nautilus system kernel.
 ///
@@ -88,8 +87,7 @@ pub struct NautilusKernel {
     /// The UNIX timestamp (nanoseconds) when the kernel was last shutdown.
     pub ts_shutdown: Option<UnixNanos>,
     shutdown_requested: Rc<Cell<bool>>,
-    #[cfg(feature = "event_store")]
-    event_store: KernelEventStore,
+    event_store: Option<Box<dyn KernelEventStore>>,
 }
 
 impl NautilusKernel {
@@ -109,7 +107,7 @@ impl NautilusKernel {
     ///
     /// Returns an error if the kernel fails to initialize.
     pub fn new<T: NautilusKernelConfig + 'static>(name: String, config: T) -> anyhow::Result<Self> {
-        Self::new_with_cache_database(name, config, None)
+        Self::new_with(name, config, None, None)
     }
 
     /// Create a new [`NautilusKernel`] instance with an injected cache database adapter.
@@ -127,6 +125,26 @@ impl NautilusKernel {
         config: T,
         cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
     ) -> anyhow::Result<Self> {
+        Self::new_with(name, config, cache_database, None)
+    }
+
+    /// Create a new [`NautilusKernel`] instance with optional cache database and event store
+    /// injections.
+    ///
+    /// The cache adapter is passed to [`Cache::new`]; the event-store factory is invoked
+    /// with the kernel's clock so the resulting [`KernelEventStore`] implementation shares
+    /// the same time source the kernel uses to stamp `RunStarted`/`RunEnded` and any
+    /// drop-seal fallback timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the kernel fails to initialize or the event-store factory fails.
+    pub fn new_with<T: NautilusKernelConfig + 'static>(
+        name: String,
+        config: T,
+        cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
+        event_store_factory: Option<EventStoreFactory>,
+    ) -> anyhow::Result<Self> {
         let instance_id = config.instance_id().unwrap_or_default();
         let machine_id = Self::determine_machine_id()?;
 
@@ -142,6 +160,10 @@ impl NautilusKernel {
         log::info!("Building system kernel");
 
         let clock = Self::initialize_clock(&config.environment());
+        let event_store = match event_store_factory {
+            Some(factory) => Some(factory(instance_id, clock.clone())?),
+            None => None,
+        };
         let cache = Self::initialize_cache(config.cache(), cache_database);
 
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
@@ -197,8 +219,7 @@ impl NautilusKernel {
             name,
             instance_id,
             machine_id,
-            #[cfg(feature = "event_store")]
-            event_store: KernelEventStore::boot(config.event_store(), instance_id, clock.clone())?,
+            event_store,
             config: Box::new(config),
             cache,
             clock,
@@ -452,31 +473,26 @@ impl NautilusKernel {
     pub fn start(&mut self) {
         log::info!("Starting");
 
-        #[cfg(feature = "event_store")]
-        {
+        if let Some(event_store) = self.event_store.as_deref_mut() {
             self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
 
-            let components = self.collect_registered_components();
+            let components = Self::collect_registered_components(&self.trader);
             let environment = self.config.environment();
 
-            if self.load_state()
-                && let Err(e) = self
-                    .event_store
-                    .restore_parent_cache(self.instance_id, &mut self.cache.borrow_mut())
+            if self.config.load_state()
+                && let Err(e) =
+                    event_store.restore_parent_cache(self.instance_id, &mut self.cache.borrow_mut())
             {
                 log::error!("Failed to restore cache from event-store parent run: {e}");
                 return;
             }
 
-            if let Err(e) = self
-                .event_store
-                .open(self.instance_id, &components, environment)
-            {
+            if let Err(e) = event_store.open(self.instance_id, &components, environment) {
                 log::error!("Failed to open event-store run: {e}");
                 return;
             }
 
-            let anchorer = self.event_store.snapshot_anchorer();
+            let anchorer = event_store.snapshot_anchorer();
             self.exec_engine
                 .borrow_mut()
                 .set_snapshot_anchorer(anchorer);
@@ -501,9 +517,8 @@ impl NautilusKernel {
         log::info!("Started");
     }
 
-    #[cfg(feature = "event_store")]
-    fn collect_registered_components(&self) -> RegisteredComponents {
-        let trader = self.trader.borrow();
+    fn collect_registered_components(trader: &Rc<RefCell<Trader>>) -> RegisteredComponents {
+        let trader = trader.borrow();
         let mut components = RegisteredComponents::default();
         for actor_id in trader.actor_ids() {
             components
@@ -572,23 +587,23 @@ impl NautilusKernel {
         self.cancel_timers();
 
         let ts_shutdown = self.clock.borrow().timestamp_ns();
-        #[cfg(feature = "event_store")]
-        {
+
+        if let Some(event_store) = self.event_store.as_deref_mut() {
             self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
-            self.event_store.seal(ts_shutdown);
+            event_store.seal(ts_shutdown);
         }
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
     }
 
-    /// Returns the kernel-managed event-store integration.
+    /// Returns the kernel-managed event-store integration, when one was injected.
     ///
-    /// The wrapper exposes the recovery report, parent run id, halt signal, and
-    /// open-run id. Returns `None` when the `event_store` feature is disabled.
-    #[cfg(feature = "event_store")]
+    /// Callers wire an implementation through
+    /// [`NautilusKernelBuilder::with_event_store`](crate::builder::NautilusKernelBuilder::with_event_store);
+    /// without an injected adapter this returns `None`.
     #[must_use]
-    pub const fn event_store(&self) -> &KernelEventStore {
-        &self.event_store
+    pub fn event_store(&self) -> Option<&dyn KernelEventStore> {
+        self.event_store.as_deref()
     }
 
     /// Resets the Nautilus system kernel to its initial state.
@@ -625,12 +640,11 @@ impl NautilusKernel {
         // BacktestEngine::end() does not call finalize_stop, so dispose() seals the
         // run for non-streaming backtests. finalize_stop (live) consumes the session
         // first; this call is then a no-op. Callers that skip dispose entirely fall
-        // back to KernelEventStore::Drop.
-        #[cfg(feature = "event_store")]
-        {
+        // back to the event-store implementation's Drop.
+        if let Some(event_store) = self.event_store.as_deref_mut() {
             self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
             let ts_dispose = self.clock.borrow().timestamp_ns();
-            self.event_store.seal(ts_dispose);
+            event_store.seal(ts_dispose);
         }
 
         self.data_engine.borrow_mut().dispose();

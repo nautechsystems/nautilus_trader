@@ -5885,14 +5885,20 @@ dependencies = [
 name = "nautilus-event-store"
 version = "0.57.0"
 dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "async-trait",
  "bincode 2.0.1",
  "blake3",
  "bytes",
  "criterion",
  "indexmap 2.14.0",
+ "log",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-execution",
  "nautilus-model",
+ "nautilus-system",
  "proptest",
  "redb",
  "rmp-serde",
@@ -6523,7 +6529,6 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "async-trait",
- "bincode 2.0.1",
  "bon",
  "bytes",
  "indexmap 2.14.0",
@@ -6531,7 +6536,6 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
- "nautilus-event-store",
  "nautilus-execution",
  "nautilus-model",
  "nautilus-persistence",
@@ -6541,9 +6545,9 @@ dependencies = [
  "pyo3",
  "rmp-serde",
  "rstest",
+ "serde",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.18",
  "ustr",
 ]
 

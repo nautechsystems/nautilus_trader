@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Debug, time::Duration};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, time::Duration};
 
 use nautilus_common::{
     cache::{CacheConfig, database::CacheDatabaseAdapter},
+    clock::Clock,
     enums::Environment,
     logging::logger::LoggerConfig,
 };
@@ -27,9 +28,11 @@ use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
-#[cfg(feature = "event_store")]
-use crate::event_store::EventStoreConfig;
-use crate::{config::KernelConfig, kernel::NautilusKernel};
+use crate::{
+    config::KernelConfig,
+    event_store::{EventStoreFactory, KernelEventStore},
+    kernel::NautilusKernel,
+};
 
 /// Builder for constructing a [`NautilusKernel`] with a fluent API.
 ///
@@ -55,8 +58,7 @@ pub struct NautilusKernelBuilder {
     risk_engine: Option<RiskEngineConfig>,
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
-    #[cfg(feature = "event_store")]
-    event_store: Option<EventStoreConfig>,
+    event_store_factory: Option<EventStoreFactory>,
 }
 
 impl Debug for NautilusKernelBuilder {
@@ -81,6 +83,7 @@ impl Debug for NautilusKernelBuilder {
             .field("risk_engine", &self.risk_engine)
             .field("exec_engine", &self.exec_engine)
             .field("portfolio", &self.portfolio)
+            .field("event_store_factory", &self.event_store_factory.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -109,8 +112,7 @@ impl NautilusKernelBuilder {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
-            #[cfg(feature = "event_store")]
-            event_store: None,
+            event_store_factory: None,
         }
     }
 
@@ -232,11 +234,20 @@ impl NautilusKernelBuilder {
         self
     }
 
-    /// Set the event-store configuration; enables run-lifecycle capture.
-    #[cfg(feature = "event_store")]
+    /// Inject an event-store implementation to drive run-lifecycle capture.
+    ///
+    /// The factory is invoked with the kernel's instance id and clock during
+    /// construction, so the returned [`KernelEventStore`] scans the same run directory
+    /// and shares the same time source the kernel uses for `RunStarted`/`RunEnded` and
+    /// any drop-seal fallback. The concrete implementation lives outside this crate
+    /// (typically in `nautilus-event-store`); callers build it inside the closure.
     #[must_use]
-    pub fn with_event_store_config(mut self, config: EventStoreConfig) -> Self {
-        self.event_store = Some(config);
+    pub fn with_event_store<F>(mut self, factory: F) -> Self
+    where
+        F: FnOnce(UUID4, Rc<RefCell<dyn Clock>>) -> anyhow::Result<Box<dyn KernelEventStore>>
+            + 'static,
+    {
+        self.event_store_factory = Some(Box::new(factory));
         self
     }
 
@@ -266,11 +277,14 @@ impl NautilusKernelBuilder {
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
             streaming: None,
-            #[cfg(feature = "event_store")]
-            event_store: self.event_store,
         };
 
-        NautilusKernel::new_with_cache_database(self.name, config, self.cache_database)
+        NautilusKernel::new_with(
+            self.name,
+            config,
+            self.cache_database,
+            self.event_store_factory,
+        )
     }
 }
 
@@ -290,10 +304,15 @@ mod tests {
     use ahash::AHashMap;
     use bytes::Bytes;
     use nautilus_common::{
-        cache::database::{CacheDatabaseAdapter, CacheMap},
+        cache::{
+            Cache,
+            database::{CacheDatabaseAdapter, CacheMap},
+        },
+        clock::Clock,
         signal::Signal,
     };
     use nautilus_core::UnixNanos;
+    use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
         accounts::AccountAny,
         data::{
@@ -315,6 +334,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::event_store::RegisteredComponents;
 
     #[rstest]
     fn test_builder_default() {
@@ -375,6 +395,59 @@ mod tests {
         let builder = NautilusKernelBuilder::default().with_cache_database(Box::new(NoopAdapter));
 
         assert!(builder.cache_database.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_default_has_no_event_store() {
+        let kernel = NautilusKernelBuilder::default()
+            .build()
+            .expect("kernel builds without an event store");
+
+        assert!(kernel.event_store().is_none());
+    }
+
+    #[rstest]
+    fn test_builder_with_event_store_invokes_factory_with_kernel_args() {
+        type FactoryArgs = (UUID4, Rc<RefCell<dyn Clock>>);
+
+        let known_id = UUID4::new();
+        let captured: Rc<RefCell<Option<FactoryArgs>>> = Rc::new(RefCell::new(None));
+        let captured_for_closure = captured.clone();
+
+        let kernel = NautilusKernelBuilder::default()
+            .with_instance_id(known_id)
+            .with_event_store(move |instance_id, clock| {
+                *captured_for_closure.borrow_mut() = Some((instance_id, clock));
+                Ok(Box::new(NoopKernelEventStore))
+            })
+            .build()
+            .expect("kernel");
+
+        let (received_id, received_clock) =
+            captured.borrow_mut().take().expect("factory invoked once");
+
+        assert_eq!(
+            received_id, known_id,
+            "factory must receive kernel instance_id"
+        );
+        assert!(
+            Rc::ptr_eq(&received_clock, &kernel.clock()),
+            "factory must receive the kernel's clock Rc, not a fresh allocation",
+        );
+    }
+
+    #[rstest]
+    fn test_builder_with_event_store_propagates_factory_error() {
+        let result = NautilusKernelBuilder::default()
+            .with_event_store(|_instance_id, _clock| Err(anyhow::anyhow!("factory boom")))
+            .build();
+
+        let err = result.expect_err("factory error must surface from build()");
+
+        assert!(
+            err.to_string().contains("factory boom"),
+            "error must propagate the factory's message; got: {err}",
+        );
     }
 
     #[rstest]
@@ -711,6 +784,46 @@ mod tests {
 
         fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct NoopKernelEventStore;
+
+    impl KernelEventStore for NoopKernelEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {}
+
+        fn run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn is_halted(&self) -> bool {
+            false
         }
     }
 }

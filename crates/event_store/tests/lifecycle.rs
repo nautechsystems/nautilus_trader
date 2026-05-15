@@ -19,10 +19,10 @@
 //! recovers crashed predecessors and a kernel that drops without explicit teardown
 //! still seals the run via [`Drop`].
 
-#![cfg(feature = "event_store")]
-
 use std::{
+    cell::RefCell,
     path::PathBuf,
+    rc::Rc,
     sync::{Mutex, MutexGuard},
     time::Duration,
 };
@@ -35,13 +35,15 @@ use nautilus_common::{
         Cache,
         database::{CacheDatabaseAdapter, CacheMap},
     },
+    clock::{Clock, TestClock},
     signal::Signal,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_event_store::{
-    AppendEntry, EventStore, EventStoreEntry, Headers, PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend,
-    RegisteredComponents, RunManifest, RunStatus, SnapshotAnchor, Topic, compute_entry_hash,
-    compute_snapshot_content_hash, encode_account_state,
+    AppendEntry, EventStore, EventStoreConfig, EventStoreEntry, EventStoreLifecycle, Headers,
+    PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend, RegisteredComponents, RetentionMode, RunIdentity,
+    RunManifest, RunStatus, SnapshotAnchor, Topic, compute_entry_hash,
+    compute_snapshot_content_hash, encode_account_state, recover_predecessors,
 };
 use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
@@ -68,9 +70,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{Currency, Quantity},
 };
-use nautilus_system::{
-    EventStoreConfig, NautilusKernelBuilder, RetentionMode, RunIdentity, recover_predecessors,
-};
+use nautilus_system::{KernelEventStore, NautilusKernelBuilder};
 use rstest::rstest;
 use tempfile::TempDir;
 use ustr::Ustr;
@@ -79,6 +79,19 @@ static KERNEL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_kernel_test() -> MutexGuard<'static, ()> {
     KERNEL_TEST_LOCK.lock().expect("kernel test lock")
+}
+
+fn event_store_factory(
+    config: EventStoreConfig,
+) -> impl FnOnce(UUID4, Rc<RefCell<dyn Clock>>) -> anyhow::Result<Box<dyn KernelEventStore>> + 'static
+{
+    move |instance_id, clock| {
+        Ok(Box::new(EventStoreLifecycle::boot(
+            Some(config),
+            instance_id,
+            clock,
+        )?))
+    }
 }
 
 fn config_with(base_dir: PathBuf) -> EventStoreConfig {
@@ -243,17 +256,29 @@ fn kernel_drop_after_start_seals_run_as_ended() {
     // backtest exit must seal the run as Ended without leaving Running on disk.
     let tmp = TempDir::new().expect("tempdir");
     let instance_id = UUID4::new();
+    let advanced_ts = UnixNanos::from(1_234_567_890_u64);
 
     let run_id = {
         let mut kernel = NautilusKernelBuilder::default()
             .with_instance_id(instance_id)
-            .with_event_store_config(config_with(tmp.path().to_path_buf()))
+            .with_event_store(event_store_factory(config_with(tmp.path().to_path_buf())))
             .build()
             .expect("kernel");
 
         kernel.start();
+
+        // Advance the kernel's TestClock so the drop-seal ts is distinguishable from 0.
+        {
+            let mut clock_borrow = kernel.clock.borrow_mut();
+            let test_clock = (&mut *clock_borrow as &mut dyn std::any::Any)
+                .downcast_mut::<TestClock>()
+                .expect("kernel clock is a TestClock in Backtest environment");
+            test_clock.advance_time(advanced_ts, true);
+        }
+
         kernel
             .event_store()
+            .expect("event store")
             .run_id()
             .expect("run open after start")
             .to_string()
@@ -269,10 +294,14 @@ fn kernel_drop_after_start_seals_run_as_ended() {
         RunStatus::Ended,
         "kernel Drop must seal the run on graceful exit",
     );
-    assert!(
-        manifest.high_watermark >= 2,
-        "RunStarted at seq=1 plus RunEnded at seq=2; was {}",
-        manifest.high_watermark,
+    assert_eq!(
+        manifest.high_watermark, 2,
+        "RunStarted at seq=1 plus RunEnded at seq=2 produces exactly 2 entries",
+    );
+    assert_eq!(
+        manifest.end_ts_init,
+        Some(advanced_ts),
+        "drop-seal must stamp end_ts_init from the kernel's clock, not a separate object",
     );
 
     // A second-boot recovery sweep must not chain to a run that closed cleanly.
@@ -303,7 +332,7 @@ fn kernel_start_installs_snapshot_anchorer_for_execution_snapshots() {
             snapshot_positions: true,
             ..Default::default()
         })
-        .with_event_store_config(config.clone())
+        .with_event_store(event_store_factory(config.clone()))
         .build()
         .expect("kernel");
 
@@ -315,6 +344,7 @@ fn kernel_start_installs_snapshot_anchorer_for_execution_snapshots() {
     kernel.start();
     let run_id = kernel
         .event_store()
+        .expect("event store")
         .run_id()
         .expect("run open after start")
         .to_string();
@@ -447,7 +477,7 @@ fn kernel_start_restores_parent_cache_snapshot_and_replays_tail() {
 
     let mut kernel = NautilusKernelBuilder::default()
         .with_instance_id(instance_id)
-        .with_event_store_config(config)
+        .with_event_store(event_store_factory(config))
         .build()
         .expect("kernel");
     kernel
@@ -472,7 +502,10 @@ fn kernel_start_restores_parent_cache_snapshot_and_replays_tail() {
         assert_eq!(account.events(), vec![replayed_state]);
     }
 
-    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
+    assert_eq!(
+        kernel.event_store().expect("event store").parent_run_id(),
+        Some(parent_run_id)
+    );
 }
 
 #[rstest]
@@ -537,7 +570,7 @@ fn kernel_start_restore_failure_does_not_open_new_run(
 
     let mut kernel = NautilusKernelBuilder::default()
         .with_instance_id(instance_id)
-        .with_event_store_config(config.clone())
+        .with_event_store(event_store_factory(config.clone()))
         .build()
         .expect("kernel");
 
@@ -554,8 +587,17 @@ fn kernel_start_restore_failure_does_not_open_new_run(
     let manifests =
         RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
 
-    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
-    assert!(kernel.event_store().run_id().is_none());
+    assert_eq!(
+        kernel.event_store().expect("event store").parent_run_id(),
+        Some(parent_run_id)
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_none()
+    );
     assert_eq!(manifests.len(), 1);
     assert_eq!(manifests[0].run_id, parent_run_id);
 }
@@ -625,7 +667,7 @@ fn kernel_start_restores_parent_cache_from_injected_database() {
 
     let mut kernel = NautilusKernelBuilder::default()
         .with_instance_id(instance_id)
-        .with_event_store_config(config)
+        .with_event_store(event_store_factory(config))
         .with_cache_database(Box::new(cache_database))
         .build()
         .expect("kernel");
@@ -655,8 +697,17 @@ fn kernel_start_restores_parent_cache_from_injected_database() {
         assert_eq!(account.events(), vec![replayed_state]);
     }
 
-    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
-    assert!(kernel.event_store().run_id().is_some());
+    assert_eq!(
+        kernel.event_store().expect("event store").parent_run_id(),
+        Some(parent_run_id)
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_some()
+    );
 }
 
 #[rstest]
@@ -714,7 +765,7 @@ fn kernel_start_db_load_error_leaves_run_unopened() {
 
     let mut kernel = NautilusKernelBuilder::default()
         .with_instance_id(instance_id)
-        .with_event_store_config(config.clone())
+        .with_event_store(event_store_factory(config.clone()))
         .with_cache_database(Box::new(StubCacheDatabase::failing_load("db unavailable")))
         .build()
         .expect("kernel");
@@ -724,8 +775,17 @@ fn kernel_start_db_load_error_leaves_run_unopened() {
     let manifests =
         RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
 
-    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
-    assert!(kernel.event_store().run_id().is_none());
+    assert_eq!(
+        kernel.event_store().expect("event store").parent_run_id(),
+        Some(parent_run_id)
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_none()
+    );
     assert_eq!(manifests.len(), 1);
     assert_eq!(manifests[0].run_id, parent_run_id);
 }

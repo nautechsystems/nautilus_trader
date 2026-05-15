@@ -22,19 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = [
-  "nautilus-common/defi",
-  "nautilus-data/defi",
-  "nautilus-event-store?/defi",
-  "nautilus-model/defi",
-]
-event_store = [
-  "dep:bincode",
-  "dep:bytes",
-  "dep:indexmap",
-  "dep:nautilus-event-store",
-  "dep:thiserror",
-]
+defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
@@ -60,21 +48,18 @@ nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
 
-nautilus-event-store = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 bon = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
-bincode = { workspace = true, optional = true }
-bytes = { workspace = true, optional = true }
-indexmap = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
-thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }

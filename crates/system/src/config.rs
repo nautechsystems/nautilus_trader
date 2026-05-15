@@ -26,9 +26,6 @@ use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
-#[cfg(feature = "event_store")]
-use crate::event_store::EventStoreConfig;
-
 /// Configuration trait for a `NautilusKernel` core system instance.
 pub trait NautilusKernelConfig: Debug {
     /// Returns the kernel environment context.
@@ -69,15 +66,6 @@ pub trait NautilusKernelConfig: Debug {
     fn portfolio(&self) -> Option<PortfolioConfig>;
     /// Returns the configuration for streaming to feather files.
     fn streaming(&self) -> Option<StreamingConfig>;
-    /// Returns the configuration for the event store, when run-lifecycle capture is
-    /// enabled.
-    ///
-    /// Returning `None` disables the event-store boot path; the kernel runs without
-    /// opening a run, recovering predecessors, or sealing on stop.
-    #[cfg(feature = "event_store")]
-    fn event_store(&self) -> Option<EventStoreConfig> {
-        None
-    }
 }
 
 /// Basic implementation of `NautilusKernelConfig` for builder and testing.
@@ -132,9 +120,6 @@ pub struct KernelConfig {
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
     pub streaming: Option<StreamingConfig>,
-    /// The configuration for the event store; `None` disables run-lifecycle capture.
-    #[cfg(feature = "event_store")]
-    pub event_store: Option<EventStoreConfig>,
 }
 
 impl NautilusKernelConfig for KernelConfig {
@@ -212,11 +197,6 @@ impl NautilusKernelConfig for KernelConfig {
 
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
-    }
-
-    #[cfg(feature = "event_store")]
-    fn event_store(&self) -> Option<EventStoreConfig> {
-        self.event_store.clone()
     }
 }
 
