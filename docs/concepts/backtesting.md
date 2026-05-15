@@ -770,7 +770,7 @@ to simulate queue position probabilistically.
 the engine uses this as fill evidence. However, this represents liquidity that existed momentarily and may
 not reflect sustained availability.
 
-### Trade based execution
+### Trade-based execution
 
 Trade tick data triggers order fills by default (`trade_execution=True`). A trade tick indicates that liquidity
 was accessed at the trade price, allowing resting limit orders to match. This mirrors the default behavior
@@ -949,7 +949,7 @@ behavior depends on many factors (order priority rules, hidden orders, etc.) tha
 perfectly reconstructed from historical data.
 :::
 
-### Bar based execution
+### Bar-based execution
 
 Bar data provides a summary of market activity with four key prices for each time period (assuming bars are aggregated by trades):
 
@@ -1080,6 +1080,37 @@ engine.add_venue(
     bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
+
+#### Order submission timing
+
+Bar N's OHLC sequence processes before `on_bar(N)` fires. Without a `LatencyModel`,
+an order submitted from `on_bar` settles immediately and matches against the current
+book, whose top reflects bar N's close.
+
+Attach a `LatencyModel` to the venue to defer the order's effective arrival. With
+bar-only data and no intervening timer events, the order settles after the next bar's
+OHLC sweep, so the fill price is that bar's close (or a later bar's close if latency
+exceeds the bar interval). Finer-grained data (quotes, trades) or timer-driven
+settlement between bars can drain the order earlier, against the book as it stands at
+that point:
+
+```python
+from nautilus_trader.backtest.models import LatencyModel
+
+engine.add_venue(
+    venue=venue,
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, Currency.from_str("USDT"))],
+    latency_model=LatencyModel(base_latency_nanos=1_000_000_000),  # 1 second
+)
+```
+
+:::note
+A native "next-bar-open" execution mode is not provided. A bar's `ts_init` is its
+close timestamp, so the open price is only known once the bar arrives. Filling at
+that open from a signal generated on the prior bar would require look-ahead.
+:::
 
 ### Internal bar aggregation timing
 
