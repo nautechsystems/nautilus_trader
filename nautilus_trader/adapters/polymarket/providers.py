@@ -174,6 +174,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             if not condition_id:
                 continue
 
+            # [fern2 local patch] Skip closed/inactive runners so resolved or
+            # de-listed legs are not loaded or subscribed. This preserves the
+            # active/closed filtering the CLOB load path used to apply. See
+            # fern2 docs/neg_risk_event_slug_loading.md.
+            if market.get("active") is not True or market.get("closed") is True:
+                continue
+
             normalized_market = normalize_gamma_market_to_clob_format(market)
 
             for token_info in normalized_market.get("tokens", []):
