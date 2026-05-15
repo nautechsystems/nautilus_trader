@@ -132,6 +132,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
             buffer_deltas: config.buffer_deltas,
             emit_quotes_from_book: config.emit_quotes_from_book,
             emit_quotes_from_book_depths: config.emit_quotes_from_book_depths,
+            disable_historical_cache: false,
             external_clients: config.external_clients,
             debug: config.debug,
         }

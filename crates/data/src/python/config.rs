@@ -69,6 +69,7 @@ impl DataEngineConfig {
         emit_quotes_from_book_depths = None,
         external_clients = None,
         debug = None,
+        disable_historical_cache = None,
     ))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
@@ -83,6 +84,7 @@ impl DataEngineConfig {
         emit_quotes_from_book_depths: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
+        disable_historical_cache: Option<bool>,
     ) -> PyResult<Self> {
         let time_bars_interval_type = match time_bars_interval_type {
             Some(value) => Some(coerce_bar_interval_type(&value)?),
@@ -104,6 +106,7 @@ impl DataEngineConfig {
             .maybe_buffer_deltas(buffer_deltas)
             .maybe_emit_quotes_from_book(emit_quotes_from_book)
             .maybe_emit_quotes_from_book_depths(emit_quotes_from_book_depths)
+            .maybe_disable_historical_cache(disable_historical_cache)
             .maybe_external_clients(external_clients)
             .maybe_debug(debug)
             .build())
@@ -161,6 +164,12 @@ impl DataEngineConfig {
     #[pyo3(name = "emit_quotes_from_book_depths")]
     const fn py_emit_quotes_from_book_depths(&self) -> bool {
         self.emit_quotes_from_book_depths
+    }
+
+    #[getter]
+    #[pyo3(name = "disable_historical_cache")]
+    const fn py_disable_historical_cache(&self) -> bool {
+        self.disable_historical_cache
     }
 
     #[getter]

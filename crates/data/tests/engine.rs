@@ -52,7 +52,7 @@ use nautilus_common::{
         UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
-        self, MessageBus, TypedHandler, TypedIntoHandler,
+        self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
         stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
@@ -75,8 +75,8 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionGreeks, StrikeRange},
         stubs::{
@@ -84,8 +84,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookType, GreeksConvention, MarketStatusAction, OptionKind,
-        PriceType,
+        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentCloseType,
+        MarketStatusAction, OptionKind, PriceType,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -9880,4 +9880,728 @@ fn test_process_defi_data_increments_data_count(
     assert_eq!(data_engine.data_count(), 0);
     data_engine.process_defi_data(DefiData::Block(block));
     assert_eq!(data_engine.data_count(), 1);
+}
+
+fn historical_topic_of(live: &str) -> String {
+    format!("historical.{live}")
+}
+
+#[rstest]
+fn test_process_historical_quote_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let live_topic = switchboard::get_quotes_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-hist")));
+    msgbus::subscribe_quotes(live_topic.into(), live_handler, None);
+    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical quote must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], quote);
+}
+
+#[rstest]
+fn test_process_historical_quote_writes_cache_by_default(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&quote));
+}
+
+#[rstest]
+fn test_process_historical_skips_cache_when_disabled(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let config = DataEngineConfig {
+        disable_historical_cache: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let historical_topic_str =
+        historical_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-cache-disabled")));
+    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert_eq!(
+        cache.borrow().quote(&instrument_id),
+        None,
+        "disable_historical_cache must suppress cache write",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(
+        hist_messages.len(),
+        1,
+        "historical publish must still occur with cache disabled",
+    );
+}
+
+#[rstest]
+fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let bar = Bar::default();
+    let live_topic = switchboard::get_bars_topic(bar.bar_type);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-hist")));
+    msgbus::subscribe_bars(live_topic.into(), live_handler, None);
+    msgbus::subscribe_bars(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Bar(bar));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical bar must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], bar);
+    assert_eq!(
+        cache.borrow().bar(&bar.bar_type),
+        Some(&bar),
+        "historical bar must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_increments_data_count(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let quote = quote_tick(audusd_sim.id, "1.00000", "1.00010", 1);
+    let bar = Bar::default();
+
+    assert_eq!(data_engine.data_count(), 0);
+    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_historical(Data::Bar(bar));
+    assert_eq!(
+        data_engine.data_count(),
+        2,
+        "process_historical must increment data_count like process_data",
+    );
+}
+
+#[rstest]
+fn test_process_historical_trade_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_trades_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-hist")));
+    msgbus::subscribe_trades(live_topic.into(), live_handler, None);
+    msgbus::subscribe_trades(historical_topic.into(), hist_handler, None);
+
+    let trade = trade_tick(instrument_id, "1.00000", "T-1", 1);
+    data_engine.process_historical(Data::Trade(trade));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical trade must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], trade);
+    assert_eq!(
+        cache.borrow().trade(&instrument_id),
+        Some(&trade),
+        "historical trade must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_mark_price_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_mark_price_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-hist")));
+    msgbus::subscribe_mark_prices(live_topic.into(), live_handler, None);
+    msgbus::subscribe_mark_prices(historical_topic.into(), hist_handler, None);
+
+    let mark_price = MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::MarkPriceUpdate(mark_price));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical mark price must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], mark_price);
+    assert_eq!(
+        cache.borrow().mark_price(&instrument_id),
+        Some(&mark_price),
+        "historical mark price must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_index_price_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_index_price_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-hist")));
+    msgbus::subscribe_index_prices(live_topic.into(), live_handler, None);
+    msgbus::subscribe_index_prices(historical_topic.into(), hist_handler, None);
+
+    let index_price = IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::IndexPriceUpdate(index_price));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical index price must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], index_price);
+    assert_eq!(
+        cache.borrow().index_price(&instrument_id),
+        Some(&index_price),
+        "historical index price must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_instrument_status_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    let status = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+    data_engine.process_historical(Data::InstrumentStatus(status));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical instrument status must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], status);
+    assert_eq!(
+        cache.borrow().instrument_status(&instrument_id),
+        Some(&status),
+        "historical instrument status must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let live_topic = switchboard::get_instrument_close_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    let close = InstrumentClose::new(
+        instrument_id,
+        Price::from("1.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::InstrumentClose(close));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical instrument close must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], close);
+}
+
+#[rstest]
+fn test_process_historical_delta_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let delta = stub_delta();
+    let instrument_id = delta.instrument_id;
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-hist")));
+    msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Delta(delta));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical delta must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0].instrument_id, instrument_id);
+    assert_eq!(hist_messages[0].deltas.len(), 1);
+    assert_eq!(hist_messages[0].deltas[0], delta);
+}
+
+#[rstest]
+fn test_process_historical_deltas_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let deltas = stub_deltas();
+    let instrument_id = deltas.instrument_id;
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-hist")));
+    msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical deltas must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], deltas);
+}
+
+#[rstest]
+fn test_process_historical_depth10_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-hist")));
+    msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_depth10(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical depth10 must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], depth);
+}
+
+#[rstest]
+fn test_process_historical_custom_data_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let custom = stub_custom_data(
+        7_000,
+        7,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let live_topic = switchboard::get_custom_topic(&custom.data_type);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Custom(custom.clone()));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical custom data must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], custom);
+}
+
+#[rstest]
+fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        validate_data_sequence: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let template = Bar::default();
+    let bar_type = template.bar_type;
+    let make_bar = |ts: u64| {
+        Bar::new(
+            bar_type,
+            template.open,
+            template.high,
+            template.low,
+            template.close,
+            template.volume,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    let first = make_bar(2_000);
+    let second = make_bar(1_000); // regresses on both ts_event and ts_init
+
+    data_engine.process_historical(Data::Bar(first));
+    data_engine.process_historical(Data::Bar(second));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type),
+        Some(&first),
+        "pipeline bar handler must honour validate_data_sequence and keep the first bar",
+    );
+}
+
+#[rstest]
+fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-synth-quote")));
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    // Register the synthetic feed via the public subscribe path so the live
+    // path would normally republish on component-quote arrival.
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id),
+    );
+
+    // Seed one component live so the synthetic calc could produce a quote.
+    let quote_a = quote_tick(component_a, "100.00", "102.00", 1);
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty()); // both components required
+
+    // Now drive the other component through the pipeline path. The live path
+    // would publish a synthetic quote here; the pipeline path must not.
+    let quote_b = quote_tick(component_b, "200.00", "204.00", 2);
+    data_engine.process_historical(Data::Quote(quote_b));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline mode must not republish synthetic quotes",
+    );
+}
+
+#[rstest]
+fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-synth-trade")));
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+
+    let trade_a = trade_tick(component_a, "100.00", "T-a", 1);
+    data_engine.process_data(Data::Trade(trade_a));
+    assert!(saver.get_messages().is_empty()); // both components required
+
+    let trade_b = trade_tick(component_b, "200.00", "T-b", 2);
+    data_engine.process_historical(Data::Trade(trade_b));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline mode must not republish synthetic trades",
+    );
+}
+
+#[rstest]
+fn test_process_historical_depth10_skips_derived_quote_emission(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    // Live path would derive a quote from depth top-of-book with this flag.
+    let config = DataEngineConfig {
+        emit_quotes_from_book_depths: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-depth-derived")));
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline depth10 must not emit a derived quote even when emit_quotes_from_book_depths is set",
+    );
+    assert!(
+        cache.borrow().quote(&instrument_id).is_none(),
+        "no derived quote should be cached for pipeline depth10",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_status_skips_option_chain_expiry(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let series_id = make_series_id();
+    let cmd = make_subscribe_option_chain(
+        series_id,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    data_engine.borrow_mut().execute(cmd);
+
+    recorder.borrow_mut().clear();
+
+    // Drive a Close status through the pipeline; live path would expire the
+    // instrument and emit wire-level unsubscribes, pipeline must not.
+    let status = InstrumentStatus::new(
+        call_id,
+        MarketStatusAction::Close,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    );
+    data_engine
+        .borrow_mut()
+        .process_historical(Data::InstrumentStatus(status));
+
+    let unsubs: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(_)))
+        .cloned()
+        .collect();
+    assert!(
+        unsubs.is_empty(),
+        "pipeline instrument status must not trigger option chain expiry (got {unsubs:?})",
+    );
+    assert!(
+        data_engine.borrow().has_option_chain_manager(&series_id),
+        "option chain manager must remain intact after pipeline status",
+    );
 }
