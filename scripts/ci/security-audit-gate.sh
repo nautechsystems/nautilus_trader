@@ -28,13 +28,13 @@ set -euo pipefail
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               pyproject.toml, python/pyproject.toml
 #   - Audit policy              deny.toml, osv-scanner.toml, .cargo/audit.toml,
-#                               .supply-chain/*
+#                               .supply-chain/*, .zizmor.yml
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
 #                               tools.toml
 #   - Audit helpers             scripts/{cargo-tool-version,rust-toolchain,
 #                               uv-version}.sh,
-#                               .github/actions/cargo-tool-install/*
-#   - The workflow itself       .github/workflows/security-audit.yml
+#                               .github/actions/*
+#   - CI config                 .pre-commit-config.yaml, .github/workflows/*
 
 emit() {
   echo "audit_needed=$1" >> "$GITHUB_OUTPUT"
@@ -83,13 +83,14 @@ pattern='^('
 pattern+='Cargo\.(lock|toml)'
 pattern+='|crates/(.*/)?Cargo\.toml'
 pattern+='|uv\.lock|pyproject\.toml'
+pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
-pattern+='|deny\.toml|osv-scanner\.toml|\.supply-chain/.*'
+pattern+='|deny\.toml|osv-scanner\.toml|\.supply-chain/.*|\.zizmor\.yml'
 pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
 pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
 pattern+='|scripts/ci/security-audit-gate\.sh'
-pattern+='|\.github/actions/cargo-tool-install/.*'
-pattern+='|\.github/workflows/security-audit\.yml'
+pattern+='|\.github/actions/.*'
+pattern+='|\.github/workflows/.*'
 pattern+=')$'
 
 changed=$(git diff --name-only "$base" "$head")

@@ -65,27 +65,65 @@ do our best to properly recognize and credit your contributions.
 
 ## Security Infrastructure
 
-NautilusTrader employs multiple layers of security to protect against supply
-chain attacks and vulnerabilities:
+NautilusTrader employs multiple layers of security across the development and
+release lifecycle:
 
-- **Dependency auditing**: Automated security scanning via cargo-audit, cargo-deny, cargo-vet, and OSV Scanner (Rust) and pip-audit (Python).
-- **Dependency and tool cooldown**: Python dependency resolution excludes packages published within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit process and policy. The cooldown gives the community time to detect and quarantine compromised releases.
-- **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every third-party package locked in `uv.lock` and forbids `uv` from building any of them from source. In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed upstream stops publishing wheels for the target platform, in which case `uv lock` fails instead of silently building from an sdist. The local workspace package is intentionally absent because it must be built by the workspace's own build backend. The `check-no-build-packages` pre-commit hook verifies the list stays in lock-step with `uv.lock` on every commit that touches the lock or the manifest.
-- **Toolchain pinning**: The uv package manager version is pinned via `required-version` in `pyproject.toml` and enforced across CI, Docker, and local development.
-- **Code scanning**: CodeQL static analysis for Python and Rust code.
-- **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub Actions auditing, and Unicode control character detection.
+### Source and review controls
+
 - **CODEOWNERS**: Critical infrastructure files require Core team review before merge.
-- **Branch protection**: Develop branch requires PR reviews and passing CI checks.
-- **Build integrity**: SLSA build provenance attestations, immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing via Sigstore cosign, SPDX SBOM generation and Sigstore attestation for container images, and hardened CI runners with network egress blocked to an explicit allow-list.
-- **Publish authentication**: PyPI uploads use Trusted Publishing (OIDC) bound to the `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived token scoped to the specific repo, workflow, and environment.
-- **License compliance**: Automated checks ensuring LGPL-3.0 compatibility.
-- **Source restrictions**: Rust packages sourced exclusively from crates.io; git dependencies and unknown registries are prohibited.
-- **Cryptography**: All TLS and cryptographic operations use [aws-lc-rs](https://github.com/aws/aws-lc-rs),
-  the Rust binding for AWS-LC. The library runs in non-FIPS mode because the
-  FIPS 140-3 module (`aws-lc-fips-sys`) requires the Go toolchain as a build
-  dependency. The underlying cryptographic primitives (AES-GCM, SHA-2, ECDSA,
-  ChaCha20-Poly1305) are identical in both modes; the FIPS module adds runtime
-  self-tests and module boundary enforcement required for federal certification.
+- **Branch and tag rulesets**: Protected branches require signed commits and passing CI checks.
+  Release tags matching `v*` are immutable after creation.
+- **Source restrictions**: Rust packages are sourced exclusively from crates.io. Git dependencies
+  and unknown registries are prohibited.
+
+### Dependency intake controls
+
+- **Dependency and tool cooldown**: Python dependency resolution excludes packages published
+  within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to
+  explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are
+  reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit
+  process and policy. The cooldown gives the community time to detect and quarantine compromised
+  releases.
+- **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every
+  third-party package locked in `uv.lock` and forbids `uv` from building any of them from source.
+  In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed
+  upstream stops publishing wheels for the target platform, in which case `uv lock` fails instead
+  of silently building from an sdist. The local workspace package is intentionally absent because it
+  must be built by the workspace's own build backend. The `check-no-build-packages` pre-commit hook
+  verifies the list stays in lock-step with `uv.lock` on every commit that touches the lock or the
+  manifest.
+- **Toolchain pinning**: The uv package manager version is pinned via `required-version` in
+  `pyproject.toml` and enforced across CI, Docker, and local development.
+- **License compliance**: Automated checks ensure LGPL-3.0 compatibility.
+
+### Pre-merge and scheduled scanning
+
+- **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub
+  Actions auditing, and Unicode control character detection run before changes land.
+- **Dependency auditing**: Automated security scanning runs via cargo-audit, cargo-deny, cargo-vet,
+  and OSV Scanner (Rust), pip-audit (Python), and Zizmor (GitHub Actions).
+- **Code scanning**: CodeQL static analysis covers Python and Rust code. The scheduled security
+  audit also uploads Zizmor SARIF results for GitHub Actions workflow findings when token
+  permissions allow it.
+
+### Build and publish controls
+
+- **Build integrity**: SLSA build provenance attestations, GitHub release checksum manifests,
+  immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing
+  via Sigstore cosign, SPDX SBOM generation and Sigstore attestation for container images, and
+  hardened CI runners with network egress blocked to an explicit allow-list.
+- **Publish authentication**: PyPI uploads use Trusted Publishing (OIDC) bound to the `release`
+  GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived token
+  scoped to the specific repo, workflow, and environment.
+
+### Runtime cryptography
+
+- **Cryptography**: All TLS and cryptographic operations use
+  [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC. The library runs in
+  non-FIPS mode because the FIPS 140-3 module (`aws-lc-fips-sys`) requires the Go toolchain as a
+  build dependency. The underlying cryptographic primitives (AES-GCM, SHA-2, ECDSA,
+  ChaCha20-Poly1305) are identical in both modes; the FIPS module adds runtime self-tests and
+  module boundary enforcement required for federal certification.
 
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
 
@@ -113,9 +151,14 @@ verify artifacts before installing them.
 
 ### Python wheels and sdist
 
-After downloading from PyPI or the GitHub release, verify each artifact with
-the GitHub CLI. The `--cert-identity-regex` and `--cert-oidc-issuer` flags
-bind verification to the `build.yml` release workflow, not just the repository:
+GitHub releases include a generated checksum table, an aggregate `SHA256SUMS`
+file, per-asset `.sha256` files, and a machine-readable `dist-manifest.json`
+for Python wheels and the sdist. Check the downloaded artifact against one of
+those checksum sources before installation.
+
+After downloading from PyPI or the GitHub release, verify each artifact with the
+GitHub CLI. The `--cert-identity-regex` and `--cert-oidc-issuer` flags bind
+verification to the `build.yml` release workflow, not just the repository:
 
 ```sh
 ISSUER=https://token.actions.githubusercontent.com

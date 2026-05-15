@@ -18,7 +18,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests, wheel builds, and artifact uploads. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only changes.
+- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
+  wheel builds, artifact uploads, PyPI publishing, release attestations, and release checksum
+  publication. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that
+  skips builds on docs-only changes and skips Rust tests on Python-only changes.
 - **build-v2.yml**: CI pipeline for the v2 Rust-native system. Uses Depot 8-core runners for Linux builds.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
@@ -30,33 +33,63 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
 - **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge` at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
-- **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny, cargo-vet, osv-scanner).
+- **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
+  cargo-vet, pip-audit, osv-scanner, and Zizmor).
 
 ## Security
 
-### Access controls
+### Source and review controls
 
-- **CODEOWNERS**: Critical infrastructure files (workflows, dependencies, build configs, scripts) require Core team review before merge.
-- **Branch protection**: The develop branch requires PR reviews with CODEOWNERS enforcement and passing CI checks. External PRs must receive Core team approval before merge.
-- **Least-privilege tokens**: Workflows default `GITHUB_TOKEN` to `contents: read, actions: read` and selectively elevate scopes only for jobs that need them.
-- **Secret management**: No secrets or credentials are stored in the repo. Credentials are provided via GitHub Secrets and injected at runtime.
+- **CODEOWNERS**: Critical infrastructure files (workflows, dependencies, build configs, scripts)
+  require Core team review before merge.
+- **Branch and tag rulesets**: Protected branches require signed commits and passing CI checks.
+  Release tags matching `v*` are immutable after creation. External PRs must receive Core team
+  approval before merge.
+- **Least-privilege tokens**: Workflows default `GITHUB_TOKEN` to `contents: read, actions: read`
+  and selectively elevate scopes only for jobs that need them.
+- **Secret management**: No secrets or credentials are stored in the repo. Credentials are provided
+  via GitHub Secrets and injected at runtime.
 
-### Dependency security
+### Dependency intake controls
 
-- **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
-- **Dependency pinning**: Key tools (prek, Python versions, Rust toolchain, cargo-nextest, uv) are locked to fixed versions or SHAs. The uv version is pinned via `required-version` in `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
-- **Dependency cooldown**: Python dependency resolution excludes packages published within the last 3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and quarantine compromised releases before they enter the lockfile.
-- **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on all PRs and weekly via cron.
+- **Dependency pinning**: Key tools (prek, Python versions, Rust toolchain, cargo-nextest, uv) are
+  locked to fixed versions or SHAs. The uv version is pinned via `required-version` in
+  `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
+- **Dependency cooldown**: Python dependency resolution excludes packages published within the last
+  3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and
+  quarantine compromised releases before they enter the lockfile.
 
-### Build integrity
+### Pre-merge and scheduled scanning
 
-- **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
-- **PyPI Trusted Publishing**: `publish-wheels-master` and `publish-sdist` upload to PyPI via OIDC trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is bound to repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No `PYPI_*` secret is required.
+- **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license
+  compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
+- **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on
+  all PRs and weekly via cron. Zizmor runs in `security-audit.yml` and uploads SARIF when token
+  permissions allow it.
+
+### Build and publish controls
+
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
-- **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test data caches speed up workflows while preserving hermetic (reproducible) builds. Rust cache saves are restricted to push events to prevent PR cache pollution.
-- **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to mainline branches are never cancelled.
-- **Runners**: Linux and Windows builds use Depot 8-core runners (32 GB RAM, 150 GB SSD). macOS builds use GitHub free runners. Lightweight jobs (plan, cargo-deny, cargo-vet, publish) use GitHub free runners. Custom runner labels are declared in `.github/actionlint.yaml`.
+- **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are
+  pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
+- **Build attestations**: All published artifacts include cryptographic SLSA build provenance
+  attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
+- **Release checksums**: GitHub releases attach `SHA256SUMS`, per-asset `.sha256` files, and
+  `dist-manifest.json`. The release body also includes a generated artifact checksum table and
+  provenance verification command.
+- **PyPI Trusted Publishing**: `publish-wheels-master` and `publish-sdist` upload to PyPI via OIDC
+  trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is bound to
+  repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`;
+  `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No
+  `PYPI_*` secret is required.
+- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
+  data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
+  to push events to prevent PR cache pollution.
+- **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
+  mainline branches are never cancelled.
+- **Runners**: Linux and Windows builds use Depot 8-core runners (32 GB RAM, 150 GB SSD). macOS
+  builds use GitHub free runners. Lightweight jobs (plan, cargo-deny, cargo-vet, publish) use
+  GitHub free runners. Custom runner labels are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 

@@ -31,6 +31,7 @@ on:
       - crates/**/Cargo.toml
       - uv.lock
       - pyproject.toml
+      - .pre-commit-config.yaml
       - python/uv.lock
       - python/pyproject.toml
       - deny.toml
@@ -44,8 +45,9 @@ on:
       - scripts/rust-toolchain.sh
       - scripts/uv-version.sh
       - scripts/ci/security-audit-gate.sh
-      - .github/actions/cargo-tool-install/**
-      - .github/workflows/security-audit.yml
+      - .zizmor.yml
+      - .github/actions/**
+      - .github/workflows/**
   push:
     branches: [develop, master, test-security]
     paths: *security_audit_paths
@@ -82,6 +84,65 @@ jobs:
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
         run: bash scripts/ci/security-audit-gate.sh
+
+  zizmor:
+    name: zizmor
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
+    steps:
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get uv version from pyproject.toml
+        id: uv-version
+        run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@b75a909f75acd358c2196fb9a5f1299a9a8868a4 # v6.7.0
+        with:
+          version: ${{ steps.uv-version.outputs.uv_version }}
+          enable-cache: true
+
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run --no-project --with zizmor==1.24.1 -- \
+            zizmor --format sarif --min-severity medium --config .zizmor.yml .github/ \
+            > zizmor.sarif
+
+      - name: Upload zizmor SARIF
+        if: >-
+          always() &&
+          hashFiles('zizmor.sarif') != '' &&
+          (github.event_name != 'pull_request' ||
+          !github.event.pull_request.head.repo.fork)
+        uses: github/codeql-action/upload-sarif@95e58e5e3890cf30f218a468abb306a5e4ac06a6 # v4.30.6
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
 
   cargo-audit:
     name: cargo-audit

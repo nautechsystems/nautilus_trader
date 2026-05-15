@@ -69,10 +69,7 @@ allow = [
   "Unicode-DFS-2016",
   "Unicode-3.0",
   "0BSD",
-  "LGPL-3.0",
-  "LGPL-3.0-only",
   "LGPL-3.0-or-later",
-  "OpenSSL",
   "Unlicense",
   "bzip2-1.0.6",
 ]

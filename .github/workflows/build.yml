@@ -1121,7 +1121,9 @@ jobs:
           body_path: RELEASE.md
 
   publish-sdist:
-    needs: [tag-release]
+    needs:
+      - publish-wheels-master
+      - tag-release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     environment: release
@@ -1258,3 +1260,13 @@ jobs:
         run: |
           bash ./scripts/ci/publish-release-attestation-siblings.sh \
             "$ASSET_PATH"
+
+      - name: Publish release checksums
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          bash ./scripts/ci/publish-release-checksums.sh
