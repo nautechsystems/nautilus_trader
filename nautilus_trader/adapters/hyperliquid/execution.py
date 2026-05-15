@@ -1073,10 +1073,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._send_order_event(event)
 
         # Drain any fills that arrived before order was in cache.
-        buffered = self._pending_fills.pop(key, None)
-        if buffered:
-            for pyo3_buffered in buffered:
-                self._handle_fill_report_pyo3(pyo3_buffered)
+        self._drain_fill_buffer(self._pending_fills, key)
 
     def _handle_order_canceled_pyo3(self, msg: nautilus_pyo3.OrderCanceled) -> None:
         event = OrderCanceled.from_dict(msg.to_dict())
@@ -1251,10 +1248,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 )
 
                 # Drain buffered fills against the now-advanced state (GH-3972).
-                buffered = self._buffered_fills.pop(key, None)
-                if buffered:
-                    for pyo3_buffered in buffered:
-                        self._handle_fill_report_pyo3(pyo3_buffered)
+                self._drain_fill_buffer(self._buffered_fills, key)
                 return
 
             if key in self._accepted_orders or key in self._terminal_orders:
@@ -1270,10 +1264,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
             # Drain any fills that arrived before order was in cache.
-            buffered = self._pending_fills.pop(key, None)
-            if buffered:
-                for pyo3_buffered in buffered:
-                    self._handle_fill_report_pyo3(pyo3_buffered)
+            self._drain_fill_buffer(self._pending_fills, key)
 
         elif report.order_status == OrderStatus.PENDING_CANCEL:
             if order.status == OrderStatus.PENDING_CANCEL:
@@ -1395,7 +1386,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         else:
             self._log.warning(f"Received unhandled OrderStatusReport: {report}")
 
-    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:  # noqa: C901 (complexity unavoidable)
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
         report = FillReport.from_pyo3(pyo3_report)
 
         self._log.debug(
@@ -1424,8 +1415,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         order = self._cache.order(client_order_id)
         if order is None:
-            self._log.error(
-                f"Cannot process fill report - order for {client_order_id!r} not found, buffering fill until order arrives",
+            self._log.warning(
+                f"Buffering fill report - order for {client_order_id!r} not yet in cache, "
+                f"will drain on OrderAccepted",
             )
             self._pending_fills.setdefault(client_order_id.value, []).append(pyo3_report)
             return
@@ -1471,10 +1463,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
             # Drain any fills that arrived before order was in cache.
-            buffered = self._pending_fills.pop(key, None)
-            if buffered:
-                for pyo3_buffered in buffered:
-                    self._handle_fill_report_pyo3(pyo3_buffered)
+            self._drain_fill_buffer(self._pending_fills, key)
 
         self.generate_order_filled(
             strategy_id=order.strategy_id,
@@ -1498,6 +1487,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if key in self._pending_filled:
             self._pending_filled.discard(key)
             self._cleanup_cloid_mapping(order.client_order_id)
+
+    def _drain_fill_buffer(
+        self,
+        buffer: dict[str, list[nautilus_pyo3.FillReport]],
+        key: str,
+    ) -> None:
+        buffered = buffer.pop(key, None)
+        if buffered:
+            for pyo3_buffered in buffered:
+                self._handle_fill_report_pyo3(pyo3_buffered)
 
     def _handle_position_status_report_pyo3(
         self,

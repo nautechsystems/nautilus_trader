@@ -2726,6 +2726,398 @@ async def test_buffered_fills_cleared_on_terminal_cleanup(
         await client._disconnect()
 
 
+def _build_order_accepted_pyo3(client, instrument, client_order_id, venue_order_id):
+    return nautilus_pyo3.OrderAccepted(
+        trader_id=nautilus_pyo3.TraderId(TestIdStubs.trader_id().value),
+        strategy_id=nautilus_pyo3.StrategyId(TestIdStubs.strategy_id().value),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        client_order_id=nautilus_pyo3.ClientOrderId(client_order_id.value),
+        venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id),
+        account_id=nautilus_pyo3.AccountId(client.account_id.value),
+        event_id=nautilus_pyo3.UUID4(),
+        ts_event=0,
+        ts_init=0,
+        reconciliation=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_fill_report_buffers_when_order_not_in_cache(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    A FillReport arriving before the order has been added to the local cache must be
+    buffered in `_pending_fills` rather than dropped, so it can be replayed once the
+    order becomes known.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    cid = ClientOrderId("O-PENDING-001")
+    # Force the non-external path while the cache has no order, exercising the race.
+    monkeypatch.setattr(client, "_is_external_order", lambda _: False)
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        cid,
+        "9400",
+        "T-PENDING-1",
+        "0.00020",
+        "56730.0",
+    )
+
+    try:
+        # Act
+        client._handle_fill_report_pyo3(fill)
+
+        # Assert
+        assert captured == []
+        assert client._pending_fills[cid.value] == [fill]
+        assert "T-PENDING-1" not in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_order_accepted_drains_pending_fill(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The dedicated OrderAccepted WS event must drain any FillReport that was buffered
+    while the order was not yet in cache, producing OrderFilled in order.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PENDING-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    voi = VenueOrderId("9410")
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-2",
+        "0.00020",
+        "56730.0",
+    )
+    accepted_msg = _build_order_accepted_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+    )
+
+    try:
+        monkeypatch.setattr(client, "_is_external_order", lambda _: False)
+
+        # Act 1: fill arrives before order known, buffered.
+        client._handle_fill_report_pyo3(fill)
+        assert client._pending_fills[order.client_order_id.value] == [fill]
+
+        # Act 2: order is now added to cache; OrderAccepted drains the buffer.
+        cache.add_order(order, None)
+        client._handle_order_accepted_pyo3(accepted_msg)
+
+        # Assert
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == voi
+        assert filled_events[0].trade_id.value == "T-PENDING-2"
+        assert order.client_order_id.value not in client._pending_fills
+        assert "T-PENDING-2" in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_order_status_accepted_drains_pending_fill(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The ACCEPTED branch of OrderStatusReport must drain any FillReport buffered while
+    the order was not yet in cache.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PENDING-003"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    voi = VenueOrderId("9420")
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-3",
+        "0.00020",
+        "56730.0",
+    )
+    accepted_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="56730.0",
+        quantity="0.00020",
+    )
+
+    try:
+        monkeypatch.setattr(client, "_is_external_order", lambda _: False)
+
+        # Act 1: fill arrives before order known, buffered.
+        client._handle_fill_report_pyo3(fill)
+        assert client._pending_fills[order.client_order_id.value] == [fill]
+
+        # Act 2: order is now in cache; OrderStatusReport(ACCEPTED) drains.
+        cache.add_order(order, None)
+        client._handle_order_status_report_pyo3(accepted_report)
+
+        # Assert
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == voi
+        assert filled_events[0].trade_id.value == "T-PENDING-3"
+        assert order.client_order_id.value not in client._pending_fills
+        assert "T-PENDING-3" in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_inline_auto_accept_drains_pending_fill(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    When a later FillReport arrives and finds the order in cache but not yet accepted in
+    the local state machine, the inline auto-accept path must drain any previously
+    buffered FillReports for the same order.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PENDING-004"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00040"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    voi = VenueOrderId("9430")
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill_a = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-4A",
+        "0.00020",
+        "56730.0",
+    )
+    fill_b = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-4B",
+        "0.00020",
+        "56735.0",
+    )
+
+    try:
+        monkeypatch.setattr(client, "_is_external_order", lambda _: False)
+
+        # Act 1: fill A arrives before order known, buffered.
+        client._handle_fill_report_pyo3(fill_a)
+        assert client._pending_fills[order.client_order_id.value] == [fill_a]
+
+        # Act 2: order is now in cache; fill B finds order and triggers inline drain.
+        cache.add_order(order, None)
+        client._handle_fill_report_pyo3(fill_b)
+
+        # Assert: both fills processed, A before B (drain runs before B's own emit).
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 2
+        assert filled_events[0].trade_id.value == "T-PENDING-4A"
+        assert filled_events[1].trade_id.value == "T-PENDING-4B"
+        assert order.client_order_id.value not in client._pending_fills
+        assert "T-PENDING-4A" in client._processed_trade_ids
+        assert "T-PENDING-4B" in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_multiple_pending_fills_drained_in_arrival_order(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Multiple FillReports buffered while the order is not in cache must be re-dispatched
+    in arrival order so the engine observes the correct cumulative fill sequence.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PENDING-MULTI"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00040"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    voi = VenueOrderId("9440")
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill_a = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-MA",
+        "0.00010",
+        "56720.0",
+    )
+    fill_b = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+        "T-PENDING-MB",
+        "0.00010",
+        "56725.0",
+    )
+    accepted_msg = _build_order_accepted_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        voi.value,
+    )
+
+    try:
+        monkeypatch.setattr(client, "_is_external_order", lambda _: False)
+
+        # Act 1: two fills arrive, both buffered.
+        client._handle_fill_report_pyo3(fill_a)
+        client._handle_fill_report_pyo3(fill_b)
+        assert len(client._pending_fills[order.client_order_id.value]) == 2
+
+        # Act 2: order added, OrderAccepted drains both in order.
+        cache.add_order(order, None)
+        client._handle_order_accepted_pyo3(accepted_msg)
+
+        # Assert
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 2
+        assert filled_events[0].trade_id.value == "T-PENDING-MA"
+        assert filled_events[0].last_px == Price.from_str("56720.0")
+        assert filled_events[1].trade_id.value == "T-PENDING-MB"
+        assert filled_events[1].last_px == Price.from_str("56725.0")
+        assert order.client_order_id.value not in client._pending_fills
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_pending_fills_cleared_on_terminal_cleanup(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Terminal cleanup must drop any pending fills so a stranded entry cannot outlive the
+    cloid mapping it was keyed on.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    cid = ClientOrderId("O-PENDING-005")
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        cid,
+        "9450",
+        "T-PENDING-5",
+        "0.00020",
+        "56730.0",
+    )
+    client._pending_fills[cid.value] = [fill]
+
+    try:
+        # Act
+        client._cleanup_cloid_mapping(cid)
+
+        # Assert
+        assert cid.value not in client._pending_fills
+    finally:
+        await client._disconnect()
+
+
 @pytest.mark.parametrize(
     ("exc", "expected"),
     [
