@@ -77,6 +77,8 @@ pyo3 = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
 rmp-serde = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }

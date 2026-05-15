@@ -690,7 +690,7 @@ impl Cache {
     /// Returns whether the cache has a backing database.
     #[must_use]
     pub const fn has_backing(&self) -> bool {
-        self.config.database.is_some()
+        self.database.is_some()
     }
 
     // Calculate the unrealized profit and loss (PnL) for `position`.

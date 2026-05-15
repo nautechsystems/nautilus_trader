@@ -27,8 +27,16 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
+use bytes::Bytes;
 use indexmap::IndexMap;
-use nautilus_common::cache::Cache;
+use nautilus_common::{
+    cache::{
+        Cache,
+        database::{CacheDatabaseAdapter, CacheMap},
+    },
+    signal::Signal,
+};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_event_store::{
     AppendEntry, EventStore, EventStoreEntry, Headers, PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend,
@@ -39,18 +47,26 @@ use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
 };
 use nautilus_model::{
-    accounts::CashAccount,
-    enums::{OmsType, OrderSide, OrderType},
-    events::{AccountState, account::stubs::cash_account_state_million_usd},
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, Venue,
-        VenueOrderId,
+    accounts::{AccountAny, CashAccount},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurveData},
     },
-    instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
-    orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    enums::{OmsType, OrderSide, OrderType},
+    events::{
+        AccountState, OrderEventAny, OrderSnapshot, account::stubs::cash_account_state_million_usd,
+        position::snapshot::PositionSnapshot,
+    },
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        TradeId, TraderId, Venue, VenueOrderId,
+    },
+    instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::audusd_sim},
+    orderbook::OrderBook,
+    orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
-    types::Quantity,
+    types::{Currency, Quantity},
 };
 use nautilus_system::{
     EventStoreConfig, NautilusKernelBuilder, RetentionMode, RunIdentity, recover_predecessors,
@@ -542,4 +558,473 @@ fn kernel_start_restore_failure_does_not_open_new_run(
     assert!(kernel.event_store().run_id().is_none());
     assert_eq!(manifests.len(), 1);
     assert_eq!(manifests[0].run_id, parent_run_id);
+}
+
+#[rstest]
+fn kernel_start_restores_parent_cache_from_injected_database() {
+    // A real process restart finds an empty in-memory cache; the snapshot blob must
+    // travel back through Cache::load_snapshot_blob -> cache_general() ->
+    // CacheDatabaseAdapter::load(). This test wires a stub adapter through the
+    // kernel builder and asserts the restore succeeds without anyone pre-seeding
+    // the cache.
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let parent_run_id = "parent-run";
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let position_id = PositionId::new("P-KERNEL-DB-RESTORE-1");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new("T-KERNEL-DB-RESTORE-1")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    let mut snapshot_cache = Cache::default();
+    let snapshot_ref = snapshot_cache
+        .snapshot_position(&position)
+        .expect("snapshot position");
+    let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+    let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, parent_run_id))
+            .expect("open parent run");
+        backend
+            .append_batch(&[append_account_state(1, &anchored_state)])
+            .expect("append anchored state");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(
+                1,
+                snapshot_ref.blob_ref.clone(),
+                compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+            ))
+            .expect("record snapshot anchor");
+        backend
+            .append_batch(&[append_account_state(2, &replayed_state)])
+            .expect("append replay tail");
+    }
+
+    let cache_database =
+        StubCacheDatabase::with_blob(snapshot_ref.blob_ref.clone(), snapshot_ref.blob.clone());
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store_config(config)
+        .with_cache_database(Box::new(cache_database))
+        .build()
+        .expect("kernel");
+
+    assert!(
+        kernel
+            .cache
+            .borrow()
+            .position_snapshot_bytes(&position.id)
+            .is_none(),
+        "cache must not be pre-seeded with the snapshot blob",
+    );
+
+    kernel.start();
+
+    {
+        let cache = kernel.cache.borrow();
+        let frames = cache
+            .position_snapshot_bytes(&position.id)
+            .expect("restored position snapshot");
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].as_slice(), snapshot_ref.blob.as_ref());
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
+    assert!(kernel.event_store().run_id().is_some());
+}
+
+#[rstest]
+fn kernel_start_db_load_error_leaves_run_unopened() {
+    // CacheDatabaseAdapter::load() can fail at boot (DB down, decode error). The
+    // kernel must surface that as a refusal to open a fresh run, mirroring the
+    // missing-blob and hash-mismatch cases.
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let parent_run_id = "parent-run";
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new("T-KERNEL-DB-LOAD-ERR-1")),
+        Some(PositionId::new("P-KERNEL-DB-LOAD-ERR-1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    let mut snapshot_cache = Cache::default();
+    let snapshot_ref = snapshot_cache
+        .snapshot_position(&position)
+        .expect("snapshot position");
+    let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, parent_run_id))
+            .expect("open parent run");
+        backend
+            .append_batch(&[append_account_state(1, &anchored_state)])
+            .expect("append anchored state");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(
+                1,
+                snapshot_ref.blob_ref.clone(),
+                compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+            ))
+            .expect("record snapshot anchor");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store_config(config.clone())
+        .with_cache_database(Box::new(StubCacheDatabase::failing_load("db unavailable")))
+        .build()
+        .expect("kernel");
+
+    kernel.start();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+
+    assert_eq!(kernel.event_store().parent_run_id(), Some(parent_run_id));
+    assert!(kernel.event_store().run_id().is_none());
+    assert_eq!(manifests.len(), 1);
+    assert_eq!(manifests[0].run_id, parent_run_id);
+}
+
+struct StubCacheDatabase {
+    general: AHashMap<String, Bytes>,
+    load_error: Option<String>,
+}
+
+impl StubCacheDatabase {
+    fn with_blob(blob_ref: String, blob: Bytes) -> Self {
+        let mut general = AHashMap::new();
+        general.insert(blob_ref, blob);
+        Self {
+            general,
+            load_error: None,
+        }
+    }
+
+    fn failing_load(message: &str) -> Self {
+        Self {
+            general: AHashMap::new(),
+            load_error: Some(message.to_string()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CacheDatabaseAdapter for StubCacheDatabase {
+    fn close(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        Ok(CacheMap::default())
+    }
+
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
+        if let Some(message) = &self.load_error {
+            anyhow::bail!("{message}");
+        }
+        Ok(self.general.clone())
+    }
+
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_currency(&self, _code: &Ustr) -> anyhow::Result<Option<Currency>> {
+        Ok(None)
+    }
+
+    async fn load_instrument(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        Ok(None)
+    }
+
+    async fn load_synthetic(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        Ok(None)
+    }
+
+    async fn load_account(&self, _account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+        Ok(None)
+    }
+
+    async fn load_order(
+        &self,
+        _client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
+        Ok(None)
+    }
+
+    async fn load_position(&self, _position_id: &PositionId) -> anyhow::Result<Option<Position>> {
+        Ok(None)
+    }
+
+    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_signals(&self, _name: &str) -> anyhow::Result<Vec<Signal>> {
+        Ok(Vec::new())
+    }
+
+    fn load_custom_data(&self, _data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        Ok(Vec::new())
+    }
+
+    fn load_order_snapshot(
+        &self,
+        _client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_position_snapshot(
+        &self,
+        _position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_quotes(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_trades(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_funding_rates(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        Ok(Vec::new())
+    }
+
+    fn load_bars(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        Ok(Vec::new())
+    }
+
+    fn add(&self, _key: String, _value: Bytes) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_currency(&self, _currency: &Currency) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order(&self, _order: &OrderAny, _client_id: Option<ClientId>) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order_snapshot(&self, _snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_position(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_position_snapshot(&self, _snapshot: &PositionSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_signal(&self, _signal: &Signal) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_custom_data(&self, _data: &CustomData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_funding_rate(&self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_greeks(&self, _greeks: &GreeksData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_strategy(&self, _component_id: &StrategyId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_order(&self, _client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_position(&self, _position_id: &PositionId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_account_event(&self, _account_id: &AccountId, _event_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_venue_order_id(
+        &self,
+        _client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_order_position(
+        &self,
+        _client_order_id: ClientOrderId,
+        _position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_actor(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_strategy(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_order(&self, _order_event: &OrderEventAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

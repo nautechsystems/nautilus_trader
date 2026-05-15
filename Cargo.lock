@@ -6522,6 +6522,7 @@ version = "0.57.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "async-trait",
  "bincode 2.0.1",
  "bon",
  "bytes",

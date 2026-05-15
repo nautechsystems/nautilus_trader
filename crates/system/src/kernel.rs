@@ -109,6 +109,24 @@ impl NautilusKernel {
     ///
     /// Returns an error if the kernel fails to initialize.
     pub fn new<T: NautilusKernelConfig + 'static>(name: String, config: T) -> anyhow::Result<Self> {
+        Self::new_with_cache_database(name, config, None)
+    }
+
+    /// Create a new [`NautilusKernel`] instance with an injected cache database adapter.
+    ///
+    /// The adapter is passed straight to [`Cache::new`] so the kernel can restore
+    /// generic cache state (including snapshot blobs anchored by the event store) from
+    /// the durable backing store on startup, without an external caller pre-seeding the
+    /// in-memory cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the kernel fails to initialize.
+    pub fn new_with_cache_database<T: NautilusKernelConfig + 'static>(
+        name: String,
+        config: T,
+        cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
+    ) -> anyhow::Result<Self> {
         let instance_id = config.instance_id().unwrap_or_default();
         let machine_id = Self::determine_machine_id()?;
 
@@ -124,7 +142,7 @@ impl NautilusKernel {
         log::info!("Building system kernel");
 
         let clock = Self::initialize_clock(&config.environment());
-        let cache = Self::initialize_cache(config.cache());
+        let cache = Self::initialize_cache(config.cache(), cache_database);
 
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
             config.trader_id(),
@@ -282,11 +300,11 @@ impl NautilusKernel {
         }
     }
 
-    fn initialize_cache(cache_config: Option<CacheConfig>) -> Rc<RefCell<Cache>> {
+    fn initialize_cache(
+        cache_config: Option<CacheConfig>,
+        cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
+    ) -> Rc<RefCell<Cache>> {
         let cache_config = cache_config.unwrap_or_default();
-
-        // TODO: Placeholder: persistent database adapter can be initialized here (e.g., Redis)
-        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> = None;
         let cache = Cache::new(Some(cache_config), cache_database);
 
         Rc::new(RefCell::new(cache))

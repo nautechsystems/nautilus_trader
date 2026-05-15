@@ -183,6 +183,24 @@ fn test_cache_general_when_no_database(mut cache: Cache) {
     assert!(cache.cache_general().is_ok());
 }
 
+#[rstest]
+fn test_has_backing_reflects_injected_adapter() {
+    let without = Cache::new(None, None);
+    assert!(!without.has_backing());
+
+    let with = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::default())));
+    assert!(with.has_backing());
+}
+
+#[rstest]
+fn test_has_backing_after_set_database() {
+    let mut cache = Cache::default();
+    assert!(!cache.has_backing());
+
+    cache.set_database(Box::new(SnapshotBlobTestDatabase::default()));
+    assert!(cache.has_backing());
+}
+
 // -- EXECUTION -------------------------------------------------------------------------------
 
 #[rstest]
