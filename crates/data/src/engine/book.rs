@@ -27,6 +27,7 @@ use nautilus_common::{
 };
 use nautilus_model::{
     data::{OrderBookDeltas, OrderBookDepth10, QuoteTick},
+    enums::InstrumentClass,
     identifiers::{InstrumentId, Venue},
     instruments::Instrument,
     orderbook::OrderBook,
@@ -38,8 +39,9 @@ use ustr::Ustr;
 pub struct BookSnapshotInfo {
     pub instrument_id: InstrumentId,
     pub venue: Venue,
-    pub is_composite: bool,
-    pub root: Ustr,
+    /// Parent expansion components `(root, class)` when this snapshot subscription
+    /// targets a parent symbol. `None` for concrete (exact-instrument) subscriptions.
+    pub parent: Option<(Ustr, InstrumentClass)>,
     pub topic: MStr<Topic>,
     pub interval_ms: NonZeroUsize,
 }
@@ -245,10 +247,9 @@ impl BookSnapshotter {
     }
 
     fn publish_snapshot(&self, snap_info: &BookSnapshotInfo, cache: &Ref<Cache>) {
-        if snap_info.is_composite {
+        if let Some((root, class)) = snap_info.parent {
             let topic = snap_info.topic;
-            let underlying = snap_info.root;
-            for instrument in cache.instruments(&snap_info.venue, Some(&underlying)) {
+            for instrument in cache.instruments_by_parent(&snap_info.venue, &root, class) {
                 self.publish_order_book(&instrument.id(), topic, cache);
             }
         } else {

@@ -33,9 +33,9 @@ use nautilus_model::{
         MarkPriceUpdate, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, BookType, ContingencyType, LiquiditySide, MarketStatusAction,
-        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
-        TriggerType,
+        AccountType, AggressorSide, AssetClass, BookType, ContingencyType, InstrumentClass,
+        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
@@ -46,7 +46,9 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Symbol, TradeId, Venue, VenueOrderId,
     },
-    instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
+    instruments::{
+        CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
+    },
     orderbook::OrderBook,
     orders::{
         Order, OrderAny, OrderError, OrderList,
@@ -1671,6 +1673,78 @@ fn test_instruments_when_some(mut cache: Cache) {
     let result2 = cache.instruments(&esz1.id.venue, Some(&esz1.underlying));
     assert_eq!(result1, vec![&InstrumentAny::FuturesContract(esz1.clone())]);
     assert_eq!(result2, vec![&InstrumentAny::FuturesContract(esz1.clone())]);
+}
+
+fn es_option_contract() -> OptionContract {
+    OptionContract::new(
+        InstrumentId::from("ESZ1 P4000.GLBX"),
+        Symbol::from("ESZ1 P4000"),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        OptionKind::Put,
+        Price::from("4000.00"),
+        Currency::USD(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        2,
+        Price::from("0.01"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None::<nautilus_core::Params>,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[rstest]
+fn test_instruments_by_parent_filters_by_class(mut cache: Cache) {
+    let esz1 = futures_contract_es(None, None);
+    let es_put = es_option_contract();
+    cache
+        .add_instrument(InstrumentAny::FuturesContract(esz1.clone()))
+        .unwrap();
+    cache
+        .add_instrument(InstrumentAny::OptionContract(es_put.clone()))
+        .unwrap();
+
+    let futures =
+        cache.instruments_by_parent(&esz1.id.venue, &Ustr::from("ES"), InstrumentClass::Future);
+    assert_eq!(futures, vec![&InstrumentAny::FuturesContract(esz1.clone())]);
+
+    let options =
+        cache.instruments_by_parent(&esz1.id.venue, &Ustr::from("ES"), InstrumentClass::Option);
+    assert_eq!(options, vec![&InstrumentAny::OptionContract(es_put)]);
+}
+
+#[rstest]
+fn test_instruments_by_parent_when_empty(cache: Cache) {
+    let result = cache.instruments_by_parent(
+        &Venue::from("XCME"),
+        &Ustr::from("ES"),
+        InstrumentClass::Future,
+    );
+    assert!(result.is_empty());
+}
+
+#[rstest]
+fn test_instruments_by_parent_filters_by_root(mut cache: Cache) {
+    let esz1 = futures_contract_es(None, None);
+    cache
+        .add_instrument(InstrumentAny::FuturesContract(esz1.clone()))
+        .unwrap();
+
+    let other_root =
+        cache.instruments_by_parent(&esz1.id.venue, &Ustr::from("CL"), InstrumentClass::Future);
+    assert!(other_root.is_empty());
 }
 
 #[rstest]

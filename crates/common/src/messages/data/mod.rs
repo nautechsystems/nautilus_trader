@@ -29,6 +29,16 @@ pub mod response;
 pub mod subscribe;
 pub mod unsubscribe;
 
+/// Params key used to flag a book subscription as targeting a parent symbol.
+///
+/// When the boolean value is `true`, the subscription fans out across all
+/// instruments that resolve from the parent components (see
+/// [`InstrumentId::parse_parent_components`]). When absent or `false`, the
+/// subscription is routed to the concrete instrument id only.
+///
+/// [`InstrumentId::parse_parent_components`]: nautilus_model::identifiers::InstrumentId::parse_parent_components
+pub const PARAMS_IS_PARENT: &str = "is_parent";
+
 // Re-exports
 pub use request::{
     RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
@@ -510,3 +520,14 @@ impl DataResponse {
 }
 
 pub type Payload = Arc<dyn Any + Send + Sync>;
+
+/// Returns `true` when `params` carries the [`PARAMS_IS_PARENT`] flag set to `true`.
+///
+/// Absent or non-boolean values resolve to `false`, keeping the default subscription
+/// path concrete (exact topic).
+#[must_use]
+pub fn is_parent_subscription(params: Option<&Params>) -> bool {
+    params
+        .and_then(|p| p.get_bool(PARAMS_IS_PARENT))
+        .unwrap_or(false)
+}

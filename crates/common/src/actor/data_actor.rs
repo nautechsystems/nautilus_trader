@@ -80,14 +80,14 @@ use crate::{
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
             UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
         system::ShutdownSystem,
     },
     msgbus::{
         self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
         switchboard::{
-            MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern,
+            MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern, get_book_deltas_topic,
             get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
             get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
             get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
@@ -1154,7 +1154,12 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let pattern = get_book_deltas_pattern(instrument_id);
+        let is_parent = is_parent_subscription(params.as_ref());
+        let pattern = if is_parent {
+            get_book_deltas_pattern(instrument_id)
+        } else {
+            get_book_deltas_topic(instrument_id).into()
+        };
 
         let handler = TypedHandler::from(move |deltas: &OrderBookDeltas| {
             get_actor_unchecked::<Self>(&actor_id).handle_book_deltas(deltas);
@@ -3709,7 +3714,11 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let pattern = get_book_deltas_pattern(instrument_id);
+        let pattern = if is_parent_subscription(params.as_ref()) {
+            get_book_deltas_pattern(instrument_id)
+        } else {
+            get_book_deltas_topic(instrument_id).into()
+        };
         self.remove_deltas_subscription(pattern);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {

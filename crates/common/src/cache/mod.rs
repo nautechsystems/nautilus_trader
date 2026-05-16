@@ -58,8 +58,8 @@ use nautilus_model::{
         MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
     enums::{
-        AggregationSource, ContingencyType, OmsType, OrderSide, PositionSide, PriceType,
-        TriggerType,
+        AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
+        PriceType, TriggerType,
     },
     events::{AccountState, OrderEventAny},
     identifiers::{
@@ -5281,6 +5281,27 @@ impl Cache {
             .values()
             .filter(|i| &i.id().venue == venue)
             .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
+            .collect()
+    }
+
+    /// Returns references to all instruments for the `venue` whose underlying
+    /// equals `root` and whose [`InstrumentClass`] equals `class`.
+    ///
+    /// Use when expanding a parent-symbol subscription: filtering by class as
+    /// well as root prevents leaves of a different class (e.g. options when
+    /// the user asked for futures, or vice versa) from being pulled in.
+    #[must_use]
+    pub fn instruments_by_parent(
+        &self,
+        venue: &Venue,
+        root: &Ustr,
+        class: InstrumentClass,
+    ) -> Vec<&InstrumentAny> {
+        self.instruments
+            .values()
+            .filter(|i| &i.id().venue == venue)
+            .filter(|i| i.underlying() == Some(*root))
+            .filter(|i| i.instrument_class() == class)
             .collect()
     }
 

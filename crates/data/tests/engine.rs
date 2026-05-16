@@ -38,8 +38,8 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        CustomDataResponse, DataCommand, DataResponse, InstrumentResponse, RequestBars,
-        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+        CustomDataResponse, DataCommand, DataResponse, InstrumentResponse, PARAMS_IS_PARENT,
+        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
@@ -84,12 +84,12 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentCloseType,
-        MarketStatusAction, OptionKind, PriceType,
+        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
-        CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny,
+        CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny, OptionContract,
         SyntheticInstrument,
         stubs::{audusd_sim, futures_spread_es, gbpusd_sim},
     },
@@ -176,6 +176,12 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+fn parent_params() -> Params {
+    let mut params = Params::new();
+    params.insert(PARAMS_IS_PARENT.to_string(), json!(true));
+    params
 }
 
 fn generic_futures_spread() -> FuturesSpread {
@@ -935,6 +941,36 @@ fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
     )
 }
 
+fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> OptionContract {
+    OptionContract::new(
+        InstrumentId::from(instrument_id),
+        Symbol::from(symbol),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        kind,
+        Price::from("4000.00"),
+        Currency::USD(),
+        UnixNanos::default(),
+        UnixNanos::from(2_000_000_000_000_000_000u64),
+        2,
+        Price::from("0.01"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
 #[rstest]
 fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
@@ -1219,7 +1255,7 @@ fn test_subscribe_book_deltas_composite_creates_books_per_underlying(
         None,
         true,
         None,
-        None,
+        Some(parent_params()),
     )));
     data_engine.execute(sub);
 
@@ -1284,7 +1320,7 @@ fn test_composite_book_deltas_route_to_per_underlying_book(
         None,
         true,
         None,
-        None,
+        Some(parent_params()),
     )));
     data_engine.execute(sub);
 
@@ -1359,7 +1395,7 @@ fn test_composite_book_deltas_route_each_underlying_independently(
         None,
         true,
         None,
-        None,
+        Some(parent_params()),
     )));
     data_engine.execute(sub);
 
@@ -1422,7 +1458,7 @@ fn test_reset_unsubscribes_composite_book_deltas(
         None,
         true,
         None,
-        None,
+        Some(parent_params()),
     )));
     data_engine.execute(sub);
 
@@ -1491,7 +1527,7 @@ fn test_composite_and_exact_book_deltas_apply_once_per_publish(
             None,
             true,
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
@@ -1575,7 +1611,7 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
             None,
             true,
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
@@ -1601,7 +1637,7 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
             UUID4::new(),
             UnixNanos::default(),
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
 
@@ -1663,7 +1699,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
             None,
             true,
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
@@ -1677,7 +1713,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
             None,
             true,
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
 
@@ -1689,7 +1725,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
             UUID4::new(),
             UnixNanos::default(),
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
 
@@ -1770,7 +1806,7 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
             None,
             true,
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
 
@@ -1782,7 +1818,7 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
             UUID4::new(),
             UnixNanos::default(),
             None,
-            None,
+            Some(parent_params()),
         ),
     )));
 
@@ -1917,20 +1953,463 @@ fn test_subscribe_book_deltas_composite_with_no_underlyings_is_noop(
         None,
         true,
         None,
-        None,
+        Some(parent_params()),
     )));
     data_engine.execute(sub);
 
     let cache_view = cache.borrow();
     assert!(
         cache_view.order_book(&composite_id).is_none(),
-        "no book should be created for the composite id itself",
+        "no book should be created for the parent id itself",
     );
     assert!(
         cache_view
-            .instruments(&venue, Some(&Ustr::from("ES")))
+            .instruments_by_parent(&venue, &Ustr::from("ES"), InstrumentClass::Future)
             .is_empty(),
-        "no underlying instruments should exist for the composite root",
+        "no FUT-class underlyings should exist for the parent root",
+    );
+}
+
+#[rstest]
+fn test_parent_book_deltas_filters_by_instrument_class(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let es_call = make_es_option("ES C4000.XCME", "ES C4000", OptionKind::Call);
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+    let es_call_id = es_call.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::OptionContract(es_call))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        parent_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&esz1_id).is_some(),
+        "ESZ1 future leaf book must be created",
+    );
+    assert!(
+        cache_view.order_book(&esh2_id).is_some(),
+        "ESH2 future leaf book must be created",
+    );
+    assert!(
+        cache_view.order_book(&es_call_id).is_none(),
+        "ES call option book must NOT be created when parent class is FUT",
+    );
+}
+
+#[rstest]
+fn test_parent_book_snapshots_filter_by_instrument_class(client_id: ClientId) {
+    let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let es_call = make_es_option("ES C4000.XCME", "ES C4000", OptionKind::Call);
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+    let es_call_id = es_call.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::OptionContract(es_call))
+            .unwrap();
+    }
+
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let interval_ms = NonZeroUsize::new(100).unwrap();
+    let parent_topic = switchboard::get_book_snapshots_topic(parent_id, interval_ms);
+
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBook>(None);
+    msgbus::subscribe_book_snapshots(parent_topic.into(), handler, None);
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+            SubscribeBookSnapshots::new(
+                parent_id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                interval_ms,
+                None,
+                Some(parent_params()),
+            ),
+        )));
+
+    // Feed deltas to populate each leaf's book so the snapshotter has
+    // something to publish.
+    process_book_delta(&data_engine, esz1_id);
+    process_book_delta(&data_engine, esh2_id);
+    process_book_delta(&data_engine, es_call_id);
+
+    advance_clock_and_dispatch(&clock, 200_000_000);
+
+    wait_until(
+        || saver.get_messages().len() >= 2,
+        Duration::from_millis(100),
+    );
+
+    let snapshots = saver.get_messages();
+    let snapshot_ids: Vec<InstrumentId> = snapshots.iter().map(|b| b.instrument_id).collect();
+
+    assert!(
+        snapshot_ids.contains(&esz1_id),
+        "parent snapshot subscription on ES.FUT.XCME must publish ESZ1 future snapshot",
+    );
+    assert!(
+        snapshot_ids.contains(&esh2_id),
+        "parent snapshot subscription on ES.FUT.XCME must publish ESH2 future snapshot",
+    );
+    assert!(
+        !snapshot_ids.contains(&es_call_id),
+        "parent snapshot subscription on ES.FUT.XCME must NOT publish the ES call option \
+         snapshot even though it shares the ES underlying root",
+    );
+}
+
+#[rstest]
+fn test_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    {
+        let cache_view = cache.borrow();
+        assert!(
+            cache_view.order_book(&runner).is_none(),
+            "parent subscribe with an unparsable Betfair runner id must NOT create a book; \
+             the engine should reject the command",
+        );
+    }
+    assert!(
+        !data_engine.subscribed_book_deltas().contains(&runner),
+        "rejected parent subscribe must NOT leave the id in book_deltas_subs",
+    );
+
+    // Retrying without the parent flag on the same id must succeed; the
+    // earlier rejection cannot have stuck the engine in a half-subscribed state.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(retry);
+    assert!(
+        cache.borrow().order_book(&runner).is_some(),
+        "concrete subscribe after a rejected parent attempt must still create the exact-id book",
+    );
+}
+
+#[rstest]
+fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    {
+        let cache_view = cache.borrow();
+        assert!(
+            cache_view.order_book(&runner).is_none(),
+            "parent depth10 subscribe with an unparsable Betfair runner id must NOT create a book",
+        );
+    }
+    assert!(
+        !data_engine.subscribed_book_depth10().contains(&runner),
+        "rejected parent depth10 subscribe must NOT leave the id in book_depth10_subs",
+    );
+
+    // Retrying without the parent flag on the same id must succeed.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(retry);
+    assert!(
+        cache.borrow().order_book(&runner).is_some(),
+        "concrete depth10 subscribe after a rejected parent attempt must still create the exact-id book",
+    );
+}
+
+#[rstest]
+fn test_snapshots_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let interval_ms = NonZeroUsize::new(1000).unwrap();
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            runner,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            interval_ms,
+            None,
+            Some(parent_params()),
+        ),
+    ));
+    data_engine.execute(sub);
+
+    assert!(
+        !data_engine.subscribed_book_snapshots().contains(&runner),
+        "rejected parent snapshots subscribe must NOT increment book_snapshot_counts \
+         for the (id, interval) key",
+    );
+
+    // Retrying without the parent flag on the same (id, interval) must succeed;
+    // the prior rejection cannot have left the snapshot counter in a half-incremented state.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            runner,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            interval_ms,
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(retry);
+    assert!(
+        data_engine.subscribed_book_snapshots().contains(&runner),
+        "concrete snapshots subscribe after a rejected parent attempt must succeed",
+    );
+}
+
+#[rstest]
+fn test_concrete_subscribe_does_not_register_parent_expansion(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    // Concrete subscription: no Some(parent_params()), so the engine must NOT expand.
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        esz1_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&esz1_id).is_some(),
+        "concrete subscribe must create the exact-id book",
+    );
+    assert!(
+        cache_view.order_book(&esh2_id).is_none(),
+        "concrete subscribe on ESZ1 must NOT spawn a book for ESH2 \
+         even though both share the `ES` underlying root",
     );
 }
 

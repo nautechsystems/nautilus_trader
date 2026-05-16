@@ -64,13 +64,9 @@ macro_rules! define_switchboard {
                 $field: AHashMap<$key_ty, MStr<Topic>>,
             )*
             instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
-            instrument_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             book_deltas_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             book_depth10_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             book_snapshots_patterns: AHashMap<(InstrumentId, NonZeroUsize), MStr<Pattern>>,
-            quote_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
-            trade_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
-            instrument_status_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             signal_topics: AHashMap<String, MStr<Topic>>,
             signal_patterns: AHashMap<String, MStr<Pattern>>,
             #[cfg(feature = "defi")]
@@ -85,13 +81,9 @@ macro_rules! define_switchboard {
                         $field: AHashMap::new(),
                     )*
                     instruments_patterns: AHashMap::new(),
-                    instrument_patterns: AHashMap::new(),
                     book_deltas_patterns: AHashMap::new(),
                     book_depth10_patterns: AHashMap::new(),
                     book_snapshots_patterns: AHashMap::new(),
-                    quote_patterns: AHashMap::new(),
-                    trade_patterns: AHashMap::new(),
-                    instrument_status_patterns: AHashMap::new(),
                     signal_topics: AHashMap::new(),
                     signal_patterns: AHashMap::new(),
                     #[cfg(feature = "defi")]
@@ -414,25 +406,6 @@ define_switchboard! {
 }
 
 impl MessagingSwitchboard {
-    /// Returns the subscription pattern for instrument updates on `instrument_id`.
-    ///
-    /// Composite roots (e.g. `ES.FUT.XCME`) yield wildcard patterns that match
-    /// every per-underlying topic published by the data engine.
-    #[must_use]
-    pub fn get_instrument_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
-        *self
-            .instrument_patterns
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.instrument.{}.{}",
-                    instrument_id.venue,
-                    instrument_id.symbol.topic(),
-                )
-                .into()
-            })
-    }
-
     /// Returns the subscription pattern for order book deltas on `instrument_id`.
     #[must_use]
     pub fn get_book_deltas_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
@@ -481,48 +454,6 @@ impl MessagingSwitchboard {
                     instrument_id.venue,
                     instrument_id.symbol.topic(),
                     interval_ms,
-                )
-                .into()
-            })
-    }
-
-    /// Returns the subscription pattern for quote ticks on `instrument_id`.
-    #[must_use]
-    pub fn get_quotes_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
-        *self.quote_patterns.entry(instrument_id).or_insert_with(|| {
-            format!(
-                "data.quotes.{}.{}",
-                instrument_id.venue,
-                instrument_id.symbol.topic(),
-            )
-            .into()
-        })
-    }
-
-    /// Returns the subscription pattern for trade ticks on `instrument_id`.
-    #[must_use]
-    pub fn get_trades_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
-        *self.trade_patterns.entry(instrument_id).or_insert_with(|| {
-            format!(
-                "data.trades.{}.{}",
-                instrument_id.venue,
-                instrument_id.symbol.topic(),
-            )
-            .into()
-        })
-    }
-
-    /// Returns the subscription pattern for instrument status updates on `instrument_id`.
-    #[must_use]
-    pub fn get_instrument_status_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
-        *self
-            .instrument_status_patterns
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.status.{}.{}",
-                    instrument_id.venue,
-                    instrument_id.symbol.topic(),
                 )
                 .into()
             })
@@ -581,18 +512,6 @@ pub fn get_instruments_pattern(venue: Venue) -> MStr<Pattern> {
         .instruments_pattern(venue)
 }
 
-/// Returns the subscription pattern for instrument updates on `instrument_id`.
-///
-/// Composite roots yield wildcard patterns that match every per-underlying
-/// publish topic.
-#[must_use]
-pub fn get_instrument_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_pattern(instrument_id)
-}
-
 /// Returns the subscription pattern for order book deltas on `instrument_id`.
 #[must_use]
 pub fn get_book_deltas_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
@@ -621,33 +540,6 @@ pub fn get_book_snapshots_pattern(
         .borrow_mut()
         .switchboard
         .get_book_snapshots_pattern(instrument_id, interval_ms)
-}
-
-/// Returns the subscription pattern for quote ticks on `instrument_id`.
-#[must_use]
-pub fn get_quotes_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_quotes_pattern(instrument_id)
-}
-
-/// Returns the subscription pattern for trade ticks on `instrument_id`.
-#[must_use]
-pub fn get_trades_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_trades_pattern(instrument_id)
-}
-
-/// Returns the subscription pattern for instrument status updates on `instrument_id`.
-#[must_use]
-pub fn get_instrument_status_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_status_pattern(instrument_id)
 }
 
 /// Returns the exact signal publish topic for `name` (`data.Signal<TitleName>`).
@@ -869,22 +761,6 @@ mod tests {
         MessagingSwitchboard::get_book_depth10_pattern as PatternFn,
         "data.book.depth10.XCME.ESZ24",
     )]
-    #[case::quotes(
-        MessagingSwitchboard::get_quotes_pattern as PatternFn,
-        "data.quotes.XCME.ESZ24",
-    )]
-    #[case::trades(
-        MessagingSwitchboard::get_trades_pattern as PatternFn,
-        "data.trades.XCME.ESZ24",
-    )]
-    #[case::instrument(
-        MessagingSwitchboard::get_instrument_pattern as PatternFn,
-        "data.instrument.XCME.ESZ24",
-    )]
-    #[case::instrument_status(
-        MessagingSwitchboard::get_instrument_status_pattern as PatternFn,
-        "data.status.XCME.ESZ24",
-    )]
     fn test_pattern_for_non_composite_is_literal(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
@@ -908,10 +784,6 @@ mod tests {
     #[rstest]
     #[case::book_deltas(MessagingSwitchboard::get_book_deltas_pattern as PatternFn)]
     #[case::book_depth10(MessagingSwitchboard::get_book_depth10_pattern as PatternFn)]
-    #[case::quotes(MessagingSwitchboard::get_quotes_pattern as PatternFn)]
-    #[case::trades(MessagingSwitchboard::get_trades_pattern as PatternFn)]
-    #[case::instrument(MessagingSwitchboard::get_instrument_pattern as PatternFn)]
-    #[case::instrument_status(MessagingSwitchboard::get_instrument_status_pattern as PatternFn)]
     fn test_pattern_helper_is_idempotent(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
@@ -965,68 +837,6 @@ mod tests {
             underlying_topic.as_ref(),
             "data.book.snapshots.XCME.ESZ24.1000"
         );
-        assert!(is_matching_backtracking(
-            underlying_topic,
-            composite_pattern
-        ));
-    }
-
-    #[rstest]
-    fn test_composite_quotes_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
-        let composite_id = InstrumentId::from("ES.FUT.XCME");
-        let underlying_id = InstrumentId::from("ESZ24.XCME");
-
-        let composite_pattern = switchboard.get_quotes_pattern(composite_id);
-        let underlying_topic = switchboard.get_quotes_topic(underlying_id);
-
-        assert_eq!(composite_pattern.as_ref(), "data.quotes.XCME.ES*");
-        assert!(is_matching_backtracking(
-            underlying_topic,
-            composite_pattern
-        ));
-    }
-
-    #[rstest]
-    fn test_composite_trades_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
-        let composite_id = InstrumentId::from("ES.FUT.XCME");
-        let underlying_id = InstrumentId::from("ESZ24.XCME");
-
-        let composite_pattern = switchboard.get_trades_pattern(composite_id);
-        let underlying_topic = switchboard.get_trades_topic(underlying_id);
-
-        assert_eq!(composite_pattern.as_ref(), "data.trades.XCME.ES*");
-        assert!(is_matching_backtracking(
-            underlying_topic,
-            composite_pattern
-        ));
-    }
-
-    #[rstest]
-    fn test_composite_instrument_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
-        let composite_id = InstrumentId::from("ES.FUT.XCME");
-        let underlying_id = InstrumentId::from("ESZ24.XCME");
-
-        let composite_pattern = switchboard.get_instrument_pattern(composite_id);
-        let underlying_topic = switchboard.get_instrument_topic(underlying_id);
-
-        assert_eq!(composite_pattern.as_ref(), "data.instrument.XCME.ES*");
-        assert!(is_matching_backtracking(
-            underlying_topic,
-            composite_pattern
-        ));
-    }
-
-    #[rstest]
-    fn test_composite_instrument_status_pattern_uses_wildcard(
-        mut switchboard: MessagingSwitchboard,
-    ) {
-        let composite_id = InstrumentId::from("ES.FUT.XCME");
-        let underlying_id = InstrumentId::from("ESZ24.XCME");
-
-        let composite_pattern = switchboard.get_instrument_status_pattern(composite_id);
-        let underlying_topic = switchboard.get_instrument_status_topic(underlying_id);
-
-        assert_eq!(composite_pattern.as_ref(), "data.status.XCME.ES*");
         assert!(is_matching_backtracking(
             underlying_topic,
             composite_pattern

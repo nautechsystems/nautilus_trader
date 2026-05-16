@@ -71,7 +71,7 @@ use nautilus_common::{
         SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars,
         UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeOptionGreeks, UnsubscribeQuotes, is_parent_subscription,
     },
     msgbus::{
         self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
@@ -97,8 +97,8 @@ use nautilus_model::{
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
-        AggregationSource, BarAggregation, BookType, MarketStatusAction, OrderSide, PriceType,
-        RecordFlag,
+        AggregationSource, BarAggregation, BookType, InstrumentClass, MarketStatusAction,
+        OrderSide, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
@@ -145,8 +145,8 @@ pub struct DataEngine {
     book_deltas_subs: AHashSet<InstrumentId>,
     book_depth10_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
-    book_deltas_composite_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
-    book_depth10_composite_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
+    book_deltas_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
+    book_depth10_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
@@ -208,8 +208,8 @@ impl DataEngine {
             book_deltas_subs: AHashSet::new(),
             book_depth10_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
-            book_deltas_composite_expansions: AHashMap::new(),
-            book_depth10_composite_expansions: AHashMap::new(),
+            book_deltas_parent_expansions: AHashMap::new(),
+            book_depth10_parent_expansions: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
@@ -519,8 +519,8 @@ impl DataEngine {
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
             msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
         }
-        self.book_deltas_composite_expansions.clear();
-        self.book_depth10_composite_expansions.clear();
+        self.book_deltas_parent_expansions.clear();
+        self.book_depth10_parent_expansions.clear();
 
         self.book_deltas_subs.clear();
         self.book_depth10_subs.clear();
@@ -1802,9 +1802,13 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
+        // Validate parent shape BEFORE mutating subscription state so a parse
+        // failure leaves the engine bookkeeping unchanged.
+        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
+
         self.book_deltas_subs.insert(cmd.instrument_id);
         if cmd.managed {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true)?;
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, parent)?;
         }
 
         Ok(())
@@ -1815,9 +1819,11 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
+        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
+
         self.book_depth10_subs.insert(cmd.instrument_id);
         if cmd.managed {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false)?;
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
         }
 
         Ok(())
@@ -1828,15 +1834,17 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
+        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
+
         let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
-        let inserted = self.increment_book_snapshot_subscription(cmd);
+        let inserted = self.increment_book_snapshot_subscription(cmd, parent);
 
         if inserted && !had_snapshots {
             // Always run setup so the depth10 handler is registered alongside
             // the deltas handler when this is the first snapshot for the id;
             // setup_book_updater is idempotent and the typed router dedups
             // overlapping subscribes.
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false)?;
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
         }
 
         if had_snapshots || self.book_deltas_subs.contains(&cmd.instrument_id) {
@@ -2427,14 +2435,23 @@ impl DataEngine {
         // Determine which per-underlying books this subscription touched, then
         // for each book check whether any other active subscription still
         // wants it before unsubscribing/dropping the shared BookUpdater.
-        let target_ids: Vec<InstrumentId> = if instrument_id.symbol.is_composite() {
+        //
+        // The presence of a memoized expansion identifies a parent teardown.
+        // Concrete subscriptions touch only the exact id.
+        let is_parent = self
+            .book_deltas_parent_expansions
+            .contains_key(instrument_id)
+            || self
+                .book_depth10_parent_expansions
+                .contains_key(instrument_id);
+        let target_ids: Vec<InstrumentId> = if is_parent {
             let mut set: AHashSet<InstrumentId> = AHashSet::new();
 
-            if let Some(expansion) = self.book_deltas_composite_expansions.get(instrument_id) {
+            if let Some(expansion) = self.book_deltas_parent_expansions.get(instrument_id) {
                 set.extend(expansion.iter().copied());
             }
 
-            if let Some(expansion) = self.book_depth10_composite_expansions.get(instrument_id) {
+            if let Some(expansion) = self.book_depth10_parent_expansions.get(instrument_id) {
                 set.extend(expansion.iter().copied());
             }
 
@@ -2447,23 +2464,23 @@ impl DataEngine {
             vec![*instrument_id]
         };
 
-        if instrument_id.symbol.is_composite() {
-            // Each composite kind (deltas / depth10 / snapshots) writes its own
+        if is_parent {
+            // Each parent kind (deltas / depth10 / snapshots) writes its own
             // memo via setup_book_updater. Keep each memo alive while any
             // sibling subscription that drives the same handler kind remains
-            // active for this composite id.
-            let composite_still_needs_deltas = self.book_deltas_subs.contains(instrument_id)
+            // active for this parent id.
+            let parent_still_needs_deltas = self.book_deltas_subs.contains(instrument_id)
                 || self.book_depth10_subs.contains(instrument_id)
                 || self.has_book_snapshot_subscriptions(instrument_id);
-            let composite_still_needs_depth10 = self.book_depth10_subs.contains(instrument_id)
+            let parent_still_needs_depth10 = self.book_depth10_subs.contains(instrument_id)
                 || self.has_book_snapshot_subscriptions(instrument_id);
 
-            if !composite_still_needs_deltas {
-                self.book_deltas_composite_expansions.remove(instrument_id);
+            if !parent_still_needs_deltas {
+                self.book_deltas_parent_expansions.remove(instrument_id);
             }
 
-            if !composite_still_needs_depth10 {
-                self.book_depth10_composite_expansions.remove(instrument_id);
+            if !parent_still_needs_depth10 {
+                self.book_depth10_parent_expansions.remove(instrument_id);
             }
         }
 
@@ -2501,7 +2518,11 @@ impl DataEngine {
             .any(|(id, _)| id == instrument_id)
     }
 
-    fn increment_book_snapshot_subscription(&mut self, cmd: &SubscribeBookSnapshots) -> bool {
+    fn increment_book_snapshot_subscription(
+        &mut self,
+        cmd: &SubscribeBookSnapshots,
+        parent: Option<(Ustr, InstrumentClass)>,
+    ) -> bool {
         let key = (cmd.instrument_id, cmd.interval_ms);
 
         if let Some(count) = self.book_snapshot_counts.get_mut(&key) {
@@ -2526,8 +2547,7 @@ impl DataEngine {
         let snap_info = BookSnapshotInfo {
             instrument_id: cmd.instrument_id,
             venue: cmd.instrument_id.venue,
-            is_composite: cmd.instrument_id.symbol.is_composite(),
-            root: Ustr::from(cmd.instrument_id.symbol.root()),
+            parent,
             topic,
             interval_ms: cmd.interval_ms,
         };
@@ -2728,17 +2748,16 @@ impl DataEngine {
         instrument_id: &InstrumentId,
         book_type: BookType,
         only_deltas: bool,
+        parent: Option<(Ustr, InstrumentClass)>,
     ) -> anyhow::Result<()> {
         // One BookUpdater per cache book (keyed by per-underlying id), shared
-        // across overlapping subscriptions. Composite subs are expanded into
+        // across overlapping subscriptions. Parent subs are expanded into
         // their underlyings here; the expansion is memoized so unsubscribe
         // mirrors the exact set even if the cache composition changes later.
-        let target_ids: Vec<InstrumentId> = if instrument_id.symbol.is_composite() {
-            let venue = instrument_id.venue;
-            let root = Ustr::from(instrument_id.symbol.root());
+        let target_ids: Vec<InstrumentId> = if let Some((root, class)) = parent {
             self.cache
                 .borrow()
-                .instruments(&venue, Some(&root))
+                .instruments_by_parent(&instrument_id.venue, &root, class)
                 .iter()
                 .map(|i| i.id())
                 .collect()
@@ -2746,12 +2765,12 @@ impl DataEngine {
             vec![*instrument_id]
         };
 
-        if instrument_id.symbol.is_composite() {
-            self.book_deltas_composite_expansions
+        if parent.is_some() {
+            self.book_deltas_parent_expansions
                 .insert(*instrument_id, target_ids.clone());
 
             if !only_deltas {
-                self.book_depth10_composite_expansions
+                self.book_depth10_parent_expansions
                     .insert(*instrument_id, target_ids.clone());
             }
         }
@@ -2816,7 +2835,7 @@ impl DataEngine {
         {
             return true;
         }
-        self.book_deltas_composite_expansions
+        self.book_deltas_parent_expansions
             .values()
             .any(|expansion| expansion.contains(target_id))
     }
@@ -2829,7 +2848,7 @@ impl DataEngine {
         {
             return true;
         }
-        self.book_depth10_composite_expansions
+        self.book_depth10_parent_expansions
             .values()
             .any(|expansion| expansion.contains(target_id))
     }
@@ -3103,6 +3122,29 @@ impl DataEngine {
 
         Ok(())
     }
+}
+
+// Resolves parent expansion components for a book subscription command.
+//
+// Returns Ok(Some((root, class))) when params carries PARAMS_IS_PARENT=true and
+// the instrument_id parses as a recognised <root>.<class> shape; Ok(None) for
+// concrete (non-parent) subscriptions; Err when the caller asserts a parent
+// subscription but the id cannot be parsed, so subscribe entries can reject up
+// front before touching state.
+fn resolve_parent_components(
+    instrument_id: &InstrumentId,
+    params: Option<&Params>,
+) -> anyhow::Result<Option<(Ustr, InstrumentClass)>> {
+    if !is_parent_subscription(params) {
+        return Ok(None);
+    }
+    let Some((root, class)) = instrument_id.parse_parent_components() else {
+        anyhow::bail!(
+            "Cannot expand parent subscription for {instrument_id}: \
+             symbol does not parse as `<root>.<class>` with a recognised class suffix"
+        );
+    };
+    Ok(Some((Ustr::from(root), class)))
 }
 
 fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> {

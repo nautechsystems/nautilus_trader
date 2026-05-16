@@ -25,7 +25,7 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
@@ -70,7 +70,7 @@ use crate::{
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
-        InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+        InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, TradesResponse,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -562,8 +562,14 @@ fn test_subscribe_and_receive_book_deltas(
     assert_eq!(actor.received_deltas.len(), 1);
 }
 
+fn parent_params() -> Params {
+    let mut params = Params::new();
+    params.insert(PARAMS_IS_PARENT.to_string(), serde_json::json!(true));
+    params
+}
+
 #[rstest]
-fn test_composite_book_deltas_subscription_receives_per_underlying(
+fn test_parent_book_deltas_subscription_receives_per_underlying(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -572,10 +578,17 @@ fn test_composite_book_deltas_subscription_receives_per_underlying(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
     let underlying_id = InstrumentId::from("ESZ24.XCME");
 
-    actor.subscribe_book_deltas(composite_id, BookType::L2_MBP, None, None, false, None);
+    actor.subscribe_book_deltas(
+        parent_id,
+        BookType::L2_MBP,
+        None,
+        None,
+        false,
+        Some(parent_params()),
+    );
 
     let underlying_topic = get_book_deltas_topic(underlying_id);
 
@@ -602,7 +615,7 @@ fn test_composite_book_deltas_subscription_receives_per_underlying(
 }
 
 #[rstest]
-fn test_composite_book_deltas_unsubscribe_removes_per_underlying_handler(
+fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -611,13 +624,20 @@ fn test_composite_book_deltas_unsubscribe_removes_per_underlying_handler(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
     let underlying_id = InstrumentId::from("ESZ24.XCME");
 
-    actor.subscribe_book_deltas(composite_id, BookType::L2_MBP, None, None, false, None);
+    actor.subscribe_book_deltas(
+        parent_id,
+        BookType::L2_MBP,
+        None,
+        None,
+        false,
+        Some(parent_params()),
+    );
     assert_eq!(actor.deltas_handler_count(), 1);
 
-    actor.unsubscribe_book_deltas(composite_id, None, None);
+    actor.unsubscribe_book_deltas(parent_id, None, Some(parent_params()));
     assert_eq!(actor.deltas_handler_count(), 0);
 
     let underlying_topic = get_book_deltas_topic(underlying_id);
@@ -641,6 +661,70 @@ fn test_composite_book_deltas_unsubscribe_removes_per_underlying_handler(
     msgbus::publish_deltas(underlying_topic, &deltas);
 
     assert_eq!(actor.received_deltas.len(), 0);
+}
+
+#[rstest]
+fn test_betfair_runner_subscription_does_not_cross_leak(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let runner_a = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let runner_b = InstrumentId::from("1.211334112-99887766.BETFAIR");
+
+    actor.subscribe_book_deltas(runner_a, BookType::L2_MBP, None, None, false, None);
+
+    let runner_b_topic = get_book_deltas_topic(runner_b);
+    let order = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("2.00"),
+        Quantity::from("100"),
+        1,
+    );
+    let delta = OrderBookDelta::new(
+        runner_b,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let deltas = OrderBookDeltas::new(runner_b, vec![delta]);
+
+    msgbus::publish_deltas(runner_b_topic, &deltas);
+
+    assert_eq!(
+        actor.received_deltas.len(),
+        0,
+        "subscriber for runner A must not receive deltas published for runner B \
+         even though their symbols share the leading digit `1`",
+    );
+
+    let runner_a_topic = get_book_deltas_topic(runner_a);
+    let runner_a_delta = OrderBookDelta::new(
+        runner_a,
+        BookAction::Add,
+        BookOrder::new(OrderSide::Buy, Price::from("3.00"), Quantity::from("50"), 2),
+        0,
+        1,
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    let runner_a_deltas = OrderBookDeltas::new(runner_a, vec![runner_a_delta]);
+
+    msgbus::publish_deltas(runner_a_topic, &runner_a_deltas);
+
+    assert_eq!(
+        actor.received_deltas.len(),
+        1,
+        "subscriber for runner A must receive deltas published on runner A",
+    );
+    assert_eq!(actor.received_deltas[0].instrument_id, runner_a);
 }
 
 #[rstest]
