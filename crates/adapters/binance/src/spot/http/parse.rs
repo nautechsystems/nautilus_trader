@@ -507,8 +507,13 @@ pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> 
     })
 }
 
-/// Block length for orders group item.
-const ORDERS_GROUP_BLOCK_LENGTH: usize = 162;
+/// Minimum block length for orders group item (schema 3:3 baseline).
+const ORDERS_GROUP_MIN_BLOCK_LENGTH: u16 = 162;
+
+/// Bytes consumed up to and including self_trade_prevention_mode; the remaining
+/// bytes of the fixed block are skipped via the group's runtime block length so
+/// new trailing fields (e.g. v4 expiryReason) round-trip without changes here.
+const ORDERS_GROUP_FIELDS_END: usize = 134;
 
 /// Decode multiple orders response.
 ///
@@ -531,9 +536,9 @@ pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeE
         return Ok(Vec::new());
     }
 
-    if block_length as usize != ORDERS_GROUP_BLOCK_LENGTH {
+    if block_length < ORDERS_GROUP_MIN_BLOCK_LENGTH {
         return Err(SbeDecodeError::InvalidBlockLength {
-            expected: ORDERS_GROUP_BLOCK_LENGTH as u16,
+            expected: ORDERS_GROUP_MIN_BLOCK_LENGTH,
             actual: block_length,
         });
     }
@@ -541,7 +546,7 @@ pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeE
     let mut orders = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        cursor.require(ORDERS_GROUP_BLOCK_LENGTH)?;
+        cursor.require(block_length as usize)?;
 
         let price_exponent = cursor.read_i8()?;
         let qty_exponent = cursor.read_i8()?;
@@ -568,7 +573,7 @@ pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeE
         cursor.advance(14)?; // Skip strategy_id to working_floor
         let self_trade_prevention_mode = cursor.read_u8()?.into();
 
-        cursor.advance(28)?; // Skip to end of fixed block
+        cursor.advance(block_length as usize - ORDERS_GROUP_FIELDS_END)?;
 
         let symbol = cursor.read_var_string8()?;
         let client_order_id = cursor.read_var_string8()?;
@@ -1408,7 +1413,7 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Group header: block_length=162, count=2
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_BLOCK_LENGTH as u16, 2));
+        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 2));
 
         // Order 1
         let order1_start = buf.len();
@@ -1434,7 +1439,7 @@ mod tests {
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to 162 bytes from order start
-        while buf.len() - order1_start < ORDERS_GROUP_BLOCK_LENGTH {
+        while buf.len() - order1_start < ORDERS_GROUP_MIN_BLOCK_LENGTH as usize {
             buf.push(0);
         }
         write_var_string(&mut buf, "BTCUSDT");
@@ -1463,7 +1468,7 @@ mod tests {
         buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
-        while buf.len() - order2_start < ORDERS_GROUP_BLOCK_LENGTH {
+        while buf.len() - order2_start < ORDERS_GROUP_MIN_BLOCK_LENGTH as usize {
             buf.push(0);
         }
         write_var_string(&mut buf, "ETHUSDT");
@@ -1484,12 +1489,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_orders_v4_trailing_expiry_reason() {
+        // Schema 3:4 appends a 1-byte expiryReason to the orders group fixed block,
+        // bumping its length 162 -> 163. The decoder must read it via the runtime
+        // group block_length so the symbol var-string starts at the right offset.
+        const V4_BLOCK_LENGTH: u16 = 163;
+        let header = create_header(0, ORDERS_TEMPLATE_ID, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&header);
+        buf.extend_from_slice(&create_group_header(V4_BLOCK_LENGTH, 1));
+
+        let order_start = buf.len();
+        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
+        buf.push(0xFF); // Sentinel for the new expiryReason byte (must be skipped)
+        assert_eq!(buf.len() - order_start, V4_BLOCK_LENGTH as usize);
+
+        write_var_string(&mut buf, "BTCUSDT");
+        write_var_string(&mut buf, "v4-order");
+
+        let orders = decode_orders(&buf).unwrap();
+
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].symbol, "BTCUSDT");
+        assert_eq!(orders[0].client_order_id, "v4-order");
+    }
+
+    #[rstest]
     fn test_decode_orders_empty() {
         let header = create_header(0, ORDERS_TEMPLATE_ID, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION);
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_BLOCK_LENGTH as u16, 0));
+        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 0));
 
         let orders = decode_orders(&buf).unwrap();
         assert!(orders.is_empty());
@@ -1501,10 +1533,10 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_BLOCK_LENGTH as u16, 1));
+        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 1));
 
         // Pad fixed block to 162 bytes
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_BLOCK_LENGTH]);
+        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
 
         // Symbol length says 7 bytes but we only provide 3
         buf.push(7); // Length prefix claims "BTCUSDT" (7 chars)
@@ -1520,9 +1552,9 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_BLOCK_LENGTH as u16, 1));
+        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 1));
 
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_BLOCK_LENGTH]);
+        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
 
         // Invalid UTF-8 sequence
         buf.push(4);

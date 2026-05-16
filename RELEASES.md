@@ -202,6 +202,7 @@ Released on TBD (UTC).
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
+- Regenerated Binance Spot SBE codecs against schema 3:4
 - Refined data engine request workflow (#3928), thanks @faysou
 - Improved `#[custom_data]` to support live-only JSON types without Arrow registration
 - Improved `DataEngine.reset` to clear book updaters, snapshotters, option chain managers, and timers (Rust)
