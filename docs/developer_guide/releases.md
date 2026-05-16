@@ -10,9 +10,70 @@ NautilusTrader uses a three-branch model:
 - **`nightly`**: pre-release testing; publishes alpha wheels and CLI binaries.
 - **`master`**: stable releases; triggers the full release pipeline.
 
-Pushing to `master` automatically tags the version from `pyproject.toml`, creates a GitHub
-release, publishes Cargo crates to crates.io, publishes wheels and sdist to PyPI, builds Docker
-images, and triggers a docs rebuild.
+Pushing to `master` automatically tags the version from `pyproject.toml`, creates a draft GitHub
+release, uploads release assets, publishes Cargo crates to crates.io, publishes wheels and sdist to
+PyPI, publishes the GitHub release, builds Docker images, and triggers a docs rebuild.
+
+## Stable release workflow
+
+The `build` workflow treats the GitHub release as the anchor for stable releases. It creates the
+release as a draft first, uploads the wheel and sdist assets to that draft release, and only then
+publishes those packages to package indexes. The workflow publishes the GitHub release only after
+the registry verification and final integrity assets are complete.
+
+```mermaid
+flowchart TD
+    push["Push to master"]
+    wheels["Build wheel artifacts<br/>Linux x86/ARM, macOS, Windows"]
+    audits["Release gates<br/>cargo-deny + cargo-vet"]
+    tag["tag-release<br/>Create tag and draft GitHub release"]
+    wheel_assets["publish-wheels-master<br/>Upload wheels to GitHub release and R2<br/>release env"]
+    build_sdist["build-sdist<br/>Build sdist workflow artifact"]
+    sdist_asset["upload-sdist-release<br/>Upload sdist to GitHub release"]
+    crates["publish-cargo-crates<br/>crates.io Trusted Publishing<br/>release env"]
+    wheel_pypi["publish-wheels-pypi<br/>Attest and publish wheels to PyPI<br/>release env"]
+    sdist_pypi["publish-sdist-pypi<br/>Attest and publish sdist to PyPI<br/>release env"]
+    integrity["publish-release-integrity<br/>Checksums and registry verification<br/>Attestation siblings and cleanup"]
+    publish_release["publish-github-release<br/>Publish draft release<br/>Verify release attestation"]
+
+    push --> wheels
+    push --> audits
+    wheels --> tag
+    audits --> tag
+    tag --> build_sdist
+    build_sdist --> sdist_asset
+    tag --> sdist_asset
+    tag --> wheel_assets
+    wheels --> wheel_assets
+    sdist_asset --> wheel_assets
+    wheel_assets --> wheel_pypi
+    wheel_assets --> crates
+    wheel_pypi --> sdist_pypi
+    sdist_asset --> sdist_pypi
+    crates --> integrity
+    wheel_pypi --> integrity
+    sdist_pypi --> integrity
+    tag --> integrity
+    integrity --> publish_release
+    tag --> publish_release
+```
+
+Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
+
+- The draft GitHub release must exist before any release asset upload or package registry publish.
+- Wheel and sdist assets must be attached to the GitHub release before package index publishing
+  starts (`packages.nautechsystems.io`, PyPI, crates.io).
+- PyPI and crates.io Trusted Publishing jobs must keep `environment: release` and
+  `id-token: write`; those registrations depend on the `release` environment.
+- Non-OIDC integrity and asset-upload jobs should avoid `environment: release` unless they need
+  release environment secrets or approvals.
+- `publish-release-integrity` must run after PyPI and crates.io publishing so it verifies the
+  registries against the release manifest before attaching final integrity assets.
+- `publish-github-release` must be the final stable release job. GitHub recommends creating a
+  draft release, attaching all assets, then publishing the draft before enabling release
+  immutability. Once GitHub release immutability is enabled for the repo, published release assets
+  and the release tag cannot be changed; only the title and release notes remain editable. The job
+  verifies GitHub's release attestation after publishing the draft.
 
 ## Versioning
 
@@ -50,6 +111,10 @@ publishable crate depends on a local `publish = false` crate that is absent from
 Optional local dependencies count as blockers because publishing a public feature that resolves to
 an absent crate would leave that feature unusable.
 
+Post-publish verification treats an existing crate version as `previously_published` only when
+crates.io shows it was trusted-published by this repository. It still fails for user-published
+crate versions, wrong trusted-publishing repositories, and checksum or sparse-index mismatches.
+
 ## Release checklist
 
 ### Pre-release (on `develop`)
@@ -67,9 +132,12 @@ an absent crate would leave that feature unusable.
 - [ ] Verify the `build` workflow completes:
   - Wheels built for Linux x86/ARM, macOS, Windows
   - `cargo-deny` and `cargo-vet` pass
-  - Tag created and GitHub release published
-  - Cargo crates published to crates.io
+  - Tag and draft GitHub release created
+  - Wheels and sdist attached to the GitHub release before package registry publishing
+  - Cargo crates published to crates.io or skipped because the version already exists
   - Wheels and sdist published to PyPI
+  - Release checksums, registry verification, crates manifest, and attestation siblings published
+  - GitHub release published after all release assets and integrity assets are attached
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
 

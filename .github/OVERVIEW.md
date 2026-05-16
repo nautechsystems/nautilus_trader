@@ -11,7 +11,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
-- **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for multiple Python versions.
+- **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for
+  multiple Python versions.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
 - **upload-artifact-wheel**: uploads the latest wheel artifact to GitHub Actions.
@@ -19,19 +20,25 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ## Workflows (`.github/workflows`)
 
 - **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
-  wheel builds, artifact uploads, PyPI publishing, release attestations, and release checksum
-  publication. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that
-  skips builds on docs-only changes and skips Rust tests on Python-only changes.
+  wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
+  release attestations, registry verification, release checksum publication, and final GitHub
+  release publication and attestation verification. Uses Depot 8-core runners for Linux and Windows
+  builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on
+  Python-only changes.
 - **build-v2.yml**: CI pipeline for the v2 Rust-native system. Uses Depot 8-core runners for Linux builds.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
-- **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
+- **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
+  `nightly`, and manual dispatch.
 - **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
 - **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
-- **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and native ARM runners.
+- **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
+  using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge` at 14:00 UTC.
+- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus
+  macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early
+  visibility on develop before `nightly-merge` at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
@@ -55,6 +62,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Dependency pinning**: Key tools (prek, Python versions, Rust toolchain, cargo-nextest, uv) are
   locked to fixed versions or SHAs. The uv version is pinned via `required-version` in
   `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
+  Release and audit helper Python CLIs are pinned in `tools.toml`.
 - **Dependency cooldown**: Python dependency resolution excludes packages published within the last
   3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and
   quarantine compromised releases before they enter the lockfile.
@@ -63,8 +71,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license
   compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
-- **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on
-  all PRs and weekly via cron. Zizmor runs in `security-audit.yml` and uploads SARIF when token
+- **Code scanning**: CodeQL analyzes Python and Rust code on PRs to `master`, pushes to `nightly`,
+  and manual dispatch. Zizmor runs in `security-audit.yml` and uploads SARIF when token
   permissions allow it.
 
 ### Build and publish controls
@@ -72,20 +80,33 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are
   pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Build attestations**: All published artifacts include cryptographic SLSA build provenance
-  attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
-- **Release checksums**: GitHub releases attach `SHA256SUMS`, per-asset `.sha256` files, and
-  `dist-manifest.json`. The release body also includes a generated artifact checksum table and
+- **Build attestations**: Python wheels and sdists receive GitHub artifact attestations and PyPI
+  publish attestations. Docker images receive cosign signatures and SPDX SBOM attestations. Verify
+  Python artifacts via `gh attestation verify` and container images via `cosign verify`.
+- **Release sequencing**: Stable releases create a draft GitHub release first, attach wheel and
+  sdist assets, publish to package indexes (`packages.nautechsystems.io`, PyPI, crates.io), verify
+  registries, attach final integrity assets, then publish the GitHub release. This keeps the GitHub
+  release as the anchor for downstream registry publishing while staying compatible with GitHub
+  release immutability.
+- **Release checksums**: GitHub releases attach `SHA256SUMS`, per-asset `.sha256` files,
+  `dist-manifest.json`, and per-artifact `.sigstore` / `.intoto.jsonl` provenance bundle siblings
+  for Python artifacts. The release body also includes a generated artifact checksum table and
   provenance verification command.
-- **PyPI Trusted Publishing**: `publish-wheels-master` and `publish-sdist` upload to PyPI via OIDC
-  trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is bound to
-  repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`;
+- **PyPI Trusted Publishing**: `publish-wheels-pypi` and `publish-sdist-pypi` upload to PyPI via
+  OIDC trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is
+  bound to repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`;
   `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No
   `PYPI_*` secret is required.
 - **crates.io Trusted Publishing**: `publish-cargo-crates` publishes Cargo crates via crates.io
   OIDC trusted publishing. The trusted publisher on crates.io must be configured per crate for
   repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
   job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
+- **Post-publish verification**: `publish-release-integrity` verifies PyPI files against
+  `dist-manifest.json`, verifies PyPI provenance publisher metadata, verifies crates.io entries
+  were trusted-published by this repository, records whether each crate matches the release commit
+  or was already published, uploads `crates-manifest.json`, attaches attestation siblings, and
+  cleans up release workflow artifacts. `publish-github-release` then publishes the draft release
+  and verifies GitHub's release attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

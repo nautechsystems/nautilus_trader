@@ -227,8 +227,9 @@ jobs:
       - name: Build wheel (v2)
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
-          pip install --upgrade maturin
-          maturin build --release --out ../dist
+          MATURIN_VERSION="$(bash ../scripts/tool-version.sh maturin)"
+          uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
+            maturin build --release --out ../dist
 
       - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}

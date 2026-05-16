@@ -47,6 +47,10 @@ inputs:
       auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
     required: false
     default: "auto"
+  capnp-cache-enabled:
+    description: Whether to restore/save the Cap'n Proto compiler cache
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
@@ -131,6 +135,8 @@ runs:
 
     - name: Install Cap'n Proto
       uses: ./.github/actions/install-capnp
+      with:
+        cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
     # > --------------------------------------------------
     # > Rust

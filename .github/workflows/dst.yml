@@ -15,7 +15,7 @@ permissions:
 
 on:
   push:
-    branches: [nightly, test-ci]
+    branches: [nightly]
   workflow_dispatch:
 
 concurrency:

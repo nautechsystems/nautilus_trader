@@ -288,7 +288,7 @@ jobs:
       - name: Run pip-audit
         run: >
           uv export --no-hashes --frozen |
-          uv run --no-project --with pip-audit --
+          uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
           pip-audit --disable-pip --no-deps -r /dev/stdin
 
   osv-scanner:

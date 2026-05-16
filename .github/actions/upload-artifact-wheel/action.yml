@@ -35,3 +35,4 @@ runs:
       with:
         name: ${{ env.ASSET_NAME }}
         path: dist/nautilus_trader-*.whl
+        retention-days: 1

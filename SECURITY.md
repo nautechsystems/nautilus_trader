@@ -1,8 +1,8 @@
 # Security Policy
 
-At NautilusTrader, we take security seriously and appreciate your efforts in
-helping us identify and fix any vulnerabilities. If you have discovered a
-security vulnerability, follow the guidelines outlined below.
+Security is a priority for the NautilusTrader project, and we value the work of
+those who help identify and resolve vulnerabilities. If you have found a
+security issue, please follow the guidelines below.
 
 For our full security policies, see <https://nautilustrader.io/security/>.
 
@@ -97,7 +97,8 @@ release lifecycle:
   verifies the list stays in lock-step with `uv.lock` on every commit that touches the lock or the
   manifest.
 - **Toolchain pinning**: The uv package manager version is pinned via `required-version` in
-  `pyproject.toml` and enforced across CI, Docker, and local development.
+  `pyproject.toml` and enforced across CI, Docker, and local development. Release and audit tool
+  Python CLIs are pinned in `tools.toml`.
 - **License compliance**: Automated checks ensure LGPL-3.0-or-later compatibility.
 
 ### Pre-merge and scheduled scanning
@@ -108,23 +109,36 @@ release lifecycle:
   and OSV Scanner (Rust), pip-audit (Python), and Zizmor (GitHub Actions).
 - **Supply chain provenance**: cargo-vet verifies Rust dependency provenance by importing trusted
   audit data from organizations including Bytecode Alliance, Google, Mozilla, and Embark Studios.
-- **Code scanning**: CodeQL static analysis covers Python and Rust code. The scheduled security
-  audit also uploads Zizmor SARIF results for GitHub Actions workflow findings when token
-  permissions allow it.
+- **Code scanning**: CodeQL static analysis covers Python and Rust code on PRs to `master`,
+  pushes to `nightly`, and manual dispatch. The scheduled security audit also uploads Zizmor SARIF
+  results for GitHub Actions workflow findings when token permissions allow it.
 
 ### Build and publish controls
 
-- **Build integrity**: SLSA build provenance attestations, GitHub release checksum manifests,
-  immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing
-  via Sigstore cosign, SPDX SBOM generation and Sigstore attestation for container images, and
-  hardened CI runners with network egress blocked to an explicit allow-list.
+- **Build integrity**: SLSA build provenance attestations for Python release artifacts, GitHub
+  release checksum manifests, immutable GitHub release attestations, immutable GitHub Actions
+  pinned to commit SHAs, container digest pinning, Docker image signing via Sigstore cosign, SPDX
+  SBOM generation and Sigstore attestation for container images, and hardened CI runners with
+  network egress blocked to an explicit allow-list.
+- **Release sequencing**: Stable releases create a draft GitHub release and attach wheel and sdist
+  assets before publishing to package indexes (`packages.nautechsystems.io`, PyPI, crates.io).
+  CI verifies the registries, attaches final checksum and provenance assets, then publishes the
+  GitHub release and verifies its release attestation. This keeps the GitHub release and checksum
+  manifest as the anchor for downstream registry verification while staying compatible with GitHub
+  release immutability.
+- **Deployment environments**: Release and package publishing jobs use scoped GitHub deployment
+  environments (`release`, `r2-develop`, and `r2-nightly`) so publishing credentials and OIDC
+  trusted-publisher identities stay isolated from test, lint, and build-only jobs.
 - **Publish authentication**: PyPI and crates.io uploads use Trusted Publishing (OIDC) bound to the
   `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived
   token scoped to the specific repo, workflow, and environment.
 - **GHCR authentication**: Container image pushes to GitHub Container Registry use the short-lived
   `GITHUB_TOKEN` scoped to the workflow run, not a long-lived personal access token.
-- **Post-publish verification**: CI verifies released wheels, sdists, and container images against
-  the expected Sigstore and GitHub Actions workflow identities after publishing.
+- **Post-publish verification**: CI verifies PyPI wheels and sdists against the GitHub release
+  manifest and expected PyPI publisher identity, verifies crates.io entries were trusted-published
+  by this repository, records whether each crate matches the release commit or was already
+  published, verifies the final GitHub release attestation, and verifies container image signatures
+  and SBOM attestations against the expected GitHub Actions workflow identities after publishing.
 
 ### Runtime cryptography
 
@@ -150,8 +164,7 @@ When a new vulnerability is identified in a dependency:
 
 - The nightly security audit flags the advisory automatically.
 - The Core team assesses severity and exposure within the NautilusTrader context.
-- Critical vulnerabilities in direct dependencies are patched or mitigated
-  within 30 days.
+- Critical vulnerabilities in direct dependencies are patched or mitigated within 30 days.
 - Users are notified through release notes and, where appropriate, security advisories.
 
 Users who build NautilusTrader from source or extend it with additional
@@ -176,8 +189,11 @@ above; the cooldown can be bypassed when a CVE warrants immediate response.
 
 ## Verifying releases
 
-Every release is signed and attested via Sigstore. You can independently
-verify artifacts before installing them.
+Python release artifacts and Docker images are signed or attested via Sigstore-backed workflows.
+Cargo crates are published through crates.io Trusted Publishing. The release verifier records
+whether each crate version was published by the current release commit or already existed from an
+earlier trusted-published commit in this repository. You can independently verify artifacts before
+installing them.
 
 ### Python wheels and sdist
 
@@ -185,6 +201,11 @@ GitHub releases include a generated checksum table, an aggregate `SHA256SUMS`
 file, per-asset `.sha256` files, and a machine-readable `dist-manifest.json`
 for Python wheels and the sdist. Check the downloaded artifact against one of
 those checksum sources before installation.
+
+GitHub releases also include `.sigstore` Sigstore bundles and `.intoto.jsonl`
+DSSE envelope siblings for each Python artifact. The GitHub CLI fetches
+attestations from the GitHub API by default; use `--bundle <artifact>.sigstore`
+to verify against a downloaded Sigstore bundle instead.
 
 After downloading from PyPI or the GitHub release, verify each artifact with the
 GitHub CLI. The `--cert-identity-regex` and `--cert-oidc-issuer` flags bind

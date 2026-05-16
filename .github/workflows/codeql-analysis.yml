@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [master]
-  schedule:
-    - cron: '42 13 * * 4'
+  push:
+    branches: [nightly]
 
 jobs:
   analyze:
