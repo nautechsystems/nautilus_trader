@@ -967,7 +967,8 @@ pub trait DataActor:
 
     /// Handles an instruments response.
     fn handle_instruments_response(&mut self, resp: &InstrumentsResponse) {
-        log_received(&resp);
+        log_received_bulk("InstrumentsResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
 
         for inst in &resp.data {
             if let Err(e) = self.on_instrument(inst) {
@@ -987,7 +988,8 @@ pub trait DataActor:
 
     /// Handles a quotes response.
     fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
-        log_received(&resp);
+        log_received_bulk("QuotesResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_quotes(&resp.data) {
             log_error(&e);
@@ -996,7 +998,8 @@ pub trait DataActor:
 
     /// Handles a trades response.
     fn handle_trades_response(&mut self, resp: &TradesResponse) {
-        log_received(&resp);
+        log_received_bulk("TradesResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_trades(&resp.data) {
             log_error(&e);
@@ -1005,7 +1008,12 @@ pub trait DataActor:
 
     /// Handles a funding rates response.
     fn handle_funding_rates_response(&mut self, resp: &FundingRatesResponse) {
-        log_received(&resp);
+        log_received_bulk(
+            "FundingRatesResponse",
+            &resp.correlation_id,
+            resp.data.len(),
+        );
+        log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_funding_rates(&resp.data) {
             log_error(&e);
@@ -1014,7 +1022,8 @@ pub trait DataActor:
 
     /// Handles a bars response.
     fn handle_bars_response(&mut self, resp: &BarsResponse) {
-        log_received(&resp);
+        log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
@@ -4428,4 +4437,8 @@ where
     T: Debug,
 {
     log::debug!("{RECV} {msg:?}");
+}
+
+fn log_received_bulk(kind: &str, correlation_id: &UUID4, records: usize) {
+    log::debug!("{RECV} {kind} correlation_id={correlation_id} records={records}");
 }

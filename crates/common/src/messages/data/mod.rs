@@ -517,6 +517,39 @@ impl DataResponse {
             Self::Bars(resp) => &resp.correlation_id,
         }
     }
+
+    /// Returns a short variant name for compact logging.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Data(_) => "Data",
+            Self::Instrument(_) => "Instrument",
+            Self::Instruments(_) => "Instruments",
+            Self::Book(_) => "Book",
+            Self::Quotes(_) => "Quotes",
+            Self::Trades(_) => "Trades",
+            Self::FundingRates(_) => "FundingRates",
+            Self::ForwardPrices(_) => "ForwardPrices",
+            Self::Bars(_) => "Bars",
+        }
+    }
+
+    /// Returns the number of records carried by the response, where defined.
+    ///
+    /// Returns `None` for singular or opaque variants (`Data`, `Instrument`, `Book`)
+    /// where a record count is not meaningful.
+    #[must_use]
+    pub fn record_count(&self) -> Option<usize> {
+        match self {
+            Self::Data(_) | Self::Instrument(_) | Self::Book(_) => None,
+            Self::Instruments(resp) => Some(resp.data.len()),
+            Self::Quotes(resp) => Some(resp.data.len()),
+            Self::Trades(resp) => Some(resp.data.len()),
+            Self::FundingRates(resp) => Some(resp.data.len()),
+            Self::ForwardPrices(resp) => Some(resp.data.len()),
+            Self::Bars(resp) => Some(resp.data.len()),
+        }
+    }
 }
 
 pub type Payload = Arc<dyn Any + Send + Sync>;

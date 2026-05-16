@@ -1173,7 +1173,20 @@ impl DataEngine {
     /// Processes a `DataResponse`, handling and publishing the response message.
     #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
     pub fn response(&mut self, resp: DataResponse) {
-        log::debug!("{RECV}{RES} {resp:?}");
+        if log::log_enabled!(log::Level::Debug) {
+            let correlation_id = resp.correlation_id();
+            match resp.record_count() {
+                Some(count) => log::debug!(
+                    "{RECV}{RES} {} correlation_id={correlation_id} records={count}",
+                    resp.kind(),
+                ),
+                None => log::debug!(
+                    "{RECV}{RES} {} correlation_id={correlation_id}",
+                    resp.kind(),
+                ),
+            }
+        }
+        log::trace!("{RECV}{RES} {resp:?}");
 
         self.response_count += 1;
         let correlation_id = *resp.correlation_id();

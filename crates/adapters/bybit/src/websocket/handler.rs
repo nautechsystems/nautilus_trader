@@ -391,7 +391,8 @@ impl BybitWsFeedHandler {
                 Some(parse_bybit_ws_frame(value))
             }
             Message::Binary(msg) => {
-                log::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary frame ({} bytes)", msg.len());
+                log::trace!("Raw binary: {msg:?}");
                 None
             }
             Message::Close(_) => {
