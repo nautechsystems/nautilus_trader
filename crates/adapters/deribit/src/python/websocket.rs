@@ -1055,6 +1055,8 @@ impl DeribitWebSocketClient {
     }
 
     /// Subscribes to volatility index updates for the given index name.
+    ///
+    /// Channel format: `deribit_volatility_index.{index_name}`
     #[pyo3(name = "subscribe_volatility_index")]
     fn py_subscribe_volatility_index<'py>(
         &self,
