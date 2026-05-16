@@ -122,9 +122,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   monitor outbound traffic. All workflows default `egress-policy` to `block`. Set
   `STEP_SECURITY_EGRESS_POLICY=audit` only as a temporary rollback while expanding an allow list. Jobs that
   declare a GitHub Environment can override the repo or org value with an environment-scoped variable. The
-  publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. The
-  `security-audit.yml` workflow also reads its allow list from GitHub Environments so it can validate
-  branch changes before promoting the same settings to scheduled runs on the default branch.
+  publish environments (`r2-develop`, `r2-nightly`, `release`) can use this override too. Security audit
+  jobs read repo and org variables directly and run in audit mode for fork PRs when variables are absent.
 - **Fork PR handling**: `build.yml` falls back to `egress-policy: audit` for fork PRs. Forks cannot
   access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
   run with read-only permissions and no access to secrets, so audit mode is safe.
@@ -173,8 +172,8 @@ All workflows read these GitHub variables:
 Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
 `auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds).
 
-Use the `security-audit` environment for the default branch and `master`. Use `security-audit-test` for
-branch tests such as `test-security`.
+Security audit jobs do not use deployment environments. They do not need environment secrets, and
+environment branch policies block same-repo contributor PRs before the audit steps can start.
 
 #### `COMMON_ALLOWED_ENDPOINTS`
 
