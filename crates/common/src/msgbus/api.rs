@@ -23,7 +23,11 @@
 //! - Publishing messages to subscribers.
 //! - Sending messages to endpoints.
 
-use std::{any::Any, cell::RefCell, thread::LocalKey};
+use std::{
+    any::Any,
+    cell::{Cell, RefCell},
+    thread::LocalKey,
+};
 
 use bytes::Bytes;
 use nautilus_core::UUID4;
@@ -1206,9 +1210,13 @@ pub fn publish_defi_flash(topic: MStr<Topic>, flash: &PoolFlash) {
 }
 
 /// Forwards a serializable message to the external transport, if attached.
+#[inline]
 fn forward_to_transport<T: serde::Serialize>(topic: MStr<Topic>, type_name: &str, message: &T) {
-    let suppressed = super::SUPPRESS_EXTERNAL.with(|f| f.get());
-    if suppressed {
+    if !HAS_TRANSPORT.with(Cell::get) {
+        return;
+    }
+
+    if SUPPRESS_EXTERNAL.with(Cell::get) {
         return;
     }
 

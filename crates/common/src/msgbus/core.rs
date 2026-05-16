@@ -419,6 +419,7 @@ impl MessageBus {
         self.transport = Some(transport);
         self.transport_encoding = encoding;
         self.has_backing = true;
+        HAS_TRANSPORT.with(|f| f.set(true));
     }
 
     /// Sets the types filter for transport forwarding.
