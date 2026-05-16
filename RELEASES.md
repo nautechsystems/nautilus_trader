@@ -134,6 +134,7 @@ Released on TBD (UTC).
 - Fixed `DataEngine` bar aggregator quote/trade subscription priority (Rust)
 - Fixed `DataEngine::reset` leaking book and option-chain state across resets (Rust)
 - Fixed `DataActor` composite book delta subscriptions not receiving per-underlying publishes (Rust)
+- Fixed Architect AX `GET /order-status` query parameters to use `oid`/`cid` per v14.0.1; legacy `order_id`/`client_order_id` now return HTTP 400
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance Spot inflight REST polls for pruned IOC orders (#4072), thanks for reporting @marcelmdn
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
