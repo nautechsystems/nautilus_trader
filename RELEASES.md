@@ -160,6 +160,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
 - Fixed Hyperliquid silently dropping `FillReport` arriving before the order was in cache; fills are now buffered and drained on `OrderAccepted` (#4076), thanks @M-Advis
 - Fixed Hyperliquid emitting terminal rejections on submit, cancel, and modify transport failures; defers to WS reconciliation (Python and Rust), thanks for reporting @M-Advis
+- Fixed Hyperliquid Rust data client reconnect leaving the consumption loop on a cancelled token after disconnect
 - Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
 - Fixed Interactive Brokers callback ordering races (#3976), thanks @faysou
 - Fixed Interactive Brokers market data farm reconnects not resubscribing feeds (#3968), thanks @onixenix
@@ -202,8 +203,6 @@ Released on TBD (UTC).
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
-- Regenerated Binance Spot SBE codecs against schema 3:4
-- Refined data engine request workflow (#3928), thanks @faysou
 - Improved `#[custom_data]` to support live-only JSON types without Arrow registration
 - Improved `DataEngine.reset` to clear book updaters, snapshotters, option chain managers, and timers (Rust)
 - Improved `DataEngine` to create per-underlying books for composite-symbol book subscriptions (Rust)
@@ -225,7 +224,11 @@ Released on TBD (UTC).
 - Improved Betfair Rust `unsubscribe_book_deltas` log level to `warn` to match Python visibility
 - Improved Betfair Rust adapter with explicit info-level no-op overrides for unsupported unsubscribe methods
 - Improved Betfair Rust integration test coverage to cover OCM, replace flow, batch ops, and session recovery
+- Improved Hyperliquid data client to track spawned subscribe tasks for abort on disconnect/reset (Rust)
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
+- Regenerated Binance Spot SBE codecs against schema 3:4
+- Refined data engine request workflow (#3928), thanks @faysou
+- Refined Hyperliquid data client by extracting `parse_l2_book_snapshot` helper for direct unit testing (Rust)
 - Optimized `Cache` order and position query methods to a single size-ordered intersection pass (Rust)
 - Optimized `Cache::*_count` methods to count via index without materializing a sorted `Vec` (Rust)
 - Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
@@ -245,7 +248,9 @@ Released on TBD (UTC).
 - Added Deribit DVOL and Hyperliquid `allMids` adapter docs
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
+- Added adapter timestamp conversion conventions covering ms-to-ns helpers and `ts_event` vs `ts_init`
 - Added Rust shared-mutability storage guide with `Rc<RefCell<T>>` decision tree to the developer guide
+- Improved Hyperliquid integration guide flagging Rust-only execution config options and scoped slippage note
 - Added `Shutdown semantics` to the backtesting guide covering `on_stop` command settlement
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
 

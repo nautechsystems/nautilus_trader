@@ -617,9 +617,10 @@ Market orders require cached quote data. The adapter uses the best ask (for buys
 significant figures, which is a Hyperliquid API requirement for all limit prices. Ensure you
 subscribe to quotes for any instrument you intend to trade with market orders.
 
-The slippage buffer is controlled by `market_order_slippage_bps` on
-`HyperliquidExecClientConfig` and can be overridden per-order via the
-`market_order_slippage_bps` key in `SubmitOrder.params`.
+When using the Rust-native execution client, the slippage buffer is controlled by
+`market_order_slippage_bps` on `HyperliquidExecClientConfig` and can be overridden per-order
+via the `market_order_slippage_bps` key in `SubmitOrder.params`. The Python `TradingNode` path
+uses a fixed 50 bps slippage and does not expose this knob on its config.
 :::
 
 :::note
@@ -949,22 +950,32 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 ### Execution client configuration options
 
-| Option                      | Default | Description                                                                               |
-|-----------------------------|---------|-------------------------------------------------------------------------------------------|
-| `private_key`               | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
-| `vault_address`             | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
-| `account_address`           | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
-| `environment`               | `None`  | Environment enum (`MAINNET` or `TESTNET`).                                           |
-| `base_url_ws`               | `None`  | Override for the WebSocket base URL.                                                      |
-| `product_types`             | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
-| `max_retries`               | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
-| `retry_delay_initial_ms`    | `None`  | Initial delay (milliseconds) between retries.                                             |
-| `retry_delay_max_ms`        | `None`  | Maximum delay (milliseconds) between retries.                                             |
-| `http_timeout_secs`         | `10`    | Timeout (seconds) applied to REST calls.                                                  |
-| `normalize_prices`          | `True`  | Normalize order prices to 5 significant figures before submission.                        |
-| `market_order_slippage_bps` | `50`    | Slippage buffer (bps) applied to MARKET and stop trigger derivations.                     |
-| `outcome_settlement_poll_secs` | `60` | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; `0` disables polling. |
-| `proxy_url`                 | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                     |
+| Option                         | Default | Description                                                                               |
+|--------------------------------|---------|-------------------------------------------------------------------------------------------|
+| `private_key`                  | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
+| `vault_address`                | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
+| `account_address`              | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
+| `environment`                  | `None`  | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.              |
+| `base_url_ws`                  | `None`  | Override for the WebSocket base URL.                                                      |
+| `product_types`                | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
+| `max_retries`                  | `None`  | Maximum retry attempts for submit, cancel, or modify order requests. Rust‑only.           |
+| `retry_delay_initial_ms`       | `None`  | Initial delay (milliseconds) between retries. Rust‑only.                                  |
+| `retry_delay_max_ms`           | `None`  | Maximum delay (milliseconds) between retries. Rust‑only.                                  |
+| `http_timeout_secs`            | `10`    | Timeout (seconds) applied to REST calls.                                                  |
+| `normalize_prices`             | `True`  | Normalize order prices to 5 significant figures before submission.                        |
+| `market_order_slippage_bps`    | `50`    | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Rust‑only.          |
+| `outcome_settlement_poll_secs` | `60`    | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; `0` disables polling.  |
+| `proxy_url`                    | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                     |
+
+:::note
+"Rust‑only" options apply when the execution client is created through the Rust-native
+`HyperliquidExecutionClientFactory`. `market_order_slippage_bps` and
+`outcome_settlement_poll_secs` are not exposed on the Python
+`HyperliquidExecClientConfig` and will be rejected by the config validator if set on
+that path. `max_retries`, `retry_delay_initial_ms`, and `retry_delay_max_ms` are
+declared on the Python config but are not yet forwarded to the Python execution
+client.
+:::
 
 ### Configuration example
 

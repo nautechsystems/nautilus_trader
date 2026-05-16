@@ -665,6 +665,13 @@ instrument references) and returns a Nautilus domain type wrapped in `Result`.
 
 Place parsing helpers (`parse_price_with_precision`, `parse_timestamp`) in the same module as private functions when they're reused across multiple parsers.
 
+### Timestamp conventions
+
+Nautilus uses `UnixNanos` (nanoseconds since epoch). Most venues deliver `ms`. Convert at the
+parser boundary using `nautilus_core::datetime::millis_to_nanos`; document the wire unit on the
+struct field. `ts_event` is the converted venue timestamp; `ts_init` is `clock.get_time_ns()`.
+For records with no venue timestamp (instruments), use `clock.get_time_ns()` for both.
+
 ### Method naming and organization
 
 The raw client mirrors venue endpoints with venue-specific parameter and response types. The domain
