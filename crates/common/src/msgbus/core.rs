@@ -87,6 +87,7 @@ use std::{
     any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
+    fmt::Debug,
     hash::{Hash, Hasher},
     rc::Rc,
 };
@@ -111,7 +112,8 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    ShareableMessageHandler,
+    HAS_TRANSPORT, ShareableMessageHandler,
+    database::MessageBusTransport,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
     set_message_bus,
@@ -119,9 +121,12 @@ use super::{
     typed_endpoints::{EndpointMap, IntoEndpointMap},
     typed_router::TopicRouter,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    enums::SerializationEncoding,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Represents a subscription to a particular topic.
@@ -211,7 +216,6 @@ impl Hash for Subscription {
 /// A question mark matches a single character once. For example, `c?mp` matches
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
-#[derive(Debug)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
@@ -275,6 +279,21 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
+    transport: Option<Box<dyn MessageBusTransport>>,
+    transport_encoding: SerializationEncoding,
+    types_filter: AHashSet<String>,
+}
+
+impl Debug for MessageBus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(MessageBus))
+            .field("trader_id", &self.trader_id)
+            .field("instance_id", &self.instance_id)
+            .field("name", &self.name)
+            .field("has_backing", &self.has_backing)
+            .field("transport", &self.transport.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for MessageBus {
@@ -352,6 +371,9 @@ impl MessageBus {
             req_count: 0,
             res_count: 0,
             pub_count: 0,
+            transport: None,
+            transport_encoding: SerializationEncoding::MsgPack,
+            types_filter: AHashSet::new(),
         }
     }
 
@@ -386,6 +408,34 @@ impl MessageBus {
             .or_insert_with(|| Box::new(EndpointMap::<T>::new()))
             .downcast_mut::<EndpointMap<T>>()
             .expect("EndpointMap type mismatch - this is a bug")
+    }
+
+    /// Sets an external transport for forwarding published messages.
+    pub fn set_transport(
+        &mut self,
+        transport: Box<dyn MessageBusTransport>,
+        encoding: SerializationEncoding,
+    ) {
+        self.transport = Some(transport);
+        self.transport_encoding = encoding;
+        self.has_backing = true;
+    }
+
+    /// Sets the types filter for transport forwarding.
+    pub fn set_types_filter(&mut self, filter: Vec<String>) {
+        self.types_filter = filter.into_iter().collect();
+    }
+
+    pub(crate) fn transport(&self) -> Option<&dyn MessageBusTransport> {
+        self.transport.as_deref()
+    }
+
+    pub(crate) fn transport_encoding(&self) -> SerializationEncoding {
+        self.transport_encoding
+    }
+
+    pub(crate) fn types_filter(&self) -> &AHashSet<String> {
+        &self.types_filter
     }
 
     /// Disposes of the message bus, clearing all subscriptions, endpoints,

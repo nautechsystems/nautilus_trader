@@ -165,6 +165,17 @@ impl Default for MessageBusConfig {
     }
 }
 
+/// Trait for external message bus transports.
+///
+/// Implementations forward serialized messages to an external system
+/// for persistence or distribution.
+/// Object-safe, single-threaded (no `Send` required).
+pub trait MessageBusTransport {
+    fn is_closed(&self) -> bool;
+    fn publish(&self, topic: Ustr, payload: Bytes);
+    fn close(&mut self);
+}
+
 /// A generic message bus database facade.
 ///
 /// The main operations take a consistent `key` and `payload` which should provide enough
