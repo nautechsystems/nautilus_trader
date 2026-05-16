@@ -60,6 +60,7 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
+    instruments::InstrumentAny,
     orderbook::OrderBook,
 };
 use smallvec::SmallVec;
@@ -126,6 +127,8 @@ thread_local! {
     pub(super) static ORDER_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderEventAny>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static POSITION_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<PositionEvent>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static INSTRUMENT_HANDLERS: RefCell<SmallVec<[TypedHandler<InstrumentAny>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
 
     #[cfg(feature = "defi")]

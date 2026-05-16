@@ -1234,7 +1234,7 @@ impl DataEngine {
 
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
-        msgbus::publish_any(topic, instrument);
+        msgbus::publish_instrument(topic, instrument);
 
         self.update_option_chains(instrument);
     }

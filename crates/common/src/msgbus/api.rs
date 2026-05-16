@@ -37,6 +37,7 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
+    instruments::InstrumentAny,
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
@@ -47,9 +48,9 @@ use ustr::Ustr;
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
     DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    INDEX_PRICE_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS,
-    ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS,
-    TRADE_HANDLERS,
+    INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
+    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
+    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send, get_message_bus,
     matching::is_matching_backtracking,
@@ -255,10 +256,14 @@ pub fn subscribe_any(
 /// Subscribes a handler to instrument messages matching a pattern.
 pub fn subscribe_instruments(
     pattern: MStr<Pattern>,
-    handler: ShareableMessageHandler,
+    handler: TypedHandler<InstrumentAny>,
     priority: Option<u32>,
 ) {
-    subscribe_any(pattern, handler, priority);
+    get_message_bus().borrow_mut().router_instruments.subscribe(
+        pattern,
+        handler,
+        priority.unwrap_or(0),
+    );
 }
 
 /// Subscribes a handler to instrument close messages matching a pattern.
@@ -557,8 +562,11 @@ pub fn subscribe_defi_flash(
 }
 
 /// Unsubscribes a handler from instrument messages.
-pub fn unsubscribe_instruments(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
-    unsubscribe_any(pattern, handler);
+pub fn unsubscribe_instruments(pattern: MStr<Pattern>, handler: &TypedHandler<InstrumentAny>) {
+    get_message_bus()
+        .borrow_mut()
+        .router_instruments
+        .unsubscribe(pattern, handler);
 }
 
 /// Unsubscribes a handler from instrument close messages.
@@ -934,6 +942,16 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
 
     handlers.clear(); // Release refs before restore
     ANY_HANDLERS.with_borrow_mut(|buf| *buf = handlers);
+}
+
+/// Publishes an instrument to subscribers on a topic.
+pub fn publish_instrument(topic: MStr<Topic>, instrument: &InstrumentAny) {
+    publish_typed(
+        topic,
+        &INSTRUMENT_HANDLERS,
+        |bus, h| bus.router_instruments.fill_matching_handlers(topic, h),
+        instrument,
+    );
 }
 
 /// Publishes order book deltas to subscribers on a topic.

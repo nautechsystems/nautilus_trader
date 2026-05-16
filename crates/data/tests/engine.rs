@@ -5377,14 +5377,15 @@ fn test_process_instrument(
 
     data_engine.borrow_mut().execute(cmd);
 
-    let handler = msgbus::stubs::get_message_saving_handler::<InstrumentAny>(None);
+    let (handler, saving_handler) =
+        msgbus::stubs::get_typed_message_saving_handler::<InstrumentAny>(None);
     let topic = switchboard::get_instrument_topic(audusd_sim.id());
-    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+    msgbus::subscribe_instruments(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
     let cache = &data_engine.get_cache();
-    let messages = msgbus::stubs::get_saved_messages::<InstrumentAny>(&handler);
+    let messages = saving_handler.get_messages();
 
     assert_eq!(
         cache.instrument(&audusd_sim.id()),

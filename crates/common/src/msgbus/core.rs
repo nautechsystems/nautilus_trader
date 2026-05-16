@@ -102,6 +102,7 @@ use nautilus_model::{
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
     identifiers::TraderId,
+    instruments::InstrumentAny,
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
@@ -243,6 +244,7 @@ pub struct MessageBus {
     pub(crate) router_greeks: TopicRouter<GreeksData>,
     pub(crate) router_option_greeks: TopicRouter<OptionGreeks>,
     pub(crate) router_option_chain: TopicRouter<OptionChainSlice>,
+    pub(crate) router_instruments: TopicRouter<InstrumentAny>,
     #[cfg(feature = "defi")]
     pub(crate) router_defi_blocks: TopicRouter<nautilus_model::defi::Block>, // nautilus-import-ok
     #[cfg(feature = "defi")]
@@ -319,6 +321,7 @@ impl MessageBus {
             router_greeks: TopicRouter::new(),
             router_option_greeks: TopicRouter::new(),
             router_option_chain: TopicRouter::new(),
+            router_instruments: TopicRouter::new(),
             #[cfg(feature = "defi")]
             router_defi_blocks: TopicRouter::new(),
             #[cfg(feature = "defi")]
@@ -411,6 +414,7 @@ impl MessageBus {
         self.router_greeks.clear();
         self.router_option_greeks.clear();
         self.router_option_chain.clear();
+        self.router_instruments.clear();
 
         #[cfg(feature = "defi")]
         {
