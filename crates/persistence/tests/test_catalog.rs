@@ -1534,6 +1534,53 @@ fn test_generic_consolidate_data_by_period_bars() {
 }
 
 #[rstest]
+fn test_generic_consolidate_data_by_period_keeps_skipped_target() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let period = 10;
+    let file1_ts = [3, 6];
+    let file2_ts = [12, 14];
+    let file3_ts = [16];
+
+    for timestamps in [&file1_ts[..], &file2_ts[..], &file3_ts[..]] {
+        let bars: Vec<Bar> = timestamps.iter().copied().map(create_bar).collect();
+        catalog
+            .write_to_parquet(bars, None, None, Some(true))
+            .unwrap();
+    }
+
+    let bar_type = create_bar(file1_ts[0]).bar_type.to_string();
+    catalog
+        .consolidate_data_by_period_generic::<Bar>(
+            Some(bar_type.as_str()),
+            Some(period),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let bars = catalog
+        .query_typed_data::<Bar>(Some(vec![bar_type.clone()]), None, None, None, None, true)
+        .unwrap();
+    let timestamps: Vec<u64> = bars.iter().map(|bar| bar.ts_init.as_u64()).collect();
+
+    assert_eq!(
+        timestamps,
+        vec![
+            file1_ts[0],
+            file1_ts[1],
+            file2_ts[0],
+            file2_ts[1],
+            file3_ts[0]
+        ]
+    );
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
+    assert!(intervals.contains(&(file1_ts[0], file1_ts[1])));
+    assert!(intervals.contains(&(file2_ts[0], file3_ts[0])));
+}
+
+#[rstest]
 fn test_generic_consolidate_data_by_period_empty_catalog() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
