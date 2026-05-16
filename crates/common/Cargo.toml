@@ -70,6 +70,7 @@ indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
+rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
