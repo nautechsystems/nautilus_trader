@@ -218,6 +218,11 @@ pub fn default_registry() -> EncoderRegistry {
 /// [`AccountState`] is registered as a bare type: `publish_account_state` and
 /// `send_account_state` both reach the tap as the same `AccountState` `TypeId`, so a
 /// single registration covers both dispatch paths.
+///
+/// [`OrderStatusReport`], [`FillReport`], and [`PositionStatusReport`] are registered
+/// as bare types because the execution engine publishes raw venue reports through
+/// `publish_any` on `reconciliation.raw.*` topics before any state mutation. The
+/// bare-type registration is what captures those raw inputs for forensic replay.
 pub fn register_default(registry: &mut EncoderRegistry) {
     registry
         .register::<SubmitOrder, _>(payload_type(PAYLOAD_TYPE_SUBMIT_ORDER), encode_submit_order);
@@ -226,6 +231,11 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<OrderStatusReport, _>(
         payload_type(PAYLOAD_TYPE_ORDER_STATUS_REPORT),
         encode_order_status_report,
+    );
+    registry.register::<FillReport, _>(payload_type(PAYLOAD_TYPE_FILL_REPORT), encode_fill_report);
+    registry.register::<PositionStatusReport, _>(
+        payload_type(PAYLOAD_TYPE_POSITION_STATUS_REPORT),
+        encode_position_status_report,
     );
     registry.register::<TradingCommand, _>(
         payload_type(PAYLOAD_TYPE_TRADING_COMMAND),
@@ -386,7 +396,13 @@ pub fn encode_execution_report(report: &ExecutionReport) -> Result<EncodedPayloa
     }
 }
 
-fn encode_fill_report(report: &FillReport) -> Result<EncodedPayload, EncodeError> {
+/// Encodes a [`FillReport`] into canonical bytes plus its `venue_order_id` index and,
+/// when present, its `client_order_id` index.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the payload.
+pub fn encode_fill_report(report: &FillReport) -> Result<EncodedPayload, EncodeError> {
     let payload = encode_serde(report)?;
     let mut index_keys = Vec::with_capacity(2);
     index_keys.push(IndexKey::new(
@@ -408,13 +424,19 @@ fn encode_fill_report(report: &FillReport) -> Result<EncodedPayload, EncodeError
     ))
 }
 
-fn encode_position_status_report(
+/// Encodes a [`PositionStatusReport`] into canonical bytes with no sidecar indices.
+///
+/// `PositionStatusReport` carries only `AccountId`, `InstrumentId`, and `PositionId`;
+/// none of those have a matching [`IndexKind`] variant today. Capture with no sidecar
+/// indices so the entry is forensics-discoverable by sequential scan rather than
+/// synthesising an index against an identifier the reader cannot query.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the payload.
+pub fn encode_position_status_report(
     report: &PositionStatusReport,
 ) -> Result<EncodedPayload, EncodeError> {
-    // PositionStatusReport carries only AccountId, InstrumentId, and PositionId; none of
-    // those have a matching IndexKind variant today. Capture with no sidecar indices so
-    // the entry is forensics-discoverable by sequential scan rather than synthesising an
-    // index against an identifier the reader cannot query.
     let payload = encode_serde(report)?;
     Ok(EncodedPayload::with_payload_type(
         payload_type(PAYLOAD_TYPE_POSITION_STATUS_REPORT),
@@ -1352,10 +1374,12 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 10);
+        assert_eq!(registry.len(), 12);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
+        assert!(registry.contains::<FillReport>());
+        assert!(registry.contains::<PositionStatusReport>());
         assert!(registry.contains::<TradingCommand>());
         assert!(registry.contains::<OrderEventAny>());
         assert!(registry.contains::<ExecutionReport>());

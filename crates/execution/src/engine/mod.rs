@@ -949,6 +949,11 @@ impl ExecutionEngine {
     /// This handles exchange-generated orders (liquidation, ADL, settlement) that were
     /// not submitted locally.
     pub fn reconcile_order_status_report(&mut self, report: &OrderStatusReport) {
+        msgbus::publish_any(
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
+            report,
+        );
+
         let cache = self.cache.borrow();
 
         let order = report
@@ -1209,6 +1214,11 @@ impl ExecutionEngine {
     /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
     /// status report still update the local position.
     pub fn reconcile_fill_report(&mut self, report: &FillReport) {
+        msgbus::publish_any(
+            MessagingSwitchboard::reconciliation_raw_fill_report_topic(),
+            report,
+        );
+
         let cache = self.cache.borrow();
 
         let order = report
@@ -1283,6 +1293,16 @@ impl ExecutionEngine {
     /// Adapters use this to emit ADL / liquidation / settlement events without
     /// losing real fill metadata.
     pub fn reconcile_order_with_fills(&mut self, report: &OrderStatusReport, fills: &[FillReport]) {
+        msgbus::publish_any(
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
+            report,
+        );
+
+        let fill_report_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+        for fill in fills {
+            msgbus::publish_any(fill_report_topic, fill);
+        }
+
         let cache = self.cache.borrow();
         let order = report
             .client_order_id
@@ -1429,6 +1449,11 @@ impl ExecutionEngine {
     /// Compares the venue-reported position with cached positions and logs any discrepancies.
     /// Handles both hedging (with `venue_position_id`) and netting (without) modes.
     pub fn reconcile_position_report(&mut self, report: &PositionStatusReport) {
+        msgbus::publish_any(
+            MessagingSwitchboard::reconciliation_raw_position_status_report_topic(),
+            report,
+        );
+
         let cache = self.cache.borrow();
 
         let size_precision = cache
@@ -1542,9 +1567,16 @@ impl ExecutionEngine {
             }
         }
 
+        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+
         for fill_reports in mass_status.fill_reports().values() {
             for fill_report in fill_reports {
                 if external_venue_ids.contains(&fill_report.venue_order_id) {
+                    // Skipped fills still arrived from the venue; capture them
+                    // for forensic replay even though reconciliation is covered
+                    // by the inferred fill generated above.
+                    msgbus::publish_any(raw_fill_topic, fill_report);
+
                     log::debug!(
                         "Skipping fill report for external order {}: covered by inferred fill",
                         fill_report.venue_order_id

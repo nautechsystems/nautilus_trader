@@ -35,8 +35,10 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self,
-        stubs::{TypedMessageSavingHandler, get_typed_message_saving_handler},
+        self, MessagingSwitchboard,
+        stubs::{
+            TypedMessageSavingHandler, get_any_saving_handler, get_typed_message_saving_handler,
+        },
         switchboard,
     },
 };
@@ -7765,5 +7767,217 @@ async fn test_position_check_stale_retries_pruned_per_account() {
             .position_recon_retry_count(&(instrument_id, account_b)),
         0,
         "account B's counter must be pruned once its position is closed",
+    );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_publishes_raw_reports_for_capture() {
+    // Live mass-status reconciliation bypasses the per-report engine entry
+    // points, so the raw venue inputs must be published from this path or the
+    // event store has no record of them for forensic replay.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let position_topic = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+
+    let (order_handler, order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    let (fill_handler, fill_saver) = get_any_saving_handler::<FillReport>(None);
+    let (position_handler, position_saver) = get_any_saving_handler::<PositionStatusReport>(None);
+
+    let order_pattern: msgbus::MStr<msgbus::Pattern> = order_topic.into();
+    let fill_pattern: msgbus::MStr<msgbus::Pattern> = fill_topic.into();
+    let position_pattern: msgbus::MStr<msgbus::Pattern> = position_topic.into();
+    msgbus::subscribe_any(order_pattern, order_handler.clone(), None);
+    msgbus::subscribe_any(fill_pattern, fill_handler.clone(), None);
+    msgbus::subscribe_any(position_pattern, position_handler.clone(), None);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-RAW-CAPTURE"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    mass_status.add_order_reports(vec![order_report.clone()]);
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-RAW-CAPTURE"),
+        TradeId::from("T-RAW-CAPTURE"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None,
+        Some(dec!(3000.0)),
+    );
+    mass_status.add_position_reports(vec![position_report.clone()]);
+
+    let _ = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(order_pattern, &order_handler);
+    msgbus::unsubscribe_any(fill_pattern, &fill_handler);
+    msgbus::unsubscribe_any(position_pattern, &position_handler);
+
+    let orders = order_saver.get_messages();
+    assert_eq!(
+        orders.len(),
+        1,
+        "raw OrderStatusReport must be published once"
+    );
+    assert_eq!(orders[0], order_report);
+
+    let fills = fill_saver.get_messages();
+    assert_eq!(fills.len(), 1, "raw FillReport must be published once");
+    assert_eq!(fills[0], fill_report);
+
+    let positions = position_saver.get_messages();
+    assert_eq!(
+        positions.len(),
+        1,
+        "raw PositionStatusReport must be published once",
+    );
+    assert_eq!(positions[0], position_report);
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
+    // The raw publish must happen BEFORE adjust_mass_status_fills, which can
+    // synthesise replacement order/fill reports via
+    // process_mass_status_for_reconciliation. Forensic replay must see only
+    // the venue-supplied raw inputs; synthetic reports are an internal
+    // reconstruction step and must never appear on `reconciliation.raw.*`.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let order_pattern: msgbus::MStr<msgbus::Pattern> = order_topic.into();
+    let fill_pattern: msgbus::MStr<msgbus::Pattern> = fill_topic.into();
+    let (order_handler, order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    let (fill_handler, fill_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(order_pattern, order_handler.clone(), None);
+    msgbus::subscribe_any(fill_pattern, fill_handler.clone(), None);
+
+    // Build a mass status that triggers AddSyntheticOpening: simulated qty
+    // (0.4 from the single fill) does not match the venue position (Long 1.0),
+    // so the adjustment step inserts a synthetic Buy 0.6 opening fill under a
+    // new `S-...` venue_order_id.
+    let venue_order_id = VenueOrderId::from("V-SYN-RAW");
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_status_report(
+        None,
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.0"),
+        Quantity::from("0.4"),
+    );
+    mass_status.add_order_reports(vec![order_report.clone()]);
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-SYN-RAW"),
+        OrderSide::Buy,
+        Quantity::from("0.4"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None, // netting mode triggers adjust_mass_status_fills
+        Some(dec!(3000.0)),
+    );
+    mass_status.add_position_reports(vec![position_report]);
+
+    let _ = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(order_pattern, &order_handler);
+    msgbus::unsubscribe_any(fill_pattern, &fill_handler);
+
+    let orders = order_saver.get_messages();
+    assert_eq!(
+        orders.len(),
+        1,
+        "only the raw venue OrderStatusReport must be captured; \
+         synthetic reports from adjust_mass_status_fills must not reach \
+         the raw topic",
+    );
+    assert_eq!(orders[0], order_report);
+    assert_eq!(
+        orders[0].venue_order_id, venue_order_id,
+        "captured venue_order_id must match the original raw input, not a synthetic `S-` id",
+    );
+
+    let fills = fill_saver.get_messages();
+    assert_eq!(
+        fills.len(),
+        1,
+        "only the raw venue FillReport must be captured; the synthetic \
+         opening fill inserted by adjustment must not appear on the raw topic",
+    );
+    assert_eq!(fills[0], fill_report);
+    assert_eq!(
+        fills[0].trade_id,
+        TradeId::from("T-SYN-RAW"),
+        "captured trade_id must match the original raw input, not a synthetic `S-` id",
     );
 }

@@ -28,9 +28,11 @@ pub mod registry;
 
 pub use adapter::{BusCaptureAdapter, CaptureError};
 pub use builtins::{
-    PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_STATUS_REPORT,
-    PAYLOAD_TYPE_SUBMIT_ORDER, default_registry, encode_account_state, encode_order_filled,
-    encode_order_status_report, encode_submit_order, register_default,
+    PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_FILL_REPORT, PAYLOAD_TYPE_ORDER_FILLED,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_POSITION_STATUS_REPORT,
+    PAYLOAD_TYPE_SUBMIT_ORDER, default_registry, encode_account_state, encode_fill_report,
+    encode_order_filled, encode_order_status_report, encode_position_status_report,
+    encode_submit_order, register_default,
 };
 pub use encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder};
 pub use registry::EncoderRegistry;

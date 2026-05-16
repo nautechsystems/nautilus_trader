@@ -34,7 +34,7 @@ use nautilus_common::{
             report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
         },
     },
-    msgbus::{self, switchboard},
+    msgbus::{self, MessagingSwitchboard, switchboard},
 };
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -364,6 +364,34 @@ impl ExecutionManager {
         mass_status: ExecutionMassStatus,
         exec_engine: Rc<RefCell<ExecutionEngine>>,
     ) -> ReconciliationResult {
+        // Publish raw reports before any state mutation (including fill adjustment
+        // below, which can synthesise replacement order/fill reports). The
+        // execution engine's per-report `reconcile_*` entry points are bypassed by
+        // this path, so the capture seam lives here.
+        let raw_order_status_topic =
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+
+        for report in mass_status.order_reports().values() {
+            msgbus::publish_any(raw_order_status_topic, report);
+        }
+
+        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+
+        for fills in mass_status.fill_reports().values() {
+            for fill in fills {
+                msgbus::publish_any(raw_fill_topic, fill);
+            }
+        }
+
+        let raw_position_topic =
+            MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+
+        for reports in mass_status.position_reports().values() {
+            for report in reports {
+                msgbus::publish_any(raw_position_topic, report);
+            }
+        }
+
         let venue = mass_status.venue;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(|v| v.len()).sum();

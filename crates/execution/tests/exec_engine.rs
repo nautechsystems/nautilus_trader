@@ -36,7 +36,9 @@ use nautilus_common::{
             CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
-    msgbus::{self, TypedHandler, switchboard},
+    msgbus::{
+        self, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler, switchboard,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
 use nautilus_execution::engine::{
@@ -9676,6 +9678,310 @@ fn test_reconcile_execution_mass_status_with_order_reports(mut execution_engine:
     let cache = execution_engine.cache().borrow();
     let order = cache.order(&client_order_id).unwrap();
     assert_eq!(order.status(), OrderStatus::Canceled);
+}
+
+#[rstest]
+fn test_reconcile_execution_mass_status_publishes_skipped_external_fill(
+    mut execution_engine: ExecutionEngine,
+) {
+    // External-order fills are skipped by the per-report reconciliation path
+    // (covered by an inferred fill), but they still arrived from the venue and
+    // must be captured for forensic replay on the raw FillReport topic.
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let venue_order_id = VenueOrderId::from("V-EXT-FILL");
+    let order_report = create_order_status_report(
+        None, // no client_order_id triggers external-order creation
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+    let fill_report = FillReport::new(
+        AccountId::test_default(),
+        instrument.id(),
+        venue_order_id,
+        TradeId::from("T-EXT-FILL"),
+        OrderSide::Buy,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+        Money::new(0.0, Currency::USD()),
+        LiquiditySide::Taker,
+        None,
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    mass_status.add_order_reports(vec![order_report]);
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let pattern: msgbus::MStr<msgbus::Pattern> = raw_fill_topic.into();
+    let (handler, saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let captured = saver.get_messages();
+    assert_eq!(
+        captured.len(),
+        1,
+        "skipped external-order fill must still publish on the raw topic",
+    );
+    assert_eq!(captured[0], fill_report);
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_publishes_raw_topic(mut execution_engine: ExecutionEngine) {
+    // Each engine reconcile entry point must publish the raw venue report on
+    // its `reconciliation.raw.*` topic before any state mutation, so forensic
+    // replay can re-run reconciliation against the captured inputs.
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-RAW-STATUS");
+    let venue_order_id = VenueOrderId::from("V-RAW-STATUS");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    let topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.into();
+    let (handler, saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let captured = saver.get_messages();
+    assert_eq!(
+        captured.len(),
+        1,
+        "raw OrderStatusReport must be published once"
+    );
+    assert_eq!(captured[0], report);
+}
+
+#[rstest]
+fn test_reconcile_fill_report_publishes_raw_topic(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-RAW-FILL");
+    let venue_order_id = VenueOrderId::from("V-RAW-FILL");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, AccountId::test_default(), venue_order_id);
+    execution_engine.process(&accepted);
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-RAW-FILL"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    let topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.into();
+    let (handler, saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.reconcile_fill_report(&report);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let captured = saver.get_messages();
+    assert_eq!(captured.len(), 1, "raw FillReport must be published once");
+    assert_eq!(captured[0], report);
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_publishes_order_and_each_fill(
+    mut execution_engine: ExecutionEngine,
+) {
+    // Verifies the fan-out: one OrderStatusReport publish plus one FillReport
+    // publish per fill in the slice, each on its matching raw topic.
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-RAW-BUNDLE");
+    let venue_order_id = VenueOrderId::from("V-RAW-BUNDLE");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, AccountId::test_default(), venue_order_id);
+    execution_engine.process(&accepted);
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+    let fill1 = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-RAW-BUNDLE-1"),
+        Quantity::from(30_000),
+        Price::from("1.00000"),
+    );
+    let fill2 = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-RAW-BUNDLE-2"),
+        Quantity::from(40_000),
+        Price::from("1.00001"),
+    );
+    let fill3 = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-RAW-BUNDLE-3"),
+        Quantity::from(30_000),
+        Price::from("1.00002"),
+    );
+
+    let order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let order_pattern: msgbus::MStr<msgbus::Pattern> = order_topic.into();
+    let fill_pattern: msgbus::MStr<msgbus::Pattern> = fill_topic.into();
+    let (order_handler, order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    let (fill_handler, fill_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(order_pattern, order_handler.clone(), None);
+    msgbus::subscribe_any(fill_pattern, fill_handler.clone(), None);
+
+    execution_engine.reconcile_order_with_fills(
+        &order_report,
+        &[fill1.clone(), fill2.clone(), fill3.clone()],
+    );
+
+    msgbus::unsubscribe_any(order_pattern, &order_handler);
+    msgbus::unsubscribe_any(fill_pattern, &fill_handler);
+
+    let orders = order_saver.get_messages();
+    assert_eq!(orders.len(), 1, "exactly one OrderStatusReport published");
+    assert_eq!(orders[0], order_report);
+
+    let fills = fill_saver.get_messages();
+    assert_eq!(fills.len(), 3, "one publish per fill in the input slice");
+    assert_eq!(fills[0], fill1);
+    assert_eq!(fills[1], fill2);
+    assert_eq!(fills[2], fill3);
+}
+
+#[rstest]
+fn test_reconcile_position_report_publishes_raw_topic(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let report = create_position_report(
+        instrument.id(),
+        PositionSideSpecified::Long,
+        Quantity::from(100_000),
+        None,
+    );
+
+    let topic = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.into();
+    let (handler, saver) = get_any_saving_handler::<PositionStatusReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.reconcile_position_report(&report);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let captured = saver.get_messages();
+    assert_eq!(
+        captured.len(),
+        1,
+        "raw PositionStatusReport must be published once"
+    );
+    assert_eq!(captured[0], report);
 }
 
 #[rstest]

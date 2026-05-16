@@ -43,6 +43,9 @@ static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static SHUTDOWN_SYSTEM_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_ORDER_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_FILL_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_POSITION_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 
 #[cfg(feature = "defi")]
 static DATA_PROCESS_DEFI_DATA_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -216,6 +219,47 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn shutdown_system_topic() -> MStr<Topic> {
                 *SHUTDOWN_SYSTEM_TOPIC.get_or_init(|| "commands.system.shutdown".into())
+            }
+
+            /// Pub/sub topic carrying raw `OrderStatusReport`s that arrived from
+            /// a venue client, published by the execution engine at the top of
+            /// reconciliation before any state mutation.
+            ///
+            /// The event store bus tap captures publications on this topic so
+            /// forensic replay can re-run reconciliation against the same raw
+            /// inputs the live engine saw. Subscribers are not expected in
+            /// production; the capture surface is the sole consumer today.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_order_status_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_ORDER_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.OrderStatusReport".into())
+            }
+
+            /// Pub/sub topic carrying raw `FillReport`s that arrived from a
+            /// venue client, published by the execution engine at the top of
+            /// reconciliation before any state mutation.
+            ///
+            /// See [`Self::reconciliation_raw_order_status_report_topic`] for the
+            /// capture contract.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_fill_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_FILL_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.FillReport".into())
+            }
+
+            /// Pub/sub topic carrying raw `PositionStatusReport`s that arrived
+            /// from a venue client, published by the execution engine at the
+            /// top of reconciliation before any state mutation.
+            ///
+            /// See [`Self::reconciliation_raw_order_status_report_topic`] for the
+            /// capture contract.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_position_status_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_POSITION_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.PositionStatusReport".into())
             }
 
             /// Returns a wildcard pattern for matching all instrument topics for a venue.
@@ -651,6 +695,27 @@ mod tests {
     fn test_data_response_topic() {
         let expected_topic = "data.response".into();
         let result = MessagingSwitchboard::data_response_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_order_status_report_topic() {
+        let expected_topic = "reconciliation.raw.OrderStatusReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_fill_report_topic() {
+        let expected_topic = "reconciliation.raw.FillReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_position_status_report_topic() {
+        let expected_topic = "reconciliation.raw.PositionStatusReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
         assert_eq!(result, expected_topic);
     }
 
