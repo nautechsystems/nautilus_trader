@@ -25,6 +25,10 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PolymarketDataClientConfig {
     /// Configuration for the Polymarket data client.
+    ///
+    /// `filters` and `new_market_filter` hold `Arc<dyn InstrumentFilter>` trait objects
+    /// and are skipped during serialization; they default to empty/`None` and must be
+    /// installed programmatically after deserialization.
     #[new]
     #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None))]
     #[expect(clippy::too_many_arguments)]
@@ -75,6 +79,9 @@ impl PolymarketDataClientConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PolymarketExecClientConfig {
     /// Configuration for the Polymarket execution client.
+    ///
+    /// `Debug` is implemented manually to redact secrets, so it is not part of the
+    /// derive list.
     #[new]
     #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None))]

@@ -198,6 +198,63 @@ pub struct HyperliquidAllMids {
     assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
 
 
+def test_collect_rust_class_fixups_detects_cfg_attr_wrapped_custom_data(tmp_path):
+    # Arrange: mirrors the multi-line cfg_attr form used in
+    # crates/adapters/hyperliquid/src/data_types.rs
+    rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+)]
+pub struct HyperliquidAllMids {
+    #[custom_data_field(json)]
+    pub mids: HashMap<InstrumentId, Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+
+    # Assert
+    assert fixups["HyperliquidAllMids"].getters == {"mids", "ts_event", "ts_init"}
+    assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
+
+
+def test_collect_rust_class_fixups_ignores_custom_data_without_stub_module(tmp_path):
+    # Arrange: DeribitVolatilityIndex pattern, cfg_attr-wrapped custom_data
+    # with no stub_module must not register stub fixups.
+    rust_file = tmp_path / "crates" / "adapters" / "deribit" / "src" / "data_types.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[cfg_attr(feature = "arrow", custom_data(pyo3))]
+#[cfg_attr(not(feature = "arrow"), custom_data(pyo3, no_arrow))]
+pub struct DeribitVolatilityIndex {
+    pub index_name: String,
+    pub volatility: f64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+
+    # Assert
+    assert "DeribitVolatilityIndex" not in fixups
+
+
 def test_collect_rust_class_fixups_preserves_attrs_across_doc_comments(tmp_path):
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"

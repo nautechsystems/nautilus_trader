@@ -1188,7 +1188,7 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
             #[pyo3(signature = (metadata, py_batch))]
             #[classmethod]
             fn decode_record_batch_py(
-                _cls: pyo3::Bound<'_, pyo3::types::PyType>,
+                _cls: &pyo3::Bound<'_, pyo3::types::PyType>,
                 py: pyo3::Python<'_>,
                 metadata: std::collections::HashMap<String, String>,
                 py_batch: &pyo3::Bound<'_, pyo3::PyAny>,
@@ -1263,8 +1263,8 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
         /// PyO3 bindings (constructor, getters, JSON, and optional record batch encode/decode).
         /// Only compiled when `feature = "python"`.
         #[cfg(feature = "python")]
-        #[pyo3::pymethods]
         #stub_pymethods_attr
+        #[pyo3::pymethods]
         #[expect(clippy::needless_pass_by_value)]
         impl #generics #name #generics {
             #[expect(clippy::too_many_arguments)]
@@ -1287,7 +1287,7 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
             /// Class method for JSON deserialization. Used by register_custom_data_class.
             #[classmethod]
             fn from_json(
-                _cls: pyo3::Bound<'_, pyo3::types::PyType>,
+                _cls: &pyo3::Bound<'_, pyo3::types::PyType>,
                 py: pyo3::Python<'_>,
                 data: &pyo3::Bound<'_, pyo3::PyAny>,
             ) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
@@ -1463,8 +1463,8 @@ pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     quote! {
         #derived_attr
         #(#struct_attrs)*
-        #pyclass_attr_ts
         #stub_pyclass_attr_ts
+        #pyclass_attr_ts
         #vis struct #name #generics {
             #(#fields_vec),*
         }
@@ -1526,6 +1526,67 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "expected `pyo3`, `python`, `no_display`, `no_arrow`, or `stub_module`; unknown option",
+        );
+    }
+
+    #[rstest]
+    fn expand_emits_stub_attributes_before_pyo3_attributes() {
+        let attr = quote! { pyo3, no_arrow, stub_module = "nautilus_trader.test" };
+        let item = quote! {
+            pub struct TestData {
+                pub value: f64,
+                pub ts_event: nautilus_core::UnixNanos,
+                pub ts_init: nautilus_core::UnixNanos,
+            }
+        };
+
+        let expanded = expand_custom_data(attr, item).to_string();
+
+        let stub_pymethods_pos = expanded
+            .find("gen_stub_pymethods")
+            .expect("expansion must contain gen_stub_pymethods");
+        let pymethods_pos = expanded
+            .find("pyo3 :: pymethods")
+            .expect("expansion must contain pyo3 :: pymethods");
+        assert!(
+            stub_pymethods_pos < pymethods_pos,
+            "gen_stub_pymethods must precede pyo3::pymethods so stub-gen reads original tokens",
+        );
+
+        let stub_pyclass_pos = expanded
+            .find("gen_stub_pyclass")
+            .expect("expansion must contain gen_stub_pyclass");
+        let pyclass_pos = expanded
+            .find("pyo3 :: pyclass")
+            .expect("expansion must contain pyo3 :: pyclass");
+        assert!(
+            stub_pyclass_pos < pyclass_pos,
+            "gen_stub_pyclass must precede pyo3::pyclass so stub-gen reads original tokens",
+        );
+    }
+
+    #[rstest]
+    fn expand_emits_referenced_bound_for_classmethod_receivers() {
+        let attr = quote! { pyo3, stub_module = "nautilus_trader.test" };
+        let item = quote! {
+            pub struct TestData {
+                pub value: f64,
+                pub ts_event: nautilus_core::UnixNanos,
+                pub ts_init: nautilus_core::UnixNanos,
+            }
+        };
+
+        let expanded = expand_custom_data(attr, item).to_string();
+
+        let full = "_cls : & pyo3 :: Bound < '_ , pyo3 :: types :: PyType >";
+        let count = expanded.matches(full).count();
+        assert_eq!(
+            count, 2,
+            "expected `&pyo3::Bound<'_, pyo3::types::PyType>` on both generated classmethods (from_json + decode_record_batch_py), was {count}",
+        );
+        assert!(
+            !expanded.contains("_cls : pyo3 :: Bound"),
+            "owned `pyo3::Bound<PyType>` on classmethod first arg prevents pyo3-stub-gen from skipping the receiver",
         );
     }
 

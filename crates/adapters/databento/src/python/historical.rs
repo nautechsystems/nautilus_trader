@@ -94,7 +94,7 @@ impl DatabentoHistoricalClient {
     ///
     /// When market data is fetched without an explicit `price_precision`, the
     /// client resolves precision per record from this cache. Instruments
-    /// returned by `get_range_instruments` are inserted automatically.
+    /// returned by `Self.get_range_instruments` are inserted automatically.
     #[pyo3(name = "set_price_precision")]
     fn py_set_price_precision(&self, symbol: &str, price_precision: u8) {
         self.inner

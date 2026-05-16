@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
+
 from nautilus_trader._libnautilus.deribit import DeribitVolatilityIndex
 from nautilus_trader._libnautilus.hyperliquid import HyperliquidAllMids
 from nautilus_trader.model import AggressorSide
@@ -90,6 +92,18 @@ def test_hyperliquid_all_mids_arrow_methods_available():
     assert all_mids.mids == {}
     assert all_mids.ts_event == 1_000
     assert all_mids.ts_init == 1_001
+
+
+def test_hyperliquid_all_mids_from_json_is_classmethod_and_roundtrips():
+    original = HyperliquidAllMids(mids={}, ts_event=1_000, ts_init=1_001)
+    payload = json.loads(original.to_json())
+
+    restored = HyperliquidAllMids.from_json(payload)
+
+    assert isinstance(restored, HyperliquidAllMids)
+    assert restored.mids == original.mids
+    assert restored.ts_event == original.ts_event
+    assert restored.ts_init == original.ts_init
 
 
 def test_quotes_to_arrow_record_batch_bytes():

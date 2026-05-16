@@ -122,9 +122,9 @@ impl DatabentoDataLoader {
 
     /// Caches a `price_precision` for the given `symbol`.
     ///
-    /// When market data is read without an explicit `price_precision`, the
-    /// loader resolves precision per record from this cache. Definitions
-    /// loaded via `load_instruments` are inserted automatically.
+    /// When market data is read without an explicit `price_precision` argument,
+    /// the loader resolves precision per record from this cache. Definitions
+    /// loaded via `Self.load_instruments` are inserted automatically.
     #[pyo3(name = "set_price_precision")]
     fn py_set_price_precision(&mut self, symbol: &str, price_precision: u8) {
         self.set_price_precision(Symbol::from(symbol), price_precision);

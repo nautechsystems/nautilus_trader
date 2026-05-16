@@ -789,11 +789,7 @@ def _collect_custom_data_macro_fixups(source: str, fixups: dict[str, ClassMethod
             continue
 
         custom_data_attr = next(
-            (
-                attr
-                for attr in pending_attrs
-                if attr.startswith("#[custom_data") and "stub_module" in attr
-            ),
+            (attr for attr in pending_attrs if "custom_data(" in attr and "stub_module" in attr),
             None,
         )
 
