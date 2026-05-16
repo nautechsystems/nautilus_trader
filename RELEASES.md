@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added `Portfolio::build_snapshot` and `Portfolio::snapshots` accessors with a bounded per-account ring (Rust)
 - Added `subscribe_portfolio_snapshot` and `publish_portfolio_snapshot` message bus API on `events.portfolio` (Rust)
 - Added `subscribe_positions` message bus function (Rust)
+- Added `InstrumentId::parse_parent_components` and `InstrumentClass` parent suffix conversion methods, exposed via PyO3 (Rust)
 - Added serde `Deserialize` support for `LiveNodeConfig` and adapter client configs to enable loading from TOML
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
@@ -121,6 +122,8 @@ Released on TBD (UTC).
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed custom data parquet schema registration and multi-file query (#4021), thanks @faysou
+- Fixed `custom_data` macro PyO3 stub generation by ordering `gen_stub` attributes above `pyo3` attributes and detecting `cfg_attr`-wrapped invocations
+- Fixed catalog `consolidate_data_by_period` cleanup for skipped targets (#4080), thanks @arpankapoor
 - Fixed SQL `ParserError` for symbols containing ampersand (#4025), thanks @arpankapoor
 - Fixed `DataEngine` to route subscribe/unsubscribe commands to the `BACKTEST` client when registered (Rust)
 - Fixed `DataEngine` to apply `validate_data_sequence` to bars emitted by internal aggregators (Rust)
@@ -200,9 +203,13 @@ Released on TBD (UTC).
 - Added Python `TradingNode` parity stress harness for v1 vs v2 comparison
 - Added `cargo-flamegraph` to workspace tools with pinned version
 - Added `simulation` feature on `nautilus-live` so the stress harness runs under `cfg(madsim)` for DST validation
+- Added `NautilusKernel::with_cache_database` builder setter and constructor variant for cache database adapter injection (Rust)
+- Added `nautilus-event-store` cache snapshot capture, restore, and replay wired through `NautilusKernel` for durable cache state across runs (Rust)
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
+- Added typed publish_instrument() to message bus (#4081), thanks @filipmacek
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
+- Added Interactive Brokers per-order exchange routing params (#4079), thanks @faysou
 - Improved `#[custom_data]` to support live-only JSON types without Arrow registration
 - Improved `DataEngine.reset` to clear book updaters, snapshotters, option chain managers, and timers (Rust)
 - Improved `DataEngine` to create per-underlying books for composite-symbol book subscriptions (Rust)
@@ -253,8 +260,6 @@ Released on TBD (UTC).
 - Improved Hyperliquid integration guide flagging Rust-only execution config options and scoped slippage note
 - Added `Shutdown semantics` to the backtesting guide covering `on_stop` command settlement
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
-
-### Deprecations
 
 ---
 
