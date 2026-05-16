@@ -294,6 +294,41 @@ impl InstrumentClass {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+
+    /// Returns whether this instrument class has an expiration.
+    #[pyo3(name = "has_expiration")]
+    #[must_use]
+    pub const fn py_has_expiration(&self) -> bool {
+        self.has_expiration()
+    }
+
+    /// Returns whether this instrument class allows negative prices.
+    #[pyo3(name = "allows_negative_price")]
+    #[must_use]
+    pub const fn py_allows_negative_price(&self) -> bool {
+        self.allows_negative_price()
+    }
+
+    /// Returns the canonical parent-symbol suffix for this class, if one exists.
+    ///
+    /// Always emits the short form (`FUT`, `OPT`) so that adapters constructing
+    /// parent ids produce a single canonical string per class.
+    #[pyo3(name = "parent_suffix")]
+    #[must_use]
+    pub const fn py_parent_suffix(&self) -> Option<&'static str> {
+        self.parent_suffix()
+    }
+
+    /// Returns the `InstrumentClass` for the parent-symbol suffix, if recognised.
+    ///
+    /// Matches strict uppercase forms only. Both Databento-style abbreviations
+    /// (`FUT`, `OPT`) and long forms (`FUTURE`, `OPTION`) are accepted.
+    #[classmethod]
+    #[pyo3(name = "try_from_parent_suffix")]
+    #[must_use]
+    pub fn py_try_from_parent_suffix(_: &Bound<'_, PyType>, suffix: &str) -> Option<Self> {
+        Self::try_from_parent_suffix(suffix)
+    }
 }
 
 #[pymethods]

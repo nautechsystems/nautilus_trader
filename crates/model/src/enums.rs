@@ -791,6 +791,32 @@ impl InstrumentClass {
             Self::Option | Self::FuturesSpread | Self::OptionSpread
         )
     }
+
+    /// Returns the [`InstrumentClass`] for the parent-symbol suffix, if recognised.
+    ///
+    /// Matches strict uppercase forms only. Both Databento-style abbreviations
+    /// (`FUT`, `OPT`) and long forms (`FUTURE`, `OPTION`) are accepted.
+    #[must_use]
+    pub fn try_from_parent_suffix(suffix: &str) -> Option<Self> {
+        match suffix {
+            "FUT" | "FUTURE" => Some(Self::Future),
+            "OPT" | "OPTION" => Some(Self::Option),
+            _ => None,
+        }
+    }
+
+    /// Returns the canonical parent-symbol suffix for this class, if one exists.
+    ///
+    /// Always emits the short form (`FUT`, `OPT`) so that adapters constructing
+    /// parent ids produce a single canonical string per class.
+    #[must_use]
+    pub const fn parent_suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Future => Some("FUT"),
+            Self::Option => Some("OPT"),
+            _ => None,
+        }
+    }
 }
 
 /// The type of event for an instrument close.
@@ -2118,5 +2144,72 @@ mod tests {
             ContinuousFutureAdjustmentType::default(),
             ContinuousFutureAdjustmentType::BackwardSpread,
         );
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Option, true)]
+    #[case(InstrumentClass::FuturesSpread, true)]
+    #[case(InstrumentClass::OptionSpread, true)]
+    #[case(InstrumentClass::Spot, false)]
+    #[case(InstrumentClass::Swap, false)]
+    #[case(InstrumentClass::Future, false)]
+    #[case(InstrumentClass::Forward, false)]
+    #[case(InstrumentClass::Cfd, false)]
+    #[case(InstrumentClass::Bond, false)]
+    #[case(InstrumentClass::Warrant, false)]
+    #[case(InstrumentClass::SportsBetting, false)]
+    #[case(InstrumentClass::BinaryOption, false)]
+    fn test_instrument_class_allows_negative_price(
+        #[case] class: InstrumentClass,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(class.allows_negative_price(), expected);
+    }
+
+    #[rstest]
+    #[case("FUT", Some(InstrumentClass::Future))]
+    #[case("FUTURE", Some(InstrumentClass::Future))]
+    #[case("OPT", Some(InstrumentClass::Option))]
+    #[case("OPTION", Some(InstrumentClass::Option))]
+    #[case("fut", None)]
+    #[case("Fut", None)]
+    #[case("option", None)]
+    #[case("Option", None)]
+    #[case("SPREAD", None)]
+    #[case("UNKNOWN", None)]
+    #[case("", None)]
+    fn test_instrument_class_try_from_parent_suffix(
+        #[case] suffix: &str,
+        #[case] expected: Option<InstrumentClass>,
+    ) {
+        assert_eq!(InstrumentClass::try_from_parent_suffix(suffix), expected);
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Future, Some("FUT"))]
+    #[case(InstrumentClass::Option, Some("OPT"))]
+    #[case(InstrumentClass::Spot, None)]
+    #[case(InstrumentClass::Swap, None)]
+    #[case(InstrumentClass::FuturesSpread, None)]
+    #[case(InstrumentClass::Forward, None)]
+    #[case(InstrumentClass::Cfd, None)]
+    #[case(InstrumentClass::Bond, None)]
+    #[case(InstrumentClass::OptionSpread, None)]
+    #[case(InstrumentClass::Warrant, None)]
+    #[case(InstrumentClass::SportsBetting, None)]
+    #[case(InstrumentClass::BinaryOption, None)]
+    fn test_instrument_class_parent_suffix(
+        #[case] class: InstrumentClass,
+        #[case] expected: Option<&'static str>,
+    ) {
+        assert_eq!(class.parent_suffix(), expected);
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Future)]
+    #[case(InstrumentClass::Option)]
+    fn test_instrument_class_parent_suffix_roundtrip(#[case] class: InstrumentClass) {
+        let suffix = class.parent_suffix().unwrap();
+        assert_eq!(InstrumentClass::try_from_parent_suffix(suffix), Some(class));
     }
 }
