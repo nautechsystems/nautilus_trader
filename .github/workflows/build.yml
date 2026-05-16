@@ -229,7 +229,8 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
@@ -365,7 +366,8 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
@@ -737,7 +739,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.whl'
+          subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
@@ -875,7 +877,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.whl'
+          subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
@@ -1078,7 +1080,7 @@ jobs:
         id: attest-wheels
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.whl'
+          subject-path: "dist/nautilus_trader-*.whl"
 
       - name: Verify wheel attestations
         env:
@@ -1124,7 +1126,7 @@ jobs:
       - cargo-vet
     permissions:
       contents: write # Required for pushing tags and upload release assets
-      actions: write  # Required for creating releases
+      actions: write # Required for creating releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
@@ -1143,7 +1145,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          persist-credentials: true  # Required for salsify action to push git tags
+          persist-credentials: true # Required for salsify action to push git tags
           fetch-depth: 2
           fetch-tags: true
 
@@ -1323,7 +1325,7 @@ jobs:
         id: attest-sdist
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.tar.gz'
+          subject-path: "dist/nautilus_trader-*.tar.gz"
 
       - name: Verify sdist attestation
         env:
@@ -1434,7 +1436,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: release-attestations
-          pattern: 'release-*-attestation-*'
+          pattern: "release-*-attestation-*"
           merge-multiple: true
 
       - name: Attach attestation siblings to GitHub release

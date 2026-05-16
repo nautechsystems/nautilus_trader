@@ -21,7 +21,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Fire event to nautilus_docs
-        run: |
+        run: |-
           curl -sS -L --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 60 --fail-with-body \
             -X POST \
             -H "Accept: application/vnd.github+json" \

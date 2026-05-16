@@ -12,7 +12,7 @@ on:
   push:
     branches: [test-docs-features]
   schedule:
-    - cron: '0 12 * * *' # Daily at 12:00 UTC (same as security-audit)
+    - cron: "0 12 * * *" # Daily at 12:00 UTC (same as security-audit)
   workflow_dispatch: # Allow manual trigger
 
 jobs:

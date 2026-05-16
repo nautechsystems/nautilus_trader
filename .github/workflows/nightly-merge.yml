@@ -8,7 +8,7 @@ on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: '0 14 * * *' # At 14:00 UTC daily
+    - cron: "0 14 * * *" # At 14:00 UTC daily
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
         with:
           persist-credentials: false
           token: ${{ secrets.NIGHTLY_TOKEN }}
-          fetch-depth: 0  # Fetch all history for all tags and branches
+          fetch-depth: 0 # Fetch all history for all tags and branches
 
       - name: Fetch develop branch workflows
         id: fetch-workflows
@@ -134,7 +134,7 @@ jobs:
         with:
           persist-credentials: true
           token: ${{ secrets.NIGHTLY_TOKEN }}
-          fetch-depth: 0  # Fetch all history for all tags and branches
+          fetch-depth: 0 # Fetch all history for all tags and branches
 
       - name: Configure Git user
         run: |
@@ -168,7 +168,7 @@ jobs:
           fi
 
       - name: Check merge result
-        run: |
+        run: |-
           develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
           nightly_sha=$(git rev-parse HEAD)
           if [[ "$nightly_sha" == "$develop_sha" ]]; then

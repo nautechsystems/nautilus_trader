@@ -6,9 +6,10 @@ runs:
   steps:
     - name: Set release output
       shell: bash
-      if:
-        github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name ==
-        'nightly' || github.ref_name == 'master' || github.ref_name == 'test-ci')
+      if: >-
+        github.event_name == 'push' &&
+        (github.ref_name == 'develop' || github.ref_name == 'nightly' ||
+        github.ref_name == 'master' || github.ref_name == 'test-ci')
       id: vars
       run: |
         if [ ! -d "./dist" ]; then
@@ -26,9 +27,10 @@ runs:
         echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
 
     - name: Upload wheel artifact
-      if:
-        github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name ==
-        'nightly' || github.ref_name == 'master' || github.ref_name == 'test-ci')
+      if: >-
+        github.event_name == 'push' &&
+        (github.ref_name == 'develop' || github.ref_name == 'nightly' ||
+        github.ref_name == 'master' || github.ref_name == 'test-ci')
       # https://github.com/actions/upload-artifact
       # Use wildcard to flatten dist/ prefix: path before first wildcard is stripped
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

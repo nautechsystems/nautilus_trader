@@ -1,0 +1,12 @@
+formatter:
+  type: basic
+  indent: 2
+  line_ending: lf
+  retain_line_breaks_single: true
+  max_line_length: 120
+  pad_line_comments: 1
+  scan_folded_as_literal: true
+  include_document_start: false
+  force_quote_style: double
+  trim_trailing_whitespace: true
+  eof_newline: true

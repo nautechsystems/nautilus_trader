@@ -61,7 +61,7 @@ jobs:
           rust-cache-enabled: "false"
 
       - name: Run DST simulation smoke tests
-        run: |
+        run: |-
           export MADSIM_TEST_SEED=$((GITHUB_RUN_NUMBER * MADSIM_TEST_NUM))
           echo "MADSIM_TEST_SEED=$MADSIM_TEST_SEED MADSIM_TEST_NUM=$MADSIM_TEST_NUM"
           make cargo-test-sim NEXTEST_PROFILE=ci

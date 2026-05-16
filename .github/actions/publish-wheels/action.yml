@@ -59,5 +59,5 @@ runs:
 
     - name: Verify uploaded files in Cloudflare R2
       shell: bash
-      run: |
+      run: |-
         bash ./scripts/ci/publish-wheels-r2-verify-files.sh

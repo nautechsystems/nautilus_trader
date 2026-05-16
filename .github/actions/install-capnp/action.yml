@@ -52,7 +52,7 @@ runs:
     - name: Install capnp (Windows)
       if: runner.os == 'Windows'
       shell: bash
-      run: |
+      run: |-
         choco install capnproto ripgrep -y || {
           echo "capnproto/ripgrep install via choco failed or unavailable"
           sleep 5

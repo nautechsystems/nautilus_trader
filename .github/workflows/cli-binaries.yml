@@ -340,5 +340,5 @@ jobs:
 
       - name: Verify uploaded files in R2
         shell: bash
-        run: |
+        run: |-
           bash ./scripts/ci/publish-cli-r2-verify.sh

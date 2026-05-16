@@ -323,7 +323,7 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/*.whl'
+          subject-path: "dist/*.whl"
 
       - name: Verify wheel attestations
         env:
@@ -346,5 +346,5 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
+        run: |-
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh

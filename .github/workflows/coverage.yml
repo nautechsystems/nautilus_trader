@@ -36,7 +36,8 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
@@ -78,14 +79,13 @@ jobs:
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data
+        # TODO: Temporarily pause coverage due runner receiving shutdown signal (OOM/resources)
+        # - name: Run tests with coverage
+        #   run: bash scripts/test-coverage.sh
 
-      # TODO: Temporarily pause coverage due runner receiving shutdown signal (OOM/resources)
-      # - name: Run tests with coverage
-      #   run: bash scripts/test-coverage.sh
-
-      # - name: Upload coverage report
-      #   uses: codecov/codecov-action@v4
-      #   with:
-      #     # fail_ci_if_error: true  # leave commented until flakiness improves
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     verbose: true
+        # - name: Upload coverage report
+        #   uses: codecov/codecov-action@v4
+        #   with:
+        #     # fail_ci_if_error: true  # leave commented until flakiness improves
+        #     token: ${{ secrets.CODECOV_TOKEN }}
+        #     verbose: true

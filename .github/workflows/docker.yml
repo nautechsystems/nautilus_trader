@@ -242,9 +242,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
-          outputs:
-            type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,
-            name-canonical=true,push=true
+          # yamllint disable-line rule:line-length
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true, name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -515,9 +514,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
-          outputs:
-            type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,
-            name-canonical=true,push=true
+          # yamllint disable-line rule:line-length
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true, name-canonical=true,push=true
           build-args: |
             GIT_TAG=${{ steps.image-tag.outputs.tag }}
 
@@ -645,7 +643,7 @@ jobs:
           IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ISSUER: https://token.actions.githubusercontent.com
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
+        run: |-
           retry() {
             local label=$1
             shift

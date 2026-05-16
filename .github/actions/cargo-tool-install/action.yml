@@ -53,7 +53,7 @@ runs:
       shell: bash
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
-      run: |
+      run: |-
         if [[ -x "$TOOL_CACHE/$TOOL_NAME/bin/$TOOL_NAME" ]]; then
           echo "$TOOL_NAME $TOOL_VERSION already installed from cache"
         else

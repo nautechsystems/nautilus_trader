@@ -18,7 +18,7 @@ on:
   push:
     branches: [test-nightly-miri]
   schedule:
-    - cron: '0 13 * * *' # Daily at 13:00 UTC (1hr after nightly-tests cron at 12:00 UTC)
+    - cron: "0 13 * * *" # Daily at 13:00 UTC (1hr after nightly-tests cron at 12:00 UTC)
   workflow_dispatch: # Allow manual trigger
 
 jobs:

@@ -10,7 +10,7 @@ on:
   push:
     branches: [test-nightly-tests]
   schedule:
-    - cron: '0 12 * * *' # Daily at 12:00 UTC (same as security, 2hrs prior to nightly-merge)
+    - cron: "0 12 * * *" # Daily at 12:00 UTC (same as security, 2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -168,7 +168,8 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
@@ -283,5 +284,5 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run tests
-        run: |
+        run: |-
           uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1

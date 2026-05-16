@@ -25,8 +25,7 @@ env:
 on:
   pull_request:
     paths: &security_audit_paths
-      # Keep in sync with scripts/ci/security-audit-gate.sh.
-      - Cargo.lock
+      - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
       - uv.lock
@@ -52,7 +51,7 @@ on:
     branches: [develop, master, test-security]
     paths: *security_audit_paths
   schedule:
-    - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
+    - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -320,7 +319,7 @@ jobs:
       - name: Run osv-scanner
         uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
         with:
-          scan-args: |
+          scan-args: |-
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
             --lockfile=uv.lock

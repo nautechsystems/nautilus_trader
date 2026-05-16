@@ -100,6 +100,6 @@ runs:
 
     - name: Install Python wheel
       shell: bash
-      run: |
+      run: |-
         bash scripts/ci/retry-on-corruption.sh uv sync --all-groups --all-extras --no-install-package nautilus_trader
         bash scripts/ci/retry-on-corruption.sh uv pip install dist/*.whl

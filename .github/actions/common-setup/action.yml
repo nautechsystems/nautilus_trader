@@ -290,7 +290,7 @@ runs:
     - name: Report cache footprint
       if: runner.os != 'Windows'
       shell: bash
-      run: |
+      run: |-
         {
           echo "## Cache footprint"
           echo
