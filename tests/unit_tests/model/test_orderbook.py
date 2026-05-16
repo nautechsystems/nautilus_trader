@@ -779,6 +779,7 @@ class TestOrderBook:
         # Arrange
         loader = DatabentoDataLoader()
         instrument = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=3)
+        loader.set_price_precision(instrument.id.symbol.value, instrument.price_precision)
 
         path_20231224 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231224.mbo.dbn.zst"
         path_20231225 = TEST_DATA_DIR / "databento" / "esh4-glbx-mdp3-20231225.mbo.dbn.zst"

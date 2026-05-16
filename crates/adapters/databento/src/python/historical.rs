@@ -22,7 +22,8 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    enums::BarAggregation, identifiers::InstrumentId,
+    enums::BarAggregation,
+    identifiers::{InstrumentId, Symbol},
     python::instruments::instrument_any_to_pyobject,
 };
 use pyo3::{
@@ -87,6 +88,17 @@ impl DatabentoHistoricalClient {
     #[pyo3(name = "api_key")]
     fn py_api_key(&self) -> &str {
         self.inner.api_key()
+    }
+
+    /// Caches a `price_precision` for the given `symbol`.
+    ///
+    /// When market data is fetched without an explicit `price_precision`, the
+    /// client resolves precision per record from this cache. Instruments
+    /// returned by `get_range_instruments` are inserted automatically.
+    #[pyo3(name = "set_price_precision")]
+    fn py_set_price_precision(&self, symbol: &str, price_precision: u8) {
+        self.inner
+            .set_price_precision(Symbol::from(symbol), price_precision);
     }
 
     /// Gets the date range for a specific dataset.

@@ -747,19 +747,29 @@ pub fn decode_mbp10_msg(
     let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &msg.levels {
-        let bid_order = BookOrder::new(
-            OrderSide::Buy,
-            decode_price_or_undef(level.bid_px, price_precision),
-            decode_quantity(level.bid_sz as u64),
-            0,
-        );
+        // Empty Databento levels carry the i64::MAX sentinel; decode them as
+        // NULL_ORDER so the matching engine's precision check skips them.
+        let bid_order = if level.bid_px == i64::MAX {
+            BookOrder::default()
+        } else {
+            BookOrder::new(
+                OrderSide::Buy,
+                decode_price_or_undef(level.bid_px, price_precision),
+                decode_quantity(level.bid_sz as u64),
+                0,
+            )
+        };
 
-        let ask_order = BookOrder::new(
-            OrderSide::Sell,
-            decode_price_or_undef(level.ask_px, price_precision),
-            decode_quantity(level.ask_sz as u64),
-            0,
-        );
+        let ask_order = if level.ask_px == i64::MAX {
+            BookOrder::default()
+        } else {
+            BookOrder::new(
+                OrderSide::Sell,
+                decode_price_or_undef(level.ask_px, price_precision),
+                decode_quantity(level.ask_sz as u64),
+                0,
+            )
+        };
 
         bids.push(bid_order);
         asks.push(ask_order);
@@ -2538,6 +2548,45 @@ mod tests {
         assert_eq!(depth.asks.len(), 10);
         assert_eq!(depth.bid_counts.len(), 10);
         assert_eq!(depth.ask_counts.len(), 10);
+    }
+
+    #[rstest]
+    fn test_decode_mbp10_msg_with_undefined_levels() {
+        let mut msg = dbn::Mbp10Msg::default();
+        for i in 0..10 {
+            msg.levels[i].bid_px = 100_000_000_000 - i as i64 * 10_000_000;
+            msg.levels[i].ask_px = 100_010_000_000 + i as i64 * 10_000_000;
+            msg.levels[i].bid_sz = 10 + i as u32;
+            msg.levels[i].ask_sz = 10 + i as u32;
+            msg.levels[i].bid_ct = 1 + i as u32;
+            msg.levels[i].ask_ct = 1 + i as u32;
+        }
+        // Levels 5 (bid) and 7 (ask) are undefined per Databento sentinel.
+        msg.levels[5].bid_px = i64::MAX;
+        msg.levels[5].bid_sz = 0;
+        msg.levels[5].bid_ct = 0;
+        msg.levels[7].ask_px = i64::MAX;
+        msg.levels[7].ask_sz = 0;
+        msg.levels[7].ask_ct = 0;
+        msg.ts_recv = 1_609_160_400_000_704_060;
+
+        let instrument_id = InstrumentId::from("TEST.VENUE");
+        let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
+
+        assert_eq!(depth.bids[5].side, OrderSide::NoOrderSide);
+        assert_eq!(depth.bids[5].price.raw, 0);
+        assert_eq!(depth.bids[5].price.precision, 0);
+        assert_eq!(depth.bids[5].size.raw, 0);
+        assert_eq!(depth.asks[7].side, OrderSide::NoOrderSide);
+        assert_eq!(depth.asks[7].price.raw, 0);
+        assert_eq!(depth.asks[7].price.precision, 0);
+        assert_eq!(depth.asks[7].size.raw, 0);
+
+        // Defined neighbours keep their normal side and instrument precision
+        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bids[0].price.precision, 2);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.asks[0].price.precision, 2);
     }
 
     #[rstest]

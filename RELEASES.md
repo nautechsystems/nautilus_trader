@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added Bybit `flatten` binary that cancels working orders and flattens Linear/Inverse positions
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
+- Added Databento `set_price_precision` and `get_price_precisions` methods on the data loader and historical client
 - Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
 - Added Deribit DVOL custom data subscriptions (#4069), thanks @graceyangfan
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
@@ -60,11 +61,12 @@ Released on TBD (UTC).
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
 - Changed `nautilus-model` to make `arrow` support optional behind a Cargo feature; enable the `arrow` feature (or `python-arrow` for the Python bindings) to restore the previous behavior (#4008), thanks @sunlei
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
-- Changed `Strategy` order APIs to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
+- Changed `Strategy` order methods to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
 - Changed `Strategy::cancel_order` and `modify_order` to take `ClientOrderId` instead of `OrderAny` (Rust v2)
 - Changed `Strategy::cancel_orders` to take `Vec<ClientOrderId>` instead of `Vec<OrderAny>` (Rust v2)
 - Changed Rust strategy registration to append `order_id_tag` to explicit strategy IDs, matching Cython
 - Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
+- Changed Databento data loaders to error on unresolved precision; pass `price_precision` or call `set_price_precision`
 - Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
 - Changed `nautilus_core::from_pydict` signature from `Py<PyDict>` to `&Py<PyDict>` to avoid moving the input dict (Rust) (#4003), thanks @faysou
 - Changed `DataActor::subscribe_signal` to take `priority: Option<u32>`; existing callers must pass `None` (Rust)
@@ -138,6 +140,7 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
 - Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
 - Fixed Databento market data price precision preservation (#4002), thanks @faysou
+- Fixed Databento MBP10 panic on undefined depth levels (#4046), thanks for reporting @prajjwal23
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths

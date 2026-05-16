@@ -407,11 +407,18 @@ instruments with non-standard tick sizes (e.g., treasury futures with fractional
 ticks like 1/256). Subscribe to `DEFINITION` schema for your instruments before
 or alongside market data subscriptions.
 
-Historical quote and trade requests use cached instrument precision from the
-instrument provider when available. When requesting multiple instruments with
-different precision values, the Python data client groups requests by precision
-before calling Databento. For direct historical client usage and file-based
-loading, pass an explicit `price_precision` parameter to override the default.
+For historical requests and file-based loading, precision is resolved per
+record in this order:
+
+1. An explicit `price_precision` argument on the call.
+2. A per-symbol cache populated by loading definitions (`load_instruments`
+   on the file loader, `get_range_instruments` on the historical client) or
+   by an explicit `set_price_precision(symbol, precision)` call.
+
+The Python data client seeds the historical-client cache from the instrument
+provider before every request, so already-loaded instruments need no extra
+configuration. When precision cannot be resolved, loading fails with an
+explicit error rather than silently defaulting to USD precision.
 
 :::tip
 The Python adapter automatically subscribes to instrument definitions before
@@ -723,7 +730,9 @@ See also the [Data concepts guide](../concepts/data.md).
 Parameters for `from_dbn_file`:
 
 - `instrument_id`: Speeds up decoding by skipping symbology lookup.
-- `price_precision`: Overrides the default price precision.
+- `price_precision`: Override applied to every record read. When omitted, the
+  loader resolves precision per symbol from its cache (populated by
+  `load_instruments` or `set_price_precision`); loading fails if unresolved.
 - `include_trades`: For MBP-1/CMBP-1 schemas, `True` emits both `QuoteTick`
   and `TradeTick` when trade data is present.
 - `as_legacy_cython`: Set to `False` for IMBALANCE/STATISTICS schemas

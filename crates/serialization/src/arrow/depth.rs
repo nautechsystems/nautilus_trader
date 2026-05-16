@@ -30,12 +30,13 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::fixed::PRECISION_BYTES,
+    types::{PRICE_UNDEF, QUANTITY_UNDEF, fixed::PRECISION_BYTES},
 };
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, get_raw_price,
+    get_raw_quantity, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -305,17 +306,36 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 let mut ask_count_arr = [0u32; DEPTH10_LEN];
 
                 for i in 0..DEPTH10_LEN {
-                    let bid_price =
-                        decode_price(bid_prices[i].value(row), price_precision, "bid_price", row)?;
-                    let bid_size =
-                        decode_quantity(bid_sizes[i].value(row), size_precision, "bid_size", row)?;
-                    bids[i] = BookOrder::new(OrderSide::Buy, bid_price, bid_size, 0);
+                    // Undefined levels (PRICE_UNDEF / QUANTITY_UNDEF sentinels) are
+                    // decoded as NULL_ORDER so the matching engine skips them during
+                    // precision validation (see engine.pyx::process_order_book_depth10).
+                    let bid_price_bytes = bid_prices[i].value(row);
+                    let bid_size_bytes = bid_sizes[i].value(row);
+                    if get_raw_price(bid_price_bytes) == PRICE_UNDEF
+                        || get_raw_quantity(bid_size_bytes) == QUANTITY_UNDEF
+                    {
+                        bids[i] = BookOrder::default();
+                    } else {
+                        let bid_price =
+                            decode_price(bid_price_bytes, price_precision, "bid_price", row)?;
+                        let bid_size =
+                            decode_quantity(bid_size_bytes, size_precision, "bid_size", row)?;
+                        bids[i] = BookOrder::new(OrderSide::Buy, bid_price, bid_size, 0);
+                    }
 
-                    let ask_price =
-                        decode_price(ask_prices[i].value(row), price_precision, "ask_price", row)?;
-                    let ask_size =
-                        decode_quantity(ask_sizes[i].value(row), size_precision, "ask_size", row)?;
-                    asks[i] = BookOrder::new(OrderSide::Sell, ask_price, ask_size, 0);
+                    let ask_price_bytes = ask_prices[i].value(row);
+                    let ask_size_bytes = ask_sizes[i].value(row);
+                    if get_raw_price(ask_price_bytes) == PRICE_UNDEF
+                        || get_raw_quantity(ask_size_bytes) == QUANTITY_UNDEF
+                    {
+                        asks[i] = BookOrder::default();
+                    } else {
+                        let ask_price =
+                            decode_price(ask_price_bytes, price_precision, "ask_price", row)?;
+                        let ask_size =
+                            decode_quantity(ask_size_bytes, size_precision, "ask_size", row)?;
+                        asks[i] = BookOrder::new(OrderSide::Sell, ask_price, ask_size, 0);
+                    }
 
                     bid_count_arr[i] = bid_counts[i].value(row);
                     ask_count_arr[i] = ask_counts[i].value(row);
@@ -354,7 +374,7 @@ mod tests {
     use arrow::datatypes::{DataType, Field};
     use nautilus_model::{
         data::stubs::stub_depth10,
-        types::{Price, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
+        types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -672,5 +692,97 @@ mod tests {
                 "ask size mismatch at level {i}"
             );
         }
+    }
+
+    // Each case toggles the price and/or size sentinel on one bid level and one
+    // ask level. Any sentinel in either field must decode to NULL_ORDER; the
+    // "neither" case is the control proving defined levels still round-trip.
+    #[rstest]
+    #[case::price_only(true, false)]
+    #[case::size_only(false, true)]
+    #[case::both(true, true)]
+    #[case::neither(false, false)]
+    fn test_decode_batch_with_undefined_levels(
+        stub_depth10: OrderBookDepth10,
+        #[case] price_undef: bool,
+        #[case] size_undef: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let price_precision = 2;
+        let size_precision = 0;
+        let metadata =
+            OrderBookDepth10::get_metadata(&instrument_id, price_precision, size_precision);
+
+        let mut depth = stub_depth10;
+        let original_bid = depth.bids[5];
+        let original_ask = depth.asks[7];
+        let sentinel_bid_price = if price_undef {
+            Price::from_raw(PRICE_UNDEF, 0)
+        } else {
+            original_bid.price
+        };
+        let sentinel_bid_size = if size_undef {
+            Quantity::from_raw(QUANTITY_UNDEF, 0)
+        } else {
+            original_bid.size
+        };
+        depth.bids[5] = BookOrder {
+            side: OrderSide::Buy,
+            price: sentinel_bid_price,
+            size: sentinel_bid_size,
+            order_id: 0,
+        };
+        let sentinel_ask_price = if price_undef {
+            Price::from_raw(PRICE_UNDEF, 0)
+        } else {
+            original_ask.price
+        };
+        let sentinel_ask_size = if size_undef {
+            Quantity::from_raw(QUANTITY_UNDEF, 0)
+        } else {
+            original_ask.size
+        };
+        depth.asks[7] = BookOrder {
+            side: OrderSide::Sell,
+            price: sentinel_ask_price,
+            size: sentinel_ask_size,
+            order_id: 0,
+        };
+
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &[depth]).unwrap();
+        let decoded = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        let decoded = &decoded[0];
+
+        let expect_null = price_undef || size_undef;
+        if expect_null {
+            assert_eq!(decoded.bids[5].side, OrderSide::NoOrderSide);
+            assert_eq!(decoded.bids[5].price.raw, 0);
+            assert_eq!(decoded.bids[5].price.precision, 0);
+            assert_eq!(decoded.bids[5].size.raw, 0);
+            assert_eq!(decoded.bids[5].size.precision, 0);
+
+            assert_eq!(decoded.asks[7].side, OrderSide::NoOrderSide);
+            assert_eq!(decoded.asks[7].price.raw, 0);
+            assert_eq!(decoded.asks[7].price.precision, 0);
+            assert_eq!(decoded.asks[7].size.raw, 0);
+            assert_eq!(decoded.asks[7].size.precision, 0);
+        } else {
+            assert_eq!(decoded.bids[5].side, OrderSide::Buy);
+            assert_eq!(decoded.bids[5].price, original_bid.price);
+            assert_eq!(decoded.bids[5].size, original_bid.size);
+            assert_eq!(decoded.asks[7].side, OrderSide::Sell);
+            assert_eq!(decoded.asks[7].price, original_ask.price);
+            assert_eq!(decoded.asks[7].size, original_ask.size);
+        }
+
+        // Surrounding defined levels always round-trip with the instrument precision
+        assert_eq!(decoded.bids[0].side, OrderSide::Buy);
+        assert_eq!(decoded.bids[0].price.precision, price_precision);
+        assert_eq!(decoded.bids[0].size.precision, size_precision);
+        assert_eq!(decoded.asks[0].side, OrderSide::Sell);
+        assert_eq!(decoded.asks[0].price.precision, price_precision);
+        assert_eq!(decoded.asks[0].size.precision, size_precision);
     }
 }

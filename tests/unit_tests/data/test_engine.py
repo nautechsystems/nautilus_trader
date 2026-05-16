@@ -4675,6 +4675,9 @@ class TestDataEngine:
     def test_request_aggregated_bars_with_bars(self):
         # Arrange
         loader = DatabentoDataLoader()
+        # Data files carry both ESU4 and NQU4 records; seed both for the read.
+        loader.set_price_precision("ESU4", 2)
+        loader.set_price_precision("NQU4", 2)
 
         path = (
             TEST_DATA_DIR
@@ -4828,6 +4831,9 @@ class TestDataEngine:
     def test_request_aggregated_bars_with_quotes(self):
         # Arrange
         loader = DatabentoDataLoader()
+        # Data files carry both ESU4 and NQU4 records; seed both for the read.
+        loader.set_price_precision("ESU4", 2)
+        loader.set_price_precision("NQU4", 2)
 
         path = (
             TEST_DATA_DIR
@@ -4949,6 +4955,9 @@ class TestDataEngine:
     def test_request_aggregated_bars_with_trades(self):
         # Arrange
         loader = DatabentoDataLoader()
+        # Data files carry both ESU4 and NQU4 records; seed both for the read.
+        loader.set_price_precision("ESU4", 2)
+        loader.set_price_precision("NQU4", 2)
 
         path = (
             TEST_DATA_DIR
@@ -5073,6 +5082,9 @@ class TestDataEngine:
         # Previously, the request would have polluted the live aggregation.
         # Arrange
         loader = DatabentoDataLoader()
+        # Data files carry both ESU4 and NQU4 records; seed both for the read.
+        loader.set_price_precision("ESU4", 2)
+        loader.set_price_precision("NQU4", 2)
 
         path = (
             TEST_DATA_DIR

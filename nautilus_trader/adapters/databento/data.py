@@ -913,6 +913,19 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         return precisions
 
+    def _seed_http_price_precisions(self, instrument_ids: list[InstrumentId]) -> None:
+        # Historical-client decode resolves precision per record from the cache
+        # when no explicit price_precision is passed. Seed it from the provider
+        # so historical requests succeed for already-loaded instruments.
+        for instrument_id in instrument_ids:
+            instrument = self._instrument_provider.find(instrument_id)
+            if instrument is None:
+                continue
+            self._http_client.set_price_precision(
+                instrument_id.symbol.value,
+                instrument.price_precision,
+            )
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         try:
             bar_types_param: list | None = command.params.get("bar_types")
@@ -1207,6 +1220,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_imbalances = await self._http_client.get_range_imbalance(
             dataset=dataset,
             instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
@@ -1255,6 +1269,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_statistics = await self._http_client.get_range_statistics(
             dataset=dataset,
             instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
@@ -1412,6 +1427,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         ]:
             schema = DatabentoSchema.MBP_1.value
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_quotes = []
 
         for price_precision, grouped_instrument_ids in self._price_precision_groups(
@@ -1502,6 +1518,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_trades = []
 
         for price_precision, grouped_instrument_ids in self._price_precision_groups(
@@ -1585,6 +1602,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_bars = await self._http_client.get_range_bars(
             dataset=dataset,
             instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
@@ -1645,6 +1663,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
+        self._seed_http_price_precisions(instrument_ids)
         pyo3_depths = await self._http_client.get_order_book_depth10(
             dataset=dataset,
             instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
@@ -1678,6 +1697,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
+        self._seed_http_price_precisions([request.instrument_id])
         # Request MBO data directly from the historical API
         pyo3_deltas = await self._http_client.get_range_order_book_deltas(
             dataset=dataset,

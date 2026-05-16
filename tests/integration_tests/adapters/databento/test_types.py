@@ -38,6 +38,7 @@ def catalog(tmp_path) -> ParquetDataCatalog:
 def test_imbalance_catalog_round_trip(catalog: ParquetDataCatalog) -> None:
     # Arrange
     loader = DatabentoDataLoader()
+    loader.set_price_precision("SPOT", 2)
     path = DATABENTO_RUST_TEST_DATA_DIR / "test_data.imbalance.dbn.zst"
     data = loader.from_dbn_file(path, as_legacy_cython=False)
     assert len(data) == 2
@@ -64,6 +65,7 @@ def test_imbalance_catalog_round_trip(catalog: ParquetDataCatalog) -> None:
 def test_statistics_catalog_round_trip(catalog: ParquetDataCatalog) -> None:
     # Arrange
     loader = DatabentoDataLoader()
+    loader.set_price_precision("ESM4", 2)
     path = DATABENTO_RUST_TEST_DATA_DIR / "test_data.statistics.dbn.zst"
     instrument_id = nautilus_pyo3.InstrumentId.from_str("ESM4.GLBX")
     data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=False)

@@ -27,6 +27,7 @@ from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -341,7 +342,11 @@ async def test_request_quote_ticks_groups_by_price_precision(
     instrument_provider,
     data_responses,
 ):
+    # Each entry consumed once during _seed_http_price_precisions and once
+    # during _price_precision_groups, so values repeat per instrument.
     instrument_provider.find.side_effect = [
+        SimpleNamespace(price_precision=2),
+        SimpleNamespace(price_precision=5),
         SimpleNamespace(price_precision=2),
         SimpleNamespace(price_precision=5),
     ]
@@ -389,7 +394,11 @@ async def test_request_quote_ticks_uses_resolved_precision_when_one_instrument_m
     instrument_provider,
     data_responses,
 ):
+    # Each entry consumed once during _seed_http_price_precisions and once
+    # during _price_precision_groups, so values repeat per instrument.
     instrument_provider.find.side_effect = [
+        None,
+        SimpleNamespace(price_precision=5),
         None,
         SimpleNamespace(price_precision=5),
     ]
@@ -600,7 +609,11 @@ async def test_request_trade_ticks_groups_by_price_precision(
     instrument_provider,
     data_responses,
 ):
+    # Each entry consumed once during _seed_http_price_precisions and once
+    # during _price_precision_groups, so values repeat per instrument.
     instrument_provider.find.side_effect = [
+        SimpleNamespace(price_precision=2),
+        SimpleNamespace(price_precision=5),
         SimpleNamespace(price_precision=2),
         SimpleNamespace(price_precision=5),
     ]
@@ -648,7 +661,11 @@ async def test_request_trade_ticks_uses_resolved_precision_when_one_instrument_m
     instrument_provider,
     data_responses,
 ):
+    # Each entry consumed once during _seed_http_price_precisions and once
+    # during _price_precision_groups, so values repeat per instrument.
     instrument_provider.find.side_effect = [
+        None,
+        SimpleNamespace(price_precision=5),
         None,
         SimpleNamespace(price_precision=5),
     ]
@@ -869,3 +886,181 @@ async def test_request_order_book_depth_multi_instrument_single_response(
     call_kwargs = mock_http_client.get_order_book_depth10.call_args.kwargs
     assert len(call_kwargs["instrument_ids"]) == 2
     assert call_kwargs["depth"] == 10
+
+
+def test_seed_http_price_precisions_calls_set_for_known_instruments(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.side_effect = [
+        SimpleNamespace(price_precision=2),
+        SimpleNamespace(price_precision=5),
+    ]
+
+    databento_client._seed_http_price_precisions([ES_CY, NQ_CY])
+
+    assert mock_http_client.set_price_precision.call_args_list == [
+        (("ESZ21", 2),),
+        (("NQZ21", 5),),
+    ]
+
+
+def test_seed_http_price_precisions_skips_unknown_instruments(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.side_effect = [
+        None,
+        SimpleNamespace(price_precision=5),
+    ]
+
+    databento_client._seed_http_price_precisions([ES_CY, NQ_CY])
+
+    assert mock_http_client.set_price_precision.call_args_list == [
+        (("NQZ21", 5),),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_request_imbalance_seeds_http_client_before_call(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+    mock_http_client.get_range_imbalance = AsyncMock(return_value=[])
+    data_type = DataType(DatabentoImbalance, metadata={"instrument_id": ES_CY})
+
+    await databento_client._request_imbalance(data_type, UUID4())
+
+    mock_http_client.set_price_precision.assert_called_once_with("ESZ21", 5)
+    mock_http_client.get_range_imbalance.assert_awaited_once()
+
+    # set_price_precision must come before the HTTP call
+    method_names = [call[0] for call in mock_http_client.method_calls]
+    assert method_names.index("set_price_precision") < method_names.index(
+        "get_range_imbalance",
+    )
+
+
+@pytest.mark.asyncio
+async def test_request_statistics_seeds_http_client_before_call(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+    mock_http_client.get_range_statistics = AsyncMock(return_value=[])
+    data_type = DataType(DatabentoStatistics, metadata={"instrument_id": ES_CY})
+
+    await databento_client._request_statistics(data_type, UUID4())
+
+    mock_http_client.set_price_precision.assert_called_once_with("ESZ21", 5)
+    mock_http_client.get_range_statistics.assert_awaited_once()
+
+    method_names = [call[0] for call in mock_http_client.method_calls]
+    assert method_names.index("set_price_precision") < method_names.index(
+        "get_range_statistics",
+    )
+
+
+@pytest.mark.asyncio
+async def test_request_order_book_depth_seeds_http_client_before_call(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+    mock_http_client.get_order_book_depth10 = AsyncMock(return_value=[])
+
+    request = RequestOrderBookDepth(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        depth=10,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={},
+    )
+
+    await databento_client._request_order_book_depth(request)
+
+    mock_http_client.set_price_precision.assert_called_once_with("ESZ21", 5)
+    mock_http_client.get_order_book_depth10.assert_awaited_once()
+
+    method_names = [call[0] for call in mock_http_client.method_calls]
+    assert method_names.index("set_price_precision") < method_names.index(
+        "get_order_book_depth10",
+    )
+
+
+@pytest.mark.asyncio
+async def test_request_order_book_deltas_seeds_http_client_before_call(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+    mock_http_client.get_range_order_book_deltas = AsyncMock(return_value=[])
+
+    request = RequestOrderBookDeltas(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={},
+    )
+
+    await databento_client._request_order_book_deltas(request)
+
+    mock_http_client.set_price_precision.assert_called_once_with("ESZ21", 5)
+    mock_http_client.get_range_order_book_deltas.assert_awaited_once()
+
+    method_names = [call[0] for call in mock_http_client.method_calls]
+    assert method_names.index("set_price_precision") < method_names.index(
+        "get_range_order_book_deltas",
+    )
+
+
+@pytest.mark.asyncio
+async def test_request_bars_seeds_http_client_before_call(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+
+    bar_type = BarType.from_str("ESZ21.GLBX-1-MINUTE-LAST-EXTERNAL")
+    request = RequestBars(
+        bar_type=bar_type,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={},
+    )
+
+    await databento_client._request_bars(request)
+
+    mock_http_client.set_price_precision.assert_called_once_with("ESZ21", 5)
+    mock_http_client.get_range_bars.assert_awaited_once()
+
+    method_names = [call[0] for call in mock_http_client.method_calls]
+    assert method_names.index("set_price_precision") < method_names.index(
+        "get_range_bars",
+    )

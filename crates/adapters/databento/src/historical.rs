@@ -27,8 +27,7 @@ use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
-    instruments::InstrumentAny,
-    types::Currency,
+    instruments::{Instrument, InstrumentAny},
 };
 
 use crate::{
@@ -55,6 +54,7 @@ pub struct DatabentoHistoricalClient {
     inner: Arc<tokio::sync::Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
+    price_precisions: Arc<AtomicMap<Symbol, u8>>,
     use_exchange_as_venue: bool,
 }
 
@@ -122,9 +122,50 @@ impl DatabentoHistoricalClient {
             inner: Arc::new(tokio::sync::Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
+            price_precisions: Arc::new(AtomicMap::new()),
             credential,
             use_exchange_as_venue,
         })
+    }
+
+    /// Caches a `price_precision` for the given `symbol`.
+    ///
+    /// When market data is fetched without an explicit `price_precision`, the
+    /// client resolves precision per record from this cache. Instruments
+    /// returned by [`Self::get_range_instruments`] are inserted automatically.
+    pub fn set_price_precision(&self, symbol: Symbol, price_precision: u8) {
+        self.price_precisions.insert(symbol, price_precision);
+    }
+
+    /// Resolves a price precision for the given `instrument_id`.
+    ///
+    /// Resolution order:
+    /// 1. The explicit `price_precision` argument (if `Some`).
+    /// 2. The cached precision for the instrument's symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no precision is available.
+    fn resolve_price_precision(
+        &self,
+        instrument_id: &InstrumentId,
+        price_precision: Option<u8>,
+    ) -> anyhow::Result<u8> {
+        if let Some(precision) = price_precision {
+            return Ok(precision);
+        }
+
+        let precisions = self.price_precisions.load();
+        precisions
+            .get(&instrument_id.symbol)
+            .copied()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Could not resolve `price_precision` for {instrument_id}: \
+                     pass `price_precision` explicitly, call `set_price_precision`, \
+                     or fetch the instrument definitions first via `get_range_instruments`"
+                )
+            })
     }
 
     /// Gets the date range for a specific dataset.
@@ -211,6 +252,11 @@ impl DatabentoHistoricalClient {
             }
         }
 
+        for instrument in &instruments {
+            self.price_precisions
+                .insert(instrument.id().symbol, instrument.price_precision());
+        }
+
         Ok(instruments)
     }
 
@@ -258,7 +304,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -279,6 +325,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             let (data, _) = decode_record(
                 &record,
@@ -365,7 +413,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -386,6 +434,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
                 let depth = decode_mbp10_msg(msg, instrument_id, price_precision, None)?;
@@ -431,7 +481,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -452,6 +502,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             if let Some(msg) = record.get::<dbn::MboMsg>() {
                 let (delta, _trade) =
@@ -501,7 +553,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -523,6 +575,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             let (data, _) = decode_record(
                 &record,
@@ -583,7 +637,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -605,6 +659,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             let (data, _) = decode_record(
                 &record,
@@ -655,7 +711,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -677,6 +733,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, None)?;
             result.push(imbalance);
@@ -714,7 +772,7 @@ impl DatabentoHistoricalClient {
             .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+        let price_precision_arg = params.price_precision;
 
         let mut client = self.inner.lock().await;
         let mut decoder = client
@@ -736,6 +794,8 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
+            let price_precision =
+                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
             let statistics = decode_statistics_msg(msg, instrument_id, price_precision, None)?;
             result.push(statistics);
@@ -816,5 +876,84 @@ impl DatabentoHistoricalClient {
             .iter()
             .map(|id| id.symbol.to_string())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::time::get_atomic_clock_realtime;
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    fn test_api_key() -> String {
+        "test-000000000000000000000000000".to_string()
+    }
+
+    fn publishers_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json")
+    }
+
+    #[fixture]
+    fn historical_client() -> DatabentoHistoricalClient {
+        DatabentoHistoricalClient::new(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    fn test_set_price_precision_inserts_into_cache(historical_client: DatabentoHistoricalClient) {
+        let symbol = Symbol::from("ESM4");
+        historical_client.set_price_precision(symbol, 2);
+
+        let precisions = historical_client.price_precisions.load();
+        assert_eq!(precisions.get(&symbol), Some(&2));
+    }
+
+    #[rstest]
+    fn test_resolve_price_precision_explicit_arg(historical_client: DatabentoHistoricalClient) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        // Seed a deliberately wrong cache value so we know the explicit arg wins
+        historical_client.set_price_precision(Symbol::from("ESM4"), 9);
+
+        let precision = historical_client
+            .resolve_price_precision(&instrument_id, Some(2))
+            .unwrap();
+        assert_eq!(precision, 2);
+    }
+
+    #[rstest]
+    fn test_resolve_price_precision_cache_hit(historical_client: DatabentoHistoricalClient) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        historical_client.set_price_precision(Symbol::from("ESM4"), 2);
+
+        let precision = historical_client
+            .resolve_price_precision(&instrument_id, None)
+            .unwrap();
+        assert_eq!(precision, 2);
+    }
+
+    #[rstest]
+    fn test_resolve_price_precision_cache_miss_errors(
+        historical_client: DatabentoHistoricalClient,
+    ) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let err = historical_client
+            .resolve_price_precision(&instrument_id, None)
+            .expect_err("expected cache-miss error");
+        let err_msg = format!("{err}");
+        assert!(
+            err_msg.contains("Could not resolve `price_precision`"),
+            "unexpected error message: {err_msg}",
+        );
+        assert!(
+            err_msg.contains("ESM4.GLBX"),
+            "error should name the instrument: {err_msg}",
+        );
     }
 }
