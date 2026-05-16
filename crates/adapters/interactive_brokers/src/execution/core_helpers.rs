@@ -123,6 +123,30 @@ impl InteractiveBrokersExecutionClient {
             .context("Failed to convert instrument ID to IB contract")
     }
 
+    pub(super) fn contract_with_order_exchange_param(
+        mut contract: ibapi::contracts::Contract,
+        params: Option<&nautilus_core::Params>,
+    ) -> anyhow::Result<ibapi::contracts::Contract> {
+        let Some(params) = params else {
+            return Ok(contract);
+        };
+
+        let Some(exchange_value) = params.get("exchange") else {
+            return Ok(contract);
+        };
+
+        let Some(exchange) = exchange_value.as_str() else {
+            anyhow::bail!("`exchange` order param must be a string");
+        };
+
+        if exchange.is_empty() {
+            return Ok(contract);
+        }
+
+        contract.exchange = ibapi::contracts::Exchange::from(exchange);
+        Ok(contract)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn cache_order_tracking(
         ib_order_id: i32,
@@ -172,5 +196,82 @@ impl InteractiveBrokersExecutionClient {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ibapi::contracts::{Contract, Exchange};
+    use nautilus_core::Params;
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::*;
+
+    fn contract_with_exchange(exchange: &str) -> Contract {
+        Contract {
+            exchange: Exchange::from(exchange),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn test_contract_with_order_exchange_param_overrides_exchange() {
+        let contract = contract_with_exchange("SMART");
+        let mut params = Params::new();
+        params.insert("exchange".to_string(), Value::String("IEX".to_string()));
+
+        let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
+            contract.clone(),
+            Some(&params),
+        )
+        .unwrap();
+
+        assert_eq!(updated.exchange.as_str(), "IEX");
+        assert_eq!(contract.exchange.as_str(), "SMART");
+    }
+
+    #[rstest]
+    fn test_contract_with_order_exchange_param_keeps_contract_without_exchange() {
+        let contract = contract_with_exchange("SMART");
+        let params = Params::new();
+
+        let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
+            contract,
+            Some(&params),
+        )
+        .unwrap();
+
+        assert_eq!(updated.exchange.as_str(), "SMART");
+    }
+
+    #[rstest]
+    fn test_contract_with_order_exchange_param_keeps_contract_with_empty_exchange() {
+        let contract = contract_with_exchange("SMART");
+        let mut params = Params::new();
+        params.insert("exchange".to_string(), Value::String(String::new()));
+
+        let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
+            contract,
+            Some(&params),
+        )
+        .unwrap();
+
+        assert_eq!(updated.exchange.as_str(), "SMART");
+    }
+
+    #[rstest]
+    fn test_contract_with_order_exchange_param_rejects_non_string_exchange() {
+        let contract = contract_with_exchange("SMART");
+        let mut params = Params::new();
+        params.insert("exchange".to_string(), Value::Bool(true));
+
+        let err = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
+            contract,
+            Some(&params),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must be a string"));
     }
 }

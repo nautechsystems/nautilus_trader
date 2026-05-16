@@ -1200,6 +1200,18 @@ exec_config = InteractiveBrokersExecClientConfig(
 )
 ```
 
+#### Order params
+
+The execution adapter supports `params["exchange"]` on order submit, order list submit, and
+order modification commands. Use it to override the IB contract exchange for routing the current
+order while preserving the cached instrument contract:
+
+```python
+self.submit_order(order, params={"exchange": "IEX"})
+```
+
+Leave `exchange` unset, or set it to an empty string, to use the cached contract exchange.
+
 #### Order tags and advanced features
 
 The adapter supports IB-specific order parameters through order tags:
