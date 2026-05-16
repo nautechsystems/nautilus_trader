@@ -99,6 +99,7 @@ Released on TBD (UTC).
 - Fixed `OwnOrderBook` tracking for reconciled external open orders (Rust)
 - Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
 - Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
+- Fixed `BacktestEngine` not settling `on_stop` commands before shutdown (#4062), thanks for reporting @zhanghaoda
 - Fixed `MessageBus` late wildcard subscriptions missing events on already-cached topics (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` duplicate fills from closed matching-core orders (#4075)
@@ -244,6 +245,7 @@ Released on TBD (UTC).
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 - Added Rust shared-mutability storage guide with `Rc<RefCell<T>>` decision tree to the developer guide
+- Added `Shutdown semantics` to the backtesting guide covering `on_stop` command settlement
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
 
 ### Deprecations

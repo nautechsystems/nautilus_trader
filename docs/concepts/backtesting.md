@@ -447,6 +447,21 @@ timestamp derived from the simulated latency. The settle loop considers inflight
 at the current timestamp as pending, so zero-latency or same-tick latency configurations still settle
 correctly. Commands with future timestamps are deferred and processed when the engine reaches that time.
 
+#### Shutdown semantics
+
+`BacktestEngine::end()` invokes each strategy's `on_stop` handler, drains and settles any commands
+it emits (e.g. `close_all_positions`, `cancel_all_orders`), then stops the engines.
+
+- Final positions, orders, and account balances reflect `on_stop` fills and cancels.
+- Strategy event handlers do not fire for the resulting events: the strategy is already `Stopped`,
+  so `OrderFilled` and similar events log but bypass `on_order_filled` and friends. Logic that
+  reacts to fills must run before `on_stop` returns.
+- Simulation modules do not re-run at shutdown. `SimulationModule::process` is once per timestamp;
+  re-invoking would double-apply side effects like FX rollover interest.
+- A `LatencyModel` defers `on_stop` commands by its configured delay; the engine clock does not
+  advance past the final data point, so those commands stay pending. Close earlier (e.g. in the
+  last `on_bar`) for reliable closing fills with latency.
+
 ### Fill modeling philosophy
 
 NautilusTrader treats historical order book and trade data as **immutable** during backtesting. What happened in the market is preserved exactly as recorded. Fills never modify the underlying book state.

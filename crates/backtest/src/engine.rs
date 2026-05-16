@@ -786,18 +786,17 @@ impl BacktestEngine {
             self.flush_accumulator_events(&clocks, flush_ts);
         }
 
-        // Stop trader
         self.kernel.stop_trader();
+
+        // Settle residual on_stop commands (e.g. close_all_positions) before stopping
+        // engines. Venue modules are not re-run; process_modules is once per timestamp.
+        let ts_now = self.kernel.clock.borrow().timestamp_ns();
+        self.settle_venues(ts_now);
 
         // Stop engines
         self.kernel.data_engine.borrow_mut().stop();
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
-
-        // Process remaining exchange messages
-        let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        self.settle_venues(ts_now);
-        self.run_venue_modules(ts_now);
 
         self.run_finished = Some(UnixNanos::from(std::time::SystemTime::now()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
@@ -1211,6 +1210,10 @@ impl BacktestEngine {
         // Only process and iterate venues that had pending commands each
         // pass, to avoid extra fill-model rolls on untouched venues.
         loop {
+            // Drain first so commands buffered in the trading queue (e.g. from
+            // on_stop handlers) reach the venues before we check for activity.
+            self.drain_command_queues();
+
             let active_venues: Vec<Venue> = self
                 .venues
                 .iter()

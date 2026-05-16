@@ -22,6 +22,7 @@ use std::{
 use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
+    modules::{ExchangeContext, SimulationModule},
 };
 use nautilus_common::{
     actor::{
@@ -46,7 +47,7 @@ use nautilus_model::{
     events::OrderFilled,
     identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -2261,6 +2262,379 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
     engine.add_data(quotes, None, true, true).unwrap();
     engine.run(None, None, None, false).unwrap();
     assert_eq!(engine.get_result().iterations, 1);
+}
+
+struct CloseOnStop {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    opened: bool,
+}
+
+impl CloseOnStop {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CLOSE-ON-STOP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            opened: false,
+        }
+    }
+}
+
+nautilus_strategy!(CloseOnStop);
+
+impl Debug for CloseOnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CloseOnStop)).finish()
+    }
+}
+
+impl DataActor for CloseOnStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.close_all_positions(self.instrument_id, None, None, None, None, None, None)
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.opened {
+            return Ok(());
+        }
+        self.opened = true;
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_close_all_positions_in_on_stop_is_processed(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Regression test for: closing orders emitted in on_stop() must be dispatched,
+    // matched, and filled before the engine returns. Without the fix, the SubmitOrder
+    // sits in the trading command queue and the position remains open at run end.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open positions after on_stop close_all_positions, found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected one closed position after on_stop close_all_positions",
+    );
+    assert!(
+        closed[0].is_closed(),
+        "position must report is_closed() after run end",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "expected opening and closing orders to both be tracked",
+    );
+}
+
+#[derive(Debug, Default)]
+struct ProcessCallTracker {
+    total_calls: Cell<u32>,
+    last_ts: Cell<Option<UnixNanos>>,
+    duplicate_ts_seen: Cell<bool>,
+}
+
+#[derive(Debug)]
+struct CountingSimulationModule {
+    tracker: std::rc::Rc<ProcessCallTracker>,
+}
+
+impl SimulationModule for CountingSimulationModule {
+    fn pre_process(&self, _data: &Data) {}
+
+    fn process(&self, ts_now: UnixNanos, _ctx: &ExchangeContext) -> Vec<Money> {
+        let prev = self.tracker.last_ts.get();
+        if prev == Some(ts_now) {
+            self.tracker.duplicate_ts_seen.set(true);
+        }
+        self.tracker.last_ts.set(Some(ts_now));
+        self.tracker
+            .total_calls
+            .set(self.tracker.total_calls.get() + 1);
+        Vec::new()
+    }
+
+    fn log_diagnostics(&self) {}
+
+    fn reset(&self) {}
+}
+
+#[rstest]
+fn test_end_does_not_double_run_modules_at_same_timestamp(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Regression guard: end() must not invoke run_venue_modules a second time at the
+    // final timestamp after run_impl already ran them. SimulationModule::process is
+    // documented as once-per-time-step; double-calling can double-apply Money
+    // adjustments (FX rollover and user-defined modules).
+    let tracker = std::rc::Rc::new(ProcessCallTracker::default());
+    let module = CountingSimulationModule {
+        tracker: tracker.clone(),
+    };
+
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .modules(vec![Box::new(module)])
+        .build();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert!(
+        !tracker.duplicate_ts_seen.get(),
+        "SimulationModule::process invoked twice at the same timestamp; \
+         end() must preserve the once-per-time-step contract",
+    );
+    assert!(
+        tracker.total_calls.get() > 0,
+        "expected the module to run at least once during the backtest",
+    );
+}
+
+struct CancelOnStop {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    limit_price: Price,
+    placed: bool,
+}
+
+impl CancelOnStop {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity, limit_price: Price) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CANCEL-ON-STOP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            limit_price,
+            placed: false,
+        }
+    }
+}
+
+nautilus_strategy!(CancelOnStop);
+
+impl Debug for CancelOnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CancelOnStop)).finish()
+    }
+}
+
+impl DataActor for CancelOnStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.cancel_all_orders(self.instrument_id, None, None, None)
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.placed {
+            return Ok(());
+        }
+        self.placed = true;
+        let order = self.core.order_factory().limit(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            self.limit_price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_cancel_all_orders_in_on_stop_is_processed(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Sibling regression to the close_all_positions case: cancel commands emitted in
+    // on_stop must reach the venue and resolve before end() returns.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    // Limit price well below market so the order rests rather than fills immediately.
+    engine
+        .add_strategy(CancelOnStop::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("900.00"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.orders_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open orders after on_stop cancel_all_orders, found {}",
+        open.len(),
+    );
+
+    let closed = cache.orders_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected the limit order to be closed (canceled) after on_stop",
+    );
+    assert!(
+        closed[0].is_canceled(),
+        "expected the closed order to be in CANCELED status",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 1,
+        "expected only the resting limit order to be tracked",
+    );
+}
+
+#[rstest]
+fn test_close_all_positions_in_on_stop_is_processed_streaming(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Streaming-mode counterpart: engine.run(streaming=true) does not call end()
+    // internally; the BacktestNode-style caller invokes end() explicitly. The fix
+    // must hold on this call path too, otherwise streaming consumers see the bug.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, true).unwrap();
+    engine.end();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open positions after streaming run + end(), found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected one closed position after streaming run + end()",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "expected opening and closing orders in streaming mode",
+    );
 }
 
 #[rstest]
