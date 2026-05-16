@@ -1090,7 +1090,7 @@ mod serial_tests {
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 
         // Close the message bus database (test should not hang)
-        db.close();
+        MessageBusDatabaseAdapter::close(&mut db);
     }
 
     #[rstest]
