@@ -25,6 +25,7 @@ use std::{
     any::Any,
     hint::black_box,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -400,6 +401,7 @@ fn bench_high_volume(c: &mut Criterion) {
     let quote = QuoteTick::default();
 
     let mut group = c.benchmark_group("High volume throughput");
+    group.measurement_time(Duration::from_secs(10));
 
     for msg_count in [100_000u64, 1_000_000] {
         group.throughput(Throughput::Elements(msg_count));
