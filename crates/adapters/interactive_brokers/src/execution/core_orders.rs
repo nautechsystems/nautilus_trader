@@ -107,6 +107,7 @@ impl InteractiveBrokersExecutionClient {
 
         let contract =
             Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
+        let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
 
         let order_any = OrderAny::try_from(cmd.order_init.clone())
             .context("Failed to construct order from `OrderInitialized`")?;
@@ -214,6 +215,7 @@ impl InteractiveBrokersExecutionClient {
             let ib_order_id = target_ib_order_id.context("Order ID not found in mapping")?;
             let contract =
                 Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
+            let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
 
             let order_ref = original_order.client_order_id().to_string();
             let mut ib_order = nautilus_order_to_ib_order(
@@ -323,6 +325,8 @@ impl InteractiveBrokersExecutionClient {
 
                     let ib_order_id = data.order_id;
                     let contract = data.contract;
+                    let contract =
+                        Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
                     let mut ib_order = data.order;
 
                     Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
@@ -400,6 +404,7 @@ impl InteractiveBrokersExecutionClient {
             first_order.instrument_id(),
             instrument_provider,
         )?;
+        let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
 
         let _submit_guard = order_submit_lock.lock().await;
 
@@ -577,6 +582,8 @@ impl InteractiveBrokersExecutionClient {
                     order.instrument_id(),
                     instrument_provider,
                 )?;
+                let order_contract =
+                    Self::contract_with_order_exchange_param(order_contract, cmd.params.as_ref())?;
 
                 let order_ref = order.client_order_id().to_string();
                 let mut ib_order = nautilus_order_to_ib_order(

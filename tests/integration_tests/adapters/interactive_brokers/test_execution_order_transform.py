@@ -15,6 +15,8 @@
 
 import pytest
 
+from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import ContingencyType
@@ -143,6 +145,45 @@ async def test_transform_order_to_ib_order_limit(
         f"{expected_order_type=}, but got {ib_order.orderType=}"
     )
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
+
+
+@pytest.mark.asyncio
+async def test_transform_order_to_ib_order_exchange_param(exec_client):
+    # Arrange
+    instrument = _AAPL
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    cached_contract = exec_client._instrument_provider.contract_details[instrument.id].contract
+    order = TestExecStubs.limit_order(instrument=instrument)
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(order, {"exchange": "IEX"})
+
+    # Assert
+    assert ib_order.contract.exchange == "IEX"
+    assert ib_order.contract.primaryExchange == "NASDAQ"
+    assert ib_order.contract.conId == cached_contract.conId
+    assert cached_contract.exchange == "SMART"
+    assert ib_order.contract is not cached_contract
+
+
+def test_contract_with_routing_exchange_preserves_combo_legs(exec_client):
+    # Arrange
+    combo_legs = [
+        ComboLeg(conId=1001, ratio=1, action="BUY", exchange="SMART"),
+        ComboLeg(conId=1002, ratio=1, action="SELL", exchange="SMART"),
+    ]
+    contract = IBContract(secType="BAG", exchange="SMART", comboLegs=combo_legs)
+
+    # Act
+    updated = exec_client._contract_with_routing_exchange(contract, "CBOE")
+
+    # Assert
+    assert updated.exchange == "CBOE"
+    assert contract.exchange == "SMART"
+    assert updated.comboLegs == combo_legs
+    assert updated.comboLegs is combo_legs
+    assert isinstance(updated.comboLegs[0], ComboLeg)
 
 
 @pytest.mark.asyncio
