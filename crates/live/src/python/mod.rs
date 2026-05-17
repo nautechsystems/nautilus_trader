@@ -18,13 +18,14 @@
 pub mod config;
 pub mod node;
 
-use nautilus_portfolio::config::PortfolioConfig;
+use nautilus_portfolio::{config::PortfolioConfig, python::PyPortfolio};
 use pyo3::prelude::*;
 
 pyo3_stub_gen::reexport_module_members!(
     "nautilus_trader.live",
     "nautilus_trader.portfolio",
-    "PortfolioConfig"
+    "PortfolioConfig",
+    "Portfolio"
 );
 
 /// Loaded as `nautilus_pyo3.live`.
@@ -45,5 +46,6 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::LiveDataClientConfig>()?;
     m.add_class::<crate::config::LiveExecClientConfig>()?;
     m.add_class::<PortfolioConfig>()?;
+    m.add_class::<PyPortfolio>()?;
     Ok(())
 }
