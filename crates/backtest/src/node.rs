@@ -152,9 +152,10 @@ impl BacktestNode {
                     .price_protection_points(venue_config.price_protection_points())
                     .liquidation_enabled(venue_config.liquidation_enabled())
                     .liquidation_trigger_ratio(
-                        venue_config.liquidation_trigger_ratio()
+                        venue_config
+                            .liquidation_trigger_ratio()
                             .to_f64()
-                            .unwrap_or(1.0)
+                            .unwrap_or(1.0),
                     )
                     .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
                     .build();

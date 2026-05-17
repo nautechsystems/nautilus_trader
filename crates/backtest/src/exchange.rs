@@ -1029,16 +1029,19 @@ impl SimulatedExchange {
         if !self.liquidation_enabled {
             return;
         }
+
         if self.frozen_account {
             return;
         }
 
         let account = {
             let cache = self.cache.borrow();
-            cache.account_for_venue(&self.id).cloned()
+            cache.account_for_venue_owned(&self.id)
         };
         let Some(account) = account else { return };
-        let AccountAny::Margin(margin_account) = &account else { return };
+        let AccountAny::Margin(margin_account) = &account else {
+            return;
+        };
         let account_id = margin_account.id();
 
         let currencies: Vec<Currency> = margin_account.currencies();
@@ -1058,7 +1061,11 @@ impl SimulatedExchange {
                 let positions = cache.positions_open(Some(&self.id), None, None, None, None);
                 let mut upnl = 0.0_f64;
                 let mut all_priced = true;
-                for p in positions.iter().filter(|p| p.settlement_currency == currency) {
+
+                for p in positions
+                    .iter()
+                    .filter(|p| p.settlement_currency == currency)
+                {
                     match cache.calculate_unrealized_pnl(p) {
                         Some(pnl) => upnl += pnl.as_f64(),
                         None => {
@@ -1089,13 +1096,19 @@ impl SimulatedExchange {
 
             log::warn!(
                 "LIQUIDATION triggered for account {} currency {}: equity={:.4} <= threshold={:.4} (maintenance={:.4} x ratio={})",
-                account_id, currency, equity, threshold, maintenance, self.liquidation_trigger_ratio
+                account_id,
+                currency,
+                equity,
+                threshold,
+                maintenance,
+                self.liquidation_trigger_ratio
             );
 
             self.liquidated_accounts.insert((account_id, currency));
 
             for matching_engine in self.matching_engines.values_mut() {
-                matching_engine.liquidate_open_positions(ts_now, self.liquidation_cancel_open_orders);
+                matching_engine
+                    .liquidate_open_positions(ts_now, self.liquidation_cancel_open_orders);
             }
 
             break;

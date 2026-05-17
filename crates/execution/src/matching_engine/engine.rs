@@ -2492,14 +2492,20 @@ impl OrderMatchingEngine {
     /// Cancels open orders if `cancel_open_orders` is true, then closes every open
     /// position at best bid/ask or the settlement price, emitting accepted and filled
     /// events for each synthetic close order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the venue order ID generator cannot produce an ID for the synthetic
+    /// liquidation order (internal state inconsistency).
     pub fn liquidate_open_positions(&mut self, ts_now: UnixNanos, cancel_open_orders: bool) {
         if cancel_open_orders {
             let open_orders: Vec<RestingOrder> = self.get_open_orders();
             for order_info in &open_orders {
                 let order = {
                     let cache = self.cache.borrow();
-                    cache.order(&order_info.client_order_id).cloned()
+                    cache.order_owned(&order_info.client_order_id)
                 };
+
                 if let Some(order) = order {
                     self.cancel_order(&order, None);
                 }
@@ -2538,8 +2544,7 @@ impl OrderMatchingEngine {
 
             let Some(fill_price) = fill_price else {
                 log::warn!(
-                    "LIQUIDATION: no price available for {} position {position_id}, skipping",
-                    instrument_id
+                    "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
                 );
                 continue;
             };

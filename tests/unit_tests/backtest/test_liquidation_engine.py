@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Integration tests for the SimulatedExchange liquidation engine (#3788).
 
@@ -21,6 +20,7 @@ These tests verify that the liquidation logic correctly:
   - Triggers a market close of all open positions when equity <= threshold
   - Cancels open orders (when configured) on liquidation
   - Does not trigger again for the same account/currency after liquidation
+
 """
 
 from decimal import Decimal
@@ -74,7 +74,9 @@ def _make_quote(price_str: str, ts: int = 0) -> QuoteTick:
 
 
 class TestLiquidationEngine:
-    """Tests for the SimulatedExchange liquidation engine feature."""
+    """
+    Tests for the SimulatedExchange liquidation engine feature.
+    """
 
     def _build_exchange(
         self,
@@ -147,7 +149,7 @@ class TestLiquidationEngine:
         self.cache.add_instrument(XBTUSD_BITMEX)
 
         self.strategy = MockStrategy(
-            bar_type=TestDataStubs.bartype_btcusdt_binance_100tick_last()
+            bar_type=TestDataStubs.bartype_btcusdt_binance_100tick_last(),
         )
         self.strategy.register(
             trader_id=self.trader_id,
@@ -165,7 +167,9 @@ class TestLiquidationEngine:
         return exchange
 
     def _open_large_long(self, exchange: SimulatedExchange, qty: int = 10_000_000) -> None:
-        """Open a large long position in XBTUSD to test margin requirements."""
+        """
+        Open a large long position in XBTUSD to test margin requirements.
+        """
         quote = _make_quote(f"{ENTRY_PRICE}.0")
         self.data_engine.process(quote)
         exchange.process_quote_tick(quote)
@@ -183,7 +187,9 @@ class TestLiquidationEngine:
     # ------------------------------------------------------------------
 
     def test_liquidation_enabled_defaults_false(self):
-        """Liquidation is disabled by default (no liquidation_enabled kwarg)."""
+        """
+        Liquidation is disabled by default (no liquidation_enabled kwarg).
+        """
         clock = TestClock()
         trader_id = TestIdStubs.trader_id()
         msgbus = MessageBus(trader_id=trader_id, clock=clock)
@@ -210,7 +216,9 @@ class TestLiquidationEngine:
         assert not exchange.liquidation_enabled
 
     def test_liquidation_enabled_can_be_set(self):
-        """Liquidation fields survive round-trip through SimulatedExchange init."""
+        """
+        Liquidation fields survive round-trip through SimulatedExchange init.
+        """
         exchange = self._build_exchange(
             liquidation_enabled=True,
             liquidation_trigger_ratio=0.9,
@@ -225,7 +233,9 @@ class TestLiquidationEngine:
     # ------------------------------------------------------------------
 
     def test_no_liquidation_when_equity_above_threshold(self):
-        """With a healthy balance no positions are closed on a price drop."""
+        """
+        With a healthy balance no positions are closed on a price drop.
+        """
         # Start with a large balance; positions won't be underwater
         exchange = self._build_exchange(starting_btc=100.0)
 
@@ -254,6 +264,7 @@ class TestLiquidationEngine:
           - Price crashes 50% to 20,000 USD
           - Unrealized loss ≈ 10M*(1/20k - 1/40k) = 250 BTC >> 1 BTC balance
           - Equity becomes deeply negative → liquidation must trigger
+
         """
         exchange = self._build_exchange(
             liquidation_enabled=True,
@@ -283,7 +294,9 @@ class TestLiquidationEngine:
     # ------------------------------------------------------------------
 
     def test_liquidation_disabled_does_not_close_position(self):
-        """When liquidation_enabled=False, positions stay open no matter the loss."""
+        """
+        When liquidation_enabled=False, positions stay open no matter the loss.
+        """
         exchange = self._build_exchange(
             liquidation_enabled=False,
             starting_btc=1.0,
@@ -296,14 +309,18 @@ class TestLiquidationEngine:
         exchange.process_quote_tick(crash_quote)
         exchange.process(0)
 
-        assert len(self.cache.positions_open()) == 1, "Position must remain open when liquidation is disabled"
+        assert len(self.cache.positions_open()) == 1, (
+            "Position must remain open when liquidation is disabled"
+        )
 
     # ------------------------------------------------------------------
     # cancel_open_orders flag
     # ------------------------------------------------------------------
 
     def test_liquidation_cancels_open_orders_when_flag_set(self):
-        """Open limit orders are cancelled when liquidation_cancel_open_orders=True."""
+        """
+        Open limit orders are cancelled when liquidation_cancel_open_orders=True.
+        """
         exchange = self._build_exchange(
             liquidation_enabled=True,
             liquidation_cancel_open_orders=True,
@@ -349,7 +366,9 @@ class TestLiquidationEngine:
         )
 
     def test_liquidation_leaves_open_orders_when_flag_unset(self):
-        """Open limit orders remain when liquidation_cancel_open_orders=False."""
+        """
+        Open limit orders remain when liquidation_cancel_open_orders=False.
+        """
         exchange = self._build_exchange(
             liquidation_enabled=True,
             liquidation_cancel_open_orders=False,
@@ -392,7 +411,9 @@ class TestLiquidationEngine:
     # ------------------------------------------------------------------
 
     def test_liquidation_does_not_trigger_twice(self):
-        """After liquidation, a subsequent process() call does not re-liquidate."""
+        """
+        After liquidation, a subsequent process() call does not re-liquidate.
+        """
         exchange = self._build_exchange(
             liquidation_enabled=True,
             starting_btc=1.0,
@@ -428,6 +449,7 @@ class TestLiquidationEngineMarketSimulation:
       - All subsequent ticks after liquidation produce no further events.
       - Price recovery (bounce) prevents liquidation from firing.
       - Multiple declining ticks stop exactly at the first crossing tick.
+
     """
 
     def _build_exchange(
@@ -498,7 +520,9 @@ class TestLiquidationEngineMarketSimulation:
         return exchange
 
     def _feed_price(self, exchange: SimulatedExchange, price: float, ts: int = 0) -> None:
-        """Push a single quote tick through data engine and exchange."""
+        """
+        Push a single quote tick through data engine and exchange.
+        """
         q = _make_quote(f"{price:.1f}", ts=ts)
         self.data_engine.process(q)
         exchange.process_quote_tick(q)
@@ -522,12 +546,13 @@ class TestLiquidationEngineMarketSimulation:
 
     def test_gradual_decline_no_premature_liquidation(self):
         """
-        Price drops in small steps; liquidation must NOT fire until the last step
-        that pushes equity below the threshold.
+        Price drops in small steps; liquidation must NOT fire until the last step that
+        pushes equity below the threshold.
 
-        With 100 BTC balance and a 100k USD (100k/40k ≈ 2.5 BTC notional) position,
-        a 50 % drop only produces ~1.25 BTC loss, leaving plenty of equity. The
-        exchange must keep the position open through the whole sequence.
+        With 100 BTC balance and a 100k USD (100k/40k ≈ 2.5 BTC notional) position, a 50
+        % drop only produces ~1.25 BTC loss, leaving plenty of equity. The exchange must
+        keep the position open through the whole sequence.
+
         """
         exchange = self._build_exchange(
             liquidation_enabled=True,
@@ -555,12 +580,13 @@ class TestLiquidationEngineMarketSimulation:
 
     def test_gradual_decline_liquidation_fires_at_threshold(self):
         """
-        Price declines step-by-step; liquidation fires on the first tick where
-        equity < maintenance_margin * trigger_ratio, and not before.
+        Price declines step-by-step; liquidation fires on the first tick where equity <
+        maintenance_margin * trigger_ratio, and not before.
 
-        With only 1 BTC balance and a 10M USD position (≈ 250 BTC notional at
-        40k), even a moderate drop causes catastrophic losses. We confirm the
-        position is still open at the first few steps and closed by the end.
+        With only 1 BTC balance and a 10M USD position (≈ 250 BTC notional at 40k), even
+        a moderate drop causes catastrophic losses. We confirm the position is still
+        open at the first few steps and closed by the end.
+
         """
         exchange = self._build_exchange(
             liquidation_enabled=True,
@@ -593,9 +619,10 @@ class TestLiquidationEngineMarketSimulation:
         """
         Price dips toward the danger zone then recovers; liquidation must NOT fire.
 
-        With 100 BTC balance and a 10M USD position the equity dips on the
-        downward leg but the account is still solvent. On recovery the position
-        stays open throughout.
+        With 100 BTC balance and a 10M USD position the equity dips on the downward leg
+        but the account is still solvent. On recovery the position stays open
+        throughout.
+
         """
         exchange = self._build_exchange(
             liquidation_enabled=True,
@@ -626,8 +653,8 @@ class TestLiquidationEngineMarketSimulation:
 
     def test_continued_ticks_after_liquidation_produce_no_events(self):
         """
-        After the position is force-closed by liquidation, further price ticks
-        must not generate any additional order or position events.
+        After the position is force-closed by liquidation, further price ticks must not
+        generate any additional order or position events.
         """
         exchange = self._build_exchange(
             liquidation_enabled=True,
@@ -660,6 +687,7 @@ class TestLiquidationEngineMarketSimulation:
         trigger_ratio=2.0 should liquidate at a smaller price drop than ratio=1.0,
         because equity must stay above 2x the maintenance margin.
         """
+
         def drop_until_liquidated(ratio: float) -> int | None:
             ex = self._build_exchange(
                 liquidation_enabled=True,
