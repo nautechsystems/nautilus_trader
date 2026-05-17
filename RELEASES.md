@@ -1,6 +1,6 @@
 # NautilusTrader 1.227.0 Beta
 
-Released on TBD (UTC).
+Released on 17th May 2026 (UTC).
 
 ### Enhancements
 - Added continuous futures support for aggregated bars (#3921), thanks @faysou
@@ -118,6 +118,7 @@ Released on TBD (UTC).
 - Fixed matching engine and sandbox handling of stale-precision quote and trade ticks (#4044), thanks @graceyangfan
 - Fixed bracket SL/TP rejected by matching engine on submit (Rust) (#4040), thanks for reporting @maximsamsonov
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
+- Fixed `ExecutionEngine` `subscribe_venue_instruments` routing through the typed publisher so adapters receive instrument updates
 - Fixed execution fill reconciliation account scoping and duplicate trade IDs (Rust)
 - Fixed reconciliation drift when a venue snapshot carries both a fill mismatch and a quantity/price amendment (Rust)
 - Fixed reconciliation premature `OrderUpdated` emission for pending venue states before venue confirmation (Rust)
@@ -149,6 +150,7 @@ Released on TBD (UTC).
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Bybit ambiguous submit failures to await reconciliation, thanks for reporting @shorino
 - Fixed Bybit BBO orders not reconciling the venue-resolved price in cached order state (Rust and Python)
+- Fixed Bybit funding rate parsing errors for dated futures on the shared `tickers.linear` WebSocket topic; gates funding rate processing to `CryptoPerpetual` instruments only (#4084)
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
@@ -167,6 +169,7 @@ Released on TBD (UTC).
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
 - Fixed Deribit cross-margin balance overcounting; now reports `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
 - Fixed Deribit subscriptions silently dropping data for uncached instruments (#4035), thanks for reporting @linimin
+- Fixed Deribit funding rate log spam from perpetual channel updates emitting info/debug on every tick (#4083)
 - Fixed Deribit and Hyperliquid custom data builds without the `arrow` feature
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
@@ -233,6 +236,7 @@ Released on TBD (UTC).
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved cache order storage to per-order `Rc<RefCell<OrderAny>>` cells, closing stale-clone bug class (Rust)
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
+- Improved `DataEngine` and `DataActor` bulky response handlers to log payload summaries at debug and full payloads at trace; same pattern applied to raw WS binary frame logging in Bybit, OKX, and BitMEX
 - Improved `OrderMatchingEngine` trailing-stop activation to use the `OrderMatchingCore` `iter_*` API (Rust)
 - Improved `OrderMatchingEngine.iterate` per-order loop to align trailing-stop and GTD timing with Cython (Rust)
 - Improved `OrderMatchingEngine` queue-position fill gating to match Cython on cross-through trades (Rust)
