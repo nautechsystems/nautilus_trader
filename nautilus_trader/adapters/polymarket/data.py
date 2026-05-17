@@ -24,6 +24,8 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENU
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import update_instrument
+from nautilus_trader.adapters.polymarket.common.retry import auto_load_retry_delay
+from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
@@ -69,6 +71,21 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
 
 
+def _resolve_with_exception(
+    pending: dict[InstrumentId, asyncio.Future[None]],
+    exc: BaseException,
+) -> None:
+    for future in pending.values():
+        if not future.done():
+            future.set_exception(exc)
+
+
+def _cancel_pending(pending: dict[InstrumentId, asyncio.Future[None]]) -> None:
+    for future in pending.values():
+        if not future.done():
+            future.cancel()
+
+
 class PolymarketDataClient(LiveMarketDataClient):
     """
     Provides a data client for Polymarket, a decentralized predication market.
@@ -93,6 +110,10 @@ class PolymarketDataClient(LiveMarketDataClient):
         The custom client ID.
 
     """
+
+    # Narrow the base class annotation so mypy knows about the Polymarket
+    # provider's extra `transient_condition_ids` kwarg on `load_ids_async`.
+    _instrument_provider: PolymarketInstrumentProvider
 
     def __init__(
         self,
@@ -290,26 +311,96 @@ class PolymarketDataClient(LiveMarketDataClient):
         if not pending:
             return
 
-        instrument_ids = list(pending.keys())
         self._log.info(
-            f"Auto-loading {len(instrument_ids)} missing instrument(s): {instrument_ids}",
+            f"Auto-loading {len(pending)} missing instrument(s): {list(pending.keys())}",
             LogColor.BLUE,
         )
 
-        try:
-            await self._instrument_provider.load_ids_async(instrument_ids)
-        except Exception as e:
-            self._log.error(f"Auto-load batch failed: {e}")
+        max_retries = self._config.auto_load_max_retries
+        base_secs = self._config.auto_load_retry_delay_initial_secs
+        max_secs = self._config.auto_load_retry_delay_max_secs
 
-            for future in pending.values():
-                if not future.done():
-                    future.set_exception(e)
-            return
+        try:
+            for attempt in range(max_retries + 1):
+                if self._disconnecting:
+                    return
+
+                transient: set[str] = set()
+                try:
+                    await self._instrument_provider.load_ids_async(
+                        list(pending.keys()),
+                        transient_condition_ids=transient,
+                    )
+                except Exception as e:
+                    self._log.error(f"Auto-load batch failed: {e}")
+                    _resolve_with_exception(pending, e)
+                    return
+
+                still_pending = self._dispatch_pending(pending, transient)
+
+                if not still_pending:
+                    return
+
+                if attempt >= max_retries:
+                    self._resolve_exhausted(still_pending, max_retries)
+                    return
+
+                pending = still_pending
+                delay = auto_load_retry_delay(
+                    attempt,
+                    base_secs=base_secs,
+                    max_secs=max_secs,
+                )
+                self._log.info(
+                    f"Auto-load retry {attempt + 1}/{max_retries} for "
+                    f"{len(still_pending)} transient instrument(s) in {delay:.1f}s",
+                    LogColor.YELLOW,
+                )
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            _cancel_pending(pending)
+            raise
+
+    def _dispatch_pending(
+        self,
+        pending: dict[InstrumentId, asyncio.Future[None]],
+        transient: set[str],
+    ) -> dict[InstrumentId, asyncio.Future[None]]:
+        # Dispatch each pending entry to a terminal outcome (loaded or
+        # terminal-miss) and return whatever is left in the transient state
+        # for the caller to retry.
+        still_pending: dict[InstrumentId, asyncio.Future[None]] = {}
 
         for instrument_id, future in pending.items():
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
                 self._handle_data(instrument)
+
+                if not future.done():
+                    future.set_result(None)
+            elif get_polymarket_condition_id(instrument_id) in transient:
+                still_pending[instrument_id] = future
+            else:
+                self._log.error(
+                    f"Cannot find instrument for {instrument_id}: not found on venue",
+                )
+
+                if not future.done():
+                    future.set_result(None)
+
+        return still_pending
+
+    def _resolve_exhausted(
+        self,
+        still_pending: dict[InstrumentId, asyncio.Future[None]],
+        max_retries: int,
+    ) -> None:
+        for instrument_id, future in still_pending.items():
+            self._log.error(
+                f"Cannot find instrument for {instrument_id}: empty token_id "
+                f"after {max_retries} retries (CLOB lifecycle race)",
+            )
+
             if not future.done():
                 future.set_result(None)
 

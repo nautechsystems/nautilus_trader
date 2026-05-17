@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from py_clob_client_v2.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
@@ -1080,3 +1081,162 @@ async def test_event_slug_builder_skips_empty_token_id(
         # Assert: Only 1 valid token loaded (the one with non-empty token_id)
         instruments = provider.list_all()
         assert len(instruments) == 1
+
+
+def _make_404_exception() -> PolyApiException:
+    # PolyApiException requires either a Response or an error_msg; we use the
+    # error_msg path and override status_code to mirror what CLOB returns when
+    # a newly-minted market has not yet propagated to the API.
+    exc = PolyApiException(error_msg="market not found")
+    exc.status_code = 404
+    return exc
+
+
+@pytest.mark.asyncio
+async def test_load_markets_seq_treats_clob_404_as_transient(
+    instrument_provider,
+    mock_clob_client,
+):
+    instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    mock_clob_client.get_market.side_effect = _make_404_exception()
+
+    transient: set[str] = set()
+    await instrument_provider._load_markets_seq(
+        [instrument_id],
+        filters={},
+        transient_condition_ids=transient,
+    )
+
+    # No instrument loaded but condition_id surfaced to the caller for retry
+    assert len(instrument_provider.list_all()) == 0
+    assert ACTIVE_OPEN_MARKET["condition_id"] in transient
+
+
+@pytest.mark.asyncio
+async def test_load_markets_seq_propagates_non_404_poly_api_exceptions(
+    instrument_provider,
+    mock_clob_client,
+):
+    # Non-404 errors (auth, 5xx, rate limit) must NOT be silently swallowed.
+    instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    exc = PolyApiException(error_msg="internal server error")
+    exc.status_code = 500
+    mock_clob_client.get_market.side_effect = exc
+
+    transient: set[str] = set()
+    with pytest.raises(PolyApiException):
+        await instrument_provider._load_markets_seq(
+            [instrument_id],
+            filters={},
+            transient_condition_ids=transient,
+        )
+
+    assert transient == set()
+
+
+@pytest.mark.asyncio
+async def test_load_async_treats_clob_404_as_transient(
+    instrument_provider,
+    mock_clob_client,
+):
+    instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    mock_clob_client.get_market.side_effect = _make_404_exception()
+
+    transient: set[str] = set()
+    await instrument_provider.load_async(
+        instrument_id,
+        transient_condition_ids=transient,
+    )
+
+    assert len(instrument_provider.list_all()) == 0
+    assert ACTIVE_OPEN_MARKET["condition_id"] in transient
+
+
+@pytest.mark.asyncio
+async def test_load_markets_seq_propagates_404_when_no_collector(
+    instrument_provider,
+    mock_clob_client,
+):
+    # Without a transient collector the caller cannot retry; a CLOB 404 must
+    # surface as an error rather than silently dropping the instrument.
+    instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    mock_clob_client.get_market.side_effect = _make_404_exception()
+
+    with pytest.raises(PolyApiException) as exc_info:
+        await instrument_provider._load_markets_seq([instrument_id], filters={})
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_load_async_propagates_404_when_no_collector(
+    instrument_provider,
+    mock_clob_client,
+):
+    instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    mock_clob_client.get_market.side_effect = _make_404_exception()
+
+    with pytest.raises(PolyApiException) as exc_info:
+        await instrument_provider.load_async(instrument_id)
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_load_ids_using_clob_api_routes_large_batch_to_seq_when_collector_present(
+    instrument_provider,
+):
+    # The bulk pager cannot observe per-condition 404s, so retry-capable
+    # callers must use the sequential path regardless of batch size.
+    instrument_ids = [
+        InstrumentId.from_str(f"0x{'a' * 63}{i:x}-0x{'b' * 63}{i:x}.POLYMARKET") for i in range(250)
+    ]
+    transient: set[str] = set()
+
+    with (
+        patch.object(instrument_provider, "_load_markets_seq", new=AsyncMock()) as seq,
+        patch.object(instrument_provider, "_load_markets", new=AsyncMock()) as bulk,
+    ):
+        await instrument_provider._load_ids_using_clob_api(
+            instrument_ids,
+            filters=None,
+            transient_condition_ids=transient,
+        )
+
+    seq.assert_awaited_once()
+    bulk.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_load_ids_using_clob_api_routes_large_batch_to_bulk_when_no_collector(
+    instrument_provider,
+):
+    # Legacy callers (no collector) keep the fast bulk-pager behavior for
+    # large batches.
+    instrument_ids = [
+        InstrumentId.from_str(f"0x{'a' * 63}{i:x}-0x{'b' * 63}{i:x}.POLYMARKET") for i in range(250)
+    ]
+
+    with (
+        patch.object(instrument_provider, "_load_markets_seq", new=AsyncMock()) as seq,
+        patch.object(instrument_provider, "_load_markets", new=AsyncMock()) as bulk,
+    ):
+        await instrument_provider._load_ids_using_clob_api(instrument_ids, filters=None)
+
+    bulk.assert_awaited_once()
+    seq.assert_not_awaited()

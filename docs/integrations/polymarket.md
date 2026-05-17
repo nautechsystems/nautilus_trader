@@ -629,6 +629,15 @@ The feature is enabled by default. Disable it by setting `auto_load_missing_inst
 `PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
 `load_ids` or `event_slug_builder` on `PolymarketInstrumentProviderConfig`.
 
+Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
+reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
+`token_id` strings. The adapter classifies both states as transient and retries the auto-load
+with bounded exponential backoff. Tune the cadence with `auto_load_max_retries` (default 12),
+`auto_load_retry_delay_initial_secs` (default 5.0), and `auto_load_retry_delay_max_secs`
+(default 15.0); the defaults cap the retry window near 3 minutes. Set `auto_load_max_retries=0`
+to disable retry. 5-minute markets (e.g. updown crypto) can expire before the venue finishes
+hydrating, so budget for that or raise the cap.
+
 ### Purging instruments at runtime
 
 Polymarket auto-loads instruments on demand, so a long-running session keeps growing the cache as
