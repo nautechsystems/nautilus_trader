@@ -709,10 +709,14 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Split an HIP-4 outcome's quote tokens into Yes and No side tokens.
+    /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
-    /// Submits a `userOutcome` action with operation `splitOutcome`. Returns
-    /// the exchange response serialized as JSON for inspection from Python.
+    /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:
+    /// debits `amount` quote tokens (USDH) and credits `amount` Yes plus `amount`
+    /// No side tokens for the given `outcome` index. Ordinary directional
+    /// buys and sells on outcome instruments go through the standard order path
+    /// without calling this; the action is for dual-side market making and
+    /// inventory creation.
     #[pyo3(name = "submit_split_outcome")]
     fn py_submit_split_outcome<'py>(
         &self,
@@ -731,9 +735,11 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Merge matched Yes + No side tokens of an HIP-4 outcome into quote tokens.
+    /// Merge matched Yes + No side-token pairs of an HIP-4 outcome back into quote tokens.
     ///
-    /// Pass `amount = None` to merge the maximum mergeable balance.
+    /// Submits a `userOutcome` action with the `mergeOutcome` operation. Pass
+    /// `amount = None` to merge the maximum mergeable balance (venue-side
+    /// `null`).
     #[pyo3(name = "submit_merge_outcome", signature = (outcome, amount=None))]
     fn py_submit_merge_outcome<'py>(
         &self,
@@ -752,9 +758,10 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Merge `Yes` shares across every outcome of a multi-outcome question.
+    /// Merge `Yes` shares of every outcome in a multi-outcome question into quote tokens.
     ///
-    /// Pass `amount = None` to merge the maximum mergeable balance.
+    /// Submits a `userOutcome` action with the `mergeQuestion` operation. Pass
+    /// `amount = None` to merge the maximum balance.
     #[pyo3(name = "submit_merge_question", signature = (question, amount=None))]
     fn py_submit_merge_question<'py>(
         &self,
@@ -775,7 +782,8 @@ impl HyperliquidHttpClient {
 
     /// Swap `No` shares of one outcome into `Yes` shares of every other outcome.
     ///
-    /// Both outcomes must belong to the same multi-outcome `question`.
+    /// Submits a `userOutcome` action with the `negateOutcome` operation. Both
+    /// outcomes must belong to the same multi-outcome `question`.
     #[pyo3(name = "submit_negate_outcome")]
     fn py_submit_negate_outcome<'py>(
         &self,

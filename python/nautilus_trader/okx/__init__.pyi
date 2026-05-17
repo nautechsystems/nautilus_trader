@@ -240,6 +240,7 @@ class OKXHttpClient:
         px_vol: str | None = None,
         speed_bump: str | None = None,
         outcome: str | None = None,
+        slippage_pct: str | None = None,
     ) -> typing.Any: ...
     def place_algo_order(
         self,
@@ -397,6 +398,7 @@ class OKXWebSocketClient:
         px_vol: str | None = None,
         speed_bump: str | None = None,
         outcome: str | None = None,
+        slippage_pct: str | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,

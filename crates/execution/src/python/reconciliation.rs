@@ -41,13 +41,10 @@ use crate::reconciliation::{
 /// 1. Extracts fills and position for the given instrument
 /// 2. Detects position discrepancies
 /// 3. Returns adjusted order/fill reports ready for processing
-///
-/// # Errors
-///
-/// Returns an error if instrument conversion or reconciliation fails.
 #[pyfunction(name = "process_mass_status_for_reconciliation")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
+#[expect(clippy::missing_errors_doc)]
 pub fn py_process_mass_status_for_reconciliation(
     py: Python<'_>,
     mass_status: &Bound<'_, PyAny>,
