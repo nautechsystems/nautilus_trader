@@ -424,7 +424,9 @@ fn handle_ws_message(
                 }
             };
 
-            if sub_set.is_some_and(|s| s.contains("funding")) {
+            if sub_set.is_some_and(|s| s.contains("funding"))
+                && matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+            {
                 let cache_entry = funding_cache
                     .entry(msg.data.symbol)
                     .or_insert((None, None, None));
@@ -937,6 +939,13 @@ impl DataClient for BybitDataClient {
 
         if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
             anyhow::bail!("Funding rates not available for {product_type:?} instruments");
+        }
+
+        let guard = self.instruments.load();
+        if let Some(instrument) = guard.get(&instrument_id)
+            && !matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+        {
+            anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
         }
 
         let mut should_subscribe = false;
