@@ -1218,27 +1218,28 @@ impl ExecTester {
             _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
         };
 
-        let orders = self.core.order_factory().bracket(
-            self.config.instrument_id,
-            order_side,
-            quantity,
-            Some(entry_price),                   // entry_price
-            sl_trigger_price,                    // sl_trigger_price
-            Some(self.config.stop_trigger_type), // sl_trigger_type
-            tp_price,                            // tp_price
-            None,                                // entry_trigger_price (limit entry, no trigger)
-            Some(time_in_force),
-            expire_time,
-            Some(sl_time_in_force),
-            Some(self.config.use_post_only || self.config.test_reject_post_only),
-            None, // reduce_only
-            Some(self.config.use_quote_quantity),
-            self.config.emulation_trigger,
-            None, // trigger_instrument_id
-            None, // exec_algorithm_id
-            None, // exec_algorithm_params
-            None, // tags
-        );
+        let entry_post_only = self.config.use_post_only || self.config.test_reject_post_only;
+        let orders = self
+            .core
+            .order_factory()
+            .bracket()
+            .instrument_id(self.config.instrument_id)
+            .order_side(order_side)
+            .quantity(quantity)
+            .quote_quantity(self.config.use_quote_quantity)
+            .entry_order_type(OrderType::Limit)
+            .entry_price(entry_price)
+            .time_in_force(time_in_force)
+            .entry_post_only(entry_post_only)
+            .maybe_emulation_trigger(self.config.emulation_trigger)
+            .maybe_expire_time(expire_time)
+            .tp_price(tp_price)
+            .tp_post_only(entry_post_only)
+            .tp_time_in_force(time_in_force)
+            .sl_trigger_price(sl_trigger_price)
+            .sl_trigger_type(self.config.stop_trigger_type)
+            .sl_time_in_force(sl_time_in_force)
+            .call();
 
         if let Some(entry_order) = orders.first() {
             if order_side == OrderSide::Buy {

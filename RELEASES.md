@@ -74,6 +74,7 @@ Released on TBD (UTC).
 - Changed `nautilus_core::from_pydict` signature from `Py<PyDict>` to `&Py<PyDict>` to avoid moving the input dict (Rust) (#4003), thanks @faysou
 - Changed `DataActor::subscribe_signal` to take `priority: Option<u32>`; existing callers must pass `None` (Rust)
 - Changed message bus subscription `priority` from `u8` to `u32` to match Cython `int priority` parity (Rust)
+- Changed `OrderFactory::bracket` to a `bon` method builder with per-leg `entry_*`/`tp_*`/`sl_*` setters; callers now use `factory.bracket()...call()` (Rust)
 
 ### Security
 - Added Sigstore SBOM attestation for Docker container images at the published digest
