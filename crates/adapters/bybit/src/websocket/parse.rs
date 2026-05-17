@@ -454,10 +454,18 @@ pub fn parse_ticker_linear_funding(
         .as_ref()
         .context("Bybit ticker missing funding_rate")?;
 
+    if funding_rate_str.is_empty() {
+        anyhow::bail!(
+            "empty funding_rate for {instrument_id} (dated futures do not have funding rates)"
+        );
+    }
+
     let funding_rate = funding_rate_str
         .as_str()
         .parse::<Decimal>()
-        .context("invalid funding_rate value")?;
+        .with_context(|| {
+            format!("invalid funding_rate value '{funding_rate_str}' for {instrument_id}")
+        })?;
 
     let funding_interval = if let Some(funding_interval_hour) = &data.funding_interval_hour {
         let funding_interval_hour = funding_interval_hour
