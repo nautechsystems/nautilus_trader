@@ -164,6 +164,12 @@ fn parse_futures_trigger_type(
         Some(KrakenTriggerSignal::Last) => Some(TriggerType::LastPrice),
         Some(KrakenTriggerSignal::Mark) => Some(TriggerType::MarkPrice),
         Some(KrakenTriggerSignal::Index) => Some(TriggerType::IndexPrice),
+        Some(KrakenTriggerSignal::Unknown) => {
+            log::warn!(
+                "KrakenTriggerSignal::Unknown received from venue, defaulting to Default trigger"
+            );
+            Some(TriggerType::Default)
+        }
         None => Some(TriggerType::Default),
     }
 }

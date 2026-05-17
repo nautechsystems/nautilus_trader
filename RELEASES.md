@@ -9,7 +9,7 @@ Released on TBD (UTC).
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
 - Added `CompositeMarketMaker` example strategy with book-mid quoting and synthetic-signal skew (Rust)
-- Added `#[custom_data_field(json)]` for JSON-backed Arrow `Utf8` storage of Serde-serializable fields, with typed PyO3 dict conversion for supported `IndexMap<K, V>` and `HashMap<K, V>` element types (#4003), thanks @faysou
+- Added `#[custom_data_field(json)]` for JSON-backed Arrow storage of Serde fields, with PyO3 dict conversion for `IndexMap`/`HashMap` element types (#4003), thanks @faysou
 - Added `priority` parameter to `DataActor.subscribe_signal` for ordered dispatch between subscribers (Rust and PyO3)
 - Added `Cache::order_owned` returning an owned `OrderAny` snapshot for boundary handover (Rust)
 - Added `Cache::account_mut`, `account_owned`, `account_for_venue_owned` with `AccountRefMut`/`AccountAny` returns (Rust)
@@ -68,7 +68,7 @@ Released on TBD (UTC).
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
 - Changed default `TransportBackend` to `Sockudo`; set `backend = Tungstenite` to keep the previous default
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
-- Changed `nautilus-model` to make `arrow` support optional behind a Cargo feature; enable the `arrow` feature (or `python-arrow` for the Python bindings) to restore the previous behavior (#4008), thanks @sunlei
+- Changed `nautilus-model` `arrow` support to an optional Cargo feature; enable `arrow` (or `python-arrow`) to restore prior behavior (#4008), thanks @sunlei
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
 - Changed `Strategy` order methods to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
 - Changed `Strategy::cancel_order` and `modify_order` to take `ClientOrderId` instead of `OrderAny` (Rust v2)
@@ -89,7 +89,7 @@ Released on TBD (UTC).
 - Hardened CI release signing chain: pinned cosign tooling, `harden-runner` on merge jobs
 - Hardened nightly-merge auth by storing token in git extraheader rather than remote URL
 - Hardened PyPI publishing with OIDC trusted publishing, eliminating long-lived API tokens
-- Hardened Python dependency installation by listing every third-party package in `[tool.uv].no-build-package` (kept in sync with `uv.lock` by a pre-commit hook) so unexpected loss of wheel publishing fails `uv lock` instead of silently building from an sdist
+- Hardened Python dependency installation by pinning every third-party package in `[tool.uv].no-build-package` so loss of wheel publishing fails `uv lock` rather than silently building from sdist
 - Upgraded `urllib3` to v2.7.0 (addresses GHSA-mf9v-mfxr-j63j decompression-bomb bypass and GHSA-qccp-gfcp-xxvc sensitive header leak on cross-host proxy redirect)
 - Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
 - Documented Sigstore signature and SBOM verification commands in `SECURITY.md`
@@ -148,7 +148,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot inflight REST polls for pruned IOC orders (#4072), thanks for reporting @marcelmdn
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Bybit ambiguous submit failures to await reconciliation, thanks for reporting @shorino
-- Fixed Bybit BBO orders not reconciling the venue-resolved price (Python emitted `OrderUpdated` without a preceding `OrderAccepted`; Rust emitted `OrderAccepted` but never reconciled the cached price)
+- Fixed Bybit BBO orders not reconciling the venue-resolved price in cached order state (Rust and Python)
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
@@ -184,6 +184,7 @@ Released on TBD (UTC).
 - Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed Kraken Spot WebSocket dispatch dropping delta-only execution frames that omit `symbol` (#4052), thanks @mcgrj
+- Fixed Kraken Futures order-update batches failing to deserialize on venue-emitted `"unknown"` enum values
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed OKX missing `rebase` instrument status (#3998), thanks @jhavie
 - Fixed OKX future instrument status parsing (#4005), thanks @cryptoSUN2049
@@ -331,7 +332,7 @@ Released on 29th April 2026 (UTC).
 - Added `Option<&AccountId>` to Rust `Portfolio::unrealized_pnls`, `realized_pnls`, `total_pnls`; pass `None` to keep prior behavior
 - Added `backend: TransportBackend` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
 - Added `proxy_url: Option<String>` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
-- Migrated Polymarket adapter to CLOB V2: new EIP-712 domain version `2`, new exchange contract addresses, `timestamp`/`metadata`/`builder` order fields replace `taker`/`nonce`/`feeRateBps`, and pUSD replaces USDC.e as collateral; the Python adapter now uses `py-clob-client-v2`
+- Migrated Polymarket adapter to CLOB V2: new EIP-712 domain, new exchange contracts, reshaped order fields, pUSD collateral, and `py-clob-client-v2` on the Python side
 - Consolidated adapter HTTP and WebSocket proxy plumbing onto a single `proxy_url` field, replacing the prior `http_proxy_url` / `ws_proxy_url` split across adapter Rust and Python configs
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
 - Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead
@@ -361,7 +362,7 @@ Released on 29th April 2026 (UTC).
 - Changed workspace `nautilus-live` to `default-features = false`; enable `features = ["node"]` for `LiveNode` (Rust)
 - Changed adapter `LiveNode` examples to require `--features examples` to build (Rust)
 - Changed `ParquetDataCatalog::to_object_path` and `to_object_path_parsed` to return `anyhow::Result` so cross-store URIs surface as errors instead of silently rewriting against the catalog bucket (Rust)
-- Changed prefixed remote catalogs (`s3://bucket/base/path`, etc.) to read and write under their declared URI prefix; data previously written to the bucket root by the prior buggy behavior will not be discovered after upgrading and must be moved into the prefix (#3930)
+- Changed prefixed remote catalogs (`s3://bucket/base/path`) to read and write under their declared URI prefix; move data previously written to the bucket root into the prefix (#3930)
 
 ### Security
 - Hardened Binance Ed25519 credential detection so base64 HMAC secrets no longer pass as Ed25519 keys (Rust)
