@@ -1,0 +1,37 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": "",
+    "category": "inverse",
+    "list": [
+      {
+        "symbol": "BRENTUSD",
+        "contractType": "InversePerpetual",
+        "status": "Trading",
+        "baseCoin": "BRENT",
+        "quoteCoin": "USD",
+        "launchTime": "0",
+        "deliveryTime": "0",
+        "deliveryFeeRate": "",
+        "priceScale": "2",
+        "leverageFilter": {"minLeverage": "1", "maxLeverage": "10", "leverageStep": "0.01"},
+        "priceFilter": {"minPrice": "0.01", "maxPrice": "1000", "tickSize": "0.01"},
+        "lotSizeFilter": {
+          "maxOrderQty": "100",
+          "minOrderQty": "0.001",
+          "qtyStep": "0.001",
+          "postOnlyMaxOrderQty": "1000",
+          "minNotionalValue": "1"
+        },
+        "unifiedMarginTrade": true,
+        "fundingInterval": 480,
+        "settleCoin": "BRENT",
+        "symbolId": 11,
+        "symbolType": "commodity"
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

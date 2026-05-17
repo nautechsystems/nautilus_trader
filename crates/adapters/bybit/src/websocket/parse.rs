@@ -30,7 +30,7 @@ use nautilus_model::{
         OrderStatus, PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
@@ -40,10 +40,11 @@ use rust_decimal::Decimal;
 use super::{
     enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
     messages::{
-        BybitWsAccountExecution, BybitWsAccountOrder, BybitWsAccountPosition, BybitWsAccountWallet,
-        BybitWsAuthResponse, BybitWsFrame, BybitWsKline, BybitWsOrderResponse,
-        BybitWsOrderbookDepthMsg, BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinear,
-        BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTrade,
+        BybitWsAccountExecution, BybitWsAccountExecutionFast, BybitWsAccountOrder,
+        BybitWsAccountPosition, BybitWsAccountWallet, BybitWsAuthResponse, BybitWsFrame,
+        BybitWsKline, BybitWsOrderResponse, BybitWsOrderbookDepthMsg, BybitWsResponse,
+        BybitWsSubscriptionMsg, BybitWsTickerLinear, BybitWsTickerLinearMsg,
+        BybitWsTickerOptionMsg, BybitWsTrade,
     },
 };
 use crate::common::{
@@ -137,6 +138,13 @@ pub fn parse_bybit_ws_frame(value: serde_json::Value) -> BybitWsFrame {
         if topic.starts_with(BybitWsPrivateChannel::Order.as_ref()) {
             return serde_json::from_value(value.clone())
                 .map_or_else(|_| BybitWsFrame::Unknown(value), BybitWsFrame::AccountOrder);
+        }
+
+        if topic.starts_with(BybitWsPrivateChannel::ExecutionFast.as_ref()) {
+            return serde_json::from_value(value.clone()).map_or_else(
+                |_| BybitWsFrame::Unknown(value),
+                BybitWsFrame::AccountExecutionFast,
+            );
         }
 
         if topic.starts_with(BybitWsPrivateChannel::Execution.as_ref()) {
@@ -922,6 +930,79 @@ pub fn parse_ws_fill_report(
     ))
 }
 
+/// Parses a fast-stream WebSocket execution payload into a [`FillReport`].
+///
+/// The `execution.fast` channel omits fee and exec-type fields, so the resulting
+/// report carries zero commission. Liquidity side is derived from the payload's
+/// `isMaker` flag. Pair with the standard `execution` channel if exact fee data
+/// is required.
+///
+/// `venue_position_id` should be supplied for tracked hedge-mode orders so the
+/// emitted report carries the long/short position identity that the standard
+/// channel preserves via `OrderFilled`.
+///
+/// # Errors
+///
+/// Returns an error if price or quantity fields cannot be parsed or timestamps are invalid.
+pub fn parse_ws_fill_report_fast(
+    execution: &BybitWsAccountExecutionFast,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    venue_position_id: Option<PositionId>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let trade_id = TradeId::new_checked(execution.exec_id.as_str())
+        .context("invalid execId in Bybit WebSocket fast-execution payload")?;
+
+    let order_side: OrderSide = execution.side.into();
+    let last_qty = parse_quantity_with_precision(
+        &execution.exec_qty,
+        instrument.size_precision(),
+        "execution.execQty",
+    )?;
+    let last_px = parse_price_with_precision(
+        &execution.exec_price,
+        instrument.price_precision(),
+        "execution.execPrice",
+    )?;
+
+    let liquidity_side = if execution.is_maker {
+        LiquiditySide::Maker
+    } else {
+        LiquiditySide::Taker
+    };
+
+    let commission_currency = instrument.quote_currency();
+    let commission = Money::from_decimal(Decimal::ZERO, commission_currency)
+        .with_context(|| format!("Failed to create zero commission for {commission_currency}"))?;
+    let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
+
+    let client_order_id = if execution.order_link_id.is_empty() {
+        None
+    } else {
+        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+    };
+
+    Ok(FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        client_order_id,
+        venue_position_id,
+        ts_event,
+        ts_init,
+        None,
+    ))
+}
+
 /// Parses a WebSocket account position payload into a [`PositionStatusReport`].
 ///
 /// # Errors
@@ -1045,14 +1126,14 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::BybitExecType,
+            enums::{BybitExecType, BybitOrderSide, BybitProductType},
             parse::{parse_linear_instrument, parse_option_instrument},
             testing::load_test_json,
         },
         http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
         websocket::messages::{
-            BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg, BybitWsTickerOptionMsg,
-            BybitWsTradeMsg,
+            BybitWsAccountExecutionMsg, BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg,
+            BybitWsTickerOptionMsg, BybitWsTradeMsg,
         },
     };
 
@@ -1385,6 +1466,100 @@ mod tests {
         let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    fn fast_execution(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFast {
+        BybitWsAccountExecutionFast {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            exec_id: "abc-123".to_string(),
+            exec_price: "50000.0".to_string(),
+            exec_qty: "0.5".to_string(),
+            order_id: Ustr::from("ord-1"),
+            order_link_id: Ustr::from(order_link_id),
+            side: BybitOrderSide::Buy,
+            exec_time: "1716800399334".to_string(),
+            is_maker,
+            seq: 42,
+        }
+    }
+
+    #[rstest]
+    // Maker fast fill: docs say orderLinkId is always empty -> client_order_id is None.
+    #[case(true, "", LiquiditySide::Maker, None)]
+    // Taker fast fill: orderLinkId is populated -> client_order_id is set.
+    #[case(false, "link-1", LiquiditySide::Taker, Some("link-1"))]
+    fn parse_ws_fill_report_fast_maps_is_maker_and_link_id(
+        #[case] is_maker: bool,
+        #[case] order_link_id: &str,
+        #[case] expected_liquidity: LiquiditySide,
+        #[case] expected_cid: Option<&str>,
+    ) {
+        let instrument = linear_instrument();
+        let exec = fast_execution(is_maker, order_link_id);
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_fill_report_fast(&exec, account_id, &instrument, None, TS).unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.venue_order_id.to_string(), "ord-1");
+        assert_eq!(report.trade_id.to_string(), "abc-123");
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
+        assert_eq!(report.last_px, instrument.make_price(50000.0));
+        assert_eq!(report.commission.as_f64(), 0.0);
+        assert_eq!(report.liquidity_side, expected_liquidity);
+        assert_eq!(
+            report.client_order_id.map(|c| c.to_string()),
+            expected_cid.map(str::to_string),
+        );
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.ts_event, UnixNanos::new(1_716_800_399_334_000_000));
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_fast_preserves_venue_position_id() {
+        let instrument = linear_instrument();
+        let exec = fast_execution(false, "link-hedge");
+        let account_id = AccountId::new("BYBIT-001");
+        let venue_pid = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
+
+        let report =
+            parse_ws_fill_report_fast(&exec, account_id, &instrument, Some(venue_pid), TS).unwrap();
+
+        assert_eq!(report.venue_position_id, Some(venue_pid));
+    }
+
+    #[rstest]
+    fn parse_bybit_ws_frame_routes_execution_fast_topic() {
+        // The fixture topic is `execution.fast` (matches the venue-doc sample),
+        // which the prefix check at parse_bybit_ws_frame routes to the fast frame.
+        let value: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_account_execution_fast.json")).unwrap();
+        let frame = parse_bybit_ws_frame(value);
+        assert!(
+            matches!(frame, BybitWsFrame::AccountExecutionFast(_)),
+            "expected AccountExecutionFast, found {frame:?}",
+        );
+    }
+
+    #[rstest]
+    fn parse_bybit_ws_frame_routes_standard_execution_topic() {
+        // Sanity: with the fast prefix checked first, a plain `execution.<cat>` topic
+        // must still route to the standard variant (not the fast one).
+        let envelope = BybitWsAccountExecutionMsg {
+            topic: Ustr::from("execution.linear"),
+            id: "std-1".to_string(),
+            creation_time: 1_716_800_399_338,
+            data: vec![],
+        };
+        let value = serde_json::to_value(envelope).unwrap();
+        let frame = parse_bybit_ws_frame(value);
+        assert!(
+            matches!(frame, BybitWsFrame::AccountExecution(_)),
+            "expected AccountExecution, found {frame:?}",
+        );
     }
 
     #[rstest]

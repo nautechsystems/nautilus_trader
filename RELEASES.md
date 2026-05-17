@@ -25,6 +25,9 @@ Released on TBD (UTC).
 - Added Bybit hedge-mode venue position IDs for order, position, and fill events
 - Added Bybit BBO order support for linear and inverse limit-style orders
 - Added Bybit `flatten` binary that cancels working orders and flattens Linear/Inverse positions
+- Added Bybit instrument-info `symbolId`, `symbolType` (with `xstocks`/`stock`/`forex`/`commodity`), and spot `xstockMultiplier` fields (Rust)
+- Added Bybit position `openTime` field on REST `BybitPosition` and WS `BybitWsAccountPosition` (Rust)
+- Added Bybit `execution.fast` private WebSocket channel support with slim payload struct and `FillReport` dispatch (Rust)
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added Databento `set_price_precision` and `get_price_precisions` methods on the data loader and historical client

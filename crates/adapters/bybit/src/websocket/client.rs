@@ -1162,6 +1162,35 @@ impl BybitWebSocketClient {
             .await
     }
 
+    /// Subscribes to fast execution updates (slim payload, lower latency).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if not authenticated.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/private/fast-execution>
+    pub async fn subscribe_executions_fast(&self) -> BybitWsResult<()> {
+        if !self.requires_auth {
+            return Err(BybitWsError::Authentication(
+                "Fast execution subscription requires authentication".to_string(),
+            ));
+        }
+        self.subscribe(vec![
+            BybitWsPrivateChannel::ExecutionFast.as_ref().to_string(),
+        ])
+        .await
+    }
+
+    /// Unsubscribes from fast execution updates.
+    pub async fn unsubscribe_executions_fast(&self) -> BybitWsResult<()> {
+        self.unsubscribe(vec![
+            BybitWsPrivateChannel::ExecutionFast.as_ref().to_string(),
+        ])
+        .await
+    }
+
     /// Subscribes to position updates.
     ///
     /// # Errors

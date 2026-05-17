@@ -557,6 +557,7 @@ fn handle_ws_message(
         | BybitWsMessage::OrderResponse(_)
         | BybitWsMessage::AccountOrder(_)
         | BybitWsMessage::AccountExecution(_)
+        | BybitWsMessage::AccountExecutionFast(_)
         | BybitWsMessage::AccountWallet(_)
         | BybitWsMessage::AccountPosition(_) => {}
     }

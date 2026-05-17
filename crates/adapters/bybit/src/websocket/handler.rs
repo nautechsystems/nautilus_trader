@@ -254,6 +254,9 @@ impl BybitWsFeedHandler {
                         BybitWsFrame::AccountExecution(msg) => {
                             return Some(BybitWsMessage::AccountExecution(msg));
                         }
+                        BybitWsFrame::AccountExecutionFast(msg) => {
+                            return Some(BybitWsMessage::AccountExecutionFast(msg));
+                        }
                         BybitWsFrame::AccountWallet(msg) => {
                             return Some(BybitWsMessage::AccountWallet(msg));
                         }

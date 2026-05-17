@@ -1,0 +1,26 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "nextPageCursor": "",
+    "category": "option",
+    "list": [
+      {
+        "symbol": "BTC-30JUN25-100000-C",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USD",
+        "settleCoin": "USDC",
+        "optionsType": "Call",
+        "launchTime": "1700000000000",
+        "deliveryTime": "1750000000000",
+        "deliveryFeeRate": "0.00015",
+        "priceFilter": {"minPrice": "5", "maxPrice": "10000000", "tickSize": "5"},
+        "lotSizeFilter": {"qtyStep": "0.01", "maxOrderQty": "1500", "minOrderQty": "0.01"},
+        "symbolId": 99
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1700000000000
+}

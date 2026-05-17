@@ -43,8 +43,13 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    messages::{BybitWsAccountExecution, BybitWsAccountOrder, BybitWsMessage},
-    parse::{parse_millis_i64, parse_ws_account_state, parse_ws_position_status_report},
+    messages::{
+        BybitWsAccountExecution, BybitWsAccountExecutionFast, BybitWsAccountOrder, BybitWsMessage,
+    },
+    parse::{
+        parse_millis_i64, parse_ws_account_state, parse_ws_fill_report_fast,
+        parse_ws_position_status_report,
+    },
 };
 use crate::common::{
     enums::BybitOrderStatus,
@@ -188,6 +193,18 @@ pub fn dispatch_ws_message(
                     continue;
                 };
                 dispatch_execution_fill(exec, instrument, emitter, state, account_id, ts_init);
+            }
+        }
+        BybitWsMessage::AccountExecutionFast(msg) => {
+            let ts_init = clock.get_time_ns();
+
+            for exec in &msg.data {
+                let symbol = make_bybit_symbol(exec.symbol, exec.category);
+                let Some(instrument) = instruments.get(&symbol) else {
+                    log::warn!("No instrument for fast-execution update: {symbol}");
+                    continue;
+                };
+                dispatch_execution_fill_fast(exec, instrument, emitter, state, account_id, ts_init);
             }
         }
         BybitWsMessage::AccountWallet(msg) => {
@@ -628,6 +645,50 @@ fn dispatch_execution_fill(
     }
 }
 
+/// Dispatches a single fast-execution (fill) message.
+///
+/// The fast channel lacks fee and exec-type fields, so all fills route to
+/// [`FillReport`] with zero commission; liquidity side is derived from the
+/// payload's `isMaker` flag. Subscribe to the standard `execution` channel
+/// for full fill metadata (e.g. fees).
+fn dispatch_execution_fill_fast(
+    exec: &BybitWsAccountExecutionFast,
+    instrument: &InstrumentAny,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    let client_order_id = if exec.order_link_id.is_empty() {
+        None
+    } else {
+        Some(ClientOrderId::new(exec.order_link_id.as_str()))
+    };
+
+    let mut venue_position_id = None;
+
+    if let Some(cid) = client_order_id.as_ref()
+        && let Some(identity) = state.order_identities.get(cid).map(|r| r.clone())
+    {
+        venue_position_id = identity.venue_position_id;
+        let venue_order_id = VenueOrderId::new(exec.order_id.as_str());
+        ensure_accepted_emitted(
+            *cid,
+            account_id,
+            venue_order_id,
+            &identity,
+            emitter,
+            state,
+            ts_init,
+        );
+    }
+
+    match parse_ws_fill_report_fast(exec, account_id, instrument, venue_position_id, ts_init) {
+        Ok(report) => emitter.send_fill_report(report),
+        Err(e) => log::error!("Failed to parse fast fill report: {e}"),
+    }
+}
+
 /// Parses a Bybit execution message directly into an [`OrderFilled`] event.
 fn parse_order_filled(
     exec: &BybitWsAccountExecution,
@@ -1043,9 +1104,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{parse::parse_linear_instrument, testing::load_test_json},
+        common::{
+            enums::{BybitOrderSide, BybitProductType},
+            parse::parse_linear_instrument,
+            testing::load_test_json,
+        },
         http::models::{BybitFeeRate, BybitInstrumentLinearResponse},
-        websocket::messages::BybitWsMessage,
+        websocket::messages::{BybitWsAccountExecutionFastMsg, BybitWsMessage},
     };
 
     fn sample_fee_rate(
@@ -1274,6 +1339,108 @@ mod tests {
                 assert_eq!(filled.position_id, Some(venue_position_id));
             }
             other => panic!("Expected Filled event, found {other:?}"),
+        }
+    }
+
+    fn fast_execution_msg(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFastMsg {
+        BybitWsAccountExecutionFastMsg {
+            topic: Ustr::from("execution.fast"),
+            id: String::new(),
+            creation_time: 1_716_800_399_338,
+            data: vec![BybitWsAccountExecutionFast {
+                category: BybitProductType::Linear,
+                symbol: Ustr::from("BTCUSDT"),
+                exec_id: "fast-1".to_string(),
+                exec_price: "50000.0".to_string(),
+                exec_qty: "0.5".to_string(),
+                order_id: Ustr::from("ord-1"),
+                order_link_id: Ustr::from(order_link_id),
+                side: BybitOrderSide::Buy,
+                exec_time: "1716800399334".to_string(),
+                is_maker,
+                seq: 42,
+            }],
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_fast_execution_preserves_venue_position_id() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+        let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
+
+        // Taker fast fill (orderLinkId populated) so the identity lookup hits.
+        let msg = fast_execution_msg(false, "link-1");
+        let cid = ClientOrderId::new(msg.data[0].order_link_id.as_str());
+        state.order_identities.insert(
+            cid,
+            OrderIdentity {
+                venue_position_id: Some(venue_position_id),
+                ..default_identity()
+            },
+        );
+
+        let ws_msg = BybitWsMessage::AccountExecutionFast(msg);
+        dispatch_ws_message(
+            &ws_msg,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        // First event: synthesized OrderAccepted from the identity hit.
+        let event1 = rx.try_recv().unwrap();
+        assert!(
+            matches!(event1, ExecutionEvent::Order(OrderEventAny::Accepted(_))),
+            "Expected Accepted, found {event1:?}",
+        );
+
+        // Second event: FillReport carrying the hedge venue_position_id.
+        let event2 = rx.try_recv().unwrap();
+        match event2 {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.venue_position_id, Some(venue_position_id));
+                assert_eq!(report.client_order_id, Some(cid));
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_untracked_fast_execution_emits_fill_report_without_position() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        // Maker fast fill: orderLinkId is empty per venue docs, so no identity lookup.
+        let msg = fast_execution_msg(true, "");
+        let ws_msg = BybitWsMessage::AccountExecutionFast(msg);
+        dispatch_ws_message(
+            &ws_msg,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        // No OrderAccepted is synthesized for untracked fills.
+        let event = rx.try_recv().unwrap();
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(report.client_order_id, None);
+                assert_eq!(report.venue_position_id, None);
+                assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+                assert_eq!(report.commission.as_f64(), 0.0);
+            }
+            other => panic!("Expected FillReport, found {other:?}"),
         }
     }
 
