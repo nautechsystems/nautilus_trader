@@ -262,13 +262,7 @@ impl DeribitDataClient {
                 log::debug!("WebSocket authenticated: expires_in={}s", auth.expires_in);
             }
             NautilusWsMessage::FundingRates(funding_rates) => {
-                log::info!(
-                    "Received {} funding rate update(s) from WebSocket",
-                    funding_rates.len()
-                );
-
                 for funding_rate in funding_rates {
-                    log::debug!("Sending funding rate: {funding_rate:?}");
                     if let Err(e) = sender.send(DataEvent::FundingRate(funding_rate)) {
                         log::error!("Failed to send funding rate: {e}");
                     }
