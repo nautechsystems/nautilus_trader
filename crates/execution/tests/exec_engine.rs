@@ -37,7 +37,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler, switchboard,
+        self, MessageBus, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler,
+        switchboard,
     },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
@@ -187,6 +188,33 @@ fn test_register_venue_routing_success(
         execution_engine.get_client(&client_id).is_some(),
         "Client should still be registered after venue routing"
     );
+}
+
+#[rstest]
+fn test_subscribe_venue_instruments_delivers_to_client_adapter(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    // Reset the thread-local bus so prior tests on this thread cannot leak
+    // instrument handlers into this assertion.
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let venue = Venue::test_default();
+    let received = stub_client.received_instruments();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    let engine_rc = Rc::new(RefCell::new(execution_engine));
+    ExecutionEngine::subscribe_venue_instruments(&engine_rc, venue);
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let topic = switchboard::get_instrument_topic(instrument.id());
+    msgbus::publish_instrument(topic, &instrument);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].id(), instrument.id());
 }
 
 #[rstest]

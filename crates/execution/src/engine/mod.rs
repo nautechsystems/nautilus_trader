@@ -49,7 +49,7 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessagingSwitchboard, ShareableMessageHandler, TypedIntoHandler, get_message_bus,
+        self, MessagingSwitchboard, TypedHandler, TypedIntoHandler, get_message_bus,
         switchboard::{self},
     },
     runner::try_get_trading_cmd_sender,
@@ -235,7 +235,7 @@ impl ExecutionEngine {
         let weak = WeakCell::from(Rc::downgrade(engine));
         let pattern = switchboard::get_instruments_pattern(venue);
 
-        let handler = ShareableMessageHandler::from_typed(move |instrument: &InstrumentAny| {
+        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
             if let Some(rc) = weak.upgrade() {
                 let venue = instrument.id().venue;
                 let client_id = rc.borrow().routing_map.get(&venue).copied();
@@ -248,7 +248,7 @@ impl ExecutionEngine {
             }
         });
 
-        msgbus::subscribe_any(pattern, handler, None);
+        msgbus::subscribe_instruments(pattern, handler, None);
         log::info!("Subscribed to instrument updates for venue {venue}");
     }
 

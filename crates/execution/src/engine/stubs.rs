@@ -30,6 +30,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
     identifiers::{AccountId, ClientId, Venue},
+    instruments::InstrumentAny,
     types::{AccountBalance, MarginBalance},
 };
 
@@ -47,6 +48,7 @@ pub struct StubExecutionClient {
     is_connected: bool,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+    received_instruments: Rc<RefCell<Vec<InstrumentAny>>>,
 }
 
 impl StubExecutionClient {
@@ -67,7 +69,14 @@ impl StubExecutionClient {
             is_connected: false,
             clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(TestClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
+            received_instruments: Rc::new(RefCell::new(Vec::new())),
         }
+    }
+
+    /// Returns a shared handle to the instruments delivered via [`ExecutionClient::on_instrument`].
+    #[must_use]
+    pub fn received_instruments(&self) -> Rc<RefCell<Vec<InstrumentAny>>> {
+        self.received_instruments.clone()
     }
 }
 
@@ -147,5 +156,9 @@ impl ExecutionClient for StubExecutionClient {
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(()) // Stub implementation always succeeds
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.received_instruments.borrow_mut().push(instrument);
     }
 }
