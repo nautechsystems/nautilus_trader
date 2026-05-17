@@ -207,6 +207,7 @@ Released on 17th May 2026 (UTC).
 - Fixed Polymarket `parse_trades` `ts_event` collisions on same-second fills (Python and Rust)
 - Fixed Polymarket `fetch_trades` aborting on historical-offset ceiling; warns and returns partial (Python and Rust)
 - Fixed Polymarket `load_trades` non-deterministic same-second ordering across pages (Python and Rust)
+- Fixed Polymarket Gamma instrument loading capped at 100 markets (#4086), thanks for reporting @haimgel
 - Fixed Tardis instrument metadata parsing for numeric fields encoded as strings
 
 ### Internal Improvements

@@ -490,11 +490,11 @@ async def test_gamma_markets_loads_all_sibling_tokens(mock_clob_client, live_clo
 @pytest.mark.asyncio
 async def test_gamma_markets_deduplicates_condition_ids(mock_clob_client, live_clock):
     """
-    Test that Gamma API loader deduplicates condition IDs before limit check.
+    Test that the Gamma API loader deduplicates condition IDs.
 
     When loading both YES and NO tokens from the same markets (common case), condition
     IDs should be deduplicated so that 60 markets with 2 tokens each (120 instruments)
-    uses the filtered query instead of bulk load.
+    issue a single batch query of 60 unique condition_ids.
 
     """
     # Arrange
@@ -534,10 +534,100 @@ async def test_gamma_markets_deduplicates_condition_ids(mock_clob_client, live_c
         call_args = mock_list_markets.call_args
         filters = call_args[1]["filters"]
 
-        # Verify condition_ids filter was applied (means we used targeted query)
+        # Verify condition_ids filter was applied
         assert "condition_ids" in filters
         # Verify we deduplicated: 120 instruments -> 60 unique condition_ids
         assert len(filters["condition_ids"]) == 60
+        # 60 unique condition_ids fits in one batch of 100
+        assert mock_list_markets.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_load_ids_chunks_at_100_condition_ids(mock_clob_client, live_clock):
+    """
+    Gamma's `condition_ids=` query accepts at most 100 IDs per request, so the provider
+    must split larger requests into chunks and union the results.
+    """
+    # Arrange
+    config = InstrumentProviderConfig(use_gamma_markets=True)
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    instrument_ids = []
+    expected_condition_ids: set[str] = set()
+
+    for i in range(250):
+        condition_id = f"0x{i:064x}"
+        expected_condition_ids.add(condition_id)
+        token_id = f"1{i:063d}"
+        instrument_ids.append(
+            InstrumentId.from_str(f"{condition_id}-{token_id}.POLYMARKET"),
+        )
+
+    with patch("nautilus_trader.adapters.polymarket.providers.list_markets") as mock_list_markets:
+        mock_list_markets.side_effect = AsyncMock(return_value=[])
+
+        # Act
+        await provider.load_ids_async(instrument_ids)
+
+    # Assert: 3 chunks (100 + 100 + 50)
+    assert mock_list_markets.await_count == 3
+    batch_sizes = [
+        len(call.kwargs["filters"]["condition_ids"]) for call in mock_list_markets.await_args_list
+    ]
+    assert batch_sizes == [100, 100, 50]
+
+    # Union of all batches must cover the full input set
+    seen: set[str] = set()
+    for call in mock_list_markets.await_args_list:
+        seen.update(call.kwargs["filters"]["condition_ids"])
+    assert seen == expected_condition_ids
+
+
+@pytest.mark.asyncio
+async def test_load_ids_preserves_caller_filters_in_each_chunk(mock_clob_client, live_clock):
+    """
+    Caller-supplied filters (e.g. `active`, `closed`) must survive into every chunked
+    batch alongside the per-chunk `condition_ids` override.
+    """
+    # Arrange: 150 IDs => 2 chunks of 100 + 50
+    config = InstrumentProviderConfig(use_gamma_markets=True)
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    instrument_ids = []
+
+    for i in range(150):
+        condition_id = f"0x{i:064x}"
+        token_id = f"1{i:063d}"
+        instrument_ids.append(
+            InstrumentId.from_str(f"{condition_id}-{token_id}.POLYMARKET"),
+        )
+
+    caller_filters = {"active": True, "closed": False}
+
+    with patch("nautilus_trader.adapters.polymarket.providers.list_markets") as mock_list_markets:
+        mock_list_markets.side_effect = AsyncMock(return_value=[])
+
+        # Act
+        await provider.load_ids_async(instrument_ids, filters=caller_filters)
+
+    # Assert: caller filters carried into each batch
+    assert mock_list_markets.await_count == 2
+    for call in mock_list_markets.await_args_list:
+        batch_filters = call.kwargs["filters"]
+        assert batch_filters["active"] is True
+        assert batch_filters["closed"] is False
+        assert "condition_ids" in batch_filters
+
+    # Caller's dict must not be mutated
+    assert caller_filters == {"active": True, "closed": False}
 
 
 @pytest.mark.asyncio

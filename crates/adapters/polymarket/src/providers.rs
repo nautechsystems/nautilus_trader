@@ -27,6 +27,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     filters::InstrumentFilter,
     http::{gamma::PolymarketGammaHttpClient, models::GammaTag, query::GetGammaMarketsParams},
 };
@@ -401,19 +402,24 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         condition_ids.sort();
         condition_ids.dedup();
 
-        if !condition_ids.is_empty() && condition_ids.len() <= 100 {
+        if condition_ids.is_empty() {
+            return Ok(());
+        }
+
+        let base_params = filters
+            .map(build_gamma_params_from_hashmap)
+            .unwrap_or_default();
+
+        for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
             let params = GetGammaMarketsParams {
-                condition_ids: Some(condition_ids.join(",")),
-                ..Default::default()
+                condition_ids: Some(chunk.join(",")),
+                ..base_params.clone()
             };
             let instruments = self
                 .http_client
                 .request_instruments_by_params(params)
                 .await?;
             self.add_instruments(instruments);
-        } else {
-            // Too many to batch, fall back to full load
-            self.load_all(filters).await?;
         }
 
         Ok(())

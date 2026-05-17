@@ -22,6 +22,7 @@ from py_clob_client_v2.client import ClobClient
 from py_clob_client_v2.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.gamma_markets import GAMMA_CONDITION_IDS_BATCH_SIZE
 from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules
 from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
 from nautilus_trader.adapters.polymarket.common.gamma_markets import (
@@ -212,44 +213,48 @@ class PolymarketInstrumentProvider(InstrumentProvider):
     ) -> None:
         # Extract unique condition IDs (markets can have multiple tokens/instruments)
         condition_ids = list({get_polymarket_condition_id(inst_id) for inst_id in instrument_ids})
+        condition_ids_set = set(condition_ids)
 
         # Create a copy to avoid mutating the caller's filters
         filters = filters.copy() if filters is not None else {}
 
-        if (
-            len(condition_ids) <= 100
-        ):  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
-            self._log.info(
-                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering",
-            )
-            filters["condition_ids"] = condition_ids
-        else:
-            self._log.info(
-                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets",
-            )
+        self._log.info(
+            f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, "
+            f"using direct condition_id filtering in batches of {GAMMA_CONDITION_IDS_BATCH_SIZE}",
+        )
 
-        markets = await list_markets(http_client=self._http_client, filters=filters)
-        self._log.info(f"Loaded {len(markets)} markets using Gamma API")
-        for market in markets:
-            condition_id = market.get("conditionId")
-            if not condition_id:
-                continue
+        total_loaded = 0
 
-            if condition_ids and condition_id not in condition_ids:
-                continue
+        for start in range(0, len(condition_ids), GAMMA_CONDITION_IDS_BATCH_SIZE):
+            batch = condition_ids[start : start + GAMMA_CONDITION_IDS_BATCH_SIZE]
+            batch_filters = filters.copy()
+            batch_filters["condition_ids"] = batch
 
-            normalized_market = normalize_gamma_market_to_clob_format(market)
+            markets = await list_markets(http_client=self._http_client, filters=batch_filters)
+            total_loaded += len(markets)
 
-            for token_info in normalized_market.get("tokens", []):
-                token_id = token_info["token_id"]
-                if not token_id:
-                    self._log.warning(f"Market {condition_id} had an empty token")
-                    if transient_condition_ids is not None:
-                        transient_condition_ids.add(condition_id)
+            for market in markets:
+                condition_id = market.get("conditionId")
+                if not condition_id:
                     continue
 
-                outcome = token_info["outcome"]
-                self._load_instrument(normalized_market, token_id, outcome)
+                if condition_id not in condition_ids_set:
+                    continue
+
+                normalized_market = normalize_gamma_market_to_clob_format(market)
+
+                for token_info in normalized_market.get("tokens", []):
+                    token_id = token_info["token_id"]
+                    if not token_id:
+                        self._log.warning(f"Market {condition_id} had an empty token")
+                        if transient_condition_ids is not None:
+                            transient_condition_ids.add(condition_id)
+                        continue
+
+                    outcome = token_info["outcome"]
+                    self._load_instrument(normalized_market, token_id, outcome)
+
+        self._log.info(f"Loaded {total_loaded} markets using Gamma API")
 
     async def _load_ids_using_clob_api(
         self,

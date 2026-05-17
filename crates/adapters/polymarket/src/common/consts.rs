@@ -80,5 +80,8 @@ pub const BATCH_ORDER_LIMIT: usize = 15;
 /// Requests per minute.
 pub const HTTP_RATE_LIMIT: u32 = 100;
 
+/// Maximum number of `condition_ids` accepted in a single Gamma `/markets` query.
+pub const GAMMA_CONDITION_IDS_BATCH_SIZE: usize = 100;
+
 pub const INVALID_API_KEY: &str = "Unauthorized/Invalid api key";
 pub const CANCEL_ALREADY_DONE: &str = "already canceled or matched";

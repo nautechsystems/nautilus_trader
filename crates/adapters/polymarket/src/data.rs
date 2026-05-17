@@ -63,7 +63,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::POLYMARKET_VENUE,
+    common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_VENUE},
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
@@ -81,8 +81,6 @@ use crate::{
         },
     },
 };
-
-const GAMMA_CONDITION_ID_CHUNK: usize = 100;
 
 fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -435,10 +433,10 @@ impl PolymarketDataClient {
                 // the request and merge the results. This matches the provider's
                 // own `_load_ids_using_gamma_markets` chunking policy.
                 let mut loaded: Vec<InstrumentAny> =
-                    Vec::with_capacity(condition_ids.len().min(GAMMA_CONDITION_ID_CHUNK));
+                    Vec::with_capacity(condition_ids.len().min(GAMMA_CONDITION_IDS_BATCH_SIZE));
                 let mut chunk_failed = false;
 
-                for chunk in condition_ids.chunks(GAMMA_CONDITION_ID_CHUNK) {
+                for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
                     let params = GetGammaMarketsParams {
                         condition_ids: Some(chunk.join(",")),
                         ..Default::default()
