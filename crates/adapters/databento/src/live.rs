@@ -49,7 +49,9 @@ use nautilus_model::{
 use nautilus_network::backoff::ExponentialBackoff;
 
 use super::{
-    decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
+    decode::{
+        decode_imbalance_msg, decode_statistics_msg, decode_status_msg, is_supported_stat_type,
+    },
     types::{DatabentoImbalance, DatabentoStatistics, SubscriptionAckEvent},
 };
 use crate::{
@@ -538,7 +540,7 @@ impl DatabentoFeedHandler {
                         )?;
                     }
                 }
-                let data = {
+                let maybe_data = {
                     let sym_map = self.symbol_venue_map.load();
                     handle_instrument_def_msg(
                         msg,
@@ -550,10 +552,13 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                instrument_def_price_precision_map
-                    .insert(msg.hd.instrument_id, data.price_precision());
-                self.send_msg(DatabentoMessage::Instrument(Box::new(data)))
-                    .await;
+
+                if let Some(data) = maybe_data {
+                    instrument_def_price_precision_map
+                        .insert(msg.hd.instrument_id, data.price_precision());
+                    self.send_msg(DatabentoMessage::Instrument(Box::new(data)))
+                        .await;
+                }
             } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
                 let data = {
                     let sym_map = self.symbol_venue_map.load();
@@ -586,7 +591,7 @@ impl DatabentoFeedHandler {
                 };
                 self.send_msg(DatabentoMessage::Imbalance(data)).await;
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
-                let data = {
+                let maybe_data = {
                     let sym_map = self.symbol_venue_map.load();
                     handle_statistics_msg(
                         msg,
@@ -601,7 +606,10 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                self.send_msg(DatabentoMessage::Statistics(data)).await;
+
+                if let Some(data) = maybe_data {
+                    self.send_msg(DatabentoMessage::Statistics(data)).await;
+                }
             } else {
                 // Decode a generic record with possible errors
                 let res = {
@@ -846,7 +854,7 @@ fn handle_instrument_def_msg(
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
-) -> anyhow::Result<InstrumentAny> {
+) -> anyhow::Result<Option<InstrumentAny>> {
     let instrument_id = update_instrument_id_map(
         record,
         symbol_map,
@@ -922,7 +930,13 @@ fn handle_statistics_msg(
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
-) -> anyhow::Result<DatabentoStatistics> {
+) -> anyhow::Result<Option<DatabentoStatistics>> {
+    // Precheck before symbol resolution so unmodeled types skip cleanly
+    if !is_supported_stat_type(msg.stat_type) {
+        log::warn!("Skipping unsupported `stat_type` {}", msg.stat_type);
+        return Ok(None);
+    }
+
     let instrument_id = update_instrument_id_map(
         record,
         symbol_map,

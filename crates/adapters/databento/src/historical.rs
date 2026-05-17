@@ -34,7 +34,7 @@ use crate::{
     common::{Credential, get_date_time_range},
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_mbo_msg, decode_mbp10_msg,
-        decode_record, decode_statistics_msg, decode_status_msg,
+        decode_record, decode_statistics_msg, decode_status_msg, is_supported_stat_type,
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
@@ -247,7 +247,8 @@ impl DatabentoHistoricalClient {
             }
 
             match decode_instrument_def_msg(msg, instrument_id, None) {
-                Ok(instrument) => instruments.push(instrument),
+                Ok(Some(instrument)) => instruments.push(instrument),
+                Ok(None) => {} // Decoder logged a warning for the unsupported class
                 Err(e) => log::error!("Failed to decode instrument: {e:?}"),
             }
         }
@@ -786,6 +787,12 @@ impl DatabentoHistoricalClient {
         let mut result: Vec<DatabentoStatistics> = Vec::new();
 
         while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
+            // Precheck before precision resolution so unmodeled types skip cleanly
+            if !is_supported_stat_type(msg.stat_type) {
+                log::warn!("Skipping unsupported `stat_type` {}", msg.stat_type);
+                continue;
+            }
+
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let instrument_id = decode_nautilus_instrument_id(
@@ -797,8 +804,11 @@ impl DatabentoHistoricalClient {
             let price_precision =
                 self.resolve_price_precision(&instrument_id, price_precision_arg)?;
 
-            let statistics = decode_statistics_msg(msg, instrument_id, price_precision, None)?;
-            result.push(statistics);
+            if let Some(statistics) =
+                decode_statistics_msg(msg, instrument_id, price_precision, None)?
+            {
+                result.push(statistics);
+            }
         }
 
         Ok(result)

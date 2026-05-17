@@ -34,7 +34,10 @@ use nautilus_model::{
 };
 
 use super::{
-    decode::{decode_imbalance_msg, decode_record, decode_statistics_msg, decode_status_msg},
+    decode::{
+        decode_imbalance_msg, decode_record, decode_statistics_msg, decode_status_msg,
+        is_supported_stat_type,
+    },
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
@@ -244,19 +247,25 @@ impl DatabentoDataLoader {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsg>();
 
+        // Loop over skipped records (Ok(None)) so one unsupported class does not
+        // terminate the stream
         Ok(std::iter::from_fn(move || {
-            let result: anyhow::Result<Option<InstrumentAny>> = (|| {
-                dbn_stream
+            loop {
+                let advance = dbn_stream
                     .advance()
-                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"));
+                if let Err(e) = advance {
+                    return Some(Err(e));
+                }
 
-                if let Some(rec) = dbn_stream.get() {
+                let rec = dbn_stream.get()?;
+
+                let result: anyhow::Result<Option<InstrumentAny>> = (|| {
                     let record = dbn::RecordRef::from(rec);
                     let msg = record
                         .get::<InstrumentDefMsg>()
                         .ok_or_else(|| anyhow::anyhow!("Failed to decode InstrumentDefMsg"))?;
 
-                    // Symbol and venue resolution
                     let raw_symbol = rec
                         .raw_symbol()
                         .map_err(|e| anyhow::anyhow!("Error decoding `raw_symbol`: {e}"))?;
@@ -290,18 +299,14 @@ impl DatabentoDataLoader {
                     let instrument_id = InstrumentId::new(symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    let data = decode_instrument_def_msg(rec, instrument_id, Some(ts_init))?;
-                    Ok(Some(data))
-                } else {
-                    // No more records
-                    Ok(None)
-                }
-            })();
+                    decode_instrument_def_msg(rec, instrument_id, Some(ts_init))
+                })();
 
-            match result {
-                Ok(Some(item)) => Some(Ok(item)),
-                Ok(None) => None,
-                Err(e) => Some(Err(e)),
+                match result {
+                    Ok(Some(item)) => return Some(Ok(item)),
+                    Ok(None) => {}
+                    Err(e) => return Some(Err(e)),
+                }
             }
         }))
     }
@@ -814,48 +819,50 @@ impl DatabentoDataLoader {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut dbn_stream = decoder.decode_stream::<T>();
 
+        // Loop over skipped records so one unsupported stat_type does not terminate
+        // the stream; precheck before precision resolution.
         Ok(std::iter::from_fn(move || {
-            if let Err(e) = dbn_stream.advance() {
-                return Some(Err(e.into()));
-            }
-
-            match dbn_stream.get() {
-                Some(rec) => {
-                    let record = dbn::RecordRef::from(rec);
-                    let instrument_id = match &instrument_id {
-                        Some(id) => *id, // Copy
-                        None => match decode_nautilus_instrument_id(
-                            &record,
-                            &mut metadata_cache,
-                            &self.publisher_venue_map,
-                            &self.symbol_venue_map,
-                        ) {
-                            Ok(id) => id,
-                            Err(e) => return Some(Err(e)),
-                        },
-                    };
-                    let resolved_precision =
-                        match self.resolve_price_precision(&instrument_id, price_precision) {
-                            Ok(p) => p,
-                            Err(e) => return Some(Err(e)),
-                        };
-                    let msg = match record.get::<dbn::StatMsg>() {
-                        Some(m) => m,
-                        None => return Some(Err(anyhow::anyhow!("Invalid `StatMsg`"))),
-                    };
-                    let ts_init = msg.ts_recv.into();
-
-                    match decode_statistics_msg(
-                        msg,
-                        instrument_id,
-                        resolved_precision,
-                        Some(ts_init),
-                    ) {
-                        Ok(data) => Some(Ok(data)),
-                        Err(e) => Some(Err(e)),
-                    }
+            loop {
+                if let Err(e) = dbn_stream.advance() {
+                    return Some(Err(e.into()));
                 }
-                None => None,
+
+                let rec = dbn_stream.get()?;
+                let record = dbn::RecordRef::from(rec);
+                let msg = match record.get::<dbn::StatMsg>() {
+                    Some(m) => m,
+                    None => return Some(Err(anyhow::anyhow!("Invalid `StatMsg`"))),
+                };
+
+                if !is_supported_stat_type(msg.stat_type) {
+                    log::warn!("Skipping unsupported `stat_type` {}", msg.stat_type);
+                    continue;
+                }
+
+                let instrument_id = match &instrument_id {
+                    Some(id) => *id, // Copy
+                    None => match decode_nautilus_instrument_id(
+                        &record,
+                        &mut metadata_cache,
+                        &self.publisher_venue_map,
+                        &self.symbol_venue_map,
+                    ) {
+                        Ok(id) => id,
+                        Err(e) => return Some(Err(e)),
+                    },
+                };
+                let resolved_precision =
+                    match self.resolve_price_precision(&instrument_id, price_precision) {
+                        Ok(p) => p,
+                        Err(e) => return Some(Err(e)),
+                    };
+                let ts_init = msg.ts_recv.into();
+
+                match decode_statistics_msg(msg, instrument_id, resolved_precision, Some(ts_init)) {
+                    Ok(Some(data)) => return Some(Ok(data)),
+                    Ok(None) => {}
+                    Err(e) => return Some(Err(e)),
+                }
             }
         }))
     }

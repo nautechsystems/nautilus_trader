@@ -155,6 +155,7 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
 - Fixed Databento market data price precision preservation (#4002), thanks @faysou
 - Fixed Databento MBP10 panic on undefined depth levels (#4046), thanks for reporting @prajjwal23
+- Fixed Databento decoder gaps on dbn 0.58 wire data: skip `'I'` (Index) classes and map new stat types 14-20
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
