@@ -33,7 +33,7 @@ Released on TBD (UTC).
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Hyperliquid HIP-4 outcome instruments: `+E`/`#E` encoding, USDH settlement, and per-side BinaryOption modeling
 - Added Hyperliquid HIP-4 outcome reconciliation via spot balances; `outcomeMeta` settlement dispatch on the Rust client
-- Added Hyperliquid HIP-4 outcome order scaffolding; live placement awaits `splitOutcome` action wiring
+- Added Hyperliquid HIP-4 `userOutcome` actions (split, merge, mergeQuestion, negate) and venue `Settlement` fill parsing
 - Added Hyperliquid `allMids` custom data subscriptions with optional dex metadata (#4067), thanks @graceyangfan
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Kraken Spot L3 order book support via WebSocket v2 (#4041), thanks @mcgrj

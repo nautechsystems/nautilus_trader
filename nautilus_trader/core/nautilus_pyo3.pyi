@@ -9237,6 +9237,23 @@ class HyperliquidHttpClient:
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> None: ...
+    async def submit_split_outcome(self, outcome: int, amount: Decimal) -> str: ...
+    async def submit_merge_outcome(
+        self,
+        outcome: int,
+        amount: Decimal | None = None,
+    ) -> str: ...
+    async def submit_merge_question(
+        self,
+        question: int,
+        amount: Decimal | None = None,
+    ) -> str: ...
+    async def submit_negate_outcome(
+        self,
+        question: int,
+        outcome: int,
+        amount: Decimal,
+    ) -> str: ...
 
 class HyperliquidWebSocketClient:
     def __init__(

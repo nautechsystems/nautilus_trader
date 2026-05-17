@@ -164,8 +164,10 @@ pub struct HyperliquidExecClientConfig {
     #[builder(default)]
     pub transport_backend: TransportBackend,
     /// Poll interval in seconds for `outcomeMeta` settlement detection.
-    /// Set to `0` to disable polling entirely.
-    #[builder(default = 60)]
+    /// Disabled by default; venue `Settlement` fills drive HIP-4 settlement
+    /// through the standard user-fills stream. Set to a non-zero value only
+    /// when the venue fill stream is unavailable.
+    #[builder(default = 0)]
     pub outcome_settlement_poll_secs: u64,
 }
 

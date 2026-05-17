@@ -193,6 +193,12 @@ def mock_http_client():
     mock.modify_order = AsyncMock()
     mock.cancel_order = AsyncMock()
 
+    _ok_response = '{"status":"ok","response":{"type":"default"}}'
+    mock.submit_split_outcome = AsyncMock(return_value=_ok_response)
+    mock.submit_merge_outcome = AsyncMock(return_value=_ok_response)
+    mock.submit_merge_question = AsyncMock(return_value=_ok_response)
+    mock.submit_negate_outcome = AsyncMock(return_value=_ok_response)
+
     mock.info_meta = AsyncMock(return_value=MagicMock())
     mock.info_l2_book = AsyncMock(return_value=MagicMock())
     mock.info_clearinghouse_state = AsyncMock(return_value={})

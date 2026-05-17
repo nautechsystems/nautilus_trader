@@ -3417,3 +3417,68 @@ async def test_modify_order_transport_failure_preserves_pending_state(
         assert client._pending_modify_target_qty[order.client_order_id.value] == target_qty
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_split_outcome_forwards_to_http_client(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    response = await client._split_outcome(outcome=50, amount=Decimal("1.5"))
+
+    http_client.submit_split_outcome.assert_awaited_once_with(50, Decimal("1.5"))
+    assert response == '{"status":"ok","response":{"type":"default"}}'
+
+
+@pytest.mark.asyncio
+async def test_merge_outcome_defaults_amount_to_none(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    await client._merge_outcome(outcome=7)
+
+    http_client.submit_merge_outcome.assert_awaited_once_with(7, None)
+
+
+@pytest.mark.asyncio
+async def test_merge_outcome_passes_amount(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    await client._merge_outcome(outcome=7, amount=Decimal("0.5"))
+
+    http_client.submit_merge_outcome.assert_awaited_once_with(7, Decimal("0.5"))
+
+
+@pytest.mark.asyncio
+async def test_merge_question_defaults_amount_to_none(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    await client._merge_question(question=9)
+
+    http_client.submit_merge_question.assert_awaited_once_with(9, None)
+
+
+@pytest.mark.asyncio
+async def test_merge_question_passes_amount(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    await client._merge_question(question=9, amount=Decimal("2.0"))
+
+    http_client.submit_merge_question.assert_awaited_once_with(9, Decimal("2.0"))
+
+
+@pytest.mark.asyncio
+async def test_negate_outcome_forwards_all_args(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    await client._negate_outcome(question=9, outcome=52, amount=Decimal("1.0"))
+
+    http_client.submit_negate_outcome.assert_awaited_once_with(9, 52, Decimal("1.0"))
+
+
+@pytest.mark.asyncio
+async def test_split_outcome_propagates_http_errors(exec_client_builder, monkeypatch):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    http_client.submit_split_outcome.side_effect = RuntimeError("rate limited")
+
+    with pytest.raises(RuntimeError, match="rate limited"):
+        await client._split_outcome(outcome=50, amount=Decimal("1.0"))

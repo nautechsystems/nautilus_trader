@@ -196,6 +196,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
         return self._instrument_provider
 
+    async def _split_outcome(self, outcome: int, amount: Decimal) -> str:
+        return await self._client.submit_split_outcome(outcome, amount)
+
+    async def _merge_outcome(self, outcome: int, amount: Decimal | None = None) -> str:
+        # `amount=None` serializes as JSON `null`, which the venue treats as the max mergeable balance
+        return await self._client.submit_merge_outcome(outcome, amount)
+
+    async def _merge_question(self, question: int, amount: Decimal | None = None) -> str:
+        return await self._client.submit_merge_question(question, amount)
+
+    async def _negate_outcome(self, question: int, outcome: int, amount: Decimal) -> str:
+        return await self._client.submit_negate_outcome(question, outcome, amount)
+
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses

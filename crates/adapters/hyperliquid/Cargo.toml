@@ -144,6 +144,18 @@ doc = false
 test = false
 
 [[bin]]
+name = "hyperliquid-http-user-outcome"
+path = "bin/http_user_outcome.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "hyperliquid-http-outcome-order"
+path = "bin/http_outcome_order.rs"
+doc = false
+test = false
+
+[[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
 doc = false

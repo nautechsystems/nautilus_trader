@@ -29,6 +29,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{prelude::*, types::PyList};
+use rust_decimal::Decimal;
 use serde_json::to_string;
 
 use crate::{
@@ -705,6 +706,92 @@ impl HyperliquidHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
             to_string(&json).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Split an HIP-4 outcome's quote tokens into Yes and No side tokens.
+    ///
+    /// Submits a `userOutcome` action with operation `splitOutcome`. Returns
+    /// the exchange response serialized as JSON for inspection from Python.
+    #[pyo3(name = "submit_split_outcome")]
+    fn py_submit_split_outcome<'py>(
+        &self,
+        py: Python<'py>,
+        outcome: u32,
+        amount: Decimal,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .submit_split_outcome(outcome, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Merge matched Yes + No side tokens of an HIP-4 outcome into quote tokens.
+    ///
+    /// Pass `amount = None` to merge the maximum mergeable balance.
+    #[pyo3(name = "submit_merge_outcome", signature = (outcome, amount=None))]
+    fn py_submit_merge_outcome<'py>(
+        &self,
+        py: Python<'py>,
+        outcome: u32,
+        amount: Option<Decimal>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .submit_merge_outcome(outcome, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Merge `Yes` shares across every outcome of a multi-outcome question.
+    ///
+    /// Pass `amount = None` to merge the maximum mergeable balance.
+    #[pyo3(name = "submit_merge_question", signature = (question, amount=None))]
+    fn py_submit_merge_question<'py>(
+        &self,
+        py: Python<'py>,
+        question: u32,
+        amount: Option<Decimal>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .submit_merge_question(question, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Swap `No` shares of one outcome into `Yes` shares of every other outcome.
+    ///
+    /// Both outcomes must belong to the same multi-outcome `question`.
+    #[pyo3(name = "submit_negate_outcome")]
+    fn py_submit_negate_outcome<'py>(
+        &self,
+        py: Python<'py>,
+        question: u32,
+        outcome: u32,
+        amount: Decimal,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .submit_negate_outcome(question, outcome, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&response).map_err(to_pyvalue_err)
         })
     }
 }
