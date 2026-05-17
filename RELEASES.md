@@ -22,6 +22,9 @@ Released on TBD (UTC).
 - Added serde `Deserialize` support for `LiveNodeConfig` and adapter client configs to enable loading from TOML
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
+- Added Binance Spot `expiryReason` field capture on schema 3:4 SBE order responses (Rust)
+- Added Binance Spot `serverShutdown` event handling on market-data and trading WebSocket streams (Rust)
+- Added Binance USDM mark price moving average (`ap`) field on `BinanceFuturesMarkPriceMsg` (Rust)
 - Added Bybit hedge-mode venue position IDs for order, position, and fill events
 - Added Bybit BBO order support for linear and inverse limit-style orders
 - Added Bybit `flatten` binary that cancels working orders and flattens Linear/Inverse positions
@@ -217,6 +220,8 @@ Released on TBD (UTC).
 - Added `nautilus-event-store` cache snapshot capture, restore, and replay wired through `NautilusKernel` for durable cache state across runs (Rust)
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
 - Added typed publish_instrument() to message bus (#4081), thanks @filipmacek
+- Added Binance Futures `-4531` (UM/CM `dualSidePosition` sync) error classifier with hedge-mode hint (Rust)
+- Added `BinanceSpotUserDataEventType` enum for typed Spot user-data event dispatch (Rust)
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
 - Added Interactive Brokers per-order exchange routing params (#4079), thanks @faysou

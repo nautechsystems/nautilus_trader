@@ -1417,6 +1417,7 @@ mod tests {
                 crate::spot::sbe::spot::self_trade_prevention_mode::SelfTradePreventionMode::None,
             client_order_id: "client-123".to_string(),
             symbol: "ETHUSDT".to_string(),
+            expiry_reason: None,
         };
         let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
 
@@ -1480,6 +1481,7 @@ mod tests {
             client_order_id: "client-456".to_string(),
             symbol: "ETHUSDT".to_string(),
             fills: vec![],
+            expiry_reason: None,
         };
         let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
 

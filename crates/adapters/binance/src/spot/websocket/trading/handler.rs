@@ -49,6 +49,7 @@ use super::{
 use crate::{
     common::credential::SigningCredential,
     spot::{
+        enums::BinanceSpotUserDataEventType,
         http::{models::BinanceCancelOrderResponse, parse},
         sbe::spot::{
             ReadBuf,
@@ -510,53 +511,8 @@ impl BinanceSpotWsTradingHandler {
     }
 
     fn handle_user_data_event(&self, event: &serde_json::Value) {
-        let event_type = event.get("e").and_then(|v| v.as_str()).unwrap_or("");
-
-        match event_type {
-            "executionReport" => {
-                match serde_json::from_value::<super::user_data::BinanceSpotExecutionReport>(
-                    event.clone(),
-                ) {
-                    Ok(report) => {
-                        log::debug!(
-                            "Execution report: symbol={}, order_id={}, exec={:?}, status={:?}",
-                            report.symbol,
-                            report.order_id,
-                            report.execution_type,
-                            report.order_status
-                        );
-                        self.emit(BinanceSpotWsTradingMessage::ExecutionReport(Box::new(
-                            report,
-                        )));
-                    }
-                    Err(e) => log::warn!("Failed to parse execution report: {e}"),
-                }
-            }
-            "outboundAccountPosition" => {
-                match serde_json::from_value::<super::user_data::BinanceSpotAccountPositionMsg>(
-                    event.clone(),
-                ) {
-                    Ok(msg) => {
-                        log::debug!("Account position update: {} balance(s)", msg.balances.len());
-                        self.emit(BinanceSpotWsTradingMessage::AccountPosition(msg));
-                    }
-                    Err(e) => log::warn!("Failed to parse account position: {e}"),
-                }
-            }
-            "balanceUpdate" => {
-                match serde_json::from_value::<super::user_data::BinanceSpotBalanceUpdateMsg>(
-                    event.clone(),
-                ) {
-                    Ok(msg) => {
-                        log::debug!("Balance update: asset={}, delta={}", msg.asset, msg.delta);
-                        self.emit(BinanceSpotWsTradingMessage::BalanceUpdate(msg));
-                    }
-                    Err(e) => log::warn!("Failed to parse balance update: {e}"),
-                }
-            }
-            _ => {
-                log::debug!("Unhandled user data event type: {event_type}");
-            }
+        if let Some(msg) = classify_user_data_event(event) {
+            self.emit(msg);
         }
     }
 
@@ -641,6 +597,13 @@ impl BinanceSpotWsTradingHandler {
                             )));
                         }
                     }
+                }
+                610 => {
+                    let event_time = parse_server_shutdown_event_time_ms(data);
+                    log::warn!(
+                        "Binance server shutdown notice (SBE, event_time={event_time}); disconnect expected within ~10 minutes",
+                    );
+                    return Ok(BinanceSpotWsTradingMessage::ServerShutdown { event_time });
                 }
                 _ => {} // Fall through to WebSocketResponse parsing
             }
@@ -850,5 +813,154 @@ impl BinanceSpotWsTradingHandler {
         let msg = String::from_utf8_lossy(msg_bytes).into_owned();
 
         Some((code, msg))
+    }
+}
+
+/// Classifies a JSON user-data event into a trading message, if any.
+///
+/// Returns `None` when the event type is unknown or the payload fails to
+/// deserialize; in that case the caller logs and drops the event.
+pub(crate) fn classify_user_data_event(
+    event: &serde_json::Value,
+) -> Option<BinanceSpotWsTradingMessage> {
+    let event_type = event
+        .get("e")
+        .and_then(|v| serde_json::from_value::<BinanceSpotUserDataEventType>(v.clone()).ok())
+        .unwrap_or(BinanceSpotUserDataEventType::Unknown);
+
+    match event_type {
+        BinanceSpotUserDataEventType::ExecutionReport => {
+            match serde_json::from_value::<super::user_data::BinanceSpotExecutionReport>(
+                event.clone(),
+            ) {
+                Ok(report) => {
+                    log::debug!(
+                        "Execution report: symbol={}, order_id={}, exec={:?}, status={:?}",
+                        report.symbol,
+                        report.order_id,
+                        report.execution_type,
+                        report.order_status
+                    );
+                    Some(BinanceSpotWsTradingMessage::ExecutionReport(Box::new(
+                        report,
+                    )))
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse execution report: {e}");
+                    None
+                }
+            }
+        }
+        BinanceSpotUserDataEventType::OutboundAccountPosition => {
+            match serde_json::from_value::<super::user_data::BinanceSpotAccountPositionMsg>(
+                event.clone(),
+            ) {
+                Ok(msg) => {
+                    log::debug!("Account position update: {} balance(s)", msg.balances.len());
+                    Some(BinanceSpotWsTradingMessage::AccountPosition(msg))
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse account position: {e}");
+                    None
+                }
+            }
+        }
+        BinanceSpotUserDataEventType::BalanceUpdate => {
+            match serde_json::from_value::<super::user_data::BinanceSpotBalanceUpdateMsg>(
+                event.clone(),
+            ) {
+                Ok(msg) => {
+                    log::debug!("Balance update: asset={}, delta={}", msg.asset, msg.delta);
+                    Some(BinanceSpotWsTradingMessage::BalanceUpdate(msg))
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse balance update: {e}");
+                    None
+                }
+            }
+        }
+        BinanceSpotUserDataEventType::ServerShutdown => {
+            let event_time = event.get("E").and_then(|v| v.as_i64()).unwrap_or_default();
+            log::warn!(
+                "Binance server shutdown notice (event_time={event_time}); disconnect expected within ~10 minutes",
+            );
+            Some(BinanceSpotWsTradingMessage::ServerShutdown { event_time })
+        }
+        BinanceSpotUserDataEventType::ListenKeyExpired
+        | BinanceSpotUserDataEventType::ExternalLockUpdate
+        | BinanceSpotUserDataEventType::EventStreamTerminated
+        | BinanceSpotUserDataEventType::Unknown => {
+            log::debug!("Unhandled user data event type: {event_type:?}");
+            None
+        }
+    }
+}
+
+/// Parses the `event_time` from an SBE `ServerShutdownEvent` (template 610) frame.
+///
+/// The SBE field is microseconds; the trading message variant documents
+/// milliseconds (matching the JSON dispatch), so this divides by 1_000.
+/// Returns `0` when the buffer is too short to contain the field.
+pub(crate) fn parse_server_shutdown_event_time_ms(data: &[u8]) -> i64 {
+    if data.len() < message_header_codec::ENCODED_LENGTH + 8 {
+        return 0;
+    }
+    let buf = ReadBuf::new(data);
+    buf.get_i64_at(message_header_codec::ENCODED_LENGTH) / 1_000
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::microseconds_converted_to_ms(1_700_000_000_000_000_i64, 1_700_000_000_000_i64)]
+    #[case::zero(0_i64, 0_i64)]
+    #[case::negative(-1_000_i64, -1_i64)]
+    fn test_parse_server_shutdown_event_time_ms(
+        #[case] event_time_us: i64,
+        #[case] expected_ms: i64,
+    ) {
+        let mut buf = vec![0u8; message_header_codec::ENCODED_LENGTH];
+        buf.extend_from_slice(&event_time_us.to_le_bytes());
+        assert_eq!(parse_server_shutdown_event_time_ms(&buf), expected_ms);
+    }
+
+    #[rstest]
+    fn test_parse_server_shutdown_event_time_ms_short_buffer_returns_zero() {
+        let buf = vec![0u8; message_header_codec::ENCODED_LENGTH + 4];
+        assert_eq!(parse_server_shutdown_event_time_ms(&buf), 0);
+    }
+
+    #[rstest]
+    fn test_classify_user_data_event_server_shutdown_emits_variant() {
+        let event = serde_json::json!({"e": "serverShutdown", "E": 1_700_000_000_000_i64});
+        let msg = classify_user_data_event(&event).expect("expected ServerShutdown");
+        match msg {
+            BinanceSpotWsTradingMessage::ServerShutdown { event_time } => {
+                assert_eq!(event_time, 1_700_000_000_000);
+            }
+            other => panic!("expected ServerShutdown variant, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_classify_user_data_event_server_shutdown_missing_event_time_defaults_to_zero() {
+        let event = serde_json::json!({"e": "serverShutdown"});
+        let msg = classify_user_data_event(&event).expect("expected ServerShutdown");
+        match msg {
+            BinanceSpotWsTradingMessage::ServerShutdown { event_time } => {
+                assert_eq!(event_time, 0);
+            }
+            other => panic!("expected ServerShutdown variant, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_classify_user_data_event_unknown_returns_none() {
+        let event = serde_json::json!({"e": "somethingElse"});
+        assert!(classify_user_data_event(&event).is_none());
     }
 }

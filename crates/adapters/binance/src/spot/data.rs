@@ -208,6 +208,12 @@ impl BinanceSpotDataClient {
                     Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
                 }
             }
+            BinanceSpotWsMessage::ServerShutdown(ref msg) => {
+                log::warn!(
+                    "Binance server shutdown notice (event_time={}); disconnect expected within ~10 minutes",
+                    msg.event_time,
+                );
+            }
             BinanceSpotWsMessage::RawBinary(data) => {
                 log::debug!("Unhandled binary message: {} bytes", data.len());
             }

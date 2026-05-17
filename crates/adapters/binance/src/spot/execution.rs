@@ -1499,6 +1499,11 @@ fn dispatch_ws_trading_message(
         BinanceSpotWsTradingMessage::Reconnected => {
             log::info!("WS trading API reconnected");
         }
+        BinanceSpotWsTradingMessage::ServerShutdown { event_time } => {
+            log::warn!(
+                "WS trading API server shutdown notice (event_time={event_time}); reconnect expected within ~10 minutes"
+            );
+        }
         BinanceSpotWsTradingMessage::Error(err) => {
             log::error!("WS trading API error: {err}");
         }

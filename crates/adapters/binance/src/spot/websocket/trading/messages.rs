@@ -159,6 +159,11 @@ pub enum BinanceSpotWsTradingMessage {
     AccountPosition(BinanceSpotAccountPositionMsg),
     /// Balance update from user data stream.
     BalanceUpdate(BinanceSpotBalanceUpdateMsg),
+    /// Server shutdown notice (sent ~10 minutes before disconnection).
+    ServerShutdown {
+        /// Event time in milliseconds.
+        event_time: i64,
+    },
     /// Error from venue or network.
     Error(String),
 }

@@ -160,6 +160,12 @@ async fn main() -> anyhow::Result<()> {
                     BinanceSpotWsMessage::RawJson(json) => {
                         log::debug!("Raw JSON: msg={message_count}, json={json}");
                     }
+                    BinanceSpotWsMessage::ServerShutdown(msg) => {
+                        log::warn!(
+                            "Server shutdown notice: event_time={}; disconnect expected within ~10 minutes",
+                            msg.event_time,
+                        );
+                    }
                     BinanceSpotWsMessage::Error(err) => {
                         log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);
                     }

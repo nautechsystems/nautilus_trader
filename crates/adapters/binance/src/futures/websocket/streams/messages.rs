@@ -259,6 +259,9 @@ pub struct BinanceFuturesMarkPriceMsg {
     /// Mark price.
     #[serde(rename = "p")]
     pub mark_price: String,
+    /// Mark price moving average (added by venue, may be absent on older payloads).
+    #[serde(rename = "ap", default)]
+    pub mark_price_moving_avg: Option<String>,
     /// Index price.
     #[serde(rename = "i")]
     pub index_price: String,

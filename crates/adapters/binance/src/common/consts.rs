@@ -304,6 +304,13 @@ pub const BINANCE_NEW_ORDER_REJECTED_CODE: i64 = -2010;
 /// Binance error code returned when an order is not found.
 pub const BINANCE_NO_SUCH_ORDER_CODE: i64 = -2013;
 
+/// Binance USD-M Futures error code for `dualSidePosition` sync rejection between
+/// UM (USDM) and CM (Coin-M) accounts on Portfolio Margin.
+///
+/// Returned when an order or position-mode change is incompatible with the
+/// account-level hedge mode that PM keeps in sync across UM/CM.
+pub const BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE: i64 = -4531;
+
 /// Binance Spot LIMIT_MAKER rejection message.
 ///
 /// This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
@@ -311,3 +318,18 @@ pub const BINANCE_SPOT_POST_ONLY_REJECT_MSG: &str = "Order would immediately mat
 
 /// Valid order book depth levels for Binance.
 pub const BINANCE_BOOK_DEPTHS: [u32; 7] = [5, 10, 20, 50, 100, 500, 1000];
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_venue_error_code_values() {
+        assert_eq!(BINANCE_GTX_ORDER_REJECT_CODE, -5022);
+        assert_eq!(BINANCE_NEW_ORDER_REJECTED_CODE, -2010);
+        assert_eq!(BINANCE_NO_SUCH_ORDER_CODE, -2013);
+        assert_eq!(BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, -4531);
+    }
+}

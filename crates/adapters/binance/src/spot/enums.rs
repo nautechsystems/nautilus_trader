@@ -66,6 +66,35 @@ pub enum BinanceCancelReplaceMode {
     AllowFailure,
 }
 
+/// Spot user data stream event types.
+///
+/// These are the `"e"` field values on JSON frames emitted by the Spot user
+/// data stream and the Spot WebSocket Trading API. The Spot wire format is
+/// camelCase throughout; this enum is kept separate from
+/// [`crate::common::enums::BinanceWsEventType`], which mixes camelCase
+/// market-data events with `SCREAMING_SNAKE_CASE` Futures user-data events.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BinanceSpotUserDataEventType {
+    /// Order execution report (`executionReport`).
+    ExecutionReport,
+    /// Account position update (`outboundAccountPosition`).
+    OutboundAccountPosition,
+    /// Balance update (`balanceUpdate`).
+    BalanceUpdate,
+    /// Server shutdown notice, sent ~10 minutes before disconnection.
+    ServerShutdown,
+    /// Listen key expired (legacy user data stream session).
+    ListenKeyExpired,
+    /// External lock update (`externalLockUpdate`).
+    ExternalLockUpdate,
+    /// Event stream terminated.
+    EventStreamTerminated,
+    /// Unknown or undocumented event type.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Converts a Nautilus order type to Binance Spot order type.
 ///
 /// # Errors

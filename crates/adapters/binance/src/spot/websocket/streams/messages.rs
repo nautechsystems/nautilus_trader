@@ -42,6 +42,8 @@ pub enum BinanceSpotWsMessage {
     DepthSnapshot(DepthSnapshotStreamEvent),
     /// Depth diff stream event (SBE decoded).
     DepthDiff(DepthDiffStreamEvent),
+    /// Server shutdown notice (sent ~10 minutes before disconnection).
+    ServerShutdown(BinanceSpotServerShutdownMsg),
     /// Raw binary message (unhandled SBE template).
     RawBinary(Vec<u8>),
     /// Raw JSON message (unhandled text frame).
@@ -50,6 +52,21 @@ pub enum BinanceSpotWsMessage {
     Error(BinanceWsErrorMsg),
     /// WebSocket reconnected.
     Reconnected,
+}
+
+/// Server shutdown event sent ~10 minutes before the venue disconnects clients.
+///
+/// # References
+///
+/// - <https://github.com/binance/binance-spot-api-docs/blob/master/CHANGELOG.md>
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceSpotServerShutdownMsg {
+    /// Event type (`"serverShutdown"`).
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
 }
 
 /// Binance WebSocket error message.
