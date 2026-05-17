@@ -69,6 +69,7 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Price
 
 
 def _resolve_with_exception(
@@ -483,19 +484,23 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
-        self._discard_pending_tick_change_if_unwanted(command.instrument_id)
+        self._discard_local_state_if_unwanted(command.instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
-        self._discard_pending_tick_change_if_unwanted(command.instrument_id)
+        self._discard_local_state_if_unwanted(command.instrument_id)
 
-    def _discard_pending_tick_change_if_unwanted(self, instrument_id: InstrumentId) -> None:
+    def _discard_local_state_if_unwanted(self, instrument_id: InstrumentId) -> None:
+        # Stale local book leaks across resubscribes and corrupts the first
+        # `compute_effective_deltas` pass against the new snapshot.
         if (
             instrument_id not in self.subscribed_order_book_deltas()
             and instrument_id not in self.subscribed_quote_ticks()
         ):
             self._pending_snapshot_after_tick_change.discard(instrument_id)
+            self._local_books.pop(instrument_id, None)
+            self._last_quotes.pop(instrument_id, None)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
@@ -791,6 +796,14 @@ class PolymarketDataClient(LiveMarketDataClient):
         instrument: BinaryOption,
         ws_message: PolymarketTickSizeChange,
     ) -> None:
+        # No-op tick_size_change must not trigger an epoch transition.
+        if Price.from_str(ws_message.new_tick_size) == instrument.price_increment:
+            self._log.debug(
+                f"Ignoring duplicate tick size change for {instrument.id}: "
+                f"{ws_message.old_tick_size} -> {ws_message.new_tick_size}",
+            )
+            return
+
         now_ns = self._clock.timestamp_ns()
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
 

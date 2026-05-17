@@ -182,6 +182,8 @@ Released on TBD (UTC).
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed Polymarket residual `ACCEPTED` orders via trade-history recovery (#4024), thanks for reporting @fedoraiver
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
+- Fixed Polymarket no-op `tick_size_change` clearing local book and queuing a redundant snapshot (Python and Rust)
+- Fixed Polymarket stale local book and last quote leaked across unsubscribe cycles (Python and Rust)
 - Fixed Polymarket auto-loaded instrument subscriptions not receiving live data (#4050), thanks for reporting @d0dge
 - Fixed Polymarket auto-load dropping subscriptions on CLOB transient 404 and empty `token_id` for newly-minted markets
 - Fixed Polymarket market IOC orders submitting as FOK (#4006), thanks for reporting @fedoraiver

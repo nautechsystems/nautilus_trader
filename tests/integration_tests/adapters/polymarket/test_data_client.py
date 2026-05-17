@@ -37,9 +37,11 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AssetClass
@@ -288,6 +290,147 @@ def test_tick_size_change_finer_then_snapshot_clean_transition(event_loop) -> No
     bid_price = rebuilt_book.best_bid_price()
     assert bid_price is not None
     assert bid_price.precision == 3
+
+
+def test_tick_size_change_noop_preserves_book_and_quote(event_loop) -> None:
+    # Same tick_size on both sides must be ignored, not treated as an epoch.
+    client, provider = _make_data_client(event_loop)
+
+    instrument = _make_binary_option("0.01")
+    client._cache.add_instrument(instrument)
+    client._add_subscription_quote_ticks(instrument.id)
+
+    snapshot = _build_snapshot(("0.50", "0.54", "0.56", "0.59"))
+    client._handle_book_snapshot(instrument=instrument, ws_message=snapshot)
+    assert instrument.id in client._local_books
+    assert instrument.id in client._last_quotes
+    book_before = client._local_books[instrument.id]
+    quote_before = client._last_quotes[instrument.id]
+    emitted_before = list(client.emitted)
+
+    change = PolymarketTickSizeChange(
+        market="0xMARKET",
+        asset_id="0xASSET",
+        new_tick_size="0.01",
+        old_tick_size="0.01",
+        timestamp="1700000001000",
+    )
+    client._handle_instrument_update(instrument=instrument, ws_message=change)
+
+    # Local book and last quote must survive; nothing should be queued.
+    assert client._local_books[instrument.id] is book_before
+    assert client._last_quotes[instrument.id] is quote_before
+    assert instrument.id not in client._pending_snapshot_after_tick_change
+
+    # A no-op must not emit a phantom instrument update.
+    provider.add.assert_not_called()
+    assert client.emitted == emitted_before
+
+
+def test_unsubscribe_clears_stale_local_book_when_no_sub_remains(event_loop) -> None:
+    # Resubscribe would diff a fresh snapshot against the stale leaked book.
+    client, _provider = _make_data_client(event_loop)
+
+    instrument = _make_binary_option(
+        "0.01",
+        instrument_id=InstrumentId.from_str("0xCOND-0xTOKEN.POLYMARKET"),
+    )
+    client._cache.add_instrument(instrument)
+    client._add_subscription_quote_ticks(instrument.id)
+
+    snapshot = _build_snapshot(("0.50", "0.54", "0.56", "0.59"))
+    client._handle_book_snapshot(instrument=instrument, ws_message=snapshot)
+    assert instrument.id in client._local_books
+    assert instrument.id in client._last_quotes
+
+    client._remove_subscription_quote_ticks(instrument.id)
+    command = UnsubscribeQuoteTicks(
+        instrument_id=instrument.id,
+        client_id=None,
+        venue=instrument.id.venue,
+        command_id=UUID4(),
+        ts_init=0,
+        params=None,
+    )
+
+    async def _run() -> None:
+        await client._unsubscribe_quote_ticks(command)
+
+    event_loop.run_until_complete(_run())
+
+    assert instrument.id not in client._local_books
+    assert instrument.id not in client._last_quotes
+
+
+def test_unsubscribe_deltas_clears_stale_local_book_when_no_sub_remains(event_loop) -> None:
+    # Sibling of the quotes-path test: the deltas teardown must clear too.
+    client, _provider = _make_data_client(event_loop)
+
+    instrument = _make_binary_option(
+        "0.01",
+        instrument_id=InstrumentId.from_str("0xCOND-0xTOKEN.POLYMARKET"),
+    )
+    client._cache.add_instrument(instrument)
+    client._add_subscription_order_book_deltas(instrument.id)
+
+    snapshot = _build_snapshot(("0.50", "0.54", "0.56", "0.59"))
+    client._handle_book_snapshot(instrument=instrument, ws_message=snapshot)
+    assert instrument.id in client._local_books
+
+    client._remove_subscription_order_book_deltas(instrument.id)
+    command = UnsubscribeOrderBook(
+        instrument_id=instrument.id,
+        book_data_type=OrderBookDelta,
+        client_id=None,
+        venue=instrument.id.venue,
+        command_id=UUID4(),
+        ts_init=0,
+        params=None,
+    )
+
+    async def _run() -> None:
+        await client._unsubscribe_order_book_deltas(command)
+
+    event_loop.run_until_complete(_run())
+
+    assert instrument.id not in client._local_books
+    assert instrument.id not in client._last_quotes
+
+
+def test_unsubscribe_preserves_local_book_when_other_sub_remains(event_loop) -> None:
+    # The surviving channel still depends on the local book.
+    client, _provider = _make_data_client(event_loop)
+
+    instrument = _make_binary_option(
+        "0.01",
+        instrument_id=InstrumentId.from_str("0xCOND-0xTOKEN.POLYMARKET"),
+    )
+    client._cache.add_instrument(instrument)
+    client._add_subscription_order_book_deltas(instrument.id)
+    client._add_subscription_quote_ticks(instrument.id)
+
+    snapshot = _build_snapshot(("0.50", "0.54", "0.56", "0.59"))
+    client._handle_book_snapshot(instrument=instrument, ws_message=snapshot)
+    book_before = client._local_books[instrument.id]
+    quote_before = client._last_quotes[instrument.id]
+
+    client._remove_subscription_quote_ticks(instrument.id)
+    command = UnsubscribeQuoteTicks(
+        instrument_id=instrument.id,
+        client_id=None,
+        venue=instrument.id.venue,
+        command_id=UUID4(),
+        ts_init=0,
+        params=None,
+    )
+
+    async def _run() -> None:
+        await client._unsubscribe_quote_ticks(command)
+
+    event_loop.run_until_complete(_run())
+
+    assert client._local_books[instrument.id] is book_before
+    assert client._last_quotes[instrument.id] is quote_before
 
 
 def test_tick_size_change_skips_pending_for_trade_only_sub(event_loop) -> None:

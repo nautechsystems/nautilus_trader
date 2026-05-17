@@ -350,6 +350,17 @@ impl PolymarketDataClient {
         pending.remove(&instrument_id);
     }
 
+    fn drop_local_book_state_if_unwanted(&self, instrument_id: InstrumentId) {
+        // Stale book/quote leaks across resubscribes
+        if self.active_quote_subs.contains(&instrument_id)
+            || self.active_delta_subs.contains(&instrument_id)
+        {
+            return;
+        }
+        self.order_books.remove(&instrument_id);
+        self.last_quotes.remove(&instrument_id);
+    }
+
     fn ensure_auto_load_task(&self) {
         if self
             .auto_load_scheduled
@@ -790,13 +801,6 @@ impl PolymarketDataClient {
             }
 
             MarketWsMessage::TickSizeChange(change) => {
-                log::info!(
-                    "Tick size changed for {}: {} -> {}",
-                    change.asset_id,
-                    change.old_tick_size,
-                    change.new_tick_size
-                );
-
                 let token_id = Ustr::from(change.asset_id.as_str());
                 let meta = match ctx.token_meta.get(&token_id) {
                     Some(m) => *m,
@@ -818,7 +822,29 @@ impl PolymarketDataClient {
                 };
                 let new_price_precision = tick_size.scale() as u8;
 
-                // Update hot-path precision
+                let instruments = ctx.instruments.load();
+                let existing = instruments.get(&meta.instrument_id);
+
+                // No-op tick_size_change must not trigger an epoch transition.
+                if let Some(existing_inst) = existing
+                    && existing_inst.price_increment().as_decimal() == tick_size
+                {
+                    log::debug!(
+                        "Ignoring duplicate tick size change for {}: {} -> {}",
+                        change.asset_id,
+                        change.old_tick_size,
+                        change.new_tick_size,
+                    );
+                    return;
+                }
+
+                log::info!(
+                    "Tick size changed for {}: {} -> {}",
+                    change.asset_id,
+                    change.old_tick_size,
+                    change.new_tick_size
+                );
+
                 ctx.token_meta.insert(
                     token_id,
                     TokenMeta {
@@ -827,9 +853,7 @@ impl PolymarketDataClient {
                     },
                 );
 
-                // Rebuild and emit the full instrument to update cache.
-                let instruments = ctx.instruments.load();
-                if let Some(existing) = instruments.get(&meta.instrument_id) {
+                if let Some(existing) = existing {
                     let ts_init = ctx.clock.get_time_ns();
 
                     match rebuild_instrument_with_tick_size(
@@ -1439,6 +1463,7 @@ impl DataClient for PolymarketDataClient {
         self.pending_snapshot_after_tick_change
             .remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
+        self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         log::debug!("Unsubscribed from book deltas for {instrument_id}");
         Ok(())
@@ -1448,6 +1473,7 @@ impl DataClient for PolymarketDataClient {
         let instrument_id = cmd.instrument_id;
         self.active_quote_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
+        self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         log::debug!("Unsubscribed from quotes for {instrument_id}");
         Ok(())
@@ -2012,6 +2038,103 @@ mod tests {
                 .contains(&instrument_id)
         );
         assert!(ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn tick_size_change_noop_preserves_book_and_quote() {
+        // Same tick_size on both sides must be ignored, not treated as an epoch.
+        let asset_id_str = "0xTOKEN_NOOP";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[("0.50", "10"), ("0.54", "5"), ("0.56", "8"), ("0.59", "12")],
+        );
+        PolymarketDataClient::handle_market_message(snap, &ctx);
+        let book_ts_before = ctx
+            .order_books
+            .get(&instrument_id)
+            .expect("book entry")
+            .ts_last;
+
+        while data_rx.try_recv().is_ok() {}
+
+        let change = make_tick_change(market, asset_id_str, "0.01", "0.01");
+        PolymarketDataClient::handle_market_message(change, &ctx);
+
+        let book_after = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book_after.ts_last, book_ts_before);
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 2);
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.is_empty(),
+            "no-op tick change must not emit events: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn tick_size_change_same_precision_different_value_triggers_epoch() {
+        // Regression lock: a precision-only no-op check would skip 0.005 -> 0.001
+        // (both precision 3) even though the tick value really changed.
+        let asset_id_str = "0xTOKEN_VALUE";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.005"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        let change = make_tick_change(market, asset_id_str, "0.005", "0.001");
+        PolymarketDataClient::handle_market_message(change, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 3);
+
+        let rebuilt = ctx
+            .instruments
+            .load()
+            .get(&instrument_id)
+            .cloned()
+            .expect("rebuilt instrument");
+        assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "expected rebuilt instrument event, found: {events:?}",
+        );
     }
 
     #[rstest]
