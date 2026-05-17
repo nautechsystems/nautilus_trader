@@ -952,7 +952,8 @@ class TestParseFiltersExpr:
 
     def test_backtest_venue_config_liquidation_fields_serialization(self):
         """
-        Test that BacktestVenueConfig with liquidation fields serializes and deserializes correctly.
+        Test that BacktestVenueConfig with liquidation fields serializes and
+        deserializes correctly.
         """
         # Arrange
         config = BacktestVenueConfig(

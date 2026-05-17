@@ -178,11 +178,18 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     price_protection_points: NonNegativeInt = 0
     settlement_prices: dict[InstrumentId, float] | None = None
     liquidation_enabled: bool = False
-    """If liquidation of positions should be triggered when maintenance margin is breached."""
+    """
+    If liquidation of positions should be triggered when maintenance margin is breached.
+    """
     liquidation_trigger_ratio: float = 1.0
-    """Ratio of equity to maintenance margin at which liquidation is triggered (default 1.0 means equity <= maintenance_margin)."""
+    """
+    Ratio of equity to maintenance margin at which liquidation is triggered (default 1.0
+    means equity <= maintenance_margin).
+    """
     liquidation_cancel_open_orders: bool = True
-    """If open orders should be cancelled before closing positions during liquidation."""
+    """
+    If open orders should be cancelled before closing positions during liquidation.
+    """
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):

@@ -16,6 +16,7 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.data.engine import DataEngine
@@ -65,7 +66,7 @@ def build_exchange(
     liquidation_enabled: bool,
     liquidation_trigger_ratio: float,
     starting_btc: float,
-) -> tuple[SimulatedExchange, DataEngine, ExecutionEngine, MockStrategy, object]:
+) -> tuple[SimulatedExchange, DataEngine, ExecutionEngine, MockStrategy, Cache]:
     clock = TestClock()
     trader_id = TestIdStubs.trader_id()
     msgbus = MessageBus(trader_id=trader_id, clock=clock)
