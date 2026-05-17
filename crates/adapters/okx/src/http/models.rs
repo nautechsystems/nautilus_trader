@@ -703,6 +703,12 @@ pub struct OKXPlaceOrderRequest {
     /// Event contract market outcome: yes or no.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// Slippage tolerance for market orders, expressed as a decimal fraction
+    /// (e.g., "0.005" for 0.5%). Supported instrument/order-type scope is
+    /// venue-controlled; rejected with `54084`/`54085` if exceeded or out of
+    /// the venue's accepted range. See the OKX v5 docs for the current matrix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slippage_pct: Option<String>,
 }
 
 pub use crate::common::models::OKXAttachedAlgoOrd;
@@ -1677,12 +1683,14 @@ mod tests {
             attach_algo_ords: None,
             speed_bump: None,
             outcome: None,
+            slippage_pct: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"pxUsd\":\"100.5\""));
         assert!(!json.contains("\"pxVol\""));
         assert!(!json.contains("\"px\":"));
+        assert!(!json.contains("slippagePct"));
     }
 
     #[rstest]
@@ -1705,12 +1713,40 @@ mod tests {
             attach_algo_ords: None,
             speed_bump: None,
             outcome: None,
+            slippage_pct: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"pxVol\":\"0.55\""));
         assert!(!json.contains("\"pxUsd\""));
         assert!(!json.contains("\"px\":"));
+    }
+
+    #[rstest]
+    fn test_place_order_request_serializes_slippage_pct() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            ccy: None,
+            cl_ord_id: Some("mkt-slip-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: Some(OKXPositionSide::Net),
+            ord_type: OKXOrderType::Market,
+            sz: "1".to_string(),
+            px: None,
+            px_usd: None,
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            attach_algo_ords: None,
+            speed_bump: None,
+            outcome: None,
+            slippage_pct: Some("0.005".to_string()),
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["slippagePct"], "0.005");
     }
 
     #[rstest]
@@ -1820,6 +1856,7 @@ mod tests {
             attach_algo_ords: None,
             speed_bump: Some("1".to_string()),
             outcome: Some("yes".to_string()),
+            slippage_pct: None,
         };
 
         let json: serde_json::Value = serde_json::to_value(&request).unwrap();

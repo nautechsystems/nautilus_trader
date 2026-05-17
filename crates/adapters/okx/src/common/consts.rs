@@ -154,6 +154,24 @@ pub const OKX_POST_ONLY_CANCEL_SOURCE: &str = "31";
 /// Human-readable reason used when a post-only order is auto-cancelled for taking liquidity.
 pub const OKX_POST_ONLY_CANCEL_REASON: &str = "POST_ONLY would take liquidity";
 
+/// OKX error code returned when a market order's `slippagePct` would be exceeded by the
+/// projected fill, so the order is rejected.
+pub const OKX_SLIPPAGE_EXCEEDED_ERROR_CODE: &str = "54084";
+
+/// OKX error code returned when the supplied `slippagePct` value is outside the
+/// venue-permitted range.
+pub const OKX_SLIPPAGE_INVALID_ERROR_CODE: &str = "54085";
+
+/// Returns `true` if the OKX `sCode` identifies a slippage-related rejection emitted
+/// in response to the `slippagePct` parameter on market orders.
+#[must_use]
+pub fn is_slippage_rejection(error_code: &str) -> bool {
+    matches!(
+        error_code,
+        OKX_SLIPPAGE_EXCEEDED_ERROR_CODE | OKX_SLIPPAGE_INVALID_ERROR_CODE
+    )
+}
+
 /// Target currency literal for base currency.
 pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
 
@@ -195,5 +213,21 @@ pub fn resolve_book_depth(raw_depth: usize) -> usize {
         0 | 400 => raw_depth,
         1..=50 => 50,
         _ => 400,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("54084", true)]
+    #[case("54085", true)]
+    #[case("51019", false)]
+    #[case("", false)]
+    fn test_is_slippage_rejection(#[case] code: &str, #[case] expected: bool) {
+        assert_eq!(is_slippage_rejection(code), expected);
     }
 }

@@ -79,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None, // px_vol
             None, // speed_bump
             None, // outcome
+            None, // slippage_pct
         )
         .await;
 

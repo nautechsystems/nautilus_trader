@@ -4313,6 +4313,7 @@ impl OKXHttpClient {
         px_vol: Option<String>,
         speed_bump: Option<String>,
         outcome: Option<String>,
+        slippage_pct: Option<String>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXHttpError::ValidationError(format!(
@@ -4473,6 +4474,7 @@ impl OKXHttpClient {
             attach_algo_ords,
             speed_bump,
             outcome,
+            slippage_pct,
         };
 
         self.place_order(request).await

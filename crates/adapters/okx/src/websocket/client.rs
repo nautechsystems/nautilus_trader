@@ -2148,6 +2148,7 @@ impl OKXWebSocketClient {
         px_vol: Option<String>,
         speed_bump: Option<String>,
         outcome: Option<String>,
+        slippage_pct: Option<String>,
     ) -> Result<(), OKXWsError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXWsError::ClientError(format!(
@@ -2343,6 +2344,10 @@ impl OKXWebSocketClient {
 
         if let Some(outcome) = outcome {
             builder.outcome(outcome);
+        }
+
+        if let Some(slippage) = slippage_pct {
+            builder.slippage_pct(slippage);
         }
 
         builder.ord_type(okx_ord_type);
@@ -3738,6 +3743,7 @@ mod tests {
                 OrderSide::Buy,
                 OrderType::Limit,
                 Quantity::from("0.01"),
+                None,
                 None,
                 None,
                 None,

@@ -38,6 +38,8 @@ Released on TBD (UTC).
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Kraken Spot L3 order book support via WebSocket v2 (#4041), thanks @mcgrj
 - Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
+- Added OKX X-Perp (`ruleType=xperp`) futures support with funding-rate subscriptions
+- Added OKX `slippagePct` parameter for market orders via the `slippage_pct` order param
 - Added OKX event contracts support
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 - Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference

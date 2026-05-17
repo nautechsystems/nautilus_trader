@@ -606,6 +606,7 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
             None,
             None,
             Some("yes".to_string()),
+            None,
         )
         .await
         .expect("submit event order failed");
@@ -666,6 +667,7 @@ async fn test_submit_event_post_only_order_omits_default_speed_bump() {
             None,
             None,
             Some("yes".to_string()),
+            None,
         )
         .await
         .expect("submit post-only event order failed");
@@ -708,6 +710,7 @@ async fn test_submit_event_order_requires_outcome() {
             Some(Price::from("0.420")),
             None,
             Some(false),
+            None,
             None,
             None,
             None,

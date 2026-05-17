@@ -78,6 +78,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 
@@ -333,14 +334,13 @@ class OKXDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        # Funding rates only apply to perpetual swaps
+        # Funding rates apply to perpetual swaps and OKX X-Perp expiring perpetuals
         instrument = self._instrument_provider.find(command.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {command.instrument_id}")
             return
 
-        # Check if instrument is a perpetual swap
-        if not isinstance(instrument, CryptoPerpetual):
+        if not _supports_funding_rates(instrument):
             self._log.warning(
                 f"Funding rates not applicable for {command.instrument_id} "
                 f"(instrument type: {type(instrument).__name__}), skipping subscription",
@@ -463,7 +463,7 @@ class OKXDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {command.instrument_id}")
             return
 
-        if not isinstance(instrument, CryptoPerpetual):
+        if not _supports_funding_rates(instrument):
             self._log.warning(
                 f"Funding rates not applicable for {command.instrument_id} "
                 f"(instrument type: {type(instrument).__name__}), skipping unsubscription",
@@ -778,3 +778,12 @@ class OKXDataClient(LiveMarketDataClient):
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 
         self._handle_data(instrument)
+
+
+def _supports_funding_rates(instrument: Instrument) -> bool:
+    if isinstance(instrument, CryptoPerpetual):
+        return True
+    if isinstance(instrument, CryptoFuture):
+        info = instrument.info or {}
+        return str(info.get("rule_type", "")).lower() == "xperp"
+    return False

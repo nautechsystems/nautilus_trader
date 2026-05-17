@@ -1904,6 +1904,8 @@ pub fn parse_futures_instrument(
     let max_price = None; // TBD
     let min_price = None; // TBD
 
+    let info = build_futures_info(definition)?;
+
     let instrument = CryptoFuture::new(
         instrument_id,
         raw_symbol,
@@ -1929,12 +1931,36 @@ pub fn parse_futures_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        None,
+        info,
         ts_init, // No ts_event for response
         ts_init,
     );
 
     Ok(InstrumentAny::CryptoFuture(instrument))
+}
+
+/// Returns `true` if the futures `rule_type` identifies an OKX X-Perp
+/// (expiring perpetual). X-Perps trade like perpetual swaps but expire on
+/// a fixed date, so they should be carried as `CryptoFuture` instruments
+/// while still supporting funding-rate flows.
+#[must_use]
+pub fn is_xperp_rule_type(rule_type: &str) -> bool {
+    rule_type.eq_ignore_ascii_case("xperp")
+}
+
+fn build_futures_info(definition: &OKXInstrument) -> anyhow::Result<Option<Params>> {
+    if definition.rule_type.is_empty() {
+        return Ok(None);
+    }
+
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "rule_type".to_string(),
+        serde_json::Value::String(definition.rule_type.clone()),
+    );
+    Ok(Some(serde_json::from_value(serde_json::Value::Object(
+        map,
+    ))?))
 }
 
 /// Parses an OKX option instrument definition into a Nautilus option contract.
@@ -3164,6 +3190,66 @@ mod tests {
         assert_eq!(instrument.lot_size(), Some(Quantity::from(1)));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
         assert_eq!(instrument.max_quantity(), Some(Quantity::from(10000)));
+
+        let InstrumentAny::CryptoFuture(crypto_future) = instrument else {
+            panic!("expected CryptoFuture, was {instrument:?}");
+        };
+        let info = crypto_future.info.expect("info populated for FUTURES");
+        assert_eq!(info.get_str("rule_type"), Some("normal"));
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_xperp_carries_rule_type() {
+        // X-Perp instruments ship with the standard 3-part futures symbol
+        // shape; the `ruleType=xperp` field is what distinguishes them from
+        // regular dated futures.
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Futures,
+            inst_id: Ustr::from("BTC-USDT-250328"),
+            uly: Ustr::from("BTC-USDT"),
+            inst_family: Ustr::from("BTC-USDT"),
+            series_id: None,
+            inst_category: None,
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from("USDT"),
+            settle_ccy: Ustr::from("USDT"),
+            ct_val: "1".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "USDT".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: String::new(),
+            list_time: Some(1_700_000_000_000),
+            exp_time: Some(1_743_004_800_000),
+            lever: "10".to_string(),
+            tick_sz: "0.1".to_string(),
+            lot_sz: "1".to_string(),
+            min_sz: "1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Live,
+            rule_type: "xperp".to_string(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
+            inst_id_code: None,
+        };
+
+        let parsed =
+            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default())
+                .expect("parses synthetic X-Perp instrument");
+
+        let InstrumentAny::CryptoFuture(crypto_future) = parsed else {
+            panic!("expected CryptoFuture for X-Perp");
+        };
+        let info = crypto_future.info.expect("info populated for X-Perp");
+        assert_eq!(info.get_str("rule_type"), Some("xperp"));
+        assert!(is_xperp_rule_type("xperp"));
+        assert!(is_xperp_rule_type("XPERP"));
+        assert!(!is_xperp_rule_type("normal"));
     }
 
     #[rstest]

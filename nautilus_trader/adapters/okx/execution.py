@@ -1147,6 +1147,7 @@ class OKXExecutionClient(LiveExecutionClient):
         px_vol = params.get("px_vol") if params else None
         speed_bump = params.get("speed_bump") if params else None
         outcome = params.get("outcome") if params else None
+        slippage_pct = params.get("slippage_pct") if params else None
 
         response = await self._http_client.place_order(
             trader_id=pyo3_trader_id,
@@ -1167,6 +1168,7 @@ class OKXExecutionClient(LiveExecutionClient):
             px_vol=str(px_vol) if px_vol is not None else None,
             speed_bump=str(speed_bump) if speed_bump is not None else None,
             outcome=str(outcome) if outcome is not None else None,
+            slippage_pct=str(slippage_pct) if slippage_pct is not None else None,
         )
 
         if response.get("s_code") and response["s_code"] != "0":
@@ -1202,6 +1204,7 @@ class OKXExecutionClient(LiveExecutionClient):
         px_vol = params.get("px_vol") if params else None
         speed_bump = params.get("speed_bump") if params else None
         outcome = params.get("outcome") if params else None
+        slippage_pct = params.get("slippage_pct") if params else None
 
         await self._ws_client.submit_order(
             trader_id=pyo3_trader_id,
@@ -1223,6 +1226,7 @@ class OKXExecutionClient(LiveExecutionClient):
             px_vol=str(px_vol) if px_vol is not None else None,
             speed_bump=str(speed_bump) if speed_bump is not None else None,
             outcome=str(outcome) if outcome is not None else None,
+            slippage_pct=str(slippage_pct) if slippage_pct is not None else None,
         )
 
     async def _submit_order_websocket(self, command: SubmitOrder) -> None:

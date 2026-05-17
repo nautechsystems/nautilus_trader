@@ -1302,6 +1302,7 @@ impl OKXWebSocketClient {
         px_vol=None,
         speed_bump=None,
         outcome=None,
+        slippage_pct=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -1327,6 +1328,7 @@ impl OKXWebSocketClient {
         px_vol: Option<String>,
         speed_bump: Option<String>,
         outcome: Option<String>,
+        slippage_pct: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
         let client = self.clone();
@@ -1354,6 +1356,7 @@ impl OKXWebSocketClient {
                     px_vol,
                     speed_bump,
                     outcome,
+                    slippage_pct,
                 )
                 .await
                 .map_err(to_pyvalue_err)

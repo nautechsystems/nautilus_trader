@@ -303,6 +303,7 @@ impl OKXExecutionClient {
         let px_vol = get_param_as_string(&cmd.params, "px_vol");
         let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
+        let slippage_pct = get_param_as_string(&cmd.params, "slippage_pct");
 
         self.spawn_task("submit_order", async move {
             let result = ws_private
@@ -327,6 +328,7 @@ impl OKXExecutionClient {
                     px_vol,
                     speed_bump,
                     outcome,
+                    slippage_pct,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
