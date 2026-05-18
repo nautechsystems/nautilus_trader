@@ -118,6 +118,14 @@ impl BinanceSpotDataClient {
             config.environment,
             product_type,
         )
+        .map_err(|e| {
+            log::warn!(
+                "Binance API credentials not found ({e}). \
+                 SBE WebSocket streams require an Ed25519 API key \
+                 (set BINANCE_API_KEY and BINANCE_API_SECRET env vars)"
+            );
+            e
+        })
         .ok();
 
         // SBE streams require Ed25519 authentication
@@ -341,6 +349,14 @@ impl DataClient for BinanceSpotDataClient {
         }
 
         self.ws_client.cache_instruments(&instruments);
+
+        if !self.ws_client.has_credential() {
+            anyhow::bail!(
+                "Binance SBE WebSocket requires Ed25519 API credentials. \
+                 Set BINANCE_API_KEY and BINANCE_API_SECRET environment variables, \
+                 or provide api_key/api_secret in the data client config"
+            );
+        }
 
         log::info!("Connecting to Binance SBE WebSocket...");
         self.ws_client.connect().await.map_err(|e| {
