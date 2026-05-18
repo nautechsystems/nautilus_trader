@@ -21,6 +21,18 @@ set -euo pipefail
 #   - .github/workflows/<not build*>.yml    scheduled or independent workflows
 #                                           that build.yml never triggers
 #                                           (nightly-*, dst, performance, ...)
+#   - root all-caps *.md                    README, RELEASES, CONTRIBUTING,
+#                                           SECURITY, etc.: documentation only
+#   - crates/.../README.md                  per-crate README (any depth):
+#                                           shipped by cargo publish but content
+#                                           does not affect compilation
+#   - LICENSE                               legal text only
+#   - .gitignore, .gitattributes,           VCS and editor metadata: no effect
+#     .editorconfig                         on build or test outcomes
+#
+# The four rules above only skip when the file is still present on disk so a
+# deletion (e.g. removing README.md, which pyproject.toml and Cargo.toml
+# declare as package metadata) cannot bypass the build that would catch it.
 
 run_all() {
   echo "run_tests=true" >> "$GITHUB_OUTPUT"
@@ -64,6 +76,12 @@ while IFS= read -r file; do
   [[ "$file" =~ ^docs/ ]] && continue
   [[ "$file" == "Makefile" ]] && continue
   [[ "$file" =~ ^\.github/workflows/ && ! "$file" =~ ^\.github/workflows/build ]] && continue
+  [[ "$file" =~ ^[A-Z][A-Z0-9_]*\.md$ && -f "$file" ]] && continue
+  [[ "$file" =~ ^crates/.+/README\.md$ && -f "$file" ]] && continue
+  [[ "$file" == "LICENSE" && -f "$file" ]] && continue
+  if [[ "$file" == ".gitignore" || "$file" == ".gitattributes" || "$file" == ".editorconfig" ]] && [[ -f "$file" ]]; then
+    continue
+  fi
   code_changed=1
   # Rust, Cython, cargo config, or build infrastructure means full Rust tests
   [[ "$file" =~ \.(rs|pyx|pxd)$ ]] && rust_changed=1
