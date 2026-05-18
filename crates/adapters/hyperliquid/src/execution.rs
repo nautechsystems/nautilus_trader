@@ -77,8 +77,8 @@ use crate::{
         ExecutionReport, NautilusWsMessage,
         client::HyperliquidWebSocketClient,
         dispatch::{
-            DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_fill_report,
-            dispatch_order_status_report,
+            DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_order_event,
+            dispatch_order_fill,
         },
     },
 };
@@ -2037,8 +2037,7 @@ fn handle_execution_report(
             let is_open = order_report.order_status.is_open();
             let client_order_id = order_report.client_order_id;
 
-            let outcome =
-                dispatch_order_status_report(&order_report, dispatch_state, emitter, ts_init);
+            let outcome = dispatch_order_event(&order_report, dispatch_state, emitter, ts_init);
 
             if outcome == DispatchOutcome::External {
                 emitter.send_order_status_report(order_report);
@@ -2073,7 +2072,7 @@ fn handle_execution_report(
         ExecutionReport::Fill(fill_report) => {
             let client_order_id = fill_report.client_order_id;
 
-            let outcome = dispatch_fill_report(&fill_report, dispatch_state, emitter, ts_init);
+            let outcome = dispatch_order_fill(&fill_report, dispatch_state, emitter, ts_init);
 
             if outcome == DispatchOutcome::External {
                 emitter.send_fill_report(fill_report);

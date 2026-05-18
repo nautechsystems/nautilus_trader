@@ -257,7 +257,7 @@ fn bench_event_filled_construct(c: &mut Criterion) {
 // is a measurement artifact, not a real cost. The second+ calls hit the
 // `filled_orders` dedup early return.
 fn bench_dispatch_reused_fill(c: &mut Criterion) {
-    use nautilus_hyperliquid::websocket::dispatch::dispatch_fill_report;
+    use nautilus_hyperliquid::websocket::dispatch::dispatch_order_fill;
     use nautilus_model::reports::FillReport;
 
     let (emitter, mut _rx) = common::bench_emitter();
@@ -288,7 +288,7 @@ fn bench_dispatch_reused_fill(c: &mut Criterion) {
     c.bench_function("atom/dispatch_fill_reused", |b| {
         b.iter(|| {
             let outcome =
-                dispatch_fill_report(black_box(&report), &state, &emitter, UnixNanos::default());
+                dispatch_order_fill(black_box(&report), &state, &emitter, UnixNanos::default());
             black_box(outcome);
         });
     });

@@ -22,7 +22,7 @@
 //!    when it submits an order, and refreshes the cached venue order id when a
 //!    modify is sent so the WebSocket consumer can detect cancel-replace.
 //! 2. Incoming [`OrderStatusReport`] and [`FillReport`] messages are routed
-//!    through [`dispatch_order_status_report`] and [`dispatch_fill_report`].
+//!    through [`dispatch_order_event`] and [`dispatch_order_fill`].
 //!    For tracked orders these build typed [`OrderEventAny`] events and emit
 //!    them via [`ExecutionEventEmitter::send_order_event`]. For untracked /
 //!    external orders the dispatch falls back to forwarding the raw report.
@@ -47,7 +47,7 @@
 //! `ACCEPTED(new_voi)` on the WebSocket, regardless of whether the WS
 //! message races ahead of the HTTP response.
 //!
-//! [`dispatch_fill_report`] buffers fills for in-flight cancel-replace
+//! [`dispatch_order_fill`] buffers fills for in-flight cancel-replace
 //! modifies into [`WsDispatchState::buffered_fills`]; `handle_accepted`
 //! drains them on the replacement ACCEPTED. See GH-3972.
 
@@ -444,7 +444,7 @@ pub enum DispatchOutcome {
 ///
 /// [`External`]: DispatchOutcome::External
 /// [`Skip`]: DispatchOutcome::Skip
-pub fn dispatch_order_status_report(
+pub fn dispatch_order_event(
     report: &OrderStatusReport,
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
@@ -507,7 +507,7 @@ pub fn dispatch_order_status_report(
 ///
 /// [`External`]: DispatchOutcome::External
 /// [`Skip`]: DispatchOutcome::Skip
-pub fn dispatch_fill_report(
+pub fn dispatch_order_fill(
     report: &FillReport,
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
@@ -665,7 +665,7 @@ fn handle_accepted(
         // FIFO-bounded caches make any residue benign. See GH-3972.
         let buffered = state.drain_buffered_fills(&client_order_id);
         for fill in buffered {
-            dispatch_fill_report(&fill, state, emitter, ts_init);
+            dispatch_order_fill(&fill, state, emitter, ts_init);
         }
         return DispatchOutcome::Tracked;
     }
@@ -885,7 +885,7 @@ fn handle_filled_marker(
     _state: &WsDispatchState,
 ) -> DispatchOutcome {
     // A status-only `FILLED` marker does not carry fill data; the actual
-    // `OrderFilled` is emitted from `dispatch_fill_report` when the matching
+    // `OrderFilled` is emitted from `dispatch_order_fill` when the matching
     // trade arrives. Do *not* set `filled_orders` here, otherwise the
     // follow-up fill would be classified as a stale replay and dropped
     // before the terminal `OrderFilled` event can be emitted. The fill

@@ -741,11 +741,11 @@ sequenceDiagram
     HTTP-->>ExecClient: { status: "ok" }
     ExecClient->>Dispatch: mark_pending_modify(cloid, old_oid)
     WS-->>ExecClient: ACCEPTED(new_oid, cloid)
-    ExecClient->>Dispatch: dispatch_order_status_report()
+    ExecClient->>Dispatch: dispatch_order_event()
     Dispatch->>Dispatch: cached_voi != new_oid -> promote to OrderUpdated,<br/>clear_pending_modify, record_venue_order_id(new_oid)
     Dispatch-->>Strategy: OrderUpdated(venue_order_id=new_oid)
     WS-->>ExecClient: CANCELED(old_oid, cloid)
-    ExecClient->>Dispatch: dispatch_order_status_report()
+    ExecClient->>Dispatch: dispatch_order_event()
     Dispatch->>Dispatch: cached_voi != old_oid -> Skip (stale cancel)
 ```
 

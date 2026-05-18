@@ -218,14 +218,14 @@ fn bench_funding_rate(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_fill_report(c: &mut Criterion) {
+fn bench_order_fill(c: &mut Criterion) {
     let instruments = instrument_cache();
     let account_id = common::account_id();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("fill_report", |b| {
+    group.bench_function("order_fill", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
                 serde_json::from_str(black_box(fixtures::USER_FILL)).unwrap();
@@ -247,14 +247,14 @@ fn bench_fill_report(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_order_status(c: &mut Criterion) {
+fn bench_order_event(c: &mut Criterion) {
     let instruments = instrument_cache();
     let account_id = common::account_id();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("order_status", |b| {
+    group.bench_function("order_event", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
                 serde_json::from_str(black_box(fixtures::ORDER_UPDATE)).unwrap();
@@ -281,7 +281,7 @@ criterion_group!(
     bench_mark_price,
     bench_index_price,
     bench_funding_rate,
-    bench_fill_report,
-    bench_order_status,
+    bench_order_fill,
+    bench_order_event,
 );
 criterion_main!(benches);

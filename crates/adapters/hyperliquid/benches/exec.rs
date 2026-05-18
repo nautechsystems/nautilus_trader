@@ -38,7 +38,7 @@ use nautilus_hyperliquid::{
     },
     signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
     websocket::dispatch::{
-        OrderIdentity, WsDispatchState, dispatch_fill_report, dispatch_order_status_report,
+        OrderIdentity, WsDispatchState, dispatch_order_event, dispatch_order_fill,
     },
 };
 use nautilus_model::{
@@ -392,12 +392,8 @@ fn bench_dispatch_fill(c: &mut Criterion) {
                 primed_state(cid, voi)
             },
             |state| {
-                let outcome = dispatch_fill_report(
-                    black_box(&report),
-                    &state,
-                    &emitter,
-                    UnixNanos::default(),
-                );
+                let outcome =
+                    dispatch_order_fill(black_box(&report), &state, &emitter, UnixNanos::default());
                 black_box(outcome);
             },
             BatchSize::SmallInput,
@@ -423,7 +419,7 @@ fn bench_dispatch_status_accepted(c: &mut Criterion) {
                 state
             },
             |state| {
-                let outcome = dispatch_order_status_report(
+                let outcome = dispatch_order_event(
                     black_box(&report),
                     &state,
                     &emitter,
@@ -452,7 +448,7 @@ fn bench_dispatch_status_canceled(c: &mut Criterion) {
                 primed_state(cid, voi)
             },
             |state| {
-                let outcome = dispatch_order_status_report(
+                let outcome = dispatch_order_event(
                     black_box(&report),
                     &state,
                     &emitter,
@@ -489,7 +485,7 @@ fn bench_dispatch_status_modified(c: &mut Criterion) {
                 state
             },
             |state| {
-                let outcome = dispatch_order_status_report(
+                let outcome = dispatch_order_event(
                     black_box(&report),
                     &state,
                     &emitter,
