@@ -1446,8 +1446,10 @@ jobs:
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: bash ./scripts/ci/upload-release-attestation-siblings.bash release-attestations
 
+      # success() so a failed publish-release-integrity leaves attestation
+      # workflow artifacts in place for re-runs.
       - name: Delete artifacts for current run
-        if: always()
+        if: success()
         continue-on-error: true
         shell: bash
         env:

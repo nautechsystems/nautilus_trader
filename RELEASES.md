@@ -9,7 +9,7 @@ Released on 18th May 2026 (UTC).
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
 - Added `CompositeMarketMaker` example strategy with book-mid quoting and synthetic-signal skew (Rust)
-- Added `#[custom_data_field(json)]` for JSON-backed Arrow storage of Serde fields, with PyO3 dict conversion for `IndexMap`/`HashMap` element types (#4003), thanks @faysou
+- Added `#[custom_data_field(json)]` for JSON-backed Arrow Serde fields and PyO3 `IndexMap`/`HashMap` dict conversion (#4003), thanks @faysou
 - Added `priority` parameter to `DataActor.subscribe_signal` for ordered dispatch between subscribers (Rust and PyO3)
 - Added `Cache::order_owned` returning an owned `OrderAny` snapshot for boundary handover (Rust)
 - Added `Cache::account_mut`, `account_owned`, `account_for_venue_owned` with `AccountRefMut`/`AccountAny` returns (Rust)
@@ -68,7 +68,7 @@ Released on 18th May 2026 (UTC).
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
 - Changed default `TransportBackend` to `Sockudo`; set `backend = Tungstenite` to keep the previous default
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
-- Changed `nautilus-model` `arrow` support to an optional Cargo feature; enable `arrow` (or `python-arrow`) to restore prior behavior (#4008), thanks @sunlei
+- Changed `nautilus-model` `arrow` to an optional feature; enable `arrow` (or `python-arrow`) for prior behavior (#4008), thanks @sunlei
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
 - Changed `Strategy` order methods to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
 - Changed `Strategy::cancel_order` and `modify_order` to take `ClientOrderId` instead of `OrderAny` (Rust v2)
@@ -77,10 +77,10 @@ Released on 18th May 2026 (UTC).
 - Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
 - Changed Databento data loaders to error on unresolved precision; pass `price_precision` or call `set_price_precision`
 - Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
-- Changed `nautilus_core::from_pydict` signature from `Py<PyDict>` to `&Py<PyDict>` to avoid moving the input dict (Rust) (#4003), thanks @faysou
+- Changed `nautilus_core::from_pydict` from `Py<PyDict>` to `&Py<PyDict>` to avoid moving the input dict (Rust) (#4003), thanks @faysou
 - Changed `DataActor::subscribe_signal` to take `priority: Option<u32>`; existing callers must pass `None` (Rust)
 - Changed message bus subscription `priority` from `u8` to `u32` to match Cython `int priority` parity (Rust)
-- Changed `OrderFactory::bracket` to a `bon` method builder with per-leg `entry_*`/`tp_*`/`sl_*` setters; callers now use `factory.bracket()...call()` (Rust)
+- Changed `OrderFactory::bracket` to a `bon` builder with per-leg `entry_*`/`tp_*`/`sl_*` setters; use `factory.bracket()...call()` (Rust)
 
 ### Security
 - Added Sigstore SBOM attestation for Docker container images at the published digest
@@ -89,8 +89,8 @@ Released on 18th May 2026 (UTC).
 - Hardened CI release signing chain: pinned cosign tooling, `harden-runner` on merge jobs
 - Hardened nightly-merge auth by storing token in git extraheader rather than remote URL
 - Hardened PyPI publishing with OIDC trusted publishing, eliminating long-lived API tokens
-- Hardened Python dependency installation by pinning every third-party package in `[tool.uv].no-build-package` so loss of wheel publishing fails `uv lock` rather than silently building from sdist
-- Upgraded `urllib3` to v2.7.0 (addresses GHSA-mf9v-mfxr-j63j decompression-bomb bypass and GHSA-qccp-gfcp-xxvc sensitive header leak on cross-host proxy redirect)
+- Hardened Python deps: pinned every third-party package in `[tool.uv].no-build-package` so lost wheels fail `uv lock` not build sdist
+- Upgraded `urllib3` to v2.7.0 (GHSA-mf9v-mfxr-j63j decompression-bomb bypass, GHSA-qccp-gfcp-xxvc cross-host proxy header leak)
 - Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
 - Documented Sigstore signature and SBOM verification commands in `SECURITY.md`
 
@@ -98,7 +98,7 @@ Released on 18th May 2026 (UTC).
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
 - Fixed `RefCell` reentrancy in `ExecutionEngine::load_cache` nested `borrow_mut` calls
 - Fixed `RefCell` double-borrow panic in `Portfolio::update_position` when `calculate_account_state` is true
-- Fixed identifier deserialization inside `#[serde(tag = "type")]` enums and `serde_json::Value`; all identifiers now accept owned strings via `Cow<'de, str>`
+- Fixed identifier deserialization inside `#[serde(tag = "type")]` enums and `serde_json::Value` via `Cow<'de, str>` owned-string support
 - Fixed `AccountsManager::update_balances` discarding recalculated balances by mutating a dropped clone
 - Fixed margin account balance not applying realized price PnL on close and reversal fills (#4056), thanks @faysou
 - Fixed Rust portfolio account event clone overhead (#4004), thanks for reporting @magnified103
@@ -132,7 +132,7 @@ Released on 18th May 2026 (UTC).
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed custom data parquet schema registration and multi-file query (#4021), thanks @faysou
-- Fixed `custom_data` macro PyO3 stub generation by ordering `gen_stub` attributes above `pyo3` attributes and detecting `cfg_attr`-wrapped invocations
+- Fixed `custom_data` macro PyO3 stub generation: order `gen_stub` above `pyo3` attributes and detect `cfg_attr`-wrapped invocations
 - Fixed catalog `consolidate_data_by_period` cleanup for skipped targets (#4080), thanks @arpankapoor
 - Fixed SQL `ParserError` for symbols containing ampersand (#4025), thanks @arpankapoor
 - Fixed `DataEngine` to route subscribe/unsubscribe commands to the `BACKTEST` client when registered (Rust)
@@ -144,13 +144,13 @@ Released on 18th May 2026 (UTC).
 - Fixed `DataEngine` bar aggregator quote/trade subscription priority (Rust)
 - Fixed `DataEngine::reset` leaking book and option-chain state across resets (Rust)
 - Fixed `DataActor` composite book delta subscriptions not receiving per-underlying publishes (Rust)
-- Fixed Architect AX `GET /order-status` query parameters to use `oid`/`cid` per v14.0.1; legacy `order_id`/`client_order_id` now return HTTP 400
-- Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
+- Fixed Architect AX `GET /order-status` to use `oid`/`cid` per v14.0.1; legacy `order_id`/`client_order_id` now return HTTP 400
+- Fixed Binance Futures reduce-only orders not reconciling venue-side quantity (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance Spot inflight REST polls for pruned IOC orders (#4072), thanks for reporting @marcelmdn
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Bybit ambiguous submit failures to await reconciliation, thanks for reporting @shorino
 - Fixed Bybit BBO orders not reconciling the venue-resolved price in cached order state (Rust and Python)
-- Fixed Bybit funding rate parsing errors for dated futures on the shared `tickers.linear` WebSocket topic; gates funding rate processing to `CryptoPerpetual` instruments only (#4084)
+- Fixed Bybit funding rate parsing for dated futures on shared `tickers.linear` WS topic; gates to `CryptoPerpetual` only (#4084)
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
@@ -167,16 +167,16 @@ Released on 18th May 2026 (UTC).
 - Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
 - Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
-- Fixed Deribit cross-margin balance overcounting; now reports `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
+- Fixed Deribit cross-margin overcounting; reports `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
 - Fixed Deribit subscriptions silently dropping data for uncached instruments (#4035), thanks for reporting @linimin
 - Fixed Deribit funding rate log spam from perpetual channel updates emitting info/debug on every tick (#4083)
 - Fixed Deribit and Hyperliquid custom data builds without the `arrow` feature
-- Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
-- Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
+- Fixed Hyperliquid modify-after-partial-fill sending absolute quantity to the cancel-replace leg, causing engine overfill (#3986)
+- Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved" by omitting builder attribution like vault orders (#3989)
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
 - Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
-- Fixed Hyperliquid silently dropping `FillReport` arriving before the order was in cache; fills are now buffered and drained on `OrderAccepted` (#4076), thanks @M-Advis
-- Fixed Hyperliquid emitting terminal rejections on submit, cancel, and modify transport failures; defers to WS reconciliation (Python and Rust), thanks for reporting @M-Advis
+- Fixed Hyperliquid dropping `FillReport` before order cached; fills now buffered and drained on `OrderAccepted` (#4076), thanks @M-Advis
+- Fixed Hyperliquid terminal rejections on submit/cancel/modify failures; defers to WS reconciliation (Python and Rust), thanks @M-Advis
 - Fixed Hyperliquid Rust data client reconnect leaving the consumption loop on a cancelled token after disconnect
 - Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
 - Fixed Interactive Brokers callback ordering races (#3976), thanks @faysou
@@ -223,7 +223,7 @@ Released on 18th May 2026 (UTC).
 - Added `cargo-flamegraph` to workspace tools with pinned version
 - Added `simulation` feature on `nautilus-live` so the stress harness runs under `cfg(madsim)` for DST validation
 - Added `NautilusKernel::with_cache_database` builder setter and constructor variant for cache database adapter injection (Rust)
-- Added `nautilus-event-store` cache snapshot capture, restore, and replay wired through `NautilusKernel` for durable cache state across runs (Rust)
+- Added `nautilus-event-store` snapshot capture/restore/replay via `NautilusKernel` for durable cache state across runs (Rust)
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
 - Added typed publish_instrument() to message bus (#4081), thanks @filipmacek
 - Added Binance Futures `-4531` (UM/CM `dualSidePosition` sync) error classifier with hedge-mode hint (Rust)
@@ -237,7 +237,7 @@ Released on 18th May 2026 (UTC).
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved cache order storage to per-order `Rc<RefCell<OrderAny>>` cells, closing stale-clone bug class (Rust)
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
-- Improved `DataEngine` and `DataActor` bulky response handlers to log payload summaries at debug and full payloads at trace; same pattern applied to raw WS binary frame logging in Bybit, OKX, and BitMEX
+- Improved `DataEngine`/`DataActor` bulky responses: summaries at debug, full at trace; same for raw WS frames in Bybit, OKX, BitMEX
 - Improved `OrderMatchingEngine` trailing-stop activation to use the `OrderMatchingCore` `iter_*` API (Rust)
 - Improved `OrderMatchingEngine.iterate` per-order loop to align trailing-stop and GTD timing with Cython (Rust)
 - Improved `OrderMatchingEngine` queue-position fill gating to match Cython on cross-through trades (Rust)
@@ -282,6 +282,10 @@ Released on 18th May 2026 (UTC).
 - Improved Hyperliquid integration guide flagging Rust-only execution config options and scoped slippage note
 - Added `Shutdown semantics` to the backtesting guide covering `on_stop` command settlement
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
+
+### Errata
+- Seven 0.57.0 crates manually published via API token (not OIDC) due to a topo-sort bug in `publish-cargo-crates.sh`
+- Affected: `nautilus-{analysis,common,execution,network,portfolio,testkit,trading}`; fixed for v1.228.0
 
 ---
 

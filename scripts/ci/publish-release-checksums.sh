@@ -135,8 +135,9 @@ mv "$clean_body_file" "$body_file"
   printf "and \`dist-manifest.json\`.\n\n"
   printf '| Artifact | SHA256 |\n'
   printf '| --- | --- |\n'
+  asset_url_base="${github_server_url}/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}"
   while read -r checksum artifact; do
-    printf '| %s | %s |\n' "$artifact" "$checksum"
+    printf '| [%s](%s/%s) | %s |\n' "$artifact" "$asset_url_base" "$artifact" "$checksum"
   done < "$asset_dir/SHA256SUMS"
   printf '\n### Verify provenance\n\n'
   printf 'After downloading an artifact, verify its GitHub artifact attestation:\n\n'
