@@ -118,7 +118,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
         if let Err(e) = self.on_start() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -136,7 +136,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
         if let Err(e) = self.on_stop() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -154,7 +154,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
         if let Err(e) = self.on_resume() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -172,7 +172,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
         if let Err(e) = self.on_degrade() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -190,7 +190,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
         if let Err(e) = self.on_fault() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -208,7 +208,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
         if let Err(e) = self.on_reset() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -226,7 +226,7 @@ pub trait Component {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
         if let Err(e) = self.on_dispose() {
-            log_error(&e);
+            log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
 
@@ -319,8 +319,8 @@ pub trait Component {
     }
 }
 
-fn log_error(e: &anyhow::Error) {
-    log::error!("{e}");
+fn log_error(component: ComponentId, e: &anyhow::Error) {
+    log::error!(component = component.as_str(); "{e}");
 }
 
 #[rustfmt::skip]

@@ -2184,7 +2184,7 @@ where
 
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state.variant_name());
+        log::info!(component = self.component_id().as_str(); "{}", self.state.variant_name());
         Ok(())
     }
 
