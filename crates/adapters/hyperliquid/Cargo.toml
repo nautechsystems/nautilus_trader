@@ -113,6 +113,18 @@ toml = { workspace = true }
 name = "signing"
 harness = false
 
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "exec"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
+
 [[bin]]
 name = "hyperliquid-http-public"
 path = "bin/http_public.rs"
