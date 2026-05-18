@@ -30,7 +30,7 @@ jobs:
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -71,7 +71,7 @@ jobs:
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -234,7 +234,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -371,7 +371,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -473,7 +473,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -636,7 +636,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -706,7 +706,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -776,7 +776,7 @@ jobs:
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -850,7 +850,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -916,7 +916,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -987,7 +987,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1033,7 +1033,7 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1134,7 +1134,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1192,7 +1192,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1239,7 +1239,7 @@ jobs:
       contents: write # Required for uploading release assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1279,7 +1279,7 @@ jobs:
       attestations: write # Required for GitHub artifact attestations
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1371,7 +1371,7 @@ jobs:
       contents: write # Required for uploading release integrity assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1467,7 +1467,7 @@ jobs:
       contents: write # Required for publishing the draft release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-

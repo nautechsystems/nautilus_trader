@@ -198,7 +198,7 @@ echo "PYTHONHOME: $PYTHONHOME"
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
 `pyproject.toml` enforces three supply chain safety settings:
 
-- **`required-version = "==0.11.12"`**: all developers and CI use the same uv version. The version
+- **`required-version = "==0.11.14"`**: all developers and CI use the same uv version. The version
   is extracted by `scripts/uv-version.sh` for Makefile, CI, and Docker builds. If your local uv
   drifts off the pin, `uv lock`/`uv sync` will fail with `Required uv version ... does not match the
   running version ...`. Run `make update-uv` to install the pinned version (or follow uv's own
