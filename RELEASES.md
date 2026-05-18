@@ -1,6 +1,6 @@
 # NautilusTrader 1.227.0 Beta
 
-Released on 17th May 2026 (UTC).
+Released on 18th May 2026 (UTC).
 
 ### Enhancements
 - Added continuous futures support for aggregated bars (#3921), thanks @faysou
