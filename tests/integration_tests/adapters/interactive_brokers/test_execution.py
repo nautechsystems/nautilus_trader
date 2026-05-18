@@ -341,6 +341,42 @@ async def test_submit_order(
 
 
 @pytest.mark.asyncio
+async def test_submit_order_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    place_order = mocker.patch.object(exec_client._client, "place_order")
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    cache.add_order(order, None)
+    command = TestCommandStubs.submit_order_command(order=order)
+
+    # Act
+    exec_client.submit_order(command=command)
+    await asyncio.sleep(0)
+
+    # Assert
+    place_order.assert_not_called()
+    assert cache.order(client_order_id).status == OrderStatus.REJECTED
+
+
+@pytest.mark.asyncio
 async def test_submit_order_what_if(
     mocker,
     exec_client,

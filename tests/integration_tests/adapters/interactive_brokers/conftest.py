@@ -270,6 +270,8 @@ def mock_connection_setup(mocker, exec_client):
         # Mock _connect with event handlers
         async def mock_connect():
             # Register event handlers as the real _connect does
+            target_client._client._is_client_ready.set()
+            target_client._client._is_ib_connected.set()
             account = target_client.account_id.get_id()
             target_client._client.subscribe_event(
                 f"accountSummary-{account}",

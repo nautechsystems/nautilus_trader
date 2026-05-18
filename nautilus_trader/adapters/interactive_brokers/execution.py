@@ -981,6 +981,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.type(command, SubmitOrder, "command")
 
         try:
+            self._ensure_client_ready_for_order_submission()
             ib_order: IBOrder = self._transform_order_to_ib_order(
                 command.order,
                 command.params,
@@ -997,6 +998,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         PyCondition.type(command, SubmitOrderList, "command")
+
+        try:
+            self._ensure_client_ready_for_order_submission()
+        except ValueError as e:
+            for order in command.order_list.orders:
+                self._handle_order_event(
+                    status=OrderStatus.REJECTED,
+                    order=order,
+                    reason=str(e),
+                )
+            return
 
         order_id_map = {}
         client_id_to_orders = {}
@@ -1104,6 +1116,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
+
+    def _ensure_client_ready_for_order_submission(self) -> None:
+        if not self._client._is_client_ready.is_set():
+            raise ValueError(
+                "Interactive Brokers client is not ready; refusing to submit order",
+            )
 
     def _transform_order_to_ib_order(  # noqa: C901
         self,
