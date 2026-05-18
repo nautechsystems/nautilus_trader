@@ -305,6 +305,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 	@$(MAKE) --no-print-directory cargo-test-extras
 	@$(MAKE) --no-print-directory build-debug
 	@$(MAKE) --no-print-directory pytest
+	@$(MAKE) --no-print-directory security-audit
 	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
 
 .PHONY: ruff
@@ -917,6 +918,7 @@ pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, 
 	@$(MAKE) --no-print-directory cargo-test-extras
 	@$(MAKE) --no-print-directory build-debug-v2
 	@$(MAKE) --no-print-directory pytest-v2
+	@$(MAKE) --no-print-directory security-audit
 	@printf "$(GREEN)All v2 pre-flight checks passed$(RESET)\n"
 
 #== CLI Tools
