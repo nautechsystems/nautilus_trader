@@ -79,6 +79,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
+    # Pinned to v8.30.1: autoupdate occasionally selects the lower v8.30.0 tag
     rev: v8.30.1
     hooks:
       - id: gitleaks
@@ -97,7 +98,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.24.1
+    rev: v1.25.2
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -347,6 +348,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
+    # Pinned to v1.20.2: pyproject.toml constrains mypy to <2.0.0; do not bump to v2.x
     rev: v1.20.2
     hooks:
       - id: mypy

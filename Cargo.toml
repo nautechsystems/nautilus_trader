@@ -117,7 +117,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.58.0", default
 # - object_store must stay in line with datafusion (pre-1.0: minor bumps can break)
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.5.7", default-features = false, features = [
+alloy-primitives = { version = "1.6.0", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -148,7 +148,7 @@ chrono = { version = "0.4.44", default-features = false, features = [
 ] }
 chrono-tz = "0.10.4"
 clap = { version = "4.6.1", features = ["derive", "env"] }
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 datafusion = { version = "53.1.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
@@ -268,7 +268,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
-sysinfo = { version = "0.39.1", default-features = false, features = [
+sysinfo = { version = "0.39.2", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.20.0", default-features = false, features = [
@@ -311,7 +311,7 @@ webpki-roots = "1.0.7"
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "2.0.4", default-features = false, features = [
+alloy = { version = "2.0.5", default-features = false, features = [
   "sol-types",
   "contract",
   "signers",
@@ -389,7 +389,7 @@ cargo-edit = "0.13.10"
 cargo-fuzz = "0.13.1"
 cargo-llvm-cov = "0.8.7"
 cargo-machete = "0.9.2"
-cargo-nextest = "0.9.135"
+cargo-nextest = "0.9.136"
 cargo-vet = "0.10.2"
 flamegraph = "0.6.12"
 lychee = "0.24.2"
