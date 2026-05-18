@@ -11,6 +11,11 @@ Released on TBD (UTC).
 ### Fixes
 
 ### Internal Improvements
+- Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
+- Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
+- Optimized Hyperliquid hot paths with benchmark report
+- Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
+- Removed dead Hyperliquid WebSocket codec module
 
 ### Documentation Updates
 

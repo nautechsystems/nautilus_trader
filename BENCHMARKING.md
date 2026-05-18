@@ -200,9 +200,14 @@ Long-term records live wherever the CI workflow uploads them
 For Criterion runs whose numbers will be reported or compared, reduce noise
 before measuring:
 
-- **Build with the `bench` profile.** It inherits from `release` and
-  preserves full debug symbols (configured in the workspace `Cargo.toml`).
-  `cargo bench` uses this profile by default.
+- **Build with the right profile.** Two profiles inherit from `release` and
+  preserve full debug symbols:
+  - `bench`: the `cargo bench` default. No LTO, fast turnaround, suitable
+    for local iteration and ad-hoc comparison.
+  - `bench-lto`: adds `lto = "fat"` and `codegen-units = 1` to match the
+    production release binary. Use this for any numbers that will be
+    reported or published (per-adapter `BENCHMARKS.md`, PR-description
+    headline tables, release-note figures): `cargo bench --profile bench-lto`.
 - **Quiesce the machine.** Close other workloads. On Linux, set the CPU
   governor to `performance`:
 
@@ -213,7 +218,7 @@ before measuring:
 - **Disable ASLR for repeatability** (Linux):
 
   ```bash
-  setarch -R cargo bench -p <crate> --bench <name>
+  setarch -R cargo bench --profile bench-lto -p <crate> --bench <name>
   ```
 
 - **Disable hyper-threading and dynamic frequency scaling** in BIOS for
@@ -230,7 +235,7 @@ Example header to accompany published results:
 ```text
 Hardware: AMD Ryzen Threadripper 9980X (64C), Linux 6.17.0
 Toolchain: rustc 1.95.0
-Profile: bench (inherits from release, debug = full)
+Profile: bench-lto (release + lto = "fat" + codegen-units = 1, debug = full)
 ```
 
 For iai, none of the above applies: Cachegrind's virtual CPU model means

@@ -497,6 +497,29 @@ incremental = true
 # Cargo ignores `panic` for bench profile (harness requires unwind to catch failures)
 
 # -----------------------------------------------------------------------------
+# Published-benchmark profile
+# -----------------------------------------------------------------------------
+# Use for any reported or published benchmark numbers: PR description headline
+# tables, release-note figures, per-adapter `BENCHMARKS.md` files, and any
+# other numbers quoted outside an ad-hoc developer-laptop comparison. Matches
+# the production release profile (`lto = "fat"`, `codegen-units = 1`) while
+# keeping debug symbols for profilers. Pair with `setarch -R` (ASLR off) and a
+# CPU governor set to `performance` for the tightest, most reproducible
+# figures.
+#
+#   sudo cpupower frequency-set -g performance
+#   setarch -R cargo bench --profile bench-lto -p <crate> --bench <name>
+# -----------------------------------------------------------------------------
+
+[profile.bench-lto]
+inherits = "release"
+debug = "full"
+strip = false
+lto = "fat"
+incremental = false
+codegen-units = 1
+
+# -----------------------------------------------------------------------------
 # Workspace lints
 # -----------------------------------------------------------------------------
 # Centralized lint configuration for all workspace crates.
