@@ -8,6 +8,10 @@ Released on TBD (UTC).
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 - Added `correlation_id` field to Rust trading and system command structs for request tracing
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
+- Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
+- Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
+- Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
+- Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert

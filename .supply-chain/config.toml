@@ -1520,6 +1520,10 @@ criteria = "safe-to-deploy"
 version = "0.2.186"
 criteria = "safe-to-deploy"
 
+[[exemptions.libloading]]
+version = "0.9.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.libm]]
 version = "0.2.16"
 criteria = "safe-to-deploy"

@@ -35,6 +35,7 @@ members = [
   "crates/persistence/macros",
   "crates/network",
   "crates/persistence",
+  "crates/plugin",
   "crates/portfolio",
   "crates/pyo3",
   "crates/risk",
@@ -175,6 +176,7 @@ implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
 itertools = "0.14.0"
+libloading = "0.9.0"
 log = { version = "0.4.29", features = [
   "std",
   "kv_unstable",
