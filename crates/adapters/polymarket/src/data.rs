@@ -29,7 +29,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_common::{
@@ -38,26 +38,33 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BookResponse, InstrumentResponse, InstrumentsResponse, RequestBookSnapshot,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
-            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBookDeltas, UnsubscribeQuotes, UnsubscribeTrades,
+            BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
+            RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBookDeltas, SubscribeInstruments, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBookDeltas, UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     },
+    msgbus::{self, TypedHandler},
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet,
+    AtomicMap, AtomicSet, Params, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas_API, QuoteTick},
-    enums::{BookType, MarketStatusAction},
+    data::{
+        Data as NautilusData, InstrumentClose, InstrumentStatus, OrderBookDeltas_API, QuoteTick,
+    },
+    enums::{BookType, InstrumentCloseType, MarketStatusAction},
+    events::PositionEvent,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
+    types::Price,
 };
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -68,8 +75,8 @@ use crate::{
     filters::InstrumentFilter,
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
-        gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
-        query::GetGammaMarketsParams,
+        gamma::PolymarketGammaHttpClient, models::GammaMarket,
+        parse::rebuild_instrument_with_tick_size, query::GetGammaMarketsParams,
     },
     providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_instruments},
     websocket::{
@@ -82,6 +89,18 @@ use crate::{
     },
 };
 
+const RESOLVE_TRIGGER_TYPE_NAME: &str = "PolymarketResolveRequest";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ResolveRequestSummary {
+    requested_condition_ids: Vec<String>,
+    used_watchlist_fallback: bool,
+    fetched_markets: usize,
+    resolved_candidates: usize,
+    compensation_emitted: usize,
+    timed_out_watchlist: usize,
+    error: Option<String>,
+}
 fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_id: InstrumentId,
@@ -143,6 +162,51 @@ struct TokenMeta {
     size_precision: u8,
 }
 
+#[derive(Clone, Debug)]
+struct ResolveWatchEntry {
+    condition_id: Option<String>,
+    expiration_ns: Option<UnixNanos>,
+    auto_poll_active: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ResolveWatchSelectionMode {
+    AutoPoll,
+    ManualFallback,
+}
+
+#[derive(Debug, Default)]
+struct ResolveWatchSelection {
+    condition_ids: Vec<String>,
+    skipped_not_expired: usize,
+    missing_expiration: usize,
+    timed_out_watchlist: usize,
+    paused_watchlist: usize,
+    min_ready_in_secs: Option<u64>,
+    not_ready_samples: Vec<String>,
+    pause_auto_poll: Vec<InstrumentId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ResolvePollSkipLogKey {
+    tracked: usize,
+    skipped_not_expired: usize,
+    missing_expiration: usize,
+    timed_out_watchlist: usize,
+    paused_watchlist: usize,
+    min_ready_bucket_mins: Option<u64>,
+}
+
+type ResolvedTarget = (
+    InstrumentId,
+    Ustr,
+    u8,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    &'static str,
+);
+
 // Inserts `instrument` into the live instrument cache and updates the
 // `token_meta` routing index in one step. Every path that populates the live
 // cache must go through here so WS messages can always resolve token_id back
@@ -164,6 +228,390 @@ fn cache_instrument(
     instruments.insert(instrument_id, instrument.clone());
 }
 
+fn instrument_market_context(
+    instrument: &InstrumentAny,
+) -> (Option<String>, Option<String>, Option<String>) {
+    match instrument {
+        InstrumentAny::BinaryOption(bo) => {
+            let slug = bo
+                .info
+                .as_ref()
+                .and_then(|info| info.get_str("market_slug"))
+                .map(ToString::to_string);
+            let market_id = bo
+                .info
+                .as_ref()
+                .and_then(|info| info.get_str("market_id"))
+                .map(ToString::to_string);
+            let condition_id = bo
+                .info
+                .as_ref()
+                .and_then(|info| info.get_str("condition_id"))
+                .map(ToString::to_string);
+            (slug, market_id, condition_id)
+        }
+        _ => (None, None, None),
+    }
+}
+
+fn build_resolve_watch_entry(instrument: &InstrumentAny) -> ResolveWatchEntry {
+    let instrument_id = instrument.id();
+    let (_, _, condition_id) = instrument_market_context(instrument);
+
+    ResolveWatchEntry {
+        condition_id: condition_id.or_else(|| extract_condition_id(&instrument_id).ok()),
+        expiration_ns: instrument.expiration_ns(),
+        auto_poll_active: true,
+    }
+}
+
+fn should_track_resolve_candidate(instrument: &InstrumentAny) -> bool {
+    matches!(instrument, InstrumentAny::BinaryOption(_)) && instrument.expiration_ns().is_some()
+}
+
+fn upsert_resolve_watch_entry_from_instrument(
+    watchlist: &Arc<AtomicMap<InstrumentId, ResolveWatchEntry>>,
+    instrument: &InstrumentAny,
+) {
+    if !should_track_resolve_candidate(instrument) {
+        return;
+    }
+
+    let instrument_id = instrument.id();
+    let existing = watchlist.load();
+    let mut entry = build_resolve_watch_entry(instrument);
+    if let Some(existing_entry) = existing.get(&instrument_id) {
+        entry.auto_poll_active = existing_entry.auto_poll_active;
+    }
+    drop(existing);
+
+    watchlist.insert(instrument_id, entry);
+}
+
+fn update_resolve_watchlist_from_position_event(
+    watchlist: &Arc<AtomicMap<InstrumentId, ResolveWatchEntry>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    event: &PositionEvent,
+) {
+    let instrument_id = event.instrument_id();
+    if instrument_id.venue != *POLYMARKET_VENUE {
+        return;
+    }
+
+    match event {
+        PositionEvent::PositionClosed(_) => {
+            watchlist.remove(&instrument_id);
+        }
+        PositionEvent::PositionOpened(_)
+        | PositionEvent::PositionChanged(_)
+        | PositionEvent::PositionAdjusted(_) => {
+            let loaded = instruments.load();
+            let Some(instrument) = loaded.get(&instrument_id) else {
+                return;
+            };
+            upsert_resolve_watch_entry_from_instrument(watchlist, instrument);
+        }
+    }
+}
+
+fn collect_resolve_watch_selection(
+    watchlist: &AHashMap<InstrumentId, ResolveWatchEntry>,
+    now_ns: UnixNanos,
+    expiry_grace_secs: u64,
+    max_wait_secs: u64,
+    mode: ResolveWatchSelectionMode,
+) -> ResolveWatchSelection {
+    let mut selection = ResolveWatchSelection::default();
+    let mut seen_conditions = AHashSet::new();
+    let grace_ns = expiry_grace_secs.saturating_mul(1_000_000_000);
+    let max_wait_ns = max_wait_secs.saturating_mul(1_000_000_000);
+
+    for (instrument_id, entry) in watchlist {
+        let Some(expiration_ns) = entry.expiration_ns else {
+            selection.missing_expiration += 1;
+            continue;
+        };
+
+        let ready_at_ns = expiration_ns.as_u64().saturating_add(grace_ns);
+        if now_ns.as_u64() < ready_at_ns {
+            selection.skipped_not_expired += 1;
+            let ready_in_secs = (ready_at_ns - now_ns.as_u64()) / 1_000_000_000;
+            selection.min_ready_in_secs = Some(
+                selection
+                    .min_ready_in_secs
+                    .map_or(ready_in_secs, |current| current.min(ready_in_secs)),
+            );
+
+            if selection.not_ready_samples.len() < 8 {
+                selection.not_ready_samples.push(format!(
+                    "{}:exp_ns={} ready_in_secs={}",
+                    instrument_id,
+                    expiration_ns.as_u64(),
+                    ready_in_secs
+                ));
+            }
+            continue;
+        }
+
+        let max_wait_reached =
+            now_ns.as_u64() >= expiration_ns.as_u64().saturating_add(max_wait_ns);
+
+        if max_wait_reached {
+            selection.timed_out_watchlist += 1;
+            if entry.auto_poll_active {
+                selection.pause_auto_poll.push(*instrument_id);
+            } else {
+                selection.paused_watchlist += 1;
+            }
+
+            if mode == ResolveWatchSelectionMode::AutoPoll {
+                continue;
+            }
+        } else if mode == ResolveWatchSelectionMode::AutoPoll && !entry.auto_poll_active {
+            selection.paused_watchlist += 1;
+            continue;
+        }
+
+        let condition_id = entry
+            .condition_id
+            .clone()
+            .or_else(|| extract_condition_id(instrument_id).ok());
+
+        if let Some(condition_id) = condition_id
+            && seen_conditions.insert(condition_id.clone())
+        {
+            selection.condition_ids.push(condition_id);
+        }
+    }
+
+    selection
+}
+
+fn pause_resolve_watch_entries(
+    watchlist: &Arc<AtomicMap<InstrumentId, ResolveWatchEntry>>,
+    instrument_ids: &[InstrumentId],
+) {
+    if instrument_ids.is_empty() {
+        return;
+    }
+
+    for instrument_id in instrument_ids {
+        let loaded = watchlist.load();
+        let Some(entry) = loaded.get(instrument_id).cloned() else {
+            continue;
+        };
+        drop(loaded);
+
+        if !entry.auto_poll_active {
+            continue;
+        }
+
+        let mut updated = entry;
+        updated.auto_poll_active = false;
+        watchlist.insert(*instrument_id, updated);
+    }
+}
+
+fn parse_json_string_array(raw: &str) -> Option<Vec<String>> {
+    serde_json::from_str::<Vec<String>>(raw)
+        .ok()
+        .filter(|values| !values.is_empty())
+}
+
+fn parse_outcome_prices(raw: &Option<String>) -> Option<Vec<f64>> {
+    let raw = raw.as_ref()?;
+
+    if let Ok(values) = serde_json::from_str::<Vec<f64>>(raw)
+        && !values.is_empty()
+    {
+        return Some(values);
+    }
+
+    let as_strings = serde_json::from_str::<Vec<String>>(raw).ok()?;
+    let mut values = Vec::with_capacity(as_strings.len());
+    for value in as_strings {
+        let parsed = value.parse::<f64>().ok()?;
+        values.push(parsed);
+    }
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
+}
+
+fn winning_index_from_outcome_prices(prices: &[f64]) -> Option<usize> {
+    if prices.is_empty() {
+        return None;
+    }
+
+    let mut winner_idx: Option<usize> = None;
+
+    for (idx, value) in prices.iter().copied().enumerate() {
+        if value >= 0.999 {
+            if winner_idx.is_some() {
+                return None;
+            }
+            winner_idx = Some(idx);
+        } else if value > 0.001 {
+            return None;
+        }
+    }
+    winner_idx
+}
+
+fn winning_index_from_outcome_prices_soft(
+    prices: &[f64],
+    min_winner_prob: f64,
+    max_loser_prob: f64,
+) -> Option<usize> {
+    if prices.is_empty() {
+        return None;
+    }
+
+    let mut best_idx = 0usize;
+    let mut best_val = prices[0];
+
+    for (idx, value) in prices.iter().copied().enumerate().skip(1) {
+        if value > best_val {
+            best_val = value;
+            best_idx = idx;
+        }
+    }
+
+    if best_val < min_winner_prob {
+        return None;
+    }
+    let second = prices
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, v)| (idx != best_idx).then_some(*v))
+        .fold(0.0_f64, f64::max);
+
+    if second > max_loser_prob {
+        return None;
+    }
+
+    Some(best_idx)
+}
+
+fn build_market_resolved_from_gamma(
+    market: &GammaMarket,
+    ts_init: UnixNanos,
+) -> Option<crate::websocket::messages::PolymarketMarketResolved> {
+    let assets_ids = parse_json_string_array(&market.clob_token_ids)?;
+    let outcomes = parse_json_string_array(&market.outcomes).unwrap_or_default();
+    let prices = parse_outcome_prices(&market.outcome_prices)?;
+    let winner_idx = winning_index_from_outcome_prices(&prices)?;
+    let winning_asset_id = assets_ids.get(winner_idx)?.clone();
+    let winning_outcome = outcomes
+        .get(winner_idx)
+        .cloned()
+        .unwrap_or_else(|| "UNKNOWN".to_string());
+
+    Some(crate::websocket::messages::PolymarketMarketResolved {
+        id: format!("gamma-resolve-{}", market.id),
+        slug: market.market_slug.clone(),
+        market: Ustr::from(market.condition_id.as_str()),
+        assets_ids,
+        winning_asset_id,
+        winning_outcome,
+        timestamp: (ts_init.as_u64() / 1_000_000).to_string(),
+        tags: Vec::new(),
+    })
+}
+
+fn build_market_resolved_from_gamma_soft(
+    market: &GammaMarket,
+    ts_init: UnixNanos,
+) -> Option<crate::websocket::messages::PolymarketMarketResolved> {
+    // Soft fallback is only considered once the market is operationally closed.
+    let is_closed = market.closed.unwrap_or(false);
+    let not_accepting = market.accepting_orders.is_some_and(|v| !v);
+    if !(is_closed || not_accepting) {
+        return None;
+    }
+
+    let assets_ids = parse_json_string_array(&market.clob_token_ids)?;
+    let outcomes = parse_json_string_array(&market.outcomes).unwrap_or_default();
+    let prices = parse_outcome_prices(&market.outcome_prices)?;
+    let winner_idx = winning_index_from_outcome_prices_soft(&prices, 0.95, 0.05)?;
+    let winning_asset_id = assets_ids.get(winner_idx)?.clone();
+    let winning_outcome = outcomes
+        .get(winner_idx)
+        .cloned()
+        .unwrap_or_else(|| "UNKNOWN".to_string());
+
+    Some(crate::websocket::messages::PolymarketMarketResolved {
+        id: format!("gamma-resolve-soft-{}", market.id),
+        slug: market.market_slug.clone(),
+        market: Ustr::from(market.condition_id.as_str()),
+        assets_ids,
+        winning_asset_id,
+        winning_outcome,
+        timestamp: (ts_init.as_u64() / 1_000_000).to_string(),
+        tags: Vec::new(),
+    })
+}
+
+fn parse_csv_values(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn parse_condition_ids_from_request_params(params: &Option<Params>) -> Vec<String> {
+    let mut ids = Vec::new();
+
+    if let Some(params) = params {
+        if let Some(raw) = params.get_str("condition_id") {
+            ids.extend(parse_csv_values(raw));
+        }
+
+        if let Some(raw) = params.get_str("condition_ids") {
+            ids.extend(parse_csv_values(raw));
+
+            if let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) {
+                ids.extend(arr.into_iter().filter(|s| !s.trim().is_empty()));
+            }
+        }
+
+        if let Some(raw) = params.get_str("instrument_id")
+            && let Ok(instrument_id) = raw.parse::<InstrumentId>()
+            && let Ok(condition_id) = extract_condition_id(&instrument_id)
+        {
+            ids.push(condition_id);
+        }
+
+        if let Some(raw) = params.get_str("instrument_ids") {
+            for value in parse_csv_values(raw) {
+                if let Ok(instrument_id) = value.parse::<InstrumentId>()
+                    && let Ok(condition_id) = extract_condition_id(&instrument_id)
+                {
+                    ids.push(condition_id);
+                }
+            }
+
+            if let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) {
+                for value in arr {
+                    if let Ok(instrument_id) = value.parse::<InstrumentId>()
+                        && let Ok(condition_id) = extract_condition_id(&instrument_id)
+                    {
+                        ids.push(condition_id);
+                    }
+                }
+            }
+        }
+    }
+
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -176,6 +624,7 @@ struct WsMessageContext {
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    resolve_poll_watchlist: Arc<AtomicMap<InstrumentId, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     subscribe_new_markets: bool,
     new_market_filter: Option<Arc<dyn InstrumentFilter>>,
@@ -209,11 +658,14 @@ pub struct PolymarketDataClient {
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    resolve_poll_watchlist: Arc<AtomicMap<InstrumentId, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
+    resolve_compensated_markets: Arc<AtomicSet<Ustr>>,
     pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
     auto_load_scheduled: Arc<AtomicBool>,
+    position_event_handler: Option<TypedHandler<PositionEvent>>,
 }
 
 impl PolymarketDataClient {
@@ -249,11 +701,14 @@ impl PolymarketDataClient {
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
+            resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
+            resolve_compensated_markets: Arc::new(AtomicSet::new()),
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
+            position_event_handler: None,
         }
     }
 
@@ -261,6 +716,27 @@ impl PolymarketDataClient {
     #[must_use]
     pub fn config(&self) -> &PolymarketDataClientConfig {
         &self.config
+    }
+
+    fn ensure_position_event_subscription(&mut self) {
+        if self.position_event_handler.is_some() {
+            return;
+        }
+
+        let watchlist = self.resolve_poll_watchlist.clone();
+        let instruments = self.instruments.clone();
+        let handler = TypedHandler::from(move |event: &PositionEvent| {
+            update_resolve_watchlist_from_position_event(&watchlist, &instruments, event);
+        });
+
+        msgbus::subscribe_position_events("events.position.*".into(), handler.clone(), Some(10));
+        self.position_event_handler = Some(handler);
+    }
+
+    fn clear_position_event_subscription(&mut self) {
+        if let Some(handler) = self.position_event_handler.take() {
+            msgbus::unsubscribe_position_events("events.position.*".into(), &handler);
+        }
     }
 
     /// Returns the venue for this data client.
@@ -560,6 +1036,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
@@ -588,6 +1065,244 @@ impl PolymarketDataClient {
             }
 
             log::debug!("Polymarket message handler ended");
+        });
+
+        self.tasks.push(handle);
+    }
+
+    fn spawn_resolve_poll_task(&mut self) {
+        if !self.config.resolve_poll_enabled {
+            return;
+        }
+
+        let interval_secs = self.config.resolve_poll_interval_secs.max(5);
+        let expiry_grace_secs = self.config.resolve_poll_expiry_grace_secs;
+        let max_wait_secs = self
+            .config
+            .resolve_poll_max_wait_secs
+            .max(expiry_grace_secs);
+        let cancellation = self.cancellation_token.clone();
+        let gamma_client = self.provider.http_client().clone();
+        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
+        let emit_compensation = self.config.resolve_poll_emit_compensation;
+        let resolve_compensated_markets = self.resolve_compensated_markets.clone();
+
+        let poll_ctx = WsMessageContext {
+            clock: self.clock,
+            data_sender: self.data_sender.clone(),
+            token_meta: self.token_meta.clone(),
+            instruments: self.instruments.clone(),
+            gamma_client: self.provider.http_client().clone(),
+            filters: self.provider.filters(),
+            order_books: self.order_books.clone(),
+            last_quotes: self.last_quotes.clone(),
+            active_quote_subs: self.active_quote_subs.clone(),
+            active_delta_subs: self.active_delta_subs.clone(),
+            active_trade_subs: self.active_trade_subs.clone(),
+            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
+            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            subscribe_new_markets: self.config.subscribe_new_markets,
+            new_market_filter: self.config.new_market_filter.clone(),
+            cancellation_token: cancellation.clone(),
+        };
+
+        let handle = get_runtime().spawn(async move {
+            let mut ticker =
+                tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut last_skip_log_key: Option<ResolvePollSkipLogKey> = None;
+            let mut last_skip_log_ns: u64 = 0;
+
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let watchlist = resolve_poll_watchlist.load();
+                        if watchlist.is_empty() {
+                            continue;
+                        }
+
+                        let now_ns = poll_ctx.clock.get_time_ns();
+                        let selection = collect_resolve_watch_selection(
+                            &watchlist,
+                            now_ns,
+                            expiry_grace_secs,
+                            max_wait_secs,
+                            ResolveWatchSelectionMode::AutoPoll,
+                        );
+                        pause_resolve_watch_entries(
+                            &resolve_poll_watchlist,
+                            &selection.pause_auto_poll,
+                        );
+
+                        if !selection.pause_auto_poll.is_empty() {
+                            log::warn!(
+                                "Resolve GET poll max_wait reached for {} instrument(s), automatic polling paused (max_wait_secs={})",
+                                selection.pause_auto_poll.len(),
+                                max_wait_secs
+                            );
+                        }
+
+                        if selection.condition_ids.is_empty() {
+                            let skip_log_key = ResolvePollSkipLogKey {
+                                tracked: watchlist.len(),
+                                skipped_not_expired: selection.skipped_not_expired,
+                                missing_expiration: selection.missing_expiration,
+                                timed_out_watchlist: selection.timed_out_watchlist,
+                                paused_watchlist: selection.paused_watchlist,
+                                min_ready_bucket_mins: selection.min_ready_in_secs.map(|secs| secs / 60),
+                            };
+                            let should_log_skip = (last_skip_log_key.as_ref()
+                                != Some(&skip_log_key))
+                                || now_ns.as_u64().saturating_sub(last_skip_log_ns)
+                                    >= 60_000_000_000;
+
+                            if should_log_skip {
+                                log::debug!(
+                                    "Resolve GET poll waiting: tracked={} expired_ready=0 skipped_not_expired={} missing_expiration={} timed_out_watchlist={} paused_watchlist={} min_ready_in_secs={:?} not_ready_samples={:?}",
+                                    watchlist.len(),
+                                    selection.skipped_not_expired,
+                                    selection.missing_expiration,
+                                    selection.timed_out_watchlist,
+                                    selection.paused_watchlist,
+                                    selection.min_ready_in_secs,
+                                    selection.not_ready_samples
+                                );
+                                last_skip_log_key = Some(skip_log_key);
+                                last_skip_log_ns = now_ns.as_u64();
+                            }
+                            continue;
+                        }
+
+                        last_skip_log_key = None;
+                        last_skip_log_ns = 0;
+
+                        let mut fetched_markets: Vec<GammaMarket> = Vec::new();
+                        let mut request_failed = false;
+
+                        for condition_id in &selection.condition_ids {
+                            let params = GetGammaMarketsParams {
+                                condition_ids: Some(condition_id.clone()),
+                                closed: Some(true),
+                                ..Default::default()
+                            };
+
+                            match gamma_client.request_markets_by_params(params).await {
+                                Ok(markets) => fetched_markets.extend(markets),
+                                Err(e) => {
+                                    request_failed = true;
+                                    log::warn!(
+                                        "Resolve GET poll failed for condition_id={condition_id}: {e}"
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+
+                        if request_failed {
+                            continue;
+                        }
+
+                        if fetched_markets.is_empty() {
+                            log::debug!(
+                                "Resolve GET poll: no markets returned for {} condition_ids",
+                                selection.condition_ids.len()
+                            );
+                            continue;
+                        }
+
+                        let mut markets_by_condition: AHashMap<String, &GammaMarket> =
+                            AHashMap::new();
+
+                        for market in &fetched_markets {
+                            markets_by_condition.insert(market.condition_id.clone(), market);
+                        }
+
+                        let mut resolved_candidates = 0usize;
+
+                        for condition_id in &selection.condition_ids {
+                            let Some(market) = markets_by_condition.get(condition_id) else {
+                                log::debug!(
+                                    "Resolve GET poll: condition_id={condition_id} missing in response",
+                                );
+                                continue;
+                            };
+
+                            let outcome_prices = parse_outcome_prices(&market.outcome_prices);
+                            let assets_ids = parse_json_string_array(&market.clob_token_ids)
+                                .unwrap_or_default();
+                            log::debug!(
+                                "Resolve GET diagnostic: condition_id={} market_id={} slug={:?} active={:?} closed={:?} assets_ids={:?} outcome_prices={:?}",
+                                market.condition_id,
+                                market.id,
+                                market.market_slug,
+                                market.active,
+                                market.closed,
+                                assets_ids,
+                                outcome_prices,
+                            );
+
+                            let ts_init = poll_ctx.clock.get_time_ns();
+                            let resolved = build_market_resolved_from_gamma(market, ts_init)
+                                .or_else(|| build_market_resolved_from_gamma_soft(market, ts_init));
+                            let Some(resolved) = resolved else {
+                                continue;
+                            };
+                            resolved_candidates += 1;
+
+                            if !emit_compensation {
+                                continue;
+                            }
+
+                            let dedupe_key = Ustr::from(
+                                format!(
+                                    "{}:{}",
+                                    resolved.market, resolved.winning_asset_id
+                                )
+                                .as_str(),
+                            );
+
+                            if resolve_compensated_markets.contains(&dedupe_key) {
+                                continue;
+                            }
+                            resolve_compensated_markets.insert(dedupe_key);
+
+                            log::info!(
+                                "Resolve GET compensation emitting synthetic market_resolved: condition_id={} winning_asset_id={} winning_outcome={}",
+                                resolved.market,
+                                resolved.winning_asset_id,
+                                resolved.winning_outcome
+                            );
+                            Self::handle_market_message(MarketWsMessage::MarketResolved(resolved), &poll_ctx);
+                        }
+
+                        if resolved_candidates > 0 || !selection.pause_auto_poll.is_empty() {
+                            log::info!(
+                                "Resolve GET poll cycle complete: tracked_instruments={} condition_ids={} skipped_not_expired={} missing_expiration={} timed_out_watchlist={} paused_watchlist={} resolved_candidates={} compensation={}",
+                                watchlist.len(),
+                                selection.condition_ids.len(),
+                                selection.skipped_not_expired,
+                                selection.missing_expiration,
+                                selection.timed_out_watchlist,
+                                selection.paused_watchlist,
+                                resolved_candidates,
+                                emit_compensation,
+                            );
+                        } else {
+                            log::debug!(
+                                "Resolve GET poll cycle complete: tracked_instruments={} condition_ids={} resolved_candidates={} compensation={}",
+                                watchlist.len(),
+                                selection.condition_ids.len(),
+                                resolved_candidates,
+                                emit_compensation,
+                            );
+                        }
+                    }
+                    () = cancellation.cancelled() => {
+                        log::debug!("Resolve GET poll task cancelled");
+                        break;
+                    }
+                }
+            }
         });
 
         self.tasks.push(handle);
@@ -974,41 +1689,207 @@ impl PolymarketDataClient {
             }
 
             MarketWsMessage::MarketResolved(resolved) => {
-                log::info!(
-                    "Market resolved: {} winner={} ({})",
+                log::debug!(
+                    "Market resolved raw event: id={} slug={:?} market={} ts={} winner={} ({}) assets_ids={:?}",
+                    resolved.id,
+                    resolved.slug,
                     resolved.market,
+                    resolved.timestamp,
                     resolved.winning_asset_id,
-                    resolved.winning_outcome
+                    resolved.winning_outcome,
+                    resolved.assets_ids
                 );
 
                 let ts_init = ctx.clock.get_time_ns();
+                let winning_asset_id = Ustr::from(resolved.winning_asset_id.as_str());
                 let reason = Ustr::from(&format!(
                     "Winner: {} ({})",
                     resolved.winning_asset_id, resolved.winning_outcome
                 ));
+                let loaded_instruments = ctx.instruments.load();
+                let mut mapped_assets = 0usize;
+                let mut missing_assets: Vec<String> = Vec::new();
+                let mut seen_instruments = AHashSet::new();
+                let mut resolved_targets: Vec<ResolvedTarget> = Vec::new();
+                let resolved_market = resolved.market.to_string();
 
                 for asset_id in &resolved.assets_ids {
                     let token_id = Ustr::from(asset_id.as_str());
                     if let Some(meta) = ctx.token_meta.get(&token_id) {
-                        let status = InstrumentStatus::new(
-                            meta.instrument_id,
-                            MarketStatusAction::Close,
-                            ts_init,
-                            ts_init,
-                            Some(reason),
-                            None,
-                            Some(false),
-                            None,
-                            None,
-                        );
-
-                        if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
-                            log::error!(
-                                "Failed to emit instrument status for {}: {e}",
-                                meta.instrument_id
-                            );
+                        if !seen_instruments.insert(meta.instrument_id) {
+                            continue;
                         }
+                        mapped_assets += 1;
+                        let (slug, market_id, condition_id) = loaded_instruments
+                            .get(&meta.instrument_id)
+                            .map_or((None, None, None), instrument_market_context);
+                        resolved_targets.push((
+                            meta.instrument_id,
+                            token_id,
+                            meta.price_precision,
+                            slug,
+                            market_id,
+                            condition_id,
+                            "assets_ids",
+                        ));
+                    } else {
+                        missing_assets.push(asset_id.clone());
+                        log::warn!(
+                            "Market resolved asset unmapped via token_meta: market={} asset_id={} token_meta_size={}",
+                            resolved.market,
+                            asset_id,
+                            ctx.token_meta.len(),
+                        );
                     }
+                }
+
+                let needs_context_fallback =
+                    resolved_targets.is_empty() || !missing_assets.is_empty();
+
+                if needs_context_fallback {
+                    let mut fallback_count = 0usize;
+
+                    for (instrument_id, instrument) in loaded_instruments.iter() {
+                        let (slug, market_id, condition_id) = instrument_market_context(instrument);
+                        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+
+                        let matches_slug = resolved
+                            .slug
+                            .as_deref()
+                            .is_some_and(|rs| slug.as_deref() == Some(rs));
+                        let matches_market_id =
+                            market_id.as_deref() == Some(resolved_market.as_str());
+                        let matches_condition_id =
+                            condition_id.as_deref() == Some(resolved_market.as_str());
+                        let matches_assets_list =
+                            resolved.assets_ids.iter().any(|id| id == token_id.as_str());
+
+                        if !(matches_slug
+                            || matches_market_id
+                            || matches_condition_id
+                            || matches_assets_list)
+                        {
+                            continue;
+                        }
+
+                        if !seen_instruments.insert(*instrument_id) {
+                            continue;
+                        }
+
+                        fallback_count += 1;
+                        resolved_targets.push((
+                            *instrument_id,
+                            token_id,
+                            instrument.price_precision(),
+                            slug,
+                            market_id,
+                            condition_id,
+                            "context_fallback",
+                        ));
+                    }
+
+                    if fallback_count > 0 {
+                        log::debug!(
+                            "Market resolved context fallback mapped {} additional instrument(s): market={} slug={:?}",
+                            fallback_count,
+                            resolved.market,
+                            resolved.slug,
+                        );
+                    }
+                }
+
+                if !missing_assets.is_empty() {
+                    let known_tokens_sample: Vec<String> = ctx
+                        .token_meta
+                        .iter()
+                        .take(10)
+                        .map(|entry| entry.key().to_string())
+                        .collect();
+                    log::warn!(
+                        "Market resolved mapping incomplete via assets_ids: market={} assets_total={} mapped_assets={} missing_assets={:?} known_tokens_sample={:?}",
+                        resolved.market,
+                        resolved.assets_ids.len(),
+                        mapped_assets,
+                        missing_assets,
+                        known_tokens_sample,
+                    );
+                }
+
+                if resolved_targets.is_empty() {
+                    log::warn!(
+                        "Market resolved produced no instrument targets: market={} slug={:?} winner_asset_id={}",
+                        resolved.market,
+                        resolved.slug,
+                        resolved.winning_asset_id,
+                    );
+                    return;
+                }
+
+                for (
+                    instrument_id,
+                    token_id,
+                    price_precision,
+                    slug,
+                    market_id,
+                    condition_id,
+                    source,
+                ) in resolved_targets
+                {
+                    log::debug!(
+                        "Market resolved mapped target: source={} market={} asset_id={} instrument_id={} slug={:?} market_id={:?} condition_id={:?} winner={}",
+                        source,
+                        resolved.market,
+                        token_id,
+                        instrument_id,
+                        slug,
+                        market_id,
+                        condition_id,
+                        token_id == winning_asset_id,
+                    );
+
+                    let status = InstrumentStatus::new(
+                        instrument_id,
+                        MarketStatusAction::Close,
+                        ts_init,
+                        ts_init,
+                        Some(reason),
+                        None,
+                        Some(false),
+                        None,
+                        None,
+                    );
+
+                    if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
+                        log::error!("Failed to emit instrument status for {instrument_id}: {e}");
+                    }
+
+                    let close_price = if token_id == winning_asset_id {
+                        Price::new(1.0, price_precision)
+                    } else {
+                        Price::new(0.0, price_precision)
+                    };
+                    let close = InstrumentClose::new(
+                        instrument_id,
+                        close_price,
+                        InstrumentCloseType::ContractExpired,
+                        ts_init,
+                        ts_init,
+                    );
+
+                    if let Err(e) = ctx
+                        .data_sender
+                        .send(DataEvent::Data(NautilusData::InstrumentClose(close)))
+                    {
+                        log::error!("Failed to emit instrument close for {instrument_id}: {e}");
+                    } else {
+                        log::info!(
+                            "Market resolved emitted InstrumentClose: instrument_id={} close_price={} close_type={:?}",
+                            instrument_id,
+                            close_price,
+                            InstrumentCloseType::ContractExpired,
+                        );
+                    }
+                    ctx.resolve_poll_watchlist.remove(&instrument_id);
                 }
             }
 
@@ -1067,6 +1948,7 @@ impl DataClient for PolymarketDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting Polymarket data client: {}", self.client_id);
+        self.ensure_position_event_subscription();
         Ok(())
     }
 
@@ -1074,6 +1956,7 @@ impl DataClient for PolymarketDataClient {
         log::info!("Stopping Polymarket data client: {}", self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
+        self.clear_position_event_subscription();
         Ok(())
     }
 
@@ -1081,6 +1964,9 @@ impl DataClient for PolymarketDataClient {
         log::debug!("Resetting Polymarket data client: {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
+        self.resolve_compensated_markets.store(AHashSet::new());
+        self.resolve_poll_watchlist.store(AHashMap::new());
+        self.clear_position_event_subscription();
 
         for handle in self.tasks.drain(..) {
             handle.abort();
@@ -1098,6 +1984,7 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.cancellation_token = CancellationToken::new();
+        self.ensure_position_event_subscription();
 
         log::info!("Connecting Polymarket data client");
 
@@ -1121,6 +2008,7 @@ impl DataClient for PolymarketDataClient {
             .ok_or_else(|| anyhow::anyhow!("WS message receiver not available after connect"))?;
 
         self.spawn_message_handler(rx);
+        self.spawn_resolve_poll_task();
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected Polymarket data client");
@@ -1142,6 +2030,7 @@ impl DataClient for PolymarketDataClient {
         self.ws_client.disconnect().await?;
 
         self.is_connected.store(false, Ordering::Relaxed);
+        self.clear_position_event_subscription();
         log::info!("Disconnected Polymarket data client");
 
         Ok(())
@@ -1153,6 +2042,202 @@ impl DataClient for PolymarketDataClient {
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if request.data_type.type_name() != RESOLVE_TRIGGER_TYPE_NAME {
+            log::debug!(
+                "Ignoring unsupported custom data request type: {}",
+                request.data_type.type_name()
+            );
+            return Ok(());
+        }
+
+        let gamma_client = self.provider.http_client().clone();
+        let sender = self.data_sender.clone();
+        let data_type = request.data_type.clone();
+        let data_type_params = request.data_type.metadata().cloned();
+        let request_params = request.params.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id;
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let clock = self.clock;
+        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
+        let resolve_compensated_markets = self.resolve_compensated_markets.clone();
+        let expiry_grace_secs = self.config.resolve_poll_expiry_grace_secs;
+        let max_wait_secs = self
+            .config
+            .resolve_poll_max_wait_secs
+            .max(expiry_grace_secs);
+        let emit_compensation_default = self.config.resolve_poll_emit_compensation;
+
+        let poll_ctx = WsMessageContext {
+            clock: self.clock,
+            data_sender: self.data_sender.clone(),
+            token_meta: self.token_meta.clone(),
+            instruments: self.instruments.clone(),
+            gamma_client: self.provider.http_client().clone(),
+            filters: self.provider.filters(),
+            order_books: self.order_books.clone(),
+            last_quotes: self.last_quotes.clone(),
+            active_quote_subs: self.active_quote_subs.clone(),
+            active_delta_subs: self.active_delta_subs.clone(),
+            active_trade_subs: self.active_trade_subs.clone(),
+            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
+            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            subscribe_new_markets: self.config.subscribe_new_markets,
+            new_market_filter: self.config.new_market_filter.clone(),
+            cancellation_token: self.cancellation_token.clone(),
+        };
+
+        get_runtime().spawn(async move {
+            let mut summary = ResolveRequestSummary {
+                requested_condition_ids: Vec::new(),
+                used_watchlist_fallback: false,
+                fetched_markets: 0,
+                resolved_candidates: 0,
+                compensation_emitted: 0,
+                timed_out_watchlist: 0,
+                error: None,
+            };
+
+            let mut condition_ids = parse_condition_ids_from_request_params(&request_params);
+            if condition_ids.is_empty() {
+                condition_ids = parse_condition_ids_from_request_params(&data_type_params);
+            }
+
+            if condition_ids.is_empty() {
+                summary.used_watchlist_fallback = true;
+                let watchlist = resolve_poll_watchlist.load();
+                let now_ns = clock.get_time_ns();
+                let selection = collect_resolve_watch_selection(
+                    &watchlist,
+                    now_ns,
+                    expiry_grace_secs,
+                    max_wait_secs,
+                    ResolveWatchSelectionMode::ManualFallback,
+                );
+                pause_resolve_watch_entries(&resolve_poll_watchlist, &selection.pause_auto_poll);
+                summary.timed_out_watchlist = selection.timed_out_watchlist;
+                condition_ids = selection.condition_ids;
+            }
+
+            condition_ids.sort();
+            condition_ids.dedup();
+            summary.requested_condition_ids = condition_ids.clone();
+
+            if condition_ids.is_empty() {
+                summary.error = Some("No eligible condition_ids for resolve request".to_string());
+                let response = DataResponse::Data(CustomDataResponse::new(
+                    request_id,
+                    client_id,
+                    Some(*POLYMARKET_VENUE),
+                    data_type.clone(),
+                    summary,
+                    start_nanos,
+                    end_nanos,
+                    clock.get_time_ns(),
+                    request_params.clone(),
+                ));
+
+                if let Err(e) = sender.send(DataEvent::Response(response)) {
+                    log::error!("Failed to send resolve request response: {e}");
+                }
+                return;
+            }
+
+            let mut fetched_markets: Vec<GammaMarket> = Vec::new();
+
+            for condition_id in &condition_ids {
+                let params = GetGammaMarketsParams {
+                    condition_ids: Some(condition_id.clone()),
+                    closed: Some(true),
+                    ..Default::default()
+                };
+
+                match gamma_client.request_markets_by_params(params).await {
+                    Ok(markets) => fetched_markets.extend(markets),
+                    Err(e) => {
+                        summary.error =
+                            Some(format!("Resolve request failed for condition_id={condition_id}: {e}"));
+                        log::warn!(
+                            "Resolve request failed for condition_id={condition_id}: {e}"
+                        );
+                        break;
+                    }
+                }
+            }
+
+            summary.fetched_markets = fetched_markets.len();
+            let emit_compensation = request_params
+                .as_ref()
+                .and_then(|params| params.get_bool("emit_compensation"))
+                .unwrap_or(emit_compensation_default);
+
+            if summary.error.is_none() {
+                let mut markets_by_condition: AHashMap<String, &GammaMarket> = AHashMap::new();
+
+                for market in &fetched_markets {
+                    markets_by_condition.insert(market.condition_id.clone(), market);
+                }
+
+                for condition_id in &condition_ids {
+                    let Some(market) = markets_by_condition.get(condition_id) else {
+                        continue;
+                    };
+                    let ts_init = clock.get_time_ns();
+                    let resolved = build_market_resolved_from_gamma(market, ts_init)
+                        .or_else(|| build_market_resolved_from_gamma_soft(market, ts_init));
+                    let Some(resolved) = resolved else {
+                        continue;
+                    };
+                    summary.resolved_candidates += 1;
+
+                    if !emit_compensation {
+                        continue;
+                    }
+
+                    let dedupe_key =
+                        Ustr::from(format!("{}:{}", resolved.market, resolved.winning_asset_id).as_str());
+
+                    if resolve_compensated_markets.contains(&dedupe_key) {
+                        continue;
+                    }
+                    resolve_compensated_markets.insert(dedupe_key);
+                    summary.compensation_emitted += 1;
+
+                    log::info!(
+                        "Resolve request compensation emitting synthetic market_resolved: condition_id={} winning_asset_id={} winning_outcome={}",
+                        resolved.market,
+                        resolved.winning_asset_id,
+                        resolved.winning_outcome
+                    );
+                    Self::handle_market_message(
+                        MarketWsMessage::MarketResolved(resolved),
+                        &poll_ctx,
+                    );
+                }
+            }
+
+            let response = DataResponse::Data(CustomDataResponse::new(
+                request_id,
+                client_id,
+                Some(*POLYMARKET_VENUE),
+                data_type,
+                summary,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                request_params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send resolve request response: {e}");
+            }
+        });
+
+        Ok(())
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -1489,12 +2574,17 @@ impl DataClient for PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
+    use nautilus_core::params::Params;
+    use nautilus_core::{UUID4, UnixNanos, nanos::DurationNanos};
     use nautilus_model::{
-        enums::AssetClass,
-        identifiers::{InstrumentId, Symbol},
+        enums::{AssetClass, InstrumentCloseType, OrderSide, PositionSide},
+        events::{PositionClosed, PositionEvent, PositionOpened},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TraderId,
+        },
         instruments::BinaryOption,
-        types::{Currency, Price, Quantity},
+        stubs::TestDefault,
+        types::{Currency, Money, Price, Quantity},
     };
     use nautilus_network::retry::RetryConfig;
     use rstest::rstest;
@@ -1506,8 +2596,9 @@ mod tests {
             client::WsSubscriptionHandle,
             handler::HandlerCommand,
             messages::{
-                MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote,
-                PolymarketQuotes, PolymarketTickSizeChange,
+                MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot,
+                PolymarketMarketResolved, PolymarketQuote, PolymarketQuotes,
+                PolymarketTickSizeChange,
             },
         },
     };
@@ -1833,6 +2924,79 @@ mod tests {
         }
     }
 
+    fn make_gamma_market_with_outcome_prices(
+        outcome_prices: Option<&str>,
+    ) -> crate::http::models::GammaMarket {
+        let mut value = serde_json::json!({
+            "id": "1557558",
+            "conditionId": "0xcondition",
+            "questionID": "0xquestion",
+            "clobTokenIds": "[\"0xyes\",\"0xno\"]",
+            "outcomes": "[\"Yes\",\"No\"]",
+            "question": "Will test pass?",
+            "description": null,
+            "startDate": null,
+            "endDate": null,
+            "active": false,
+            "closed": true,
+            "acceptingOrders": false,
+            "enableOrderBook": false,
+            "slug": "test-market",
+            "events": []
+        });
+
+        if let Some(prices) = outcome_prices {
+            value["outcomePrices"] = serde_json::Value::String(prices.to_string());
+        }
+        serde_json::from_value(value).expect("valid gamma market json")
+    }
+
+    #[rstest]
+    fn build_market_resolved_from_gamma_parses_1_0_outcome_prices() {
+        let market = make_gamma_market_with_outcome_prices(Some("[\"1\",\"0\"]"));
+        let resolved = build_market_resolved_from_gamma(&market, UnixNanos::from(1_700_000_000))
+            .expect("expected resolved payload");
+
+        assert_eq!(resolved.market.as_str(), "0xcondition");
+        assert_eq!(
+            resolved.assets_ids,
+            vec!["0xyes".to_string(), "0xno".to_string()]
+        );
+        assert_eq!(resolved.winning_asset_id, "0xyes");
+        assert_eq!(resolved.winning_outcome, "Yes");
+    }
+
+    #[rstest]
+    fn build_market_resolved_from_gamma_rejects_ambiguous_outcomes() {
+        let market = make_gamma_market_with_outcome_prices(Some("[\"0.6\",\"0.4\"]"));
+        let resolved = build_market_resolved_from_gamma(&market, UnixNanos::from(1_700_000_000));
+
+        assert!(resolved.is_none());
+    }
+
+    #[rstest]
+    fn build_market_resolved_from_gamma_soft_accepts_closed_decisive_market() {
+        let market = make_gamma_market_with_outcome_prices(Some("[\"0.97\",\"0.03\"]"));
+        let resolved =
+            build_market_resolved_from_gamma_soft(&market, UnixNanos::from(1_700_000_000))
+                .expect("expected soft resolved payload");
+
+        assert_eq!(resolved.market.as_str(), "0xcondition");
+        assert_eq!(resolved.winning_asset_id, "0xyes");
+        assert_eq!(resolved.winning_outcome, "Yes");
+    }
+
+    #[rstest]
+    fn build_market_resolved_from_gamma_soft_rejects_not_closed_market() {
+        let mut market = make_gamma_market_with_outcome_prices(Some("[\"0.97\",\"0.03\"]"));
+        market.closed = Some(false);
+        market.accepting_orders = Some(true);
+
+        let resolved =
+            build_market_resolved_from_gamma_soft(&market, UnixNanos::from(1_700_000_000));
+        assert!(resolved.is_none());
+    }
+
     fn make_ws_ctx() -> (
         WsMessageContext,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -1857,6 +3021,7 @@ mod tests {
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
+            resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             subscribe_new_markets: false,
             new_market_filter: None,
@@ -1875,6 +3040,129 @@ mod tests {
         let inst = stub_instrument(raw_symbol, price_increment, size_increment);
         cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
         inst
+    }
+
+    fn seed_instrument_with_context(
+        ctx: &WsMessageContext,
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+        market_slug: Option<&str>,
+        market_id: Option<&str>,
+        condition_id: Option<&str>,
+    ) -> InstrumentAny {
+        seed_instrument_with_context_and_expiration(
+            ctx,
+            raw_symbol,
+            price_increment,
+            size_increment,
+            market_slug,
+            market_id,
+            condition_id,
+            None,
+        )
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn seed_instrument_with_context_and_expiration(
+        ctx: &WsMessageContext,
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+        market_slug: Option<&str>,
+        market_id: Option<&str>,
+        condition_id: Option<&str>,
+        expiration_ns: Option<UnixNanos>,
+    ) -> InstrumentAny {
+        let mut inst = stub_instrument(raw_symbol, price_increment, size_increment);
+        if let InstrumentAny::BinaryOption(ref mut bo) = inst {
+            if let Some(expiration_ns) = expiration_ns {
+                bo.expiration_ns = expiration_ns;
+            }
+            let mut info = Params::new();
+            info.insert(
+                "token_id".to_string(),
+                serde_json::Value::String(raw_symbol.to_string()),
+            );
+
+            if let Some(slug) = market_slug {
+                info.insert(
+                    "market_slug".to_string(),
+                    serde_json::Value::String(slug.to_string()),
+                );
+            }
+
+            if let Some(id) = market_id {
+                info.insert(
+                    "market_id".to_string(),
+                    serde_json::Value::String(id.to_string()),
+                );
+            }
+
+            if let Some(id) = condition_id {
+                info.insert(
+                    "condition_id".to_string(),
+                    serde_json::Value::String(id.to_string()),
+                );
+            }
+            bo.info = Some(info);
+        }
+
+        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        inst
+    }
+
+    fn stub_position_opened_event(instrument_id: InstrumentId) -> PositionEvent {
+        PositionEvent::PositionOpened(PositionOpened {
+            trader_id: TraderId::test_default(),
+            strategy_id: StrategyId::test_default(),
+            instrument_id,
+            position_id: PositionId::new("P-1"),
+            account_id: AccountId::from("ACCOUNT-001"),
+            opening_order_id: ClientOrderId::from("ENTRY-1"),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 5.0,
+            quantity: Quantity::from("5"),
+            last_qty: Quantity::from("5"),
+            last_px: Price::from("0.75"),
+            currency: Currency::pUSD(),
+            avg_px_open: 0.75,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        })
+    }
+
+    fn stub_position_closed_event(instrument_id: InstrumentId) -> PositionEvent {
+        PositionEvent::PositionClosed(PositionClosed {
+            trader_id: TraderId::test_default(),
+            strategy_id: StrategyId::test_default(),
+            instrument_id,
+            position_id: PositionId::new("P-1"),
+            account_id: AccountId::from("ACCOUNT-001"),
+            opening_order_id: ClientOrderId::from("ENTRY-1"),
+            closing_order_id: Some(ClientOrderId::from("EXIT-1")),
+            entry: OrderSide::Buy,
+            side: PositionSide::Flat,
+            signed_qty: 0.0,
+            quantity: Quantity::from("0"),
+            peak_quantity: Quantity::from("5"),
+            last_qty: Quantity::from("5"),
+            last_px: Price::from("1.0"),
+            currency: Currency::pUSD(),
+            avg_px_open: 0.75,
+            avg_px_close: Some(1.0),
+            realized_return: 0.3333333333,
+            realized_pnl: Some(Money::new(1.0, Currency::pUSD())),
+            unrealized_pnl: Money::new(0.0, Currency::pUSD()),
+            duration: DurationNanos::from(1u64),
+            event_id: UUID4::new(),
+            ts_opened: UnixNanos::from(1),
+            ts_closed: Some(UnixNanos::from(2)),
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        })
     }
 
     fn level(price: &str, size: &str) -> PolymarketBookLevel {
@@ -1921,6 +3209,550 @@ mod tests {
             }],
             timestamp: "1700000002000".to_string(),
         })
+    }
+
+    fn make_market_resolved(
+        market: &str,
+        assets_ids: Vec<&str>,
+        winning_asset_id: &str,
+    ) -> MarketWsMessage {
+        MarketWsMessage::MarketResolved(PolymarketMarketResolved {
+            id: "resolved-1".to_string(),
+            slug: None,
+            market: Ustr::from(market),
+            assets_ids: assets_ids
+                .into_iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+            winning_asset_id: winning_asset_id.to_string(),
+            winning_outcome: "Yes".to_string(),
+            timestamp: "1700000004000".to_string(),
+            tags: vec![],
+        })
+    }
+
+    fn make_market_resolved_with_slug(
+        market: &str,
+        slug: Option<&str>,
+        assets_ids: Vec<&str>,
+        winning_asset_id: &str,
+    ) -> MarketWsMessage {
+        MarketWsMessage::MarketResolved(PolymarketMarketResolved {
+            id: "resolved-2".to_string(),
+            slug: slug.map(std::string::ToString::to_string),
+            market: Ustr::from(market),
+            assets_ids: assets_ids
+                .into_iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+            winning_asset_id: winning_asset_id.to_string(),
+            winning_outcome: "Yes".to_string(),
+            timestamp: "1700000005000".to_string(),
+            tags: vec![],
+        })
+    }
+
+    fn make_official_market_resolved_payload(
+        market: &str,
+        slug: &str,
+        winner_asset_id: &str,
+        loser_asset_id: &str,
+    ) -> MarketWsMessage {
+        let payload = serde_json::json!({
+            "id": "1031769",
+            "question": "Will NVIDIA (NVDA) close above $240 end of January?",
+            "market": market,
+            "slug": slug,
+            "description": "Official sample-like payload for integration test",
+            "assets_ids": [winner_asset_id, loser_asset_id],
+            "outcomes": ["Yes", "No"],
+            "winning_asset_id": winner_asset_id,
+            "winning_outcome": "Yes",
+            "event_message": {
+                "id": "125819",
+                "ticker": "nvda-above-in-january-2026",
+                "slug": "nvda-above-in-january-2026",
+                "title": "Will NVIDIA (NVDA) close above ___ end of January?",
+                "description": "..."
+            },
+            "timestamp": "1766790415550",
+            "event_type": "market_resolved"
+        });
+
+        serde_json::from_value(payload).expect("valid official-style market_resolved payload")
+    }
+
+    #[rstest]
+    fn market_resolved_emits_status_and_close_for_each_asset() {
+        let market = "0xMARKET";
+        let winner_asset = "0xTOKEN_WIN";
+        let loser_asset = "0xTOKEN_LOSE";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let winner = seed_instrument(
+            &ctx,
+            winner_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let loser = seed_instrument(
+            &ctx,
+            loser_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+
+        let resolved = make_market_resolved(market, vec![winner_asset, loser_asset], winner_asset);
+        PolymarketDataClient::handle_market_message(resolved, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let status_count = events
+            .iter()
+            .filter(|e| matches!(e, DataEvent::InstrumentStatus(_)))
+            .count();
+        assert_eq!(
+            status_count, 2,
+            "expected 2 status events, found: {events:?}"
+        );
+
+        let mut winner_close = None;
+        let mut loser_close = None;
+
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                if close.instrument_id == winner.id() {
+                    winner_close = Some(close);
+                } else if close.instrument_id == loser.id() {
+                    loser_close = Some(close);
+                }
+            }
+        }
+
+        let winner_close = winner_close.expect("expected winner close event");
+        let loser_close = loser_close.expect("expected loser close event");
+        assert_eq!(
+            winner_close.close_type,
+            InstrumentCloseType::ContractExpired
+        );
+        assert_eq!(loser_close.close_type, InstrumentCloseType::ContractExpired);
+        assert_eq!(winner_close.close_price.as_f64(), 1.0);
+        assert_eq!(loser_close.close_price.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn market_resolved_slug_fallback_maps_without_assets_ids() {
+        let slug = "btc-updown-5m-1778973900";
+        let market_id = "1778973900";
+        let winner_asset = "0xTOKEN_WIN";
+        let loser_asset = "0xTOKEN_LOSE";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let winner = seed_instrument_with_context(
+            &ctx,
+            winner_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some(slug),
+            Some(market_id),
+            None,
+        );
+        let loser = seed_instrument_with_context(
+            &ctx,
+            loser_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some(slug),
+            Some(market_id),
+            None,
+        );
+
+        let resolved = make_market_resolved_with_slug(market_id, Some(slug), vec![], winner_asset);
+        PolymarketDataClient::handle_market_message(resolved, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let status_count = events
+            .iter()
+            .filter(|e| matches!(e, DataEvent::InstrumentStatus(_)))
+            .count();
+        assert_eq!(
+            status_count, 2,
+            "expected 2 status events, found: {events:?}"
+        );
+
+        let mut winner_close = None;
+        let mut loser_close = None;
+
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                if close.instrument_id == winner.id() {
+                    winner_close = Some(close);
+                } else if close.instrument_id == loser.id() {
+                    loser_close = Some(close);
+                }
+            }
+        }
+
+        let winner_close = winner_close.expect("expected winner close event");
+        let loser_close = loser_close.expect("expected loser close event");
+        assert_eq!(
+            winner_close.close_type,
+            InstrumentCloseType::ContractExpired
+        );
+        assert_eq!(loser_close.close_type, InstrumentCloseType::ContractExpired);
+        assert_eq!(winner_close.close_price.as_f64(), 1.0);
+        assert_eq!(loser_close.close_price.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn market_resolved_official_payload_maps_and_closes_positions() {
+        let slug = "btc-updown-5m-1778973900";
+        let market = "0xCOND-OFFICIAL";
+        let winner_asset = "0xTOKEN_OFFICIAL_WIN";
+        let loser_asset = "0xTOKEN_OFFICIAL_LOSE";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let winner = seed_instrument_with_context(
+            &ctx,
+            winner_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some(slug),
+            Some("1778973900"),
+            Some(market),
+        );
+        let loser = seed_instrument_with_context(
+            &ctx,
+            loser_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some(slug),
+            Some("1778973900"),
+            Some(market),
+        );
+
+        let resolved =
+            make_official_market_resolved_payload(market, slug, winner_asset, loser_asset);
+        PolymarketDataClient::handle_market_message(resolved, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let status_count = events
+            .iter()
+            .filter(|e| matches!(e, DataEvent::InstrumentStatus(_)))
+            .count();
+        assert_eq!(
+            status_count, 2,
+            "expected 2 status events, found: {events:?}"
+        );
+
+        let mut winner_close = None;
+        let mut loser_close = None;
+
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                if close.instrument_id == winner.id() {
+                    winner_close = Some(close);
+                } else if close.instrument_id == loser.id() {
+                    loser_close = Some(close);
+                }
+            }
+        }
+
+        let winner_close = winner_close.expect("expected winner close event");
+        let loser_close = loser_close.expect("expected loser close event");
+        assert_eq!(winner_close.close_price.as_f64(), 1.0);
+        assert_eq!(loser_close.close_price.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn position_events_drive_resolve_watchlist_membership() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_POSITION",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some("btc-updown-5m-1778973900"),
+            Some("1778973900"),
+            Some("0xCOND-POSITION"),
+        );
+        let instrument_id = instrument.id();
+
+        let opened = stub_position_opened_event(instrument_id);
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &opened,
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get(&instrument_id)
+            .expect("expected position-opened to add watchlist entry");
+        assert_eq!(entry.condition_id.as_deref(), Some("0xCOND-POSITION"));
+        assert!(entry.auto_poll_active);
+        drop(watchlist);
+
+        let closed = stub_position_closed_event(instrument_id);
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &closed,
+        );
+
+        assert!(!ctx.resolve_poll_watchlist.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn position_events_drive_resolve_watchlist_for_shared_and_distinct_markets() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let btc_yes = seed_instrument_with_context_and_expiration(
+            &ctx,
+            "0xTOKEN_BTC_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some("btc-updown-5m-1778973900"),
+            Some("1778973900"),
+            Some("0xCOND-BTC"),
+            Some(expiration_ns),
+        );
+        let btc_no = seed_instrument_with_context_and_expiration(
+            &ctx,
+            "0xTOKEN_BTC_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some("btc-updown-5m-1778973900"),
+            Some("1778973900"),
+            Some("0xCOND-BTC"),
+            Some(expiration_ns),
+        );
+        let eth_yes = seed_instrument_with_context_and_expiration(
+            &ctx,
+            "0xTOKEN_ETH_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            Some("eth-updown-5m-1778973900"),
+            Some("2778973900"),
+            Some("0xCOND-ETH"),
+            Some(expiration_ns),
+        );
+
+        for instrument_id in [btc_yes.id(), btc_no.id(), eth_yes.id()] {
+            let opened = stub_position_opened_event(instrument_id);
+            update_resolve_watchlist_from_position_event(
+                &ctx.resolve_poll_watchlist,
+                &ctx.instruments,
+                &opened,
+            );
+        }
+
+        let now_ns = UnixNanos::from(expiration_ns.as_u64().saturating_add(11_000_000_000));
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        assert_eq!(watchlist.len(), 3);
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            10,
+            1800,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+        drop(watchlist);
+
+        assert_eq!(selection.condition_ids.len(), 2);
+        assert!(selection.condition_ids.contains(&"0xCOND-BTC".to_string()));
+        assert!(selection.condition_ids.contains(&"0xCOND-ETH".to_string()));
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_closed_event(btc_yes.id()),
+        );
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        assert_eq!(watchlist.len(), 2);
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            10,
+            1800,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+        drop(watchlist);
+
+        assert_eq!(selection.condition_ids.len(), 2);
+        assert!(selection.condition_ids.contains(&"0xCOND-BTC".to_string()));
+        assert!(selection.condition_ids.contains(&"0xCOND-ETH".to_string()));
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_closed_event(btc_no.id()),
+        );
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        assert_eq!(watchlist.len(), 1);
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            10,
+            1800,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+
+        assert_eq!(selection.condition_ids, vec!["0xCOND-ETH".to_string()]);
+    }
+
+    #[rstest]
+    fn resolve_watch_selection_auto_poll_pauses_timed_out_entries() {
+        let instrument_id = InstrumentId::from("0xTOKEN_TIMEOUT.POLYMARKET");
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let now_ns = UnixNanos::from(1_812_000_000_000);
+
+        let mut watchlist = AHashMap::new();
+        watchlist.insert(
+            instrument_id,
+            ResolveWatchEntry {
+                condition_id: Some("0xCOND-TIMEOUT".to_string()),
+                expiration_ns: Some(expiration_ns),
+                auto_poll_active: true,
+            },
+        );
+
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            10,
+            1800,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+
+        assert!(selection.condition_ids.is_empty());
+        assert_eq!(selection.timed_out_watchlist, 1);
+        assert_eq!(selection.pause_auto_poll, vec![instrument_id]);
+        assert_eq!(selection.paused_watchlist, 0);
+    }
+
+    #[rstest]
+    fn resolve_watch_selection_manual_fallback_includes_paused_entries() {
+        let instrument_id = InstrumentId::from("0xTOKEN_PAUSED.POLYMARKET");
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let now_ns = UnixNanos::from(1_812_000_000_000);
+
+        let mut watchlist = AHashMap::new();
+        watchlist.insert(
+            instrument_id,
+            ResolveWatchEntry {
+                condition_id: Some("0xCOND-PAUSED".to_string()),
+                expiration_ns: Some(expiration_ns),
+                auto_poll_active: false,
+            },
+        );
+
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            now_ns,
+            10,
+            1800,
+            ResolveWatchSelectionMode::ManualFallback,
+        );
+
+        assert_eq!(selection.condition_ids, vec!["0xCOND-PAUSED".to_string()]);
+        assert_eq!(selection.timed_out_watchlist, 1);
+        assert!(selection.pause_auto_poll.is_empty());
+        assert_eq!(selection.paused_watchlist, 1);
+    }
+
+    #[rstest]
+    fn market_resolved_removes_targets_from_resolve_watchlist() {
+        let market = "0xMARKET-WATCHLIST";
+        let winner_asset = "0xTOKEN_WATCH_WIN";
+        let loser_asset = "0xTOKEN_WATCH_LOSE";
+
+        let (ctx, _data_rx) = make_ws_ctx();
+        let winner = seed_instrument(
+            &ctx,
+            winner_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let loser = seed_instrument(
+            &ctx,
+            loser_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        ctx.resolve_poll_watchlist
+            .insert(winner.id(), build_resolve_watch_entry(&winner));
+        ctx.resolve_poll_watchlist
+            .insert(loser.id(), build_resolve_watch_entry(&loser));
+
+        let resolved = make_market_resolved(market, vec![winner_asset, loser_asset], winner_asset);
+        PolymarketDataClient::handle_market_message(resolved, &ctx);
+
+        assert!(!ctx.resolve_poll_watchlist.contains_key(&winner.id()));
+        assert!(!ctx.resolve_poll_watchlist.contains_key(&loser.id()));
+    }
+
+    #[rstest]
+    fn market_resolved_condition_id_fallback_maps_without_assets_ids() {
+        let condition_id = "0xCOND-RESOLVE";
+        let winner_asset = "0xTOKEN_WIN2";
+        let loser_asset = "0xTOKEN_LOSE2";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let winner = seed_instrument_with_context(
+            &ctx,
+            winner_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            Some(condition_id),
+        );
+        let loser = seed_instrument_with_context(
+            &ctx,
+            loser_asset,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            Some(condition_id),
+        );
+
+        let resolved = make_market_resolved_with_slug(condition_id, None, vec![], winner_asset);
+        PolymarketDataClient::handle_market_message(resolved, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let status_count = events
+            .iter()
+            .filter(|e| matches!(e, DataEvent::InstrumentStatus(_)))
+            .count();
+        assert_eq!(
+            status_count, 2,
+            "expected 2 status events, found: {events:?}"
+        );
+
+        let mut winner_close = None;
+        let mut loser_close = None;
+
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                if close.instrument_id == winner.id() {
+                    winner_close = Some(close);
+                } else if close.instrument_id == loser.id() {
+                    loser_close = Some(close);
+                }
+            }
+        }
+
+        let winner_close = winner_close.expect("expected winner close event");
+        let loser_close = loser_close.expect("expected loser close event");
+        assert_eq!(
+            winner_close.close_type,
+            InstrumentCloseType::ContractExpired
+        );
+        assert_eq!(loser_close.close_type, InstrumentCloseType::ContractExpired);
+        assert_eq!(winner_close.close_price.as_f64(), 1.0);
+        assert_eq!(loser_close.close_price.as_f64(), 0.0);
     }
 
     #[rstest]

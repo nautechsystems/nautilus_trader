@@ -1024,6 +1024,49 @@ impl LiveNodeBuilderPy {
         }
     }
 
+    #[pyo3(name = "add_simulated_exec_client")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_add_simulated_exec_client(
+        &self,
+        name: Option<String>,
+        factory: Py<PyAny>,
+        config: Py<PyAny>,
+    ) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            Python::attach(|py| -> PyResult<Self> {
+                let registry = get_global_pyo3_registry();
+
+                let boxed_factory = registry.extract_sim_exec_factory(py, factory.clone_ref(py))?;
+                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+
+                let factory_name = factory
+                    .getattr(py, "name")?
+                    .call0(py)?
+                    .extract::<String>(py)?;
+                let client_name = name.unwrap_or(factory_name);
+
+                match builder.add_simulated_exec_client(
+                    Some(client_name),
+                    boxed_factory,
+                    boxed_config,
+                ) {
+                    Ok(updated_builder) => {
+                        *inner_ref = Some(updated_builder);
+                        Ok(Self {
+                            inner: self.inner.clone(),
+                        })
+                    }
+                    Err(e) => Err(to_pyruntime_err(format!(
+                        "Failed to add simulated exec client: {e}"
+                    ))),
+                }
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<LiveNode> {
         let mut inner_ref = self.inner.borrow_mut();

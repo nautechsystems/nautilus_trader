@@ -1623,6 +1623,14 @@ impl DataEngine {
 
     fn handle_instrument_close(&self, close: InstrumentClose) {
         let topic = switchboard::get_instrument_close_topic(close.instrument_id);
+        log::debug!(
+            "DataEngine publishing InstrumentClose: topic={} instrument_id={} close_type={:?} close_price={} ts_event={}",
+            topic,
+            close.instrument_id,
+            close.close_type,
+            close.close_price,
+            close.ts_event,
+        );
         msgbus::publish_any(topic, &close);
     }
 

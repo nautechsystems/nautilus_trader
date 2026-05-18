@@ -71,6 +71,22 @@ pub struct PolymarketDataClientConfig {
     /// The window (milliseconds) over which concurrent auto-load requests are batched.
     #[builder(default = 100)]
     pub auto_load_debounce_ms: u64,
+    /// Enables periodic Gamma GET polling as the primary resolve path.
+    #[builder(default)]
+    pub resolve_poll_enabled: bool,
+    /// Poll interval in seconds when `resolve_poll_enabled` is enabled.
+    #[builder(default = 10)]
+    pub resolve_poll_interval_secs: u64,
+    /// Grace window after expiration before considering a market for resolve polling.
+    #[builder(default = 10)]
+    pub resolve_poll_expiry_grace_secs: u64,
+    /// Maximum seconds to keep polling an expired market before pausing automatic polling.
+    #[builder(default = 1800)]
+    pub resolve_poll_max_wait_secs: u64,
+    /// If true, synthesize `market_resolved` events from GET results so the normal
+    /// `InstrumentClose` pipeline can settle positions without relying on WS resolves.
+    #[builder(default)]
+    pub resolve_poll_emit_compensation: bool,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     #[serde(skip)]
@@ -260,6 +276,11 @@ ws_max_subscriptions = 50
 update_instruments_interval_mins = 5
 subscribe_new_markets = true
 auto_load_debounce_ms = 250
+resolve_poll_enabled = true
+resolve_poll_interval_secs = 10
+resolve_poll_expiry_grace_secs = 10
+resolve_poll_max_wait_secs = 1800
+resolve_poll_emit_compensation = false
 ",
         )
         .unwrap();
@@ -269,6 +290,11 @@ auto_load_debounce_ms = 250
         assert_eq!(config.update_instruments_interval_mins, 5);
         assert!(config.subscribe_new_markets);
         assert_eq!(config.auto_load_debounce_ms, 250);
+        assert!(config.resolve_poll_enabled);
+        assert_eq!(config.resolve_poll_interval_secs, 10);
+        assert_eq!(config.resolve_poll_expiry_grace_secs, 10);
+        assert_eq!(config.resolve_poll_max_wait_secs, 1800);
+        assert!(!config.resolve_poll_emit_compensation);
         assert!(config.filters.is_empty());
         assert!(config.new_market_filter.is_none());
     }

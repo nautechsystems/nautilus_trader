@@ -182,11 +182,14 @@ pub struct PolymarketNewMarket {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketMarketResolved {
     pub id: String,
+    #[serde(default)]
+    pub slug: Option<String>,
     pub market: Ustr,
     pub assets_ids: Vec<String>,
     pub winning_asset_id: String,
     pub winning_outcome: String,
     pub timestamp: String,
+    #[serde(default)]
     pub tags: Vec<String>,
 }
 

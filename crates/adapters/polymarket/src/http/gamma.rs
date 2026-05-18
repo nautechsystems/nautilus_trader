@@ -279,7 +279,7 @@ impl PolymarketGammaHttpClient {
             page_num += 1;
             all_markets.extend(page);
 
-            log::info!(
+            log::debug!(
                 "Fetched markets page {page_num}: {page_len} markets (total: {})",
                 all_markets.len(),
             );
@@ -502,6 +502,14 @@ impl PolymarketGammaHttpClient {
         let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::debug!("Parsed {} instruments from params query", instruments.len());
         Ok(instruments)
+    }
+
+    /// Fetches raw markets using arbitrary Gamma API query params with auto-pagination.
+    pub async fn request_markets_by_params(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<GammaMarket>> {
+        self.fetch_gamma_markets_paginated(base_params).await
     }
 
     /// Fetches instruments from an event slug with client-side sorting and limiting.
