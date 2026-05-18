@@ -1,3 +1,23 @@
+# NautilusTrader 1.228.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 1.227.0 Beta
 
 Released on 18th May 2026 (UTC).
