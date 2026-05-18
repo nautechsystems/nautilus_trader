@@ -376,7 +376,7 @@ pub enum PostResponsePayload {
 /// All mid prices data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AllMidsData {
-    pub mids: AHashMap<String, String>,
+    pub mids: AHashMap<Ustr, String>,
 }
 
 /// Notification data.

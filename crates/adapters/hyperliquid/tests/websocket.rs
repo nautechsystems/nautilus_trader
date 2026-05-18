@@ -1560,22 +1560,41 @@ async fn test_all_mids_default_and_dex_subscriptions_emit_distinct_data_types() 
     )
     .await;
 
-    let dexes = [
-        next_all_mids_dex(&mut client).await,
-        next_all_mids_dex(&mut client).await,
+    let emissions = [
+        next_all_mids_emission(&mut client).await,
+        next_all_mids_emission(&mut client).await,
     ];
 
-    assert!(dexes.iter().any(Option::is_none));
+    assert!(emissions.iter().any(|(dex, _)| dex.is_none()));
     assert!(
-        dexes
+        emissions
             .iter()
-            .any(|dex| dex.as_deref() == Some("hyperliquid"))
+            .any(|(dex, _)| dex.as_deref() == Some("hyperliquid"))
     );
+
+    // Both emissions must carry the full `mids` payload, not just one.
+    // The handler reuses the parsed map across subscribers via `mem::take`
+    // on the final iteration; a regression that gives the moved-out empty
+    // map to the wrong iteration would leave a count of zero here.
+    for (dex, count) in &emissions {
+        assert!(
+            *count > 0,
+            "AllMids emission for dex={dex:?} carried an empty mids map",
+        );
+    }
 
     client.disconnect().await.expect("close failed");
 }
 
 async fn next_all_mids_dex(client: &mut HyperliquidWebSocketClient) -> Option<String> {
+    next_all_mids_emission(client).await.0
+}
+
+/// Reads one `AllMids` emission and returns `(dex, mids_count)` so callers can
+/// assert both the routing metadata and that the payload itself was populated.
+async fn next_all_mids_emission(
+    client: &mut HyperliquidWebSocketClient,
+) -> (Option<String>, usize) {
     let msg = tokio::time::timeout(Duration::from_secs(5), client.next_event())
         .await
         .expect("timeout waiting for allMids message")
@@ -1583,16 +1602,17 @@ async fn next_all_mids_dex(client: &mut HyperliquidWebSocketClient) -> Option<St
 
     match msg {
         NautilusWsMessage::CustomData(Data::Custom(custom)) => {
-            custom
+            let all_mids = custom
                 .data
                 .as_any()
                 .downcast_ref::<HyperliquidAllMids>()
                 .expect("expected HyperliquidAllMids");
-            custom
+            let dex = custom
                 .data_type
                 .metadata()
                 .and_then(|metadata| metadata.get_str("dex"))
-                .map(ToString::to_string)
+                .map(ToString::to_string);
+            (dex, all_mids.mids.len())
         }
         other => panic!("unexpected message type: {other:?}"),
     }

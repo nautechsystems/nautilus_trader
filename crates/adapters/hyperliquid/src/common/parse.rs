@@ -187,12 +187,10 @@ pub fn round_to_sig_figs(value: Decimal, sig_figs: u32) -> Decimal {
         return Decimal::ZERO;
     }
 
-    // Find order of magnitude using log10
-    let abs_val = value.abs();
-    let float_val: f64 = abs_val.to_string().parse().unwrap_or(0.0);
-    let magnitude = float_val.log10().floor() as i32;
+    // log10(|value|) = log10(|mantissa|) - scale; `ilog10` skips the float path
+    let mantissa = value.mantissa().unsigned_abs();
+    let magnitude = mantissa.ilog10() as i32 - value.scale() as i32;
 
-    // Calculate shift to round to sig_figs
     let shift = sig_figs as i32 - 1 - magnitude;
     let factor = Decimal::from(10_i64.pow(shift.unsigned_abs()));
 
@@ -1163,6 +1161,11 @@ mod tests {
 
         // Zero case
         assert_eq!(round_to_sig_figs(dec!(0), 5), dec!(0));
+
+        assert_eq!(round_to_sig_figs(dec!(-104567.3), 5), dec!(-104570));
+        assert_eq!(round_to_sig_figs(dec!(-1234.5), 5), dec!(-1234.5));
+        assert_eq!(round_to_sig_figs(dec!(-0.000123456), 5), dec!(-0.00012346));
+        assert_eq!(round_to_sig_figs(dec!(-0.123456), 5), dec!(-0.12346));
     }
 
     #[rstest]

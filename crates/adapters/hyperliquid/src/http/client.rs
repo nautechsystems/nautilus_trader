@@ -580,17 +580,13 @@ impl HyperliquidRawHttpClient {
         let signer_id = self.signer_id();
         let time_nonce = nonce_manager.next(signer_id)?;
 
-        let action_value = serde_json::to_value(action)
-            .context("serialize exchange action")
-            .map_err(|e| Error::bad_request(e.to_string()))?;
-
-        // Serialize the original action struct with MessagePack for L1 signing
+        // L1 signing uses `action_bytes` only; skip the JSON value to save work
         let action_bytes = rmp_serde::to_vec_named(action)
             .context("serialize action with MessagePack")
             .map_err(|e| Error::bad_request(e.to_string()))?;
 
         let sign_request = SignRequest {
-            action: action_value,
+            action: None,
             action_bytes: Some(action_bytes),
             time_nonce,
             action_type: HyperliquidActionType::L1,
@@ -685,18 +681,14 @@ impl HyperliquidRawHttpClient {
         let time_nonce = nonce_manager.next(signer_id)?;
         // No need to validate - next() guarantees a valid, unused nonce
 
-        let action_value = serde_json::to_value(action)
-            .context("serialize exchange action")
-            .map_err(|e| Error::bad_request(e.to_string()))?;
-
-        // Serialize the original action struct with MessagePack for L1 signing
+        // L1 signing uses `action_bytes` only; skip the JSON value to save work
         let action_bytes = rmp_serde::to_vec_named(action)
             .context("serialize action with MessagePack")
             .map_err(|e| Error::bad_request(e.to_string()))?;
 
         let sig = signer
             .sign(&SignRequest {
-                action: action_value,
+                action: None,
                 action_bytes: Some(action_bytes),
                 time_nonce,
                 action_type: HyperliquidActionType::L1,

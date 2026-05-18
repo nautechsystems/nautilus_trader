@@ -15,9 +15,12 @@
 
 //! WebSocket message handler for Hyperliquid.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -105,7 +108,7 @@ pub(super) struct FeedHandler {
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<HyperliquidWsError>,
-    message_buffer: Vec<NautilusWsMessage>,
+    message_buffer: VecDeque<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     cloid_cache: CloidCache,
     bar_types_cache: AHashMap<String, BarType>,
@@ -139,7 +142,7 @@ impl FeedHandler {
             account_id,
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
-            message_buffer: Vec::new(),
+            message_buffer: VecDeque::new(),
             instruments: AHashMap::new(),
             cloid_cache,
             bar_types_cache: AHashMap::new(),
@@ -189,8 +192,8 @@ impl FeedHandler {
     }
 
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
-        if !self.message_buffer.is_empty() {
-            return Some(self.message_buffer.remove(0));
+        if let Some(msg) = self.message_buffer.pop_front() {
+            return Some(msg);
         }
 
         loop {
@@ -458,10 +461,12 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::AllMids { data } => {
-                let mut mids = std::collections::HashMap::new();
+                let mut mids = std::collections::HashMap::with_capacity(
+                    data.mids.len().min(instruments.len()),
+                );
+
                 for (coin, mid_str) in &data.mids {
-                    let coin_ustr = Ustr::from(coin.as_str());
-                    if let Some(instrument) = instruments.get(&coin_ustr) {
+                    if let Some(instrument) = instruments.get(coin) {
                         match mid_str.parse::<Price>() {
                             Ok(price) => {
                                 mids.insert(instrument.id(), price);
@@ -476,8 +481,15 @@ impl FeedHandler {
                 }
 
                 if !mids.is_empty() {
-                    for data_type in all_mids_data_types {
-                        let all_mids = HyperliquidAllMids::new(mids.clone(), ts_init, ts_init);
+                    // Take instead of clone on the last subscriber
+                    let last_idx = all_mids_data_types.len().saturating_sub(1);
+                    for (i, data_type) in all_mids_data_types.iter().enumerate() {
+                        let mids_for_this = if i == last_idx {
+                            std::mem::take(&mut mids)
+                        } else {
+                            mids.clone()
+                        };
+                        let all_mids = HyperliquidAllMids::new(mids_for_this, ts_init, ts_init);
                         result.push(NautilusWsMessage::CustomData(Data::Custom(
                             CustomData::new(Arc::new(all_mids), data_type.clone()),
                         )));
@@ -626,11 +638,7 @@ impl FeedHandler {
                 }
             } else {
                 // Not marked as processed so fill is retried if instrument loads later
-                log::warn!(
-                    "No instrument found for fill coin={}. Keys: {:?}",
-                    fill.coin,
-                    instruments.keys().collect::<Vec<_>>()
-                );
+                log::warn!("No instrument found for fill coin={}", fill.coin);
             }
         }
 

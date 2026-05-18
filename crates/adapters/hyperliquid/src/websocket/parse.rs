@@ -34,7 +34,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::FromPrimitive};
+use rust_decimal::Decimal;
 
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
@@ -104,12 +104,14 @@ pub fn parse_ws_order_book_deltas(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
     let ts_event = millis_to_nanos(book.time)?;
-    let mut deltas = Vec::new();
+    let bids = &book.levels[0];
+    let asks = &book.levels[1];
+    let mut deltas = Vec::with_capacity(1 + bids.len() + asks.len());
 
     // Treat every book payload as a snapshot: clear existing depth and rebuild it
     deltas.push(OrderBookDelta::clear(instrument.id(), 0, ts_event, ts_init));
 
-    for level in &book.levels[0] {
+    for level in bids {
         let price = parse_price(&level.px, instrument, "book.bid.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
 
@@ -132,7 +134,7 @@ pub fn parse_ws_order_book_deltas(
         deltas.push(delta);
     }
 
-    for level in &book.levels[1] {
+    for level in asks {
         let price = parse_price(&level.px, instrument, "book.ask.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;
 
@@ -453,29 +455,16 @@ pub fn parse_ws_asset_context(
 
     match ctx {
         WsActiveAssetCtxData::Perp { coin: _, ctx } => {
-            let mark_px_f64 = ctx
-                .shared
-                .mark_px
-                .parse::<f64>()
-                .context("Failed to parse mark_px as f64")?;
-            let mark_price = parse_f64_price(mark_px_f64, instrument, "ctx.mark_px")?;
+            let mark_price = parse_price(&ctx.shared.mark_px, instrument, "ctx.mark_px")?;
             let mark_price_update =
                 MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
 
-            let oracle_px_f64 = ctx
-                .oracle_px
-                .parse::<f64>()
-                .context("Failed to parse oracle_px as f64")?;
-            let index_price = parse_f64_price(oracle_px_f64, instrument, "ctx.oracle_px")?;
+            let index_price = parse_price(&ctx.oracle_px, instrument, "ctx.oracle_px")?;
             let index_price_update =
                 IndexPriceUpdate::new(instrument_id, index_price, ts_init, ts_init);
 
-            let funding_f64 = ctx
-                .funding
-                .parse::<f64>()
-                .context("Failed to parse funding as f64")?;
-            let funding_rate_decimal = Decimal::from_f64(funding_f64)
-                .context("Failed to convert funding rate to Decimal")?;
+            let funding_rate_decimal = Decimal::from_str(&ctx.funding)
+                .with_context(|| format!("Failed to parse funding rate from '{}'", ctx.funding))?;
             let funding_rate_update = FundingRateUpdate::new(
                 instrument_id,
                 funding_rate_decimal,
@@ -492,29 +481,13 @@ pub fn parse_ws_asset_context(
             ))
         }
         WsActiveAssetCtxData::Spot { coin: _, ctx } => {
-            let mark_px_f64 = ctx
-                .shared
-                .mark_px
-                .parse::<f64>()
-                .context("Failed to parse mark_px as f64")?;
-            let mark_price = parse_f64_price(mark_px_f64, instrument, "ctx.mark_px")?;
+            let mark_price = parse_price(&ctx.shared.mark_px, instrument, "ctx.mark_px")?;
             let mark_price_update =
                 MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
 
             Ok((mark_price_update, None, None))
         }
     }
-}
-
-fn parse_f64_price(
-    price: f64,
-    instrument: &InstrumentAny,
-    field_name: &str,
-) -> anyhow::Result<Price> {
-    if !price.is_finite() {
-        anyhow::bail!("Invalid price value for {field_name}: {price} (must be finite)");
-    }
-    Ok(Price::new(price, instrument.price_precision()))
 }
 
 #[cfg(test)]
@@ -971,5 +944,41 @@ mod tests {
         assert_eq!(mark_price.value.as_f64(), 50_000.0);
         assert!(index_price.is_none());
         assert!(funding_rate.is_none());
+    }
+
+    /// Pins the direct `Decimal::from_str` path for the funding rate. An f64
+    /// round-trip (the prior implementation) cannot represent these values
+    /// exactly, so the parsed Decimal would diverge from the input string.
+    #[rstest]
+    #[case::positive_high_precision("0.0001234567890123456")]
+    #[case::negative_high_precision("-0.0001234567890123456")]
+    fn test_parse_ws_asset_context_perp_preserves_funding_precision(#[case] funding_str: &str) {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let expected = Decimal::from_str(funding_str).unwrap();
+
+        let ctx_data = WsActiveAssetCtxData::Perp {
+            coin: Ustr::from("BTC"),
+            ctx: PerpsAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: None,
+                    impact_pxs: None,
+                    day_base_vlm: None,
+                },
+                funding: funding_str.to_string(),
+                open_interest: "100000.0".to_string(),
+                oracle_px: "50005.0".to_string(),
+                premium: None,
+            },
+        };
+
+        let (_, _, funding_rate) = parse_ws_asset_context(&ctx_data, &instrument, ts_init).unwrap();
+
+        let funding = funding_rate.expect("perp ctx must yield funding rate");
+        assert_eq!(funding.rate, expected);
     }
 }

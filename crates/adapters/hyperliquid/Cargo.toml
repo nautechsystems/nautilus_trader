@@ -161,6 +161,13 @@ path = "bin/capture_test_data.rs"
 doc = false
 test = false
 
+# Run with `cargo run -p nautilus-hyperliquid --bin hyperliquid-flatten`.
+[[bin]]
+name = "hyperliquid-flatten"
+path = "bin/flatten.rs"
+doc = false
+test = false
+
 # Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`.
 [[example]]
 name = "hyperliquid-data-tester"

@@ -16,16 +16,8 @@
 use std::env;
 
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment,
-    http::{
-        client::HyperliquidHttpClient,
-        models::{
-            HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTpSl,
-            HyperliquidExecTriggerParams,
-        },
-    },
+    common::enums::HyperliquidEnvironment, http::client::HyperliquidHttpClient,
 };
-use rust_decimal_macros::dec;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,8 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         HyperliquidEnvironment::Mainnet
     };
-    let test_conditional = args.get(1).is_some_and(|s| s == "conditional")
-        || args.get(2).is_some_and(|s| s == "conditional");
 
     log::info!("Starting Hyperliquid HTTP private example");
 
@@ -51,11 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if test_conditional {
-        log::info!("Conditional orders test mode enabled");
-    }
-
-    // Try to create authenticated client from environment
     let client = match HyperliquidHttpClient::from_env(environment) {
         Ok(client) => {
             log::info!("Environment: {environment:?}");
@@ -74,14 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // For demonstration, use a placeholder address
     let user_address = "0x0000000000000000000000000000000000000000";
 
-    // Test conditional orders if requested
-    if test_conditional {
-        log::info!("=== Testing Conditional Orders ===");
-        test_conditional_orders(&client).await?;
-        return Ok(());
-    }
-
-    // Get user fills
     match client.info_user_fills(user_address).await {
         Ok(fills) => {
             log::info!("Fetched {} fills", fills.len());
@@ -94,7 +71,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Get order status (example with fake order ID)
     let example_order_id = 12345u64;
     match client
         .info_order_status(user_address, example_order_id)
@@ -107,119 +83,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log::info!("Order status query failed (expected for demo ID): {e}");
         }
     }
-
-    Ok(())
-}
-
-/// Test conditional orders (stop market, stop limit, market-if-touched, limit-if-touched).
-async fn test_conditional_orders(
-    _client: &HyperliquidHttpClient,
-) -> Result<(), Box<dyn std::error::Error>> {
-    log::info!("Testing conditional order types:");
-    log::info!("  - StopMarket (is_market=true, tpsl=Sl)");
-    log::info!("  - StopLimit (is_market=false, tpsl=Sl)");
-    log::info!("  - MarketIfTouched (is_market=true, tpsl=Tp)");
-    log::info!("  - LimitIfTouched (is_market=false, tpsl=Tp)");
-    log::info!("");
-
-    // Example: Stop Market order (BUY)
-    // Triggers when price goes ABOVE trigger_px, executes at market
-    let stop_market_buy = HyperliquidExecPlaceOrderRequest {
-        asset: 0, // BTC-USD (asset 0)
-        is_buy: true,
-        price: dec!(0), // Price is 0 for market execution after trigger
-        size: dec!(0.001),
-        reduce_only: false,
-        kind: HyperliquidExecOrderKind::Trigger {
-            trigger: HyperliquidExecTriggerParams {
-                is_market: true,
-                trigger_px: dec!(45000),       // Trigger at $45,000
-                tpsl: HyperliquidExecTpSl::Sl, // Stop Loss semantics
-            },
-        },
-        cloid: None,
-    };
-
-    // Example: Stop Limit order (SELL)
-    // Triggers when price goes BELOW trigger_px, places limit order at specified price
-    let _stop_limit_sell = HyperliquidExecPlaceOrderRequest {
-        asset: 0,
-        is_buy: false,
-        price: dec!(44900), // Limit price after trigger
-        size: dec!(0.001),
-        reduce_only: false,
-        kind: HyperliquidExecOrderKind::Trigger {
-            trigger: HyperliquidExecTriggerParams {
-                is_market: false,
-                trigger_px: dec!(45000),       // Trigger at $45,000
-                tpsl: HyperliquidExecTpSl::Sl, // Stop Loss semantics
-            },
-        },
-        cloid: None,
-    };
-
-    // Example: Market If Touched order (BUY)
-    // Triggers when price goes ABOVE trigger_px, executes at market
-    let _market_if_touched_buy = HyperliquidExecPlaceOrderRequest {
-        asset: 0,
-        is_buy: true,
-        price: dec!(0), // Price is 0 for market execution after trigger
-        size: dec!(0.001),
-        reduce_only: false,
-        kind: HyperliquidExecOrderKind::Trigger {
-            trigger: HyperliquidExecTriggerParams {
-                is_market: true,
-                trigger_px: dec!(46000),       // Trigger at $46,000
-                tpsl: HyperliquidExecTpSl::Tp, // Take Profit semantics
-            },
-        },
-        cloid: None,
-    };
-
-    // Example: Limit If Touched order (SELL)
-    // Triggers when price goes BELOW trigger_px, places limit order at specified price
-    let _limit_if_touched_sell = HyperliquidExecPlaceOrderRequest {
-        asset: 0,
-        is_buy: false,
-        price: dec!(45900), // Limit price after trigger
-        size: dec!(0.001),
-        reduce_only: false,
-        kind: HyperliquidExecOrderKind::Trigger {
-            trigger: HyperliquidExecTriggerParams {
-                is_market: false,
-                trigger_px: dec!(46000),       // Trigger at $46,000
-                tpsl: HyperliquidExecTpSl::Tp, // Take Profit semantics
-            },
-        },
-        cloid: None,
-    };
-
-    log::info!("Example conditional order structures created:");
-    log::info!("  1. Stop Market BUY @ trigger $45,000");
-    log::info!("  2. Stop Limit SELL @ trigger $45,000, limit $44,900");
-    log::info!("  3. Market If Touched BUY @ trigger $46,000");
-    log::info!("  4. Limit If Touched SELL @ trigger $46,000, limit $45,900");
-    log::info!("");
-    log::info!(
-        "To actually place orders, create an ExchangeAction::Order and call client.post_action()"
-    );
-    log::info!("");
-    log::info!("Example code:");
-    log::info!(
-        "
-    let action = HyperliquidExecAction::Order {{
-        orders: vec![stop_market_buy],
-        grouping: HyperliquidExecGrouping::Na,
-        builder: None,
-    }};
-    let response = client.post_action(&action).await?;
-    "
-    );
-
-    // Display the JSON serialization to show the exact API format
-    let example_json = serde_json::to_string_pretty(&stop_market_buy)?;
-    log::info!("Stop Market order JSON format:");
-    log::info!("{example_json}");
 
     Ok(())
 }
