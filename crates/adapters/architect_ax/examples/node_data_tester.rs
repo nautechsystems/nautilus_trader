@@ -23,16 +23,17 @@
 //! - `AX_IS_SANDBOX`: Set to "true" for sandbox (default), "false" for production
 
 use nautilus_architect_ax::{
-    common::enums::AxEnvironment, config::AxDataClientConfig, factories::AxDataClientFactory,
+    common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
+    config::AxDataClientConfig,
+    factories::AxDataClientFactory,
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::BarType,
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -64,12 +65,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: std::env::var("AX_API_KEY").ok(),
         api_secret: std::env::var("AX_API_SECRET").ok(),
         environment: ax_environment,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let client_factory = AxDataClientFactory::new();
-    let client_id = ClientId::new("AX");
+    let client_id = *AX_CLIENT_ID;
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)

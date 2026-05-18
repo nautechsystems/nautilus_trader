@@ -47,6 +47,10 @@ inputs:
       auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
     required: false
     default: "auto"
+  capnp-cache-enabled:
+    description: Whether to restore/save the Cap'n Proto compiler cache
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
@@ -131,6 +135,8 @@ runs:
 
     - name: Install Cap'n Proto
       uses: ./.github/actions/install-capnp
+      with:
+        cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
     # > --------------------------------------------------
     # > Rust
@@ -149,7 +155,7 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+      uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
@@ -180,7 +186,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@0d865d5cc6d507df4765f1f866bfae8bab4e2a73 # v2.69.7
+      uses: taiki-e/install-action@b651345a718c8f44efa2460560b3dbf29cbd7ee1 # v2.75.26
       with:
         tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
 
@@ -232,8 +238,7 @@ runs:
       shell: bash
       run: |
         PREK_VERSION="$(bash scripts/tool-version.sh prek)"
-        curl --proto '=https' --tlsv1.2 -LsSf \
-          "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" | sh
+        bash scripts/ci/install-prek.sh "$PREK_VERSION"
 
     # > --------------------------------------------------
     # > UV
@@ -244,7 +249,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       with:
         version: ${{ env.UV_VERSION }}
         enable-cache: ${{ inputs.uv-cache-enabled }}
@@ -273,7 +278,7 @@ runs:
                 && runner.environment != 'self-hosted'))
       id: cached-prek
       # https://github.com/actions/cache
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ~/.cache/prek
         key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}
@@ -285,7 +290,7 @@ runs:
     - name: Report cache footprint
       if: runner.os != 'Windows'
       shell: bash
-      run: |
+      run: |-
         {
           echo "## Cache footprint"
           echo

@@ -18,16 +18,16 @@
 //! Run with: `cargo run --example bybit-data-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
-    common::enums::BybitProductType, config::BybitDataClientConfig,
+    common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType},
+    config::BybitDataClientConfig,
     factories::BybitDataClientFactory,
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -46,12 +46,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Linear],
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let client_factory = BybitDataClientFactory::new();
-    let client_id = ClientId::new("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)

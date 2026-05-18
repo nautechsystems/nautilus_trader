@@ -255,7 +255,7 @@ impl HurstVpinDirectional {
             None, // client_order_id
         );
         self.entry_order_id = Some(order.client_order_id());
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 
     fn submit_close(&mut self) -> anyhow::Result<()> {
@@ -290,7 +290,7 @@ impl HurstVpinDirectional {
                 None,
             );
             self.exit_order_ids.insert(close_order.client_order_id());
-            self.submit_order(close_order, Some(position_id), None)?;
+            self.submit_order(close_order, Some(position_id), None, None)?;
         }
 
         Ok(())
@@ -380,7 +380,7 @@ impl DataActor for HurstVpinDirectional {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        self.cancel_all_orders(instrument_id, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, None)?;
         self.close_all_positions(instrument_id, None, None, None, None, None, None)?;
         self.unsubscribe_bars(self.config.bar_type, None, None);
         self.unsubscribe_quotes(instrument_id, None, None);

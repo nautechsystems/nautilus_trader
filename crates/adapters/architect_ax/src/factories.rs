@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,10 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::{consts::AX_VENUE, credential::Credential},
+    common::{
+        consts::{AX, AX_VENUE},
+        credential::Credential,
+    },
     config::{AxDataClientConfig, AxExecClientConfig},
     data::AxDataClient,
     execution::AxExecutionClient,
@@ -73,7 +76,7 @@ impl DataClientFactory for AxDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let ax_config = config
@@ -133,7 +136,7 @@ impl DataClientFactory for AxDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "AX"
+        AX
     }
 
     fn config_type(&self) -> &'static str {
@@ -164,7 +167,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let ax_config = config
             .as_any()
@@ -197,7 +200,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "AX"
+        AX
     }
 
     fn config_type(&self) -> &'static str {
@@ -226,13 +229,13 @@ mod tests {
     #[rstest]
     fn test_ax_data_client_factory_creation() {
         let factory = AxDataClientFactory::new();
-        assert_eq!(factory.name(), "AX");
+        assert_eq!(factory.name(), AX);
         assert_eq!(factory.config_type(), "AxDataClientConfig");
     }
 
     #[rstest]
     fn test_ax_data_client_factory_default() {
         let factory = AxDataClientFactory;
-        assert_eq!(factory.name(), "AX");
+        assert_eq!(factory.name(), AX);
     }
 }

@@ -21,13 +21,15 @@ use nautilus_common::factories::ClientConfig;
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
 
 /// Configuration for Binance data client.
 ///
 /// Ed25519 API keys are required for SBE WebSocket streams.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
@@ -40,8 +42,8 @@ pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
     #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
-    /// Environment (mainnet or testnet).
-    #[builder(default = BinanceEnvironment::Mainnet)]
+    /// Environment (live, testnet, or demo).
+    #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
@@ -80,7 +82,8 @@ impl ClientConfig for BinanceDataClientConfig {
 /// Ed25519 API keys are required for execution clients. Binance deprecated
 /// listenKey-based user data streams in favor of WebSocket API authentication,
 /// which only supports Ed25519.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
@@ -99,8 +102,8 @@ pub struct BinanceExecClientConfig {
     /// Product types to trade.
     #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
-    /// Environment (mainnet or testnet).
-    #[builder(default = BinanceEnvironment::Mainnet)]
+    /// Environment (live, testnet, or demo).
+    #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
@@ -161,5 +164,49 @@ impl Default for BinanceExecClientConfig {
 impl ClientConfig for BinanceExecClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: BinanceDataClientConfig = toml::from_str(
+            r#"
+environment = "Testnet"
+product_types = ["SPOT", "USD_M"]
+instrument_status_poll_secs = 600
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, BinanceEnvironment::Testnet);
+        assert_eq!(
+            config.product_types,
+            vec![BinanceProductType::Spot, BinanceProductType::UsdM]
+        );
+        assert_eq!(config.instrument_status_poll_secs, 600);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: BinanceExecClientConfig = toml::from_str("").unwrap();
+        let expected = BinanceExecClientConfig::default();
+
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.product_types, expected.product_types);
+        assert_eq!(config.use_ws_trading, expected.use_ws_trading);
+        assert_eq!(config.use_position_ids, expected.use_position_ids);
+        assert_eq!(config.default_taker_fee, expected.default_taker_fee);
+        assert_eq!(
+            config.treat_expired_as_canceled,
+            expected.treat_expired_as_canceled,
+        );
+        assert_eq!(config.use_trade_lite, expected.use_trade_lite);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

@@ -15,13 +15,10 @@
 """
 Provides a PyO3-based API integration for Interactive Brokers.
 
-This package currently exists as the Python compatibility layer for the v1/Cython
-`TradingNode` path. It wraps the Rust Interactive Brokers adapter behind Python-facing
-classes and exposes explicit compatibility factories for the legacy live client stack.
-
-For Nautilus v2, the desired boundary is different: the Interactive Brokers adapter
-should be consumed directly from `nautilus_trader.core.nautilus_pyo3.interactive_brokers`
-without depending on Python adapter logic from this package.
+This package exposes the configs, enums, instrument provider, historical client, and
+gateway helper from the Rust Interactive Brokers adapter at
+`nautilus_trader.core.nautilus_pyo3.interactive_brokers`. The live data and execution
+clients are constructed by the Rust live node from configs and are not exposed here.
 
 """
 
@@ -34,22 +31,6 @@ from nautilus_trader.adapters.interactive_brokers_pyo3.config import (
 )
 from nautilus_trader.adapters.interactive_brokers_pyo3.config import (
     InteractiveBrokersInstrumentProviderConfig,
-)
-from nautilus_trader.adapters.interactive_brokers_pyo3.data import InteractiveBrokersDataClient
-from nautilus_trader.adapters.interactive_brokers_pyo3.execution import (
-    InteractiveBrokersExecutionClient,
-)
-from nautilus_trader.adapters.interactive_brokers_pyo3.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers_pyo3.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers_pyo3.factories import (
-    InteractiveBrokersV1LiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers_pyo3.factories import (
-    InteractiveBrokersV1LiveExecClientFactory,
 )
 from nautilus_trader.adapters.interactive_brokers_pyo3.historical import (
     HistoricalInteractiveBrokersClient,
@@ -66,14 +47,8 @@ __all__ = [
     "DockerizedIBGatewayConfig",
     "HistoricInteractiveBrokersClient",
     "HistoricalInteractiveBrokersClient",
-    "InteractiveBrokersDataClient",
     "InteractiveBrokersDataClientConfig",
     "InteractiveBrokersExecClientConfig",
-    "InteractiveBrokersExecutionClient",
     "InteractiveBrokersInstrumentProvider",
     "InteractiveBrokersInstrumentProviderConfig",
-    "InteractiveBrokersLiveDataClientFactory",
-    "InteractiveBrokersLiveExecClientFactory",
-    "InteractiveBrokersV1LiveDataClientFactory",
-    "InteractiveBrokersV1LiveExecClientFactory",
 ]

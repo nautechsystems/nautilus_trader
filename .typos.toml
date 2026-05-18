@@ -44,6 +44,9 @@ arange = "arange" # NumPy array range function (not a typo of "arrange")
 # Rust crate names
 flate = "flate" # Part of flate2 crate name (deflate compression)
 
+# Supply-chain provenance formats
+intoto = "intoto" # Part of .intoto.jsonl in-toto attestation bundle filenames
+
 # Generated code file names (from Binance SBE code generator)
 # The generator creates file names like "ticker_24_hs_ymbol" from "Ticker24hSymbol"
 ymbol = "ymbol" # Part of generated file names from SBE code generator

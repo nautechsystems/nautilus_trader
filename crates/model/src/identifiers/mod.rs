@@ -52,10 +52,21 @@ pub mod stubs;
 
 // Re-exports
 pub use crate::identifiers::{
-    account_id::AccountId, actor_id::ActorId, client_id::ClientId, client_order_id::ClientOrderId,
-    component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-    option_series_id::OptionSeriesId, order_list_id::OrderListId, position_id::PositionId,
-    strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId, venue::Venue,
+    account_id::AccountId,
+    actor_id::ActorId,
+    client_id::ClientId,
+    client_order_id::ClientOrderId,
+    component_id::ComponentId,
+    exec_algorithm_id::ExecAlgorithmId,
+    instrument_id::InstrumentId,
+    option_series_id::OptionSeriesId,
+    order_list_id::OrderListId,
+    position_id::PositionId,
+    strategy_id::{StrategyId, normalize_order_id_tag},
+    symbol::Symbol,
+    trade_id::TradeId,
+    trader_id::TraderId,
+    venue::Venue,
     venue_order_id::VenueOrderId,
 };
 
@@ -81,13 +92,12 @@ impl_serialization_for_identifier!(client_order_id::ClientOrderId);
 impl_serialization_for_identifier!(component_id::ComponentId);
 impl_serialization_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
 impl_serialization_for_identifier!(order_list_id::OrderListId);
+impl_serialization_for_identifier!(position_id::PositionId);
 impl_serialization_for_identifier!(strategy_id::StrategyId);
+impl_serialization_for_identifier!(symbol::Symbol);
 impl_serialization_for_identifier!(trader_id::TraderId);
 impl_serialization_for_identifier!(venue::Venue);
 impl_serialization_for_identifier!(venue_order_id::VenueOrderId);
-
-impl_serialization_for_identifier_utf8!(position_id::PositionId);
-impl_serialization_for_identifier_utf8!(symbol::Symbol);
 
 impl_as_ref_for_identifier!(account_id::AccountId);
 impl_as_ref_for_identifier!(actor_id::ActorId);

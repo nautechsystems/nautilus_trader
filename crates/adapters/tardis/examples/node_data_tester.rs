@@ -26,10 +26,12 @@
 use chrono::NaiveDate;
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_tardis::{
-    common::enums::TardisExchange, config::TardisDataClientConfig,
-    factories::TardisDataClientFactory, machine::types::ReplayNormalizedRequestOptions,
+    common::{consts::TARDIS_CLIENT_ID, enums::TardisExchange},
+    config::TardisDataClientConfig,
+    factories::TardisDataClientFactory,
+    machine::types::ReplayNormalizedRequestOptions,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
@@ -51,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let client_id = ClientId::new("TARDIS");
+    let client_id = *TARDIS_CLIENT_ID;
     let instrument_ids = vec![InstrumentId::from("BTCUSDT-PERP.BINANCE")];
 
     let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)?

@@ -19,6 +19,8 @@ class PortfolioConfig:
     @property
     def min_account_state_logging_interval_ms(self) -> int | None: ...
     @property
+    def snapshot_interval_ms(self) -> int | None: ...
+    @property
     def debug(self) -> bool: ...
     def __new__(
         cls,
@@ -28,4 +30,5 @@ class PortfolioConfig:
         convert_to_account_base_currency: bool | None = None,
         min_account_state_logging_interval_ms: int | None = None,
         debug: bool | None = None,
+        snapshot_interval_ms: int | None = None,
     ) -> PortfolioConfig: ...

@@ -47,6 +47,7 @@
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -54,6 +55,72 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::similar_names,
+    reason = "data domain terms such as ts_event/ts_init are intentionally parallel"
+)]
+#![allow(
+    clippy::cast_lossless,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "data math casts between i64/u64/usize/f64 with values bounded by domain ranges"
+)]
+#![allow(
+    clippy::must_use_candidate,
+    reason = "data accessors are pervasive; #[must_use] noise is not warranted"
+)]
+#![allow(
+    clippy::unused_self,
+    reason = "engine helpers take &self for method-style organization"
+)]
+#![allow(
+    clippy::large_types_passed_by_value,
+    reason = "command and request value types are intentionally moved through dispatch"
+)]
+#![allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config types deserialize plain field values; unrelated unsafe impls are sound"
+)]
+#![allow(
+    clippy::missing_fields_in_debug,
+    reason = "manual Debug impls intentionally omit verbose internal state"
+)]
+#![allow(
+    clippy::struct_excessive_bools,
+    reason = "config structs mirror existing Python configuration surfaces"
+)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "engine and aggregation dispatch functions exceed the default threshold by design"
+)]
+#![allow(
+    clippy::inline_always,
+    reason = "hot-path helpers in aggregation are intentionally always inlined"
+)]
+#![allow(
+    clippy::match_same_arms,
+    reason = "explicit per-variant arms document data dispatch even when bodies coincide"
+)]
+#![allow(
+    clippy::match_wildcard_for_single_variants,
+    reason = "wildcard arms guard against future enum variants in command dispatch"
+)]
+#![allow(
+    clippy::single_match_else,
+    reason = "two-arm matches are consistent with surrounding command and event dispatch"
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::float_cmp,
+        clippy::should_panic_without_expect,
+        clippy::unreadable_literal,
+        clippy::used_underscore_binding,
+        reason = "data tests assert exact float outputs and use loose patterns for fixture setup"
+    )
+)]
 
 pub mod aggregation;
 pub mod client;

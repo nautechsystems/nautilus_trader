@@ -24,6 +24,7 @@ from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -67,8 +68,8 @@ async def main():
         ),
         data_clients={
             "DYDX": DydxDataClientConfig(
+                environment=DydxNetwork.MAINNET,
                 instrument_provider=instrument_provider_config,
-                is_testnet=False,  # If client uses the testnet
             ),
         },
         exec_clients=exec_clients,

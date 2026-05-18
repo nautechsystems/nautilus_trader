@@ -50,6 +50,7 @@ __all__ = [
     "BybitWsPlaceOrderParams",
     "bybit_bar_spec_to_interval",
     "bybit_extract_raw_symbol",
+    "bybit_make_hedge_venue_position_id",
     "bybit_product_type_from_symbol",
     "bybit_resolve_position_idx",
     "get_bybit_http_base_url",
@@ -158,14 +159,17 @@ class BybitHttpClient:
         self,
         product_type: BybitProductType,
         mode: BybitPositionMode,
-        symbol: str | None = ...,
-        coin: str | None = ...,
+        symbol: str | None = None,
+        coin: str | None = None,
     ) -> typing.Any: ...
     def get_spot_borrow_amount(self, coin: str) -> typing.Any: ...
     def borrow_spot(self, coin: str, amount: model.Quantity) -> typing.Any: ...
-    def repay_spot_borrow(self, coin: str, amount: model.Quantity | None = ...) -> typing.Any: ...
+    def repay_spot_borrow(self, coin: str, amount: model.Quantity | None = None) -> typing.Any: ...
     def request_instruments(
-        self, product_type: BybitProductType, symbol: str | None = ..., base_coin: str | None = ...
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
     ) -> typing.Any: ...
     def request_instrument_statuses(self, product_type: BybitProductType) -> typing.Any: ...
     def request_tickers(self, params: BybitTickersParams) -> typing.Any: ...
@@ -178,32 +182,34 @@ class BybitHttpClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         quantity: model.Quantity,
-        time_in_force: model.TimeInForce | None,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        post_only: bool | None,
-        reduce_only: bool,
-        is_quote_quantity: bool,
-        is_leverage: bool,
-        position_idx: BybitPositionIdx | None = ...,
+        time_in_force: model.TimeInForce | None = None,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool = False,
+        is_quote_quantity: bool = False,
+        is_leverage: bool = False,
+        position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,
         account_id: model.AccountId,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
-        quantity: model.Quantity | None = ...,
-        price: model.Price | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
+        quantity: model.Quantity | None = None,
+        price: model.Price | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         account_id: model.AccountId,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def cancel_all_orders(
         self,
@@ -216,40 +222,43 @@ class BybitHttpClient:
         account_id: model.AccountId,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def request_trades(
         self,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        limit: int | None = ...,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_funding_rates(
         self,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_orderbook_snapshot(
         self,
         product_type: BybitProductType,
         instrument_id: model.InstrumentId,
-        limit: int | None = ...,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         product_type: BybitProductType,
         bar_type: model.BarType,
-        start: datetime.datetime | None,
-        end: datetime.datetime | None,
-        limit: int | None,
-        timestamp_on_close: bool,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        timestamp_on_close: bool = True,
     ) -> typing.Any: ...
     def request_fee_rates(
-        self, product_type: BybitProductType, symbol: str | None = ..., base_coin: str | None = ...
+        self,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
     ) -> typing.Any: ...
     def request_account_state(
         self, account_type: BybitAccountType, account_id: model.AccountId
@@ -258,29 +267,29 @@ class BybitHttpClient:
         self,
         account_id: model.AccountId,
         product_type: BybitProductType,
-        instrument_id: model.InstrumentId | None,
-        open_only: bool,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        instrument_id: model.InstrumentId | None = None,
+        open_only: bool = False,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_fill_reports(
         self,
         account_id: model.AccountId,
         product_type: BybitProductType,
-        instrument_id: model.InstrumentId | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        limit: int | None = ...,
+        instrument_id: model.InstrumentId | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_position_status_reports(
         self,
         account_id: model.AccountId,
         product_type: BybitProductType,
-        instrument_id: model.InstrumentId | None = ...,
+        instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
     def request_forward_prices(
-        self, base_coin: str, instrument_id: model.InstrumentId | None = ...
+        self, base_coin: str, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...
 
 @typing.final
@@ -373,15 +382,15 @@ class BybitRawHttpClient:
     def get_open_orders(
         self,
         category: BybitProductType,
-        symbol: str | None = ...,
-        base_coin: str | None = ...,
-        settle_coin: str | None = ...,
-        order_id: str | None = ...,
-        order_link_id: str | None = ...,
-        open_only: BybitOpenOnly | None = ...,
-        order_filter: BybitOrderFilter | None = ...,
-        limit: int | None = ...,
-        cursor: str | None = ...,
+        symbol: str | None = None,
+        base_coin: str | None = None,
+        settle_coin: str | None = None,
+        order_id: str | None = None,
+        order_link_id: str | None = None,
+        open_only: BybitOpenOnly | None = None,
+        order_filter: BybitOrderFilter | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
     ) -> typing.Any: ...
 
 @typing.final
@@ -474,15 +483,17 @@ class BybitWebSocketClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         quantity: model.Quantity,
-        is_quote_quantity: bool,
-        time_in_force: model.TimeInForce | None,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        trigger_type: model.TriggerType | None,
-        post_only: bool | None,
-        reduce_only: bool | None,
-        is_leverage: bool,
-        position_idx: BybitPositionIdx | None = ...,
+        is_quote_quantity: bool = False,
+        time_in_force: model.TimeInForce | None = None,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        trigger_type: model.TriggerType | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+        is_leverage: bool = False,
+        position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,
@@ -491,9 +502,9 @@ class BybitWebSocketClient:
         strategy_id: model.StrategyId,
         instrument_id: model.InstrumentId,
         client_order_id: model.ClientOrderId,
-        venue_order_id: model.VenueOrderId | None = ...,
-        quantity: model.Quantity | None = ...,
-        price: model.Price | None = ...,
+        venue_order_id: model.VenueOrderId | None = None,
+        quantity: model.Quantity | None = None,
+        price: model.Price | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,
@@ -502,7 +513,7 @@ class BybitWebSocketClient:
         strategy_id: model.StrategyId,
         instrument_id: model.InstrumentId,
         client_order_id: model.ClientOrderId,
-        venue_order_id: model.VenueOrderId | None = ...,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def build_place_order_params(
         self,
@@ -523,6 +534,8 @@ class BybitWebSocketClient:
         take_profit: model.Price | None = None,
         stop_loss: model.Price | None = None,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def batch_cancel_orders(
         self,
@@ -633,6 +646,8 @@ class BybitWsPlaceOrderParams:
         order_iv: str | None = None,
         mmp: bool | None = None,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -856,6 +871,9 @@ class BybitTriggerType(enum.Enum):
 
 def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
 def bybit_extract_raw_symbol(symbol: str) -> str: ...
+def bybit_make_hedge_venue_position_id(
+    instrument_id: model.InstrumentId, position_idx: BybitPositionIdx | None = None
+) -> model.PositionId | None: ...
 def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...
 def bybit_resolve_position_idx(
     position_mode: BybitPositionMode | None,

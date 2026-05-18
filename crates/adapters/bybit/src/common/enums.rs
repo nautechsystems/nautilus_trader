@@ -394,6 +394,29 @@ pub enum BybitOptionType {
     Put,
 }
 
+/// Symbol type values for spot/linear/inverse instrument info responses.
+///
+/// Effective 2026-03-09 / 03-26 / 04-21 / 04-23. New values may be added by the venue;
+/// unknown strings fall back to `Other` so deserialization remains forward-compatible.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BybitSymbolType {
+    /// Tokenized equities (spot xstocks).
+    Xstocks,
+    /// Tokenized stock derivatives.
+    Stock,
+    /// Foreign exchange instruments.
+    Forex,
+    /// Commodity instruments.
+    Commodity,
+    /// Forward-compatible fallback for any value the venue adds later.
+    #[serde(other)]
+    Other,
+}
+
 /// Position side as represented in REST/WebSocket payloads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum BybitPositionSide {
@@ -704,8 +727,17 @@ pub enum BybitCreateType {
     CreateByLiquidate,
     CreateByTakeover,
     CreateByTpsl,
+    CreateByBboOrder,
     #[serde(other)]
     Other,
+}
+
+/// BBO side type values for Bybit order placement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum BybitBboSideType {
+    Queue,
+    Counterparty,
 }
 
 /// Venue order type enumeration.

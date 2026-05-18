@@ -455,6 +455,26 @@ fn get_exec_engine(
     ExecutionEngine::new(clock, cache, config)
 }
 
+#[rstest]
+fn test_counters_increment_and_reset(get_stub_submit_order: (OrderAny, SubmitOrder)) {
+    let (order, submit_order) = get_stub_submit_order;
+    let mut risk_engine = get_risk_engine(None, None, None, true);
+
+    assert_eq!(risk_engine.command_count(), 0);
+    assert_eq!(risk_engine.event_count(), 0);
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    risk_engine.process(OrderEventAny::Submitted(order_submitted(&order)));
+
+    assert_eq!(risk_engine.command_count(), 1);
+    assert_eq!(risk_engine.event_count(), 1);
+
+    risk_engine.reset();
+
+    assert_eq!(risk_engine.command_count(), 0);
+    assert_eq!(risk_engine.event_count(), 0);
+}
+
 fn order_submitted(order: &OrderAny) -> OrderSubmitted {
     OrderSubmitted::new(
         order.trader_id(),

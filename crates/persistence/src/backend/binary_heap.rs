@@ -20,6 +20,10 @@
 //! Original source: <https://github.com/sekineh/binary-heap-plus-rs>
 
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "vendored heap chains pointer ops; SAFETY comments justify each block"
+)]
 
 use std::{
     fmt,

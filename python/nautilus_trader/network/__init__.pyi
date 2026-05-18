@@ -34,45 +34,45 @@ class HttpClient:
         self,
         method: HttpMethod,
         url: str,
-        params: typing.Any | None = ...,
-        headers: typing.Mapping[str, str] | None = ...,
-        body: typing.Sequence[int] | None = ...,
-        keys: typing.Sequence[str] | None = ...,
-        timeout_secs: int | None = ...,
+        params: typing.Any | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        body: typing.Sequence[int] | None = None,
+        keys: typing.Sequence[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> typing.Any: ...
     def get(
         self,
         url: str,
-        params: typing.Any | None = ...,
-        headers: typing.Mapping[str, str] | None = ...,
-        keys: typing.Sequence[str] | None = ...,
-        timeout_secs: int | None = ...,
+        params: typing.Any | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        keys: typing.Sequence[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> typing.Any: ...
     def post(
         self,
         url: str,
-        params: typing.Any | None = ...,
-        headers: typing.Mapping[str, str] | None = ...,
-        body: typing.Sequence[int] | None = ...,
-        keys: typing.Sequence[str] | None = ...,
-        timeout_secs: int | None = ...,
+        params: typing.Any | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        body: typing.Sequence[int] | None = None,
+        keys: typing.Sequence[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> typing.Any: ...
     def patch(
         self,
         url: str,
-        params: typing.Any | None = ...,
-        headers: typing.Mapping[str, str] | None = ...,
-        body: typing.Sequence[int] | None = ...,
-        keys: typing.Sequence[str] | None = ...,
-        timeout_secs: int | None = ...,
+        params: typing.Any | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        body: typing.Sequence[int] | None = None,
+        keys: typing.Sequence[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> typing.Any: ...
     def delete(
         self,
         url: str,
-        params: typing.Any | None = ...,
-        headers: typing.Mapping[str, str] | None = ...,
-        keys: typing.Sequence[str] | None = ...,
-        timeout_secs: int | None = ...,
+        params: typing.Any | None = None,
+        headers: typing.Mapping[str, str] | None = None,
+        keys: typing.Sequence[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> typing.Any: ...
 
 @typing.final
@@ -150,10 +150,10 @@ class WebSocketClient:
     def is_disconnecting(self) -> bool: ...
     def is_closed(self) -> bool: ...
     def send(
-        self, data: typing.Sequence[int], keys: typing.Sequence[str] | None = ...
+        self, data: typing.Sequence[int], keys: typing.Sequence[str] | None = None
     ) -> typing.Any: ...
     def send_text(
-        self, data: typing.Sequence[int], keys: typing.Sequence[str] | None = ...
+        self, data: typing.Sequence[int], keys: typing.Sequence[str] | None = None
     ) -> typing.Any: ...
     def send_pong(self, data: typing.Sequence[int]) -> typing.Any: ...
 

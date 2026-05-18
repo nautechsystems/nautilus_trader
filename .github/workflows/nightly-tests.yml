@@ -10,7 +10,7 @@ on:
   push:
     branches: [test-nightly-tests]
   schedule:
-    - cron: '0 12 * * *' # Daily at 12:00 UTC (same as security, 2hrs prior to nightly-merge)
+    - cron: "0 12 * * *" # Daily at 12:00 UTC (same as security, 2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/turmoil
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -78,7 +78,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -168,11 +168,12 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -252,7 +253,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -283,5 +284,5 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run tests
-        run: |
+        run: |-
           uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1

@@ -25,8 +25,8 @@ use crate::common::{
         BybitExecType, BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode,
         BybitMarginTrading, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
         BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
-        BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
-        BybitTriggerType, BybitUnifiedMarginStatus,
+        BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
+        BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
     },
     models::{
         BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -604,6 +604,12 @@ pub struct BybitInstrumentSpot {
     pub margin_trading: BybitMarginTrading,
     pub lot_size_filter: SpotLotSizeFilter,
     pub price_filter: SpotPriceFilter,
+    #[serde(default)]
+    pub symbol_id: Option<i64>,
+    #[serde(default)]
+    pub symbol_type: Option<BybitSymbolType>,
+    #[serde(default)]
+    pub xstock_multiplier: Option<String>,
 }
 
 /// Instrument definition for linear contracts.
@@ -628,6 +634,10 @@ pub struct BybitInstrumentLinear {
     pub unified_margin_trade: bool,
     pub funding_interval: i64,
     pub settle_coin: Ustr,
+    #[serde(default)]
+    pub symbol_id: Option<i64>,
+    #[serde(default)]
+    pub symbol_type: Option<BybitSymbolType>,
 }
 
 /// Instrument definition for inverse contracts.
@@ -652,6 +662,10 @@ pub struct BybitInstrumentInverse {
     pub unified_margin_trade: bool,
     pub funding_interval: i64,
     pub settle_coin: Ustr,
+    #[serde(default)]
+    pub symbol_id: Option<i64>,
+    #[serde(default)]
+    pub symbol_type: Option<BybitSymbolType>,
 }
 
 /// Instrument definition for option contracts.
@@ -672,6 +686,8 @@ pub struct BybitInstrumentOption {
     pub delivery_fee_rate: String,
     pub price_filter: LinearPriceFilter,
     pub lot_size_filter: OptionLotSizeFilter,
+    #[serde(default)]
+    pub symbol_id: Option<i64>,
 }
 
 /// Response alias for instrument info requests that return spot instruments.
@@ -1294,6 +1310,8 @@ pub struct BybitPosition {
     pub leverage_sys_updated_time: String,
     pub created_time: String,
     pub updated_time: String,
+    #[serde(default)]
+    pub open_time: i64,
 }
 
 const fn default_position_seq() -> i64 {
@@ -1856,6 +1874,40 @@ mod tests {
     }
 
     #[rstest]
+    fn deserialize_spot_instrument_with_xstock_fields() {
+        let json = load_test_json("http_get_instruments_spot_xstocks.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.symbol_id, Some(42));
+        assert_eq!(instrument.symbol_type, Some(BybitSymbolType::Xstocks));
+        assert_eq!(instrument.xstock_multiplier.as_deref(), Some("0.1"));
+    }
+
+    #[rstest]
+    fn deserialize_linear_instrument_with_symbol_type_and_id() {
+        let json = load_test_json("http_get_instruments_linear_symbol_type.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.symbol_id, Some(7));
+        assert_eq!(instrument.symbol_type, Some(BybitSymbolType::Stock));
+    }
+
+    #[derive(Deserialize)]
+    struct SymbolTypeWrap {
+        #[serde(rename = "symbolType")]
+        t: BybitSymbolType,
+    }
+
+    #[rstest]
+    fn deserialize_symbol_type_falls_back_to_other_for_unknown() {
+        let json = r#"{"symbolType": "newthing"}"#;
+        let parsed: SymbolTypeWrap = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.t, BybitSymbolType::Other);
+    }
+
+    #[rstest]
     fn deserialize_account_info_response() {
         let json = load_test_json("http_get_account_info.json");
         let response: BybitAccountInfoResponse = serde_json::from_str(&json).unwrap();
@@ -2150,6 +2202,42 @@ mod tests {
         assert_eq!(position.seq, -1);
         assert_eq!(position.mmr_sys_updated_time, "");
         assert_eq!(position.leverage_sys_updated_time, "");
+        assert_eq!(position.open_time, 0);
+    }
+
+    #[rstest]
+    #[case(0_i64)]
+    #[case(1_700_000_000_123_i64)]
+    fn deserialize_position_with_open_time_integer(#[case] expected: i64) {
+        // Bybit position info added `openTime` (integer, ms; default 0) effective 2026-04-21.
+        let mut value: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_positions_with_open_time.json"))
+                .unwrap();
+        value["result"]["list"][0]["openTime"] = serde_json::json!(expected);
+
+        let response: BybitPositionListResponse = serde_json::from_value(value)
+            .expect("Failed to parse position list with integer openTime");
+
+        assert_eq!(response.result.list[0].open_time, expected);
+    }
+
+    #[rstest]
+    fn deserialize_inverse_instrument_with_symbol_type_and_id() {
+        let json = load_test_json("http_get_instruments_inverse_symbol_type.json");
+        let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.symbol_id, Some(11));
+        assert_eq!(instrument.symbol_type, Some(BybitSymbolType::Commodity));
+    }
+
+    #[rstest]
+    fn deserialize_option_instrument_with_symbol_id() {
+        let json = load_test_json("http_get_instruments_option_symbol_id.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.symbol_id, Some(99));
     }
 
     #[rstest]

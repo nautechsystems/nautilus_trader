@@ -26,7 +26,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
 use crate::defi::{Blockchain, validation::validate_address};
-use crate::identifiers::{Symbol, Venue};
+use crate::{
+    enums::InstrumentClass,
+    identifiers::{Symbol, Venue},
+};
 
 /// Represents a valid instrument ID.
 ///
@@ -77,6 +80,26 @@ impl InstrumentId {
             .parse_dex()
             .map(|(blockchain, _)| blockchain)
             .ok()
+    }
+
+    /// Returns the parent-symbol components `(root, class)` if this id has
+    /// a recognised parent shape `<root>.<class>` in its symbol component.
+    ///
+    /// Returns `None` when the symbol has zero or more than one `.`, or when
+    /// the suffix is not a recognised [`InstrumentClass`] parent suffix
+    /// (see [`InstrumentClass::try_from_parent_suffix`]).
+    ///
+    /// Used to gate parent-style subscription fan-out: a `None` return means
+    /// the id does not refer to a parent group and must not be expanded.
+    #[must_use]
+    pub fn parse_parent_components(&self) -> Option<(&str, InstrumentClass)> {
+        let symbol_str = self.symbol.as_str();
+        let (root, suffix) = symbol_str.split_once('.')?;
+        if root.is_empty() || suffix.contains('.') {
+            return None;
+        }
+        let class = InstrumentClass::try_from_parent_suffix(suffix)?;
+        Some((root, class))
     }
 }
 
@@ -149,8 +172,8 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str: String = Deserialize::deserialize(deserializer)?;
-        Self::from_str(&instrument_id_str).map_err(serde::de::Error::custom)
+        let instrument_id_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::from_str(instrument_id_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -294,5 +317,31 @@ mod tests {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
         let blockchain = id.blockchain();
         assert!(blockchain.is_none());
+    }
+
+    use crate::enums::InstrumentClass;
+
+    #[rstest]
+    #[case("ES.FUT.XCME", Some(("ES", InstrumentClass::Future)))]
+    #[case("ES.FUTURE.XCME", Some(("ES", InstrumentClass::Future)))]
+    #[case("ES.OPT.XCME", Some(("ES", InstrumentClass::Option)))]
+    #[case("ES.OPTION.XCME", Some(("ES", InstrumentClass::Option)))]
+    #[case("CL.FUT.XNYM", Some(("CL", InstrumentClass::Future)))]
+    #[case("ECES.OPT.XCME", Some(("ECES", InstrumentClass::Option)))]
+    #[case("ESZ4.XCME", None)]
+    #[case("AUDUSD.SIM", None)]
+    #[case("1.211334112-31570229.BETFAIR", None)]
+    #[case("ES.UNKNOWN.XCME", None)]
+    #[case("ES.FUT.OOPS.XCME", None)]
+    #[case("ES.fut.XCME", None)]
+    #[case("ES.opt.XCME", None)]
+    #[case(".FUT.XCME", None)]
+    #[case(".OPT.XCME", None)]
+    fn test_parse_parent_components(
+        #[case] id_str: &str,
+        #[case] expected: Option<(&str, InstrumentClass)>,
+    ) {
+        let id = InstrumentId::from(id_str);
+        assert_eq!(id.parse_parent_components(), expected);
     }
 }

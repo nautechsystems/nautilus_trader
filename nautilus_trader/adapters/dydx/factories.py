@@ -131,11 +131,7 @@ class DydxLiveDataClientFactory(LiveDataClientFactory):
         DydxDataClient
 
         """
-        network = (
-            config.environment
-            if config.environment is not None
-            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
-        )
+        network = config.environment or DydxNetwork.MAINNET
         client: nautilus_pyo3.DydxHttpClient = get_cached_dydx_http_client(  # type: ignore[name-defined]
             base_url=config.base_url_http,
             network=network,
@@ -194,11 +190,7 @@ class DydxLiveExecClientFactory(LiveExecClientFactory):
         DydxExecutionClient
 
         """
-        network = (
-            config.environment
-            if config.environment is not None
-            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
-        )
+        network = config.environment or DydxNetwork.MAINNET
         client: nautilus_pyo3.DydxHttpClient = get_cached_dydx_http_client(  # type: ignore[name-defined]
             base_url=config.base_url_http,
             network=network,

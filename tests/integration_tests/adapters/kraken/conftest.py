@@ -206,13 +206,13 @@ def mock_http_client_spot():
 
     # Reconciliation methods
     mock.request_account_state = AsyncMock(return_value=_create_mock_account_state())
+    mock.request_account_state_with_metrics = AsyncMock(
+        return_value=(_create_mock_account_state(), {}),
+    )
     mock.request_order_status_reports = AsyncMock(return_value=[])
     mock.request_fill_reports = AsyncMock(return_value=[])
     mock.request_position_status_reports = AsyncMock(return_value=[])
-
-    # Spot position reports config
-    mock.set_use_spot_position_reports = MagicMock()
-    mock.set_spot_positions_quote_currency = MagicMock()
+    mock.request_margin_metrics = AsyncMock(return_value={})
 
     return mock
 

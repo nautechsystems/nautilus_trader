@@ -69,15 +69,15 @@ class DydxHttpClient:
         self,
         address: str,
         subaccount_number: int,
-        market: str | None = ...,
-        limit: int | None = ...,
+        market: str | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def get_fills(
         self,
         address: str,
         subaccount_number: int,
-        market: str | None = ...,
-        limit: int | None = ...,
+        market: str | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def get_subaccount(self, address: str, subaccount_number: int) -> typing.Any: ...
     def request_order_status_reports(
@@ -85,21 +85,21 @@ class DydxHttpClient:
         address: str,
         subaccount_number: int,
         account_id: model.AccountId,
-        instrument_id: model.InstrumentId | None = ...,
+        instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
     def request_fill_reports(
         self,
         address: str,
         subaccount_number: int,
         account_id: model.AccountId,
-        instrument_id: model.InstrumentId | None = ...,
+        instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
     def request_position_status_reports(
         self,
         address: str,
         subaccount_number: int,
         account_id: model.AccountId,
-        instrument_id: model.InstrumentId | None = ...,
+        instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
     def request_account_state(
         self, address: str, subaccount_number: int, account_id: model.AccountId
@@ -107,23 +107,30 @@ class DydxHttpClient:
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None,
-        end: datetime.datetime | None,
-        limit: int | None,
-        timestamp_on_close: bool,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        timestamp_on_close: bool = True,
     ) -> typing.Any: ...
     def request_trade_ticks(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+    ) -> typing.Any: ...
+    def request_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_orderbook_snapshot(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def get_time(self) -> typing.Any: ...
     def get_height(self) -> typing.Any: ...
     def get_transfers(
-        self, address: str, subaccount_number: int, limit: int | None = ...
+        self, address: str, subaccount_number: int, limit: int | None = None
     ) -> typing.Any: ...
 
 @typing.final
@@ -176,7 +183,7 @@ class DydxWebSocketClient:
         loop_: typing.Any,
         instruments: typing.Sequence[typing.Any],
         callback: typing.Any,
-        trader_id: model.TraderId | None = ...,
+        trader_id: model.TraderId | None = None,
     ) -> typing.Any: ...
     def disconnect(self) -> typing.Any: ...
     def wait_until_active(self, timeout_secs: float) -> typing.Any: ...
@@ -246,7 +253,7 @@ class DydxOrderSubmitter:
         client_order_id: int,
         side: int,
         quantity: str,
-        client_metadata: int | None = ...,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def submit_limit_order(
         self,
@@ -258,8 +265,8 @@ class DydxOrderSubmitter:
         time_in_force: int,
         post_only: bool,
         reduce_only: bool,
-        expire_time: int | None = ...,
-        client_metadata: int | None = ...,
+        expire_time: int | None = None,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def submit_stop_market_order(
         self,
@@ -269,8 +276,8 @@ class DydxOrderSubmitter:
         trigger_price: str,
         quantity: str,
         reduce_only: bool,
-        expire_time: int | None = ...,
-        client_metadata: int | None = ...,
+        expire_time: int | None = None,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def submit_stop_limit_order(
         self,
@@ -283,8 +290,8 @@ class DydxOrderSubmitter:
         time_in_force: int,
         post_only: bool,
         reduce_only: bool,
-        expire_time: int | None = ...,
-        client_metadata: int | None = ...,
+        expire_time: int | None = None,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def submit_take_profit_market_order(
         self,
@@ -294,8 +301,8 @@ class DydxOrderSubmitter:
         trigger_price: str,
         quantity: str,
         reduce_only: bool,
-        expire_time: int | None = ...,
-        client_metadata: int | None = ...,
+        expire_time: int | None = None,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def submit_take_profit_limit_order(
         self,
@@ -308,15 +315,15 @@ class DydxOrderSubmitter:
         time_in_force: int,
         post_only: bool,
         reduce_only: bool,
-        expire_time: int | None = ...,
-        client_metadata: int | None = ...,
+        expire_time: int | None = None,
+        client_metadata: int | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         instrument_id: str,
         client_order_id: int,
-        time_in_force: int | None = ...,
-        expire_time_ns: int | None = ...,
+        time_in_force: int | None = None,
+        expire_time_ns: int | None = None,
     ) -> typing.Any: ...
     def cancel_orders_batch(
         self, orders: typing.Sequence[tuple[str, int, int | None, int | None]] = ...

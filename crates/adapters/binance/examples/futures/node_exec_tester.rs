@@ -18,22 +18,24 @@
 //! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables (Ed25519 keys are auto-detected):
-//! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
+//! - Testnet: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
 //!
-//! Create demo credentials at <https://www.binance.com/en/demo-trading>.
+//! Create testnet credentials from the Binance Futures testnet platform.
 
 use nautilus_binance::{
-    common::enums::{BinanceEnvironment, BinanceProductType},
+    common::{
+        consts::BINANCE_CLIENT_ID,
+        enums::{BinanceEnvironment, BinanceProductType},
+    },
     config::{BinanceDataClientConfig, BinanceExecClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -45,15 +47,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-FUTURES-001");
     let node_name = "BINANCE-FUTURES-EXEC-TESTER-001".to_string();
-    let client_id = ClientId::new("BINANCE");
+    let client_id = *BINANCE_CLIENT_ID;
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
 
     let data_config = BinanceDataClientConfig {
         product_types: vec![BinanceProductType::UsdM],
-        environment: BinanceEnvironment::Demo,
+        environment: BinanceEnvironment::Testnet,
         api_key: None,
         api_secret: None,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -62,7 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         product_types: vec![BinanceProductType::UsdM],
         environment: BinanceEnvironment::Testnet,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

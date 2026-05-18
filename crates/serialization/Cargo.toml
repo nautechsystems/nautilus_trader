@@ -6,6 +6,8 @@ include = [
   "src/**/*",
   "schemas/**/*",
   "generated/**/*",
+  "tests/**/*",
+  "benches/**/*",
   "build.rs",
   "Cargo.toml",
   "README.md",
@@ -31,7 +33,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-arrow = ["dep:arrow"]
+arrow = ["dep:arrow", "nautilus-model/arrow"]
 capnp = ["dep:capnp"]
 display = ["arrow"]
 sbe = []

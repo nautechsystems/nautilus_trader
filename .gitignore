@@ -43,11 +43,18 @@ logs/
 .benchmarks*
 .coverage*
 htmlcov/
+perf.data
 
 # Rust related
 *target/
 *target-v2/
 **/*.rs.bk
+
+# Fuzz testing artifacts (cargo-fuzz)
+**/fuzz/corpus/
+**/fuzz/artifacts/
+**/fuzz/coverage/
+**/fuzz/target/
 
 # Python related
 *.pyc
@@ -76,9 +83,77 @@ env/
 .tmp-pre-commit/
 *.bak
 *.sh
+!.docker/entrypoint.sh
+!.pre-commit-hooks/cargo_fmt_stable.sh
+!.pre-commit-hooks/cargo_vet.sh
+!.pre-commit-hooks/check_anyhow_usage.sh
+!.pre-commit-hooks/check_cargo_conventions.sh
+!.pre-commit-hooks/check_copyright_year.sh
+!.pre-commit-hooks/check_docs_conventions.sh
+!.pre-commit-hooks/check_dst_conventions.sh
+!.pre-commit-hooks/check_error_conventions.sh
+!.pre-commit-hooks/check_formatting_py.sh
+!.pre-commit-hooks/check_formatting_rs.sh
+!.pre-commit-hooks/check_hidden_chars.sh
+!.pre-commit-hooks/check_links_offline.sh
+!.pre-commit-hooks/check_logging_conventions.sh
+!.pre-commit-hooks/check_nautilus_conventions.sh
+!.pre-commit-hooks/check_no_legacy_paths_v2.sh
+!.pre-commit-hooks/check_non_latin_text.sh
+!.pre-commit-hooks/check_pyo3_conventions.sh
+!.pre-commit-hooks/check_testing_conventions.sh
+!.pre-commit-hooks/check_tokio_usage.sh
+!.pre-commit-hooks/check_toml_codegen.sh
+!scripts/cargo-tool-version.sh
+!scripts/check-cargo-cooldown.sh
+!scripts/check-no-build-packages.sh
+!scripts/ci/check-crates-io-trusted-publishing.sh
+!scripts/ci/check-github-action-shas.sh
+!scripts/ci/check-security-audit-result.sh
+!scripts/ci/docker-pull-retry.sh
 !scripts/ci/install-cargo-nextest.sh
+!scripts/ci/install-nautilus-cli.sh
+!scripts/ci/install-prek.sh
+!scripts/ci/install-rust.sh
+!scripts/ci/osv-severity-gate.sh
+!scripts/ci/plan.sh
+!scripts/ci/publish-cargo-crates.sh
+!scripts/ci/publish-cli-r2-prune.sh
+!scripts/ci/publish-cli-r2-upload.sh
+!scripts/ci/publish-cli-r2-verify.sh
+!scripts/ci/publish-release-attestation-siblings.sh
+!scripts/ci/publish-release-checksums.sh
+!scripts/ci/publish-wheels-delete-artifacts.sh
+!scripts/ci/publish-wheels-generate-index.sh
+!scripts/ci/publish-wheels-r2-remove-old-wheels.sh
+!scripts/ci/publish-wheels-r2-upload-index.sh
+!scripts/ci/publish-wheels-r2-upload-new-wheels.sh
+!scripts/ci/publish-wheels-r2-verify-files.sh
+!scripts/ci/retry-on-corruption.sh
+!scripts/ci/security-audit-gate.sh
+!scripts/ci/set-cargo-build-jobs.sh
+!scripts/ci/update-pyproject-version.sh
+!scripts/ci/validate-wheel-count.sh
 !scripts/ci/verify-ci-inputs.sh
-!.pre-commit-hooks/*.sh
+!scripts/cli/install.sh
+!scripts/clippy-changed.sh
+!scripts/crate-test-features.sh
+!scripts/curate-dataset.sh
+!scripts/doc-changed.sh
+!scripts/find-replace.sh
+!scripts/install-capnp.sh
+!scripts/install-osv-scanner.sh
+!scripts/package-version.sh
+!scripts/purge-orphan-dev-wheels.sh
+!scripts/python-version.sh
+!scripts/regen-capnp.sh
+!scripts/rust-toolchain.sh
+!scripts/test-coverage.sh
+!scripts/test-examples.sh
+!scripts/test-performance.sh
+!scripts/test.sh
+!scripts/tool-version.sh
+!scripts/uv-version.sh
 *tmp/
 *temp/
 
@@ -89,6 +164,7 @@ PERF.JSON
 output.json
 
 # AI assistants and tools
+.codex
 .cursorignore
 .mcp.json
 .mcp.local.json
@@ -126,6 +202,7 @@ tests/test_data/local/
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
 tests/test_data/**/backtest/**
+
 
 # Exceptions
 !tests/test_data/large/checksums.json

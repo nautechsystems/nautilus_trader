@@ -8,7 +8,7 @@ on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: '0 14 * * *' # At 14:00 UTC daily
+    - cron: "0 14 * * *" # At 14:00 UTC daily
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       has_changes: ${{ steps.check-workflow.outputs.has_changes }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -34,7 +34,7 @@ jobs:
         with:
           persist-credentials: false
           token: ${{ secrets.NIGHTLY_TOKEN }}
-          fetch-depth: 0  # Fetch all history for all tags and branches
+          fetch-depth: 0 # Fetch all history for all tags and branches
 
       - name: Fetch develop branch workflows
         id: fetch-workflows
@@ -121,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -132,14 +132,9 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          persist-credentials: false
+          persist-credentials: true
           token: ${{ secrets.NIGHTLY_TOKEN }}
-          fetch-depth: 0  # Fetch all history for all tags and branches
-
-      - name: Configure authenticated git remote
-        run: |
-          git remote set-url origin \
-            "https://x-access-token:${{ secrets.NIGHTLY_TOKEN }}@github.com/${{ github.repository }}"
+          fetch-depth: 0 # Fetch all history for all tags and branches
 
       - name: Configure Git user
         run: |
@@ -173,7 +168,7 @@ jobs:
           fi
 
       - name: Check merge result
-        run: |
+        run: |-
           develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
           nightly_sha=$(git rev-parse HEAD)
           if [[ "$nightly_sha" == "$develop_sha" ]]; then

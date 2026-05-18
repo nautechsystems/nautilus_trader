@@ -1,0 +1,45 @@
+{
+  "channel": "level3",
+  "type": "snapshot",
+  "data": [
+    {
+      "symbol": "BTC/USD",
+      "timestamp": "2024-01-15T12:00:00.000000Z",
+      "checksum": 0,
+      "bids": [
+        {
+          "order_id": "order-bid-1",
+          "limit_price": 42000.5,
+          "order_qty": 0.5,
+          "timestamp": "2024-01-15T11:59:58.000000Z"
+        },
+        {
+          "order_id": "order-bid-2",
+          "limit_price": 42000.5,
+          "order_qty": 1.2,
+          "timestamp": "2024-01-15T11:59:59.000000Z"
+        },
+        {
+          "order_id": "order-bid-3",
+          "limit_price": 41999.0,
+          "order_qty": 0.3,
+          "timestamp": "2024-01-15T11:59:59.500000Z"
+        }
+      ],
+      "asks": [
+        {
+          "order_id": "order-ask-1",
+          "limit_price": 42001.0,
+          "order_qty": 0.8,
+          "timestamp": "2024-01-15T11:59:57.000000Z"
+        },
+        {
+          "order_id": "order-ask-2",
+          "limit_price": 42002.0,
+          "order_qty": 2.0,
+          "timestamp": "2024-01-15T11:59:58.500000Z"
+        }
+      ]
+    }
+  ]
+}

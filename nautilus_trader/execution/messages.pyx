@@ -823,6 +823,7 @@ cdef class SubmitOrder(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            params=values.get("params"),
             correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
@@ -838,6 +839,7 @@ cdef class SubmitOrder(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "params": obj.params,
             "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
@@ -970,6 +972,7 @@ cdef class SubmitOrderList(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            params=values.get("params"),
             correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
@@ -987,6 +990,7 @@ cdef class SubmitOrderList(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "params": obj.params,
             "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 

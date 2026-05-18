@@ -17,7 +17,7 @@
 
 use indexmap::IndexMap;
 use nautilus_model::{
-    enums::OrderSide,
+    enums::{OrderSide, PositionSideSpecified},
     identifiers::VenueOrderId,
     reports::{FillReport, OrderStatusReport},
 };
@@ -26,26 +26,26 @@ use rust_decimal::Decimal;
 /// Immutable snapshot of fill data for position simulation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FillSnapshot {
-    /// The event timestamp (nanoseconds).
-    pub ts_event: u64,
+    /// The venue order ID.
+    pub venue_order_id: VenueOrderId,
     /// The order side (BUY or SELL).
     pub side: OrderSide,
     /// The fill quantity.
     pub qty: Decimal,
     /// The fill price.
     pub px: Decimal,
-    /// The venue order ID.
-    pub venue_order_id: VenueOrderId,
+    /// The event timestamp (nanoseconds).
+    pub ts_event: u64,
 }
 
 /// Represents a position snapshot from the venue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VenuePositionSnapshot {
-    /// The position side (LONG, SHORT, or FLAT).
-    pub side: OrderSide, // Using OrderSide to represent position side for simplicity
-    /// The position quantity (always positive, even for SHORT).
+    /// The position side (Long, Short, or Flat).
+    pub side: PositionSideSpecified,
+    /// The position quantity (always positive, even for Short).
     pub qty: Decimal,
-    /// The average entry price (can be zero for FLAT positions).
+    /// The average entry price (can be zero for Flat positions).
     pub avg_px: Decimal,
 }
 
@@ -81,18 +81,18 @@ impl FillSnapshot {
     /// Create a new fill snapshot.
     #[must_use]
     pub fn new(
-        ts_event: u64,
+        venue_order_id: VenueOrderId,
         side: OrderSide,
         qty: Decimal,
         px: Decimal,
-        venue_order_id: VenueOrderId,
+        ts_event: u64,
     ) -> Self {
         Self {
-            ts_event,
+            venue_order_id,
             side,
             qty,
             px,
-            venue_order_id,
+            ts_event,
         }
     }
 

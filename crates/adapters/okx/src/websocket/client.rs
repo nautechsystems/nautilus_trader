@@ -1483,6 +1483,25 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
+    /// Subscribes to event contract market updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-websocket-event-contract-markets-channel>.
+    pub async fn subscribe_event_contract_markets(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::EventContractMarkets,
+            inst_type: Some(OKXInstrumentType::Events),
+            inst_family: None,
+            inst_id: None,
+        };
+        self.subscribe(vec![arg]).await
+    }
+
     /// Returns a reference to the option greeks subscription map.
     ///
     /// The map stores the set of greeks conventions to emit for each subscribed instrument.
@@ -1733,6 +1752,21 @@ impl OKXWebSocketClient {
             channel: OKXWsChannel::OptionSummary,
             inst_type: None,
             inst_family: Some(inst_family),
+            inst_id: None,
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
+    /// Unsubscribes from event contract market updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    pub async fn unsubscribe_event_contract_markets(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::EventContractMarkets,
+            inst_type: Some(OKXInstrumentType::Events),
+            inst_family: None,
             inst_id: None,
         };
         self.unsubscribe(vec![arg]).await
@@ -2112,6 +2146,9 @@ impl OKXWebSocketClient {
         attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
+        speed_bump: Option<String>,
+        outcome: Option<String>,
+        slippage_pct: Option<String>,
     ) -> Result<(), OKXWsError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXWsError::ClientError(format!(
@@ -2194,6 +2231,7 @@ impl OKXWebSocketClient {
                 }
                 // reduceOnly is not applicable to options per OKX docs
             }
+            OKXInstrumentType::Events => {}
             _ => {
                 builder.ccy(quote_currency.to_string());
 
@@ -2284,6 +2322,34 @@ impl OKXWebSocketClient {
             "Order type mapping: order_type={order_type:?}, time_in_force={time_in_force:?}, post_only={post_only:?} -> okx_ord_type={okx_ord_type:?}"
         );
 
+        let speed_bump = if instrument_type == OKXInstrumentType::Events {
+            if outcome.is_none() {
+                return Err(OKXWsError::ClientError(
+                    "OKX event contract orders require `outcome`".to_string(),
+                ));
+            }
+
+            if okx_ord_type == OKXOrderType::PostOnly {
+                speed_bump
+            } else {
+                Some(speed_bump.unwrap_or_else(|| "1".to_string()))
+            }
+        } else {
+            speed_bump
+        };
+
+        if let Some(speed_bump) = speed_bump {
+            builder.speed_bump(speed_bump);
+        }
+
+        if let Some(outcome) = outcome {
+            builder.outcome(outcome);
+        }
+
+        if let Some(slippage) = slippage_pct {
+            builder.slippage_pct(slippage);
+        }
+
         builder.ord_type(okx_ord_type);
         builder.sz(quantity.to_string());
 
@@ -2369,6 +2435,7 @@ impl OKXWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
         new_px_usd: Option<String>,
         new_px_vol: Option<String>,
+        speed_bump: Option<String>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
@@ -2410,6 +2477,10 @@ impl OKXWebSocketClient {
 
         if let Some(quantity) = quantity {
             builder.new_sz(quantity.to_string());
+        }
+
+        if let Some(speed_bump) = speed_bump {
+            builder.speed_bump(speed_bump);
         }
 
         let params = builder
@@ -2618,6 +2689,8 @@ impl OKXWebSocketClient {
             Option<Price>,
             Option<bool>,
             Option<bool>,
+            Option<String>,
+            Option<String>,
         )>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
@@ -2635,6 +2708,8 @@ impl OKXWebSocketClient {
             tp,
             post_only,
             reduce_only,
+            speed_bump,
+            outcome,
         ) in orders
         {
             let mut builder = WsPostOrderParamsBuilder::default();
@@ -2652,13 +2727,18 @@ impl OKXWebSocketClient {
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.side(ord_side.as_specified());
 
-            if let Some(instrument) = self.instruments_cache.get_cloned(&inst_id.symbol.inner()) {
+            if inst_type != OKXInstrumentType::Events
+                && let Some(instrument) = self.instruments_cache.get_cloned(&inst_id.symbol.inner())
+            {
                 builder.ccy(instrument.quote_currency().to_string());
             }
 
             if let Some(ps) = pos_side {
                 builder.pos_side(OKXPositionSide::from(ps));
-            } else if !matches!(inst_type, OKXInstrumentType::Spot) {
+            } else if matches!(
+                inst_type,
+                OKXInstrumentType::Swap | OKXInstrumentType::Futures | OKXInstrumentType::Option
+            ) {
                 builder.pos_side(OKXPositionSide::Net);
             }
 
@@ -2690,6 +2770,30 @@ impl OKXWebSocketClient {
                 builder.reduce_only(ro);
             }
 
+            let speed_bump = if inst_type == OKXInstrumentType::Events {
+                if outcome.is_none() {
+                    return Err(OKXWsError::ClientError(
+                        "OKX event contract orders require `outcome`".to_string(),
+                    ));
+                }
+
+                if okx_ord_type == OKXOrderType::PostOnly {
+                    speed_bump
+                } else {
+                    Some(speed_bump.unwrap_or_else(|| "1".to_string()))
+                }
+            } else {
+                speed_bump
+            };
+
+            if let Some(speed_bump) = speed_bump {
+                builder.speed_bump(speed_bump);
+            }
+
+            if let Some(outcome) = outcome {
+                builder.outcome(outcome);
+            }
+
             builder.tag(OKX_NAUTILUS_BROKER_ID);
 
             let params = builder
@@ -2719,10 +2823,11 @@ impl OKXWebSocketClient {
             ClientOrderId,
             Option<Price>,
             Option<Quantity>,
+            Option<String>,
         )>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz) in orders {
+        for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz, speed_bump) in orders {
             let mut builder = WsAmendOrderParamsBuilder::default();
 
             let inst_id_code = self
@@ -2743,6 +2848,10 @@ impl OKXWebSocketClient {
 
             if let Some(q) = sz {
                 builder.new_sz(q.to_string());
+            }
+
+            if let Some(speed_bump) = speed_bump {
+                builder.speed_bump(speed_bump);
             }
 
             let params = builder.build().map_err(|e| {
@@ -3027,7 +3136,7 @@ mod tests {
             .as_secs()
             .to_string();
 
-        assert!(timestamp.parse::<u64>().is_ok());
+        timestamp.parse::<u64>().unwrap();
         assert_eq!(timestamp.len(), 10);
         assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
     }
@@ -3126,7 +3235,7 @@ mod tests {
             TransportBackend::default(),
             None,
         );
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]
@@ -3382,6 +3491,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: None,
             fee_ccy: Ustr::from("USDT"),
             fill_px: "0".to_string(),
@@ -3633,6 +3743,9 @@ mod tests {
                 OrderSide::Buy,
                 OrderType::Limit,
                 Quantity::from("0.01"),
+                None,
+                None,
+                None,
                 None,
                 None,
                 None,

@@ -15,7 +15,17 @@
 
 //! Integration tests for the Binance Spot execution client.
 
-use std::{cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    net::SocketAddr,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -26,6 +36,7 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_binance::{
+    common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
     config::BinanceExecClientConfig,
     spot::{
         execution::BinanceSpotExecutionClient,
@@ -37,8 +48,10 @@ use nautilus_common::{
     clients::ExecutionClient,
     live::runner::set_exec_event_sender,
     messages::{
-        ExecutionEvent,
-        execution::{CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, SubmitOrder},
+        ExecutionEvent, ExecutionReport,
+        execution::{
+            CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        },
     },
     testing::wait_until_async,
 };
@@ -48,9 +61,7 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     enums::{AccountType, OmsType, OrderSide, TimeInForce},
     events::{AccountState, OrderEventAny},
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::{LimitOrder, Order, OrderAny},
     types::{AccountBalance, Money, Price, Quantity},
 };
@@ -397,7 +408,17 @@ fn unauthorized_response() -> impl IntoResponse {
     )
 }
 
-fn create_exec_test_router() -> Router {
+fn no_such_order_response() -> impl IntoResponse {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Body::from(r#"{"code":-2013,"msg":"Order does not exist."}"#),
+    )
+}
+
+fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Router {
+    let order_query_count_for_order_route = order_query_count;
+
     Router::new()
         .route(
             "/api/v3/ping",
@@ -508,6 +529,20 @@ fn create_exec_test_router() -> Router {
                     .into_response()
                 },
             )
+            .get(move |headers: HeaderMap| {
+                let order_query_count = order_query_count_for_order_route.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return unauthorized_response().into_response();
+                    }
+
+                    if let Some(count) = order_query_count {
+                        count.fetch_add(1, Ordering::SeqCst);
+                    }
+
+                    no_such_order_response().into_response()
+                }
+            })
             .delete(
                 |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| async move {
                     if !has_auth_headers(&headers) {
@@ -541,7 +576,13 @@ fn create_exec_test_router() -> Router {
 }
 
 async fn start_exec_test_server() -> SocketAddr {
-    let router = create_exec_test_router();
+    start_exec_test_server_with_order_query_count(None).await
+}
+
+async fn start_exec_test_server_with_order_query_count(
+    order_query_count: Option<Arc<AtomicUsize>>,
+) -> SocketAddr {
+    let router = create_exec_test_router(order_query_count);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -577,14 +618,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let client_id = ClientId::from("BINANCE");
+    let client_id = *BINANCE_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BINANCE"),
+        *BINANCE_VENUE,
         OmsType::Hedging,
         account_id,
         AccountType::Cash,
@@ -640,8 +681,8 @@ async fn test_client_creation() {
 
     let (client, _rx, _cache) = create_test_execution_client(base_url);
 
-    assert_eq!(client.client_id(), ClientId::from("BINANCE"));
-    assert_eq!(client.venue(), Venue::from("BINANCE"));
+    assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
+    assert_eq!(client.venue(), *BINANCE_VENUE);
     assert_eq!(client.oms_type(), OmsType::Hedging);
     assert!(!client.is_connected());
 }
@@ -733,7 +774,7 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         order_any.client_order_id(),
@@ -775,7 +816,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
 
     let cancel_all_cmd = CancelAllOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         StrategyId::from("TEST-STRATEGY"),
         instrument_id,
         OrderSide::NoOrderSide,
@@ -852,7 +893,7 @@ async fn test_cancel_order_generates_canceled_event() {
 
     let cancel_cmd = CancelOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -929,7 +970,7 @@ async fn test_modify_order_generates_events() {
 
     let modify_cmd = ModifyOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -944,7 +985,7 @@ async fn test_modify_order_generates_events() {
 
     // Modify uses cancel-replace on Binance Spot, which generates cancel + new events
     let result = client.modify_order(modify_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     // Should get at least one execution event (cancel or accepted for the replacement)
     wait_until_async(
@@ -993,7 +1034,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let query_cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         AccountId::from("BINANCE-001"),
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -1001,7 +1042,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     );
 
     let result = client.query_account(query_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || {
@@ -1013,4 +1054,55 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_missing_order_emits_no_order_report() {
+    let order_query_count = Arc::new(AtomicUsize::new(0));
+    let addr = start_exec_test_server_with_order_query_count(Some(order_query_count.clone())).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let query_cmd = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BINANCE_CLIENT_ID),
+        StrategyId::from("TEST-STRATEGY"),
+        InstrumentId::from("BTCUSDT.BINANCE"),
+        ClientOrderId::new("missing-order-001"),
+        Some(VenueOrderId::from("99999")),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.query_order(query_cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let order_query_count = order_query_count.clone();
+            async move { order_query_count.load(Ordering::SeqCst) > 0 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut emitted_order_report = false;
+
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))) {
+            emitted_order_report = true;
+        }
+    }
+
+    assert!(!emitted_order_report);
 }

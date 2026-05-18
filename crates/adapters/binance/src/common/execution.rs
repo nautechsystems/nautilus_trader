@@ -111,12 +111,13 @@ mod tests {
         accounts::{AccountAny, CashAccount},
         enums::{AccountType, OmsType},
         events::AccountState,
-        identifiers::{AccountId, ClientId, TraderId, Venue},
+        identifiers::{AccountId, TraderId},
         types::{AccountBalance, Money},
     };
     use rstest::rstest;
 
     use super::*;
+    use crate::common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE};
 
     #[rstest]
     fn test_spawn_task_prunes_finished_handles() {
@@ -179,7 +180,7 @@ mod tests {
         };
 
         let (result, ()) = tokio::join!(wait_fut, register_fut);
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[rstest]
@@ -211,8 +212,8 @@ mod tests {
     fn create_test_core(cache: Rc<RefCell<Cache>>, account_id: AccountId) -> ExecutionClientCore {
         ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
-            ClientId::from("BINANCE"),
-            Venue::from("BINANCE"),
+            *BINANCE_CLIENT_ID,
+            *BINANCE_VENUE,
             OmsType::Hedging,
             account_id,
             AccountType::Cash,

@@ -96,6 +96,9 @@ from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
 
 
+InstrumentAccountKey = tuple[InstrumentId, AccountId]
+
+
 class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
@@ -148,8 +151,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._recon_check_retries: Counter[ClientOrderId] = Counter()
         self._ts_last_query: dict[ClientOrderId, int] = {}
         self._order_local_activity_ns: dict[ClientOrderId, int] = {}
-        self._position_local_activity_ns: dict[InstrumentId, int] = {}
-        self._position_recon_retries: Counter[InstrumentId] = Counter()
+        self._position_local_activity_ns: dict[InstrumentAccountKey, int] = {}
+        self._position_recon_retries: Counter[InstrumentAccountKey] = Counter()
         self._recent_fills_cache: dict[TradeId, int] = {}  # TradeId -> timestamp_ns (TTL cache)
         self._inferred_fill_ts: dict[ClientOrderId, int] = {}
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
@@ -807,17 +810,18 @@ class LiveExecutionEngine(ExecutionEngine):
                 p for p in open_positions if p.instrument_id in self.reconciliation_instrument_ids
             ]
 
-        # Group positions by instrument_id (for netting)
-        positions_by_instrument: dict[InstrumentId, list[Position]] = {}
+        positions_by_key: dict[InstrumentAccountKey, list[Position]] = {}
 
         for position in open_positions:
-            if position.instrument_id not in positions_by_instrument:
-                positions_by_instrument[position.instrument_id] = []
+            position_key = (position.instrument_id, position.account_id)
+            if position_key not in positions_by_key:
+                positions_by_key[position_key] = []
 
-            positions_by_instrument[position.instrument_id].append(position)
+            positions_by_key[position_key].append(position)
 
         self._log.debug(
-            f"Found {len(positions_by_instrument)} unique instrument(s) with open positions",
+            f"Found {len(positions_by_key)} unique instrument/account combination(s) "
+            "with open positions",
         )
 
         if not self._clients:
@@ -827,25 +831,25 @@ class LiveExecutionEngine(ExecutionEngine):
         venue_positions, failed_position_report_venues = await self._query_position_status_reports()
 
         await self._process_cached_position_discrepancies(
-            positions_by_instrument,
+            positions_by_key,
             venue_positions,
             failed_position_report_venues,
         )
 
         await self._process_venue_reported_positions(
-            positions_by_instrument,
+            positions_by_key,
             venue_positions,
         )
 
-        # Prune retry counters for instruments no longer actively discrepant
-        active_instruments = set(positions_by_instrument) | set(venue_positions)
-        stale = [iid for iid in self._position_recon_retries if iid not in active_instruments]
-        for iid in stale:
-            self._position_recon_retries.pop(iid, None)
+        # Prune retry counters for (instrument, account) pairs no longer actively discrepant
+        active_keys = set(positions_by_key) | set(venue_positions)
+        stale = [k for k in self._position_recon_retries if k not in active_keys]
+        for k in stale:
+            self._position_recon_retries.pop(k, None)
 
     async def _query_position_status_reports(
         self,
-    ) -> tuple[dict[InstrumentId, PositionStatusReport], set[Venue | None]]:
+    ) -> tuple[dict[InstrumentAccountKey, PositionStatusReport], set[Venue | None]]:
         clients = list(self._clients.values())
 
         tasks = [
@@ -868,8 +872,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.error(f"Failed to gather position status reports: {e}")
             return {}, {client.venue for client in clients}
 
-        # Build mapping: instrument_id -> venue report
-        venue_positions: dict[InstrumentId, PositionStatusReport] = {}
+        venue_positions: dict[InstrumentAccountKey, PositionStatusReport] = {}
         failed_venues: set[Venue | None] = set()
 
         for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
@@ -883,20 +886,20 @@ class LiveExecutionEngine(ExecutionEngine):
 
             reports = cast("list[PositionStatusReport]", reports_or_exception)
             for report in reports:
-                venue_positions[report.instrument_id] = report
+                venue_positions[(report.instrument_id, report.account_id)] = report
 
         return venue_positions, failed_venues
 
     async def _process_cached_position_discrepancies(
         self,
-        positions_by_instrument: dict[InstrumentId, list[Position]],
-        venue_positions: dict[InstrumentId, PositionStatusReport],
+        positions_by_key: dict[InstrumentAccountKey, list[Position]],
+        venue_positions: dict[InstrumentAccountKey, PositionStatusReport],
         failed_position_report_venues: set[Venue | None] | None = None,
     ) -> None:
         clients = self._clients.values()
 
-        for instrument_id, cached_positions in positions_by_instrument.items():
-            venue_report = venue_positions.get(instrument_id)
+        for (instrument_id, account_id), cached_positions in positions_by_key.items():
+            venue_report = venue_positions.get((instrument_id, account_id))
 
             if venue_report is None and self._did_position_status_query_fail(
                 instrument_id,
@@ -916,10 +919,10 @@ class LiveExecutionEngine(ExecutionEngine):
             )
 
             if not has_discrepancy:
-                self._position_recon_retries.pop(instrument_id, None)
+                self._position_recon_retries.pop((instrument_id, account_id), None)
                 continue
 
-            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
+            last_activity_ts = self._position_local_activity_ns.get((instrument_id, account_id))
             if last_activity_ts:
                 ts_now = self._clock.timestamp_ns()
                 if ts_now - last_activity_ts < self._position_check_threshold_ns:
@@ -929,7 +932,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
                     continue
 
-            retries = self._position_recon_retries[instrument_id]
+            retries = self._position_recon_retries[(instrument_id, account_id)]
             if retries >= self.position_check_retries:
                 continue
 
@@ -950,7 +953,10 @@ class LiveExecutionEngine(ExecutionEngine):
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-read positions from cache (may have changed during reconciliation)
-            current_positions = self._cache.positions_open(instrument_id=instrument_id)
+            current_positions = self._cache.positions_open(
+                instrument_id=instrument_id,
+                account_id=account_id,
+            )
             still_discrepant = self._check_position_discrepancy(
                 current_positions,
                 venue_report,
@@ -968,7 +974,10 @@ class LiveExecutionEngine(ExecutionEngine):
                     and self.generate_missing_orders
                     and self._reconcile_position_report(reconciliation_report)
                 ):
-                    current_positions = self._cache.positions_open(instrument_id=instrument_id)
+                    current_positions = self._cache.positions_open(
+                        instrument_id=instrument_id,
+                        account_id=account_id,
+                    )
                     still_discrepant = self._check_position_discrepancy(
                         current_positions,
                         venue_report,
@@ -976,10 +985,10 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
 
                 if not still_discrepant:
-                    self._position_recon_retries.pop(instrument_id, None)
+                    self._position_recon_retries.pop((instrument_id, account_id), None)
                     continue
 
-                self._position_recon_retries[instrument_id] = retries + 1
+                self._position_recon_retries[(instrument_id, account_id)] = retries + 1
                 if retries + 1 >= self.position_check_retries:
                     self._log.error(
                         f"Position discrepancy for {instrument_id} unresolved after "
@@ -995,7 +1004,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         LogColor.YELLOW,
                     )
             else:
-                self._position_recon_retries.pop(instrument_id, None)
+                self._position_recon_retries.pop((instrument_id, account_id), None)
 
     def _did_position_status_query_fail(
         self,
@@ -1089,13 +1098,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def _process_venue_reported_positions(
         self,
-        positions_by_instrument: dict[InstrumentId, list[Position]],
-        venue_positions: dict[InstrumentId, PositionStatusReport],
+        positions_by_key: dict[InstrumentAccountKey, list[Position]],
+        venue_positions: dict[InstrumentAccountKey, PositionStatusReport],
     ) -> None:
         clients = self._clients.values()
 
-        for instrument_id, venue_report in venue_positions.items():
-            if instrument_id in positions_by_instrument:
+        for (instrument_id, account_id), venue_report in venue_positions.items():
+            if (instrument_id, account_id) in positions_by_key:
                 continue  # Already checked above
 
             # Apply instrument filter
@@ -1108,11 +1117,11 @@ class LiveExecutionEngine(ExecutionEngine):
             # Venue has a position but we don't - this is a discrepancy
             venue_qty = venue_report.signed_decimal_qty
             if venue_qty == 0:
-                self._position_recon_retries.pop(instrument_id, None)
+                self._position_recon_retries.pop((instrument_id, account_id), None)
                 continue  # Both flat, no discrepancy
 
             # THRESHOLD CHECK
-            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
+            last_activity_ts = self._position_local_activity_ns.get((instrument_id, account_id))
             if last_activity_ts:
                 ts_now = self._clock.timestamp_ns()
                 if ts_now - last_activity_ts < self._position_check_threshold_ns:
@@ -1122,7 +1131,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
                     continue
 
-            retries = self._position_recon_retries[instrument_id]
+            retries = self._position_recon_retries[(instrument_id, account_id)]
             if retries >= self.position_check_retries:
                 continue
 
@@ -1139,7 +1148,10 @@ class LiveExecutionEngine(ExecutionEngine):
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-check using tolerance-aware comparison
-            cached_after = self._cache.positions_open(instrument_id=instrument_id)
+            cached_after = self._cache.positions_open(
+                instrument_id=instrument_id,
+                account_id=account_id,
+            )
             still_discrepant = self._check_position_discrepancy(
                 cached_after,
                 venue_report,
@@ -1148,7 +1160,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if still_discrepant:
                 cached_qty_now = sum(p.signed_decimal_qty() for p in cached_after)
-                self._position_recon_retries[instrument_id] = retries + 1
+                self._position_recon_retries[(instrument_id, account_id)] = retries + 1
                 if retries + 1 >= self.position_check_retries:
                     self._log.error(
                         f"Position discrepancy for {instrument_id} unresolved after "
@@ -1164,7 +1176,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         LogColor.YELLOW,
                     )
             else:
-                self._position_recon_retries.pop(instrument_id, None)
+                self._position_recon_retries.pop((instrument_id, account_id), None)
 
     async def _query_and_find_missing_fills(
         self,
@@ -1239,7 +1251,9 @@ class LiveExecutionEngine(ExecutionEngine):
             try:
                 result = self._reconcile_fill_report_single(fill_report)
                 if result:
-                    self._position_local_activity_ns[instrument_id] = self._clock.timestamp_ns()
+                    self._position_local_activity_ns[(instrument_id, fill_report.account_id)] = (
+                        self._clock.timestamp_ns()
+                    )
                 else:
                     self._log.warning(
                         f"Failed to reconcile fill {fill_report.trade_id} for {instrument_id}: "
@@ -1629,7 +1643,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 # Check for recent local activity to avoid race conditions with in-flight fills
                 local_activity = self._order_local_activity_ns.get(report.client_order_id)
                 if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
-                    self._log.info(
+                    self._log.debug(
                         f"Deferring reconciliation for {report.client_order_id!r}: "
                         f"recent local activity ({(ts_now - local_activity) / 1_000_000:.0f}ms < "
                         f"threshold={self.open_check_threshold_ms}ms), "
@@ -2456,6 +2470,7 @@ class LiveExecutionEngine(ExecutionEngine):
         positions_open: list[Position] = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
+            account_id=report.account_id,
         )
 
         position_signed_decimal_qty: Decimal = Decimal()
@@ -3202,6 +3217,11 @@ class LiveExecutionEngine(ExecutionEngine):
             if order.status != OrderStatus.ACCEPTED:
                 self._generate_order_accepted(order, report)
 
+            # Detect deltas even when already accepted (e.g. venue-side reduce-only
+            # quantity reduction or priceMatch adjustment that we missed).
+            if self._should_update(order, report):
+                self._generate_order_updated(order, report)
+
             return True  # Reconciled
 
         # Order must have been accepted from this point
@@ -3667,7 +3687,9 @@ class LiveExecutionEngine(ExecutionEngine):
 
         if isinstance(event, OrderFilled):
             self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
-            self._position_local_activity_ns[event.instrument_id] = event.ts_event
+            self._position_local_activity_ns[(event.instrument_id, event.account_id)] = (
+                event.ts_event
+            )
 
             # Track inferred fill timestamps to prevent duplicate historical fills
             if event.reconciliation:

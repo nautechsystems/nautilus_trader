@@ -21,13 +21,15 @@ use std::sync::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
-    data::BarType,
-    identifiers::{AccountId, ClientOrderId},
+    data::{BarType, CustomData, Data, DataType},
+    identifiers::AccountId,
     instruments::{Instrument, InstrumentAny},
+    types::Price,
 };
 use nautilus_network::{
     RECONNECTED,
@@ -38,7 +40,7 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
-    client::AssetContextDataType,
+    client::{AssetContextDataType, CloidCache},
     enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
     messages::{
@@ -51,6 +53,7 @@ use super::{
         parse_ws_trade_tick,
     },
 };
+use crate::data_types::HyperliquidAllMids;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -104,7 +107,7 @@ pub(super) struct FeedHandler {
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: Vec<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
-    cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+    cloid_cache: CloidCache,
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
@@ -124,7 +127,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
-        cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+        cloid_cache: CloidCache,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -295,6 +298,8 @@ impl FeedHandler {
                             match serde_json::from_str::<HyperliquidWsMessage>(&text) {
                                 Ok(msg) => {
                                     let ts_init = self.clock.get_time_ns();
+                                    let all_mids_data_types =
+                                        Self::all_mids_data_types(&self.subscriptions);
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
@@ -310,6 +315,7 @@ impl FeedHandler {
                                         &mut self.index_price_cache,
                                         &mut self.funding_rate_cache,
                                         &mut self.bar_cache,
+                                        &all_mids_data_types,
                                     );
 
                                     if !nautilus_msgs.is_empty() {
@@ -350,7 +356,7 @@ impl FeedHandler {
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         bar_types: &AHashMap<String, BarType>,
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
@@ -361,6 +367,7 @@ impl FeedHandler {
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
         bar_cache: &mut AHashMap<String, CandleData>,
+        all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
 
@@ -450,6 +457,33 @@ impl FeedHandler {
                     result.push(msg);
                 }
             }
+            HyperliquidWsMessage::AllMids { data } => {
+                let mut mids = std::collections::HashMap::new();
+                for (coin, mid_str) in &data.mids {
+                    let coin_ustr = Ustr::from(coin.as_str());
+                    if let Some(instrument) = instruments.get(&coin_ustr) {
+                        match mid_str.parse::<Price>() {
+                            Ok(price) => {
+                                mids.insert(instrument.id(), price);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse mid price for {coin}: {e}");
+                            }
+                        }
+                    } else {
+                        log::debug!("No instrument found for coin: {coin}");
+                    }
+                }
+
+                if !mids.is_empty() {
+                    for data_type in all_mids_data_types {
+                        let all_mids = HyperliquidAllMids::new(mids.clone(), ts_init, ts_init);
+                        result.push(NautilusWsMessage::CustomData(Data::Custom(
+                            CustomData::new(Arc::new(all_mids), data_type.clone()),
+                        )));
+                    }
+                }
+            }
             HyperliquidWsMessage::Bbo { data } => {
                 if let Some(msg) = Self::handle_bbo(&data, instruments, ts_init) {
                     result.push(msg);
@@ -495,7 +529,7 @@ impl FeedHandler {
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
@@ -510,8 +544,13 @@ impl FeedHandler {
                         // Resolve cloid to real client_order_id if cached
                         if let Some(cloid) = &order_update.order.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
-                                let real_client_order_id = *entry.value();
+                            let resolved = cloid_cache
+                                .lock()
+                                .expect(MUTEX_POISONED)
+                                .get(&cloid_ustr)
+                                .copied();
+
+                            if let Some(real_client_order_id) = resolved {
                                 log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
                                 report.client_order_id = Some(real_client_order_id);
                             }
@@ -537,7 +576,7 @@ impl FeedHandler {
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         account_id: AccountId,
         ts_init: UnixNanos,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
@@ -561,8 +600,13 @@ impl FeedHandler {
 
                         if let Some(cloid) = &fill.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
-                                let real_client_order_id = *entry.value();
+                            let resolved = cloid_cache
+                                .lock()
+                                .expect(MUTEX_POISONED)
+                                .get(&cloid_ustr)
+                                .copied();
+
+                            if let Some(real_client_order_id) = resolved {
                                 log::debug!(
                                     "Resolved fill cloid {cloid} -> {real_client_order_id}"
                                 );
@@ -798,6 +842,35 @@ impl FeedHandler {
 
         result
     }
+
+    fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
+        let mut topics = subscriptions.all_topics();
+        topics.sort_unstable();
+        topics.dedup();
+
+        let all_mids_channel = HyperliquidWsChannel::AllMids.as_str();
+        let all_mids_prefix = format!("{all_mids_channel}:");
+        let mut data_types = Vec::new();
+
+        for topic in topics {
+            if topic == all_mids_channel {
+                data_types.push(DataType::new("HyperliquidAllMids", None, None));
+            } else if let Some(dex) = topic.strip_prefix(&all_mids_prefix) {
+                let mut metadata = Params::new();
+                metadata.insert(
+                    "dex".to_string(),
+                    serde_json::Value::String(dex.to_string()),
+                );
+                data_types.push(DataType::new("HyperliquidAllMids", Some(metadata), None));
+            }
+        }
+
+        if data_types.is_empty() {
+            data_types.push(DataType::new("HyperliquidAllMids", None, None));
+        }
+
+        data_types
+    }
 }
 
 pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
@@ -901,7 +974,7 @@ mod tests {
     use ahash::{AHashMap, AHashSet};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol, Venue},
+        identifiers::{InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -912,10 +985,11 @@ mod tests {
         super::messages::{NautilusWsMessage, WsBookData, WsLevelData},
         FeedHandler,
     };
+    use crate::common::consts::HYPERLIQUID_VENUE;
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID")),
+            InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE),
             Symbol::new("BTC-PERP"),
             Currency::from("BTC"),
             Currency::from("USDC"),

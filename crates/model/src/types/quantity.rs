@@ -851,8 +851,8 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        let qty_str: &str = Deserialize::deserialize(deserializer)?;
-        let qty: Self = qty_str.into();
+        let qty_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let qty: Self = qty_str.as_ref().into();
         Ok(qty)
     }
 }
@@ -1571,6 +1571,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quantity_serde_json_from_value_round_trip() {
+        let original = Quantity::new(123.456, 3);
+        let value = serde_json::to_value(original).unwrap();
+        assert_eq!(value, serde_json::json!("123.456"));
+
+        let deserialized: Quantity = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized, original);
+        assert_eq!(deserialized.precision, 3);
+    }
+
+    #[rstest]
     fn test_from_mantissa_exponent_exact_precision() {
         let qty = Quantity::from_mantissa_exponent(12345, -2, 2);
         assert_eq!(qty.as_f64(), 123.45);
@@ -1604,7 +1615,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Overflow")]
+    #[should_panic(expected = "Quantity::from_mantissa_exponent")]
     fn test_from_mantissa_exponent_overflow_panics() {
         let _ = Quantity::from_mantissa_exponent(u64::MAX, 9, 0);
     }

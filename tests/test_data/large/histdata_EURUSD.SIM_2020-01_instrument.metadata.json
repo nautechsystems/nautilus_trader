@@ -1,0 +1,14 @@
+{
+  "file": "histdata_EURUSD.SIM_2020-01_instrument.parquet",
+  "sha256": "2088959dc15eecfebb7d4c45054d6a74d1000078daa1153388fe19c3b1468bac",
+  "size_bytes": 6692,
+  "original_url": "https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/EURUSD/2020/1",
+  "licence": "Synthetic CurrencyPair instrument (TestInstrumentProvider.default_fx_ccy('EUR/USD')) paired with the EURUSD.SIM quote_tick dataset above.",
+  "added_at": "2026-05-12T23:38:13Z",
+  "instrument": "EURUSD.SIM",
+  "date": "2020-01",
+  "format": "NautilusTrader CurrencyPair Parquet",
+  "original_file": "DAT_ASCII_EURUSD_T_202001.csv.gz",
+  "parser": "TestInstrumentProvider.default_fx_ccy",
+  "compression": "SNAPPY"
+}

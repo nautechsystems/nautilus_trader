@@ -7,6 +7,14 @@ permissions: # Principle of least privilege
 on:
   push:
     branches: [master, nightly, test-docker]
+  workflow_dispatch:
+
+env:
+  # SPDX in-toto predicate URI emitted by `actions/attest-sbom` for the SPDX 2.3
+  # SBOMs produced by anchore/sbom-action (syft 1.42.x). Must exact-match
+  # `--predicate-type` since cosign's `spdx` alias maps to the unversioned
+  # `https://spdx.dev/Document` and would skip these attestations.
+  SPDX_PREDICATE_TYPE: https://spdx.dev/Document/v2.3
 
 jobs:
   # Test builds only - no publishing
@@ -28,7 +36,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -83,11 +91,11 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate platform slug
         id: platform-slug
@@ -96,7 +104,7 @@ jobs:
 
       - name: Build nautilus_trader (push to local registry)
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: .docker/nautilus_trader.dockerfile
@@ -113,7 +121,7 @@ jobs:
 
       - name: Build jupyterlab (push to local registry)
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: /tmp/jupyterlab-test.dockerfile
@@ -147,7 +155,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -197,11 +205,11 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get branch name
         id: branch-name
@@ -226,7 +234,7 @@ jobs:
       - name: Build and push by digest
         id: build
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: .docker/nautilus_trader.dockerfile
@@ -234,9 +242,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
-          outputs:
-            type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true,
-            name-canonical=true,push=true
+          # yamllint disable-line rule:line-length
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true, name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -245,7 +252,7 @@ jobs:
           touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
           path: /tmp/digests/nautilus_trader/*
@@ -258,8 +265,28 @@ jobs:
     permissions:
       packages: write
       id-token: write
+      attestations: write
     needs: build-docker-images-nautilus-trader
     steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # GitHub Container Registry (push manifests, signatures, attestations)
+            ghcr.io:443
+            # Sigstore TUF trust root (used by cosign 3.x and actions/attest)
+            tuf-repo-cdn.sigstore.dev:443
+
+      - name: Checkout repository
+        # Required so the local ./.github/actions/attest-sbom-retry composite
+        # resolves at runtime; merge jobs only download digests otherwise.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -273,11 +300,11 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get branch name
         id: branch-name
@@ -313,18 +340,64 @@ jobs:
             "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
 
       - name: Sign image with cosign
         run: |
           cosign sign --yes \
             "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
-      - name: Generate and attach SBOM
+      - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
+
+      - name: Attest SBOM
+        uses: ./.github/actions/attest-sbom-retry
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/nautilus_trader
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+
+      - name: Verify image signature and SBOM attestation
+        timeout-minutes: 15
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          retry() {
+            local label=$1
+            shift
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::${label} failed after 3 attempts"
+                return 1
+              fi
+              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
+              sleep 30
+            done
+          }
+
+          retry "cosign verify" \
+            timeout 90 cosign verify "$IMAGE" \
+              --timeout=60s \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER"
+
+          retry "gh attestation verify" \
+            timeout 90 gh attestation verify "oci://${IMAGE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -345,7 +418,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -395,11 +468,11 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get branch name
         id: branch-name
@@ -433,7 +506,7 @@ jobs:
       - name: Build and push by digest
         id: build
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: .docker/jupyterlab.dockerfile
@@ -441,9 +514,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
-          outputs:
-            type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true,
-            name-canonical=true,push=true
+          # yamllint disable-line rule:line-length
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/jupyterlab,push-by-digest=true, name-canonical=true,push=true
           build-args: |
             GIT_TAG=${{ steps.image-tag.outputs.tag }}
 
@@ -454,7 +526,7 @@ jobs:
           touch "/tmp/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
           path: /tmp/digests/jupyterlab/*
@@ -467,8 +539,28 @@ jobs:
     permissions:
       packages: write
       id-token: write
+      attestations: write
     needs: build-docker-images-jupyterlab
     steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # GitHub Container Registry (push manifests, signatures, attestations)
+            ghcr.io:443
+            # Sigstore TUF trust root (used by cosign 3.x and actions/attest)
+            tuf-repo-cdn.sigstore.dev:443
+
+      - name: Checkout repository
+        # Required so the local ./.github/actions/attest-sbom-retry composite
+        # resolves at runtime; merge jobs only download digests otherwise.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -482,11 +574,11 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get branch name
         id: branch-name
@@ -522,15 +614,61 @@ jobs:
             "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
 
       - name: Sign image with cosign
         run: |
           cosign sign --yes \
             "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
-      - name: Generate and attach SBOM
+      - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
+
+      - name: Attest SBOM
+        uses: ./.github/actions/attest-sbom-retry
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jupyterlab
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+
+      - name: Verify image signature and SBOM attestation
+        timeout-minutes: 15
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          retry() {
+            local label=$1
+            shift
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::${label} failed after 3 attempts"
+                return 1
+              fi
+              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
+              sleep 30
+            done
+          }
+
+          retry "cosign verify" \
+            timeout 90 cosign verify "$IMAGE" \
+              --timeout=60s \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER"
+
+          retry "gh attestation verify" \
+            timeout 90 gh attestation verify "oci://${IMAGE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"

@@ -23,7 +23,7 @@ use nautilus_model::data::{
     Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
     QuoteTick, TradeTick,
 };
-use nautilus_serialization::arrow::custom::CustomDataDecoder;
+use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
@@ -145,6 +145,17 @@ impl DataBackendSession {
         sql_query: Option<&str>,
     ) -> PyResult<()> {
         let _guard = slf.runtime.enter();
+        let mut metadata = HashMap::new();
+        metadata.insert("type_name".to_string(), type_name.to_string());
+        let base_schema = CustomDataDecoder::get_schema(Some(metadata));
+        base_schema.field_with_name("ts_init").map_err(|_| {
+            to_pyruntime_err(format!(
+                "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init"
+            ))
+        })?;
+        // Use schemaless registration so DataFusion preserves the parquet file's
+        // schema metadata (e.g. `bar_type`) on output batches, since the
+        // explicit-schema variant strips per-batch metadata that decoders rely on.
         slf.add_file::<CustomDataDecoder>(table_name, file_path, sql_query, Some(type_name))
             .map_err(to_pyruntime_err)
     }

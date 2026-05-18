@@ -316,7 +316,7 @@ impl BinanceSpotWsTradingClient {
         if let Some(handle) = self.task_handle.take()
             && let Ok(handle) = Arc::try_unwrap(handle)
         {
-            let _ = handle.await;
+            let _result = handle.await;
         }
     }
 

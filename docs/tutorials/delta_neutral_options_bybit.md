@@ -219,7 +219,7 @@ strategy places SELL limit orders using the `order_iv` parameter:
 let mut call_params = Params::new();
 call_params.insert("order_iv".to_string(), json!(call_entry_iv.to_string()));
 
-self.submit_order_with_params(call_order, None, Some(client_id), call_params)?;
+self.submit_order(call_order, None, Some(client_id), Some(call_params))?;
 ```
 
 Bybit converts `orderIv` to a limit price server-side and gives it

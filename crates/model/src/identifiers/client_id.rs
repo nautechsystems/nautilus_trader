@@ -108,6 +108,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_from_owned_value() {
+        let value = serde_json::Value::String("BINANCE".to_string());
+
+        let deserialized: ClientId = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized, ClientId::new("BINANCE"));
+    }
+
+    #[rstest]
     #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
     fn test_new_with_empty_string_panics_with_display_format() {
         let _ = ClientId::new("");

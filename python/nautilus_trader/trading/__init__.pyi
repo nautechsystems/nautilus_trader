@@ -76,7 +76,7 @@ class Strategy:
     ) -> None: ...
     def modify_order(
         self,
-        order: typing.Any,
+        client_order_id: model.ClientOrderId,
         quantity: model.Quantity | None = None,
         price: model.Price | None = None,
         trigger_price: model.Price | None = None,
@@ -84,11 +84,14 @@ class Strategy:
         params: dict | None = None,
     ) -> None: ...
     def cancel_order(
-        self, order: typing.Any, client_id: model.ClientId | None = None, params: dict | None = None
+        self,
+        client_order_id: model.ClientOrderId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def cancel_orders(
         self,
-        orders: typing.Sequence[typing.Any],
+        client_order_ids: typing.Sequence[model.ClientOrderId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...

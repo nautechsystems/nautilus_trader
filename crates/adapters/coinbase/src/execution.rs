@@ -467,7 +467,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account(&self.core.account_id).cloned()
+        self.core.cache().account_owned(&self.core.account_id)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1163,11 +1163,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // without having to look up the current quantity themselves.
         let (auto_price, auto_quantity) = {
             let cache = self.core.cache();
-            let order = cache.order(&cmd.client_order_id);
-            (
-                cmd.price.or_else(|| order.and_then(|o| o.price())),
-                cmd.quantity.or_else(|| order.map(|o| o.quantity())),
-            )
+            let cached = cache.order(&cmd.client_order_id);
+            let cached_price = cached.as_ref().and_then(|o| o.price());
+            let cached_qty = cached.as_ref().map(|o| o.quantity());
+            (cmd.price.or(cached_price), cmd.quantity.or(cached_qty))
         };
 
         let http_client = self.http_client.clone();
@@ -1974,11 +1973,14 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            CoinbaseContractExpiryType, CoinbaseOrderSide as CbSide,
-            CoinbaseOrderStatus as CbStatus, CoinbaseOrderType as CbType,
-            CoinbaseProductType as CbProductType, CoinbaseRiskManagedBy,
-            CoinbaseTimeInForce as CbTif, CoinbaseTriggerStatus,
+        common::{
+            consts::COINBASE_VENUE,
+            enums::{
+                CoinbaseContractExpiryType, CoinbaseOrderSide as CbSide,
+                CoinbaseOrderStatus as CbStatus, CoinbaseOrderType as CbType,
+                CoinbaseProductType as CbProductType, CoinbaseRiskManagedBy,
+                CoinbaseTimeInForce as CbTif, CoinbaseTriggerStatus,
+            },
         },
         websocket::messages::WsOrderUpdate,
     };
@@ -2118,8 +2120,7 @@ mod tests {
     }
 
     fn test_instrument() -> InstrumentAny {
-        let instrument_id =
-            InstrumentId::new(Symbol::new("BTC-USD"), Venue::new(Ustr::from("COINBASE")));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
         InstrumentAny::CurrencyPair(CurrencyPair::new(
             instrument_id,
             Symbol::new("BTC-USD"),

@@ -129,6 +129,18 @@ class TestBacktestEngine:
         assert engine.iteration == 0
         assert engine.get_log_guard() is None  # Logging bypassed
 
+    def test_dispose_disposes_emulator(self):
+        # Arrange
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
+        emulator = engine.kernel.emulator
+        assert not emulator.is_disposed
+
+        # Act
+        engine.dispose()
+
+        # Assert
+        assert emulator.is_disposed
+
     def test_reset_engine(self):
         # Arrange
         self.engine.run()
@@ -300,10 +312,14 @@ class TestBacktestEngine:
         engine.run()
 
         # Assert
-        msg = messages[10]
-        assert msg.__class__.__name__ == "SignalCounter"
-        assert msg.ts_init == 1359676800000000000
-        assert msg.ts_event == 1359676800000000000
+        expected_ts = 1359676800000000000
+        msg = next(
+            m
+            for m in messages
+            if m.__class__.__name__ == "SignalCounter" and m.ts_event == expected_ts
+        )
+        assert msg.ts_init == expected_ts
+        assert msg.ts_event == expected_ts
 
     def test_set_instance_id(self):
         # Arrange

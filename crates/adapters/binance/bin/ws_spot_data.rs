@@ -56,13 +56,13 @@ async fn main() -> anyhow::Result<()> {
     let (api_key, api_secret) = resolve_credentials(
         None,
         None,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         BinanceProductType::Spot,
     )?;
 
     log::info!("Fetching instruments from Binance Spot API...");
     let http_client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         None, // api_key (not needed for public endpoints)
         None, // api_secret
@@ -159,6 +159,12 @@ async fn main() -> anyhow::Result<()> {
                     }
                     BinanceSpotWsMessage::RawJson(json) => {
                         log::debug!("Raw JSON: msg={message_count}, json={json}");
+                    }
+                    BinanceSpotWsMessage::ServerShutdown(msg) => {
+                        log::warn!(
+                            "Server shutdown notice: event_time={}; disconnect expected within ~10 minutes",
+                            msg.event_time,
+                        );
                     }
                     BinanceSpotWsMessage::Error(err) => {
                         log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hint::black_box;
+use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_common::cache::Cache;
@@ -81,9 +81,12 @@ fn bench_order_processing(c: &mut Criterion) {
         b.iter(|| cache_orders_processing(black_box(&all_orders[..10000])));
     });
 
-    c.bench_function("Cache order processing 100k orders", |b| {
+    let mut large = c.benchmark_group("Cache order processing large");
+    large.measurement_time(Duration::from_secs(10));
+    large.bench_function("100k orders", |b| {
         b.iter(|| cache_orders_processing(black_box(&all_orders)));
     });
+    large.finish();
 }
 
 criterion_group!(benches, bench_order_indexing, bench_order_processing);

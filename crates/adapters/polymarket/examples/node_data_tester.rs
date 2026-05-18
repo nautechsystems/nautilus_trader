@@ -30,11 +30,10 @@ use std::sync::Arc;
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
-use nautilus_network::websocket::TransportBackend;
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_polymarket::{
-    config::PolymarketDataClientConfig, factories::PolymarketDataClientFactory,
-    filters::EventSlugFilter,
+    common::consts::POLYMARKET_CLIENT_ID, config::PolymarketDataClientConfig,
+    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
@@ -68,11 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let polymarket_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(data_filter)],
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
     let client_factory = PolymarketDataClientFactory;
-    let client_id = ClientId::new("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,

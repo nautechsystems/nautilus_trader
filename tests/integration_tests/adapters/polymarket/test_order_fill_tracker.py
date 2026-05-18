@@ -49,40 +49,36 @@ class TestOrderFillTracker:
         )
         assert tracker.contains(vid)
 
-    # Tolerances at size_precision=6:
-    #   SNAP_UNDERFILL_ULPS = 10_000 -> 0.01
-    #   SNAP_OVERFILL_ULPS  = 100    -> 0.0001
+    # snap_fill_qty is overfill-only. Underfill is preserved so partial fills
+    # followed by cancel keep their venue-reported size; the synthetic dust
+    # fill at MATCHED status handles CLOB cent-tick truncation.
     @pytest.mark.parametrize(
         ("submitted", "fill", "expected"),
         [
-            # Underfill well within tolerance: CLOB truncated the fill to a
-            # cent tick, snap UP so the order can reach FILLED cleanly.
-            pytest.param(23.696681, 23.690000, 23.696681, id="underfill_dust"),
-            # Underfill near tolerance (0.0099 < 0.01): still snaps.
-            pytest.param(100.000000, 99.990100, 100.000000, id="underfill_near_tolerance"),
-            # Underfill at exactly the tolerance must NOT snap.
-            pytest.param(100.000000, 99.990000, 99.990000, id="underfill_at_tolerance"),
-            # Underfill above the tolerance: no snap.
-            pytest.param(100.000000, 99.980000, 99.980000, id="underfill_above_tolerance"),
-            # Underfill far past tolerance: leave fill alone.
+            # Underfill within the dust band: NOT snapped. The fill is recorded
+            # as-is; if the order reaches MATCHED, the synthetic dust mechanism
+            # emits the missing leaves at that point.
+            pytest.param(23.696681, 23.690000, 23.690000, id="underfill_dust_preserved"),
+            pytest.param(100.000000, 99.990100, 99.990100, id="underfill_near_band_preserved"),
+            # Underfill at exactly the band: NOT snapped.
+            pytest.param(100.000000, 99.990000, 99.990000, id="underfill_at_band"),
+            # Underfill above the band: NOT snapped (real partial leaves).
+            pytest.param(100.000000, 99.980000, 99.980000, id="underfill_above_band"),
+            # Underfill far past band: NOT snapped.
             pytest.param(100.000000, 50.000000, 50.000000, id="large_underfill"),
-            # Overfill within the tighter tolerance: V2 market BUY where the
-            # SDK truncates registered qty to USDC scale but the on-chain
-            # fill comes back at full precision. Observed drift is 4 ulps
-            # (4e-6 at size_precision=6). Snap DOWN so the engine does not
+            # Overfill within the band: V2 market BUY where the SDK truncates
+            # the registered base qty to USDC scale but the on-chain fill
+            # comes back at full precision. Snap DOWN so the engine does not
             # reject as overfill.
             pytest.param(714.285710, 714.285714, 714.285710, id="overfill_dust"),
-            # Overfill near the overfill tolerance (0.000099 < 0.0001):
-            # still snaps.
-            pytest.param(100.000000, 100.000099, 100.000000, id="overfill_near_tolerance"),
-            # Overfill at exactly the overfill tolerance must NOT snap.
-            pytest.param(100.000000, 100.000100, 100.000100, id="overfill_at_tolerance"),
-            # Overfill above the overfill tolerance but below the underfill
-            # tolerance must NOT snap. This is the asymmetry: a 0.005
-            # overfill is suspicious and surfaces as an engine-side error
-            # rather than being silently absorbed.
-            pytest.param(100.000000, 100.005000, 100.005000, id="overfill_above_tolerance"),
-            # Overfill far past tolerance: leave fill alone.
+            # Overfill near the band (0.0099 < 0.01): still snaps.
+            pytest.param(100.000000, 100.009900, 100.000000, id="overfill_near_band"),
+            # Overfill at exactly the band must NOT snap (exclusive boundary).
+            pytest.param(100.000000, 100.010000, 100.010000, id="overfill_at_band"),
+            # Overfill above the band: leave fill alone, surfaces as
+            # engine-side error since this is no longer dust.
+            pytest.param(100.000000, 100.020000, 100.020000, id="overfill_above_band"),
+            # Overfill far past band: leave fill alone.
             pytest.param(100.000000, 150.000000, 150.000000, id="large_overfill"),
             # Exact match: no-op (returns the fill qty, which equals submitted).
             pytest.param(100.000000, 100.000000, 100.000000, id="exact"),
@@ -102,23 +98,20 @@ class TestOrderFillTracker:
         snapped = tracker.snap_fill_qty(venue_order_id, Quantity(fill, SIZE_PRECISION))
         assert snapped == Quantity(expected, SIZE_PRECISION)
 
-    # Tolerances scale with size_precision: at size_precision=3 the
-    # underfill tolerance becomes 10 (10_000 * 1e-3) and the overfill
-    # tolerance becomes 0.1 (100 * 1e-3). This case verifies the scaling.
+    # The band is in absolute share units; it does not scale with
+    # size_precision. CLOB cent-tick truncation and V2 USDC-scale truncation
+    # are both fixed in absolute share terms, so the threshold is too.
+    # snap_fill_qty is overfill-only, so underfill cases pass through.
     @pytest.mark.parametrize(
         ("submitted", "fill", "expected"),
         [
-            # Underfill within scaled tolerance (5 < 10): snap.
-            pytest.param(100.000, 95.000, 100.000, id="underfill_scaled_within"),
-            # Underfill above scaled tolerance (15 > 10): no snap.
-            pytest.param(100.000, 85.000, 85.000, id="underfill_scaled_above"),
-            # Overfill within scaled tolerance (0.05 < 0.1): snap.
-            pytest.param(100.000, 100.050, 100.000, id="overfill_scaled_within"),
-            # Overfill above scaled tolerance (0.2 > 0.1): no snap.
-            pytest.param(100.000, 100.200, 100.200, id="overfill_scaled_above"),
+            pytest.param(100.000, 99.995, 99.995, id="underfill_within_band_preserved"),
+            pytest.param(100.000, 95.000, 95.000, id="underfill_above_band"),
+            pytest.param(100.000, 100.005, 100.000, id="overfill_within_band"),
+            pytest.param(100.000, 100.050, 100.050, id="overfill_above_band"),
         ],
     )
-    def test_snap_fill_qty_scales_with_precision(self, tracker, submitted, fill, expected):
+    def test_snap_fill_qty_at_lower_precision(self, tracker, submitted, fill, expected):
         precision = 3
         venue_order_id = VenueOrderId("order-1")
         tracker.register(
@@ -233,7 +226,7 @@ class TestOrderFillTracker:
         result = tracker.check_dust_residual(vid)
         assert result is not None
 
-        # Entry should be removed — second check returns None (no duplicate)
+        # Entry should be removed: second check returns None (no duplicate)
         assert not tracker.contains(vid)
         result2 = tracker.check_dust_residual(vid)
         assert result2 is None

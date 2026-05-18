@@ -720,6 +720,13 @@ impl BacktestEngine {
                 self.advance_time_impl(ts_init, &clocks);
             }
 
+            // A timer fired during clock advance may have requested shutdown,
+            // skip delivering this data point in that case
+            if self.kernel.is_shutdown_requested() {
+                self.force_stop = true;
+                break;
+            }
+
             // Route data to exchange
             self.route_data_to_exchange(d);
 
@@ -748,14 +755,14 @@ impl BacktestEngine {
         self.settle_venues(ts_now);
         self.run_venue_modules(ts_now);
 
-        // Flush remaining timer events. In streaming mode only flush to the
-        // last data timestamp to avoid advancing timers past the current batch.
-        // The final flush to end_ns happens in end() or a non-streaming run.
-        if streaming {
-            self.flush_accumulator_events(&clocks, self.last_ns);
+        // Cap at last_ns when streaming or after shutdown to avoid firing
+        // timers past the current batch or the graceful stop
+        let flush_ts = if streaming || self.force_stop || self.kernel.is_shutdown_requested() {
+            self.last_ns
         } else {
-            self.flush_accumulator_events(&clocks, end_ns);
-        }
+            end_ns
+        };
+        self.flush_accumulator_events(&clocks, flush_ts);
 
         Ok(())
     }
@@ -779,18 +786,17 @@ impl BacktestEngine {
             self.flush_accumulator_events(&clocks, flush_ts);
         }
 
-        // Stop trader
         self.kernel.stop_trader();
+
+        // Settle residual on_stop commands (e.g. close_all_positions) before stopping
+        // engines. Venue modules are not re-run; process_modules is once per timestamp.
+        let ts_now = self.kernel.clock.borrow().timestamp_ns();
+        self.settle_venues(ts_now);
 
         // Stop engines
         self.kernel.data_engine.borrow_mut().stop();
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
-
-        // Process remaining exchange messages
-        let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        self.settle_venues(ts_now);
-        self.run_venue_modules(ts_now);
 
         self.run_finished = Some(UnixNanos::from(std::time::SystemTime::now()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
@@ -929,7 +935,11 @@ impl BacktestEngine {
         let orders = cache.orders(None, None, None, None, None);
         let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
         let total_orders = orders.len();
-        let positions = cache.positions(None, None, None, None, None);
+        let positions: Vec<Position> = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|p| p.cloned())
+            .collect();
         let total_positions = positions.len();
 
         let analyzer = self.build_analyzer(&cache, &positions);
@@ -965,9 +975,8 @@ impl BacktestEngine {
         }
     }
 
-    fn build_analyzer(&self, cache: &Cache, positions: &[&Position]) -> PortfolioAnalyzer {
+    fn build_analyzer(&self, cache: &Cache, positions: &[Position]) -> PortfolioAnalyzer {
         let mut analyzer = PortfolioAnalyzer::default();
-        let positions_owned: Vec<_> = positions.iter().map(|p| (*p).clone()).collect();
         let mut snapshot_positions = Vec::new();
 
         for position in positions {
@@ -977,7 +986,7 @@ impl BacktestEngine {
         // Aggregate starting and current balances across all venue accounts
         for venue in self.venues.keys() {
             if let Some(account) = cache.account_for_venue(venue) {
-                let account_ref: &dyn Account = match account {
+                let account_ref: &dyn Account = match &*account {
                     AccountAny::Margin(margin) => margin,
                     AccountAny::Cash(cash) => cash,
                     AccountAny::Betting(betting) => betting,
@@ -1001,7 +1010,7 @@ impl BacktestEngine {
             }
         }
 
-        analyzer.add_positions(&positions_owned);
+        analyzer.add_positions(positions);
         analyzer.add_positions(&snapshot_positions);
         analyzer
     }
@@ -1050,6 +1059,7 @@ impl BacktestEngine {
         };
 
         let mut ts_last: Option<UnixNanos> = None;
+        let mut shutdown_at: Option<UnixNanos> = None;
 
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_before) {
             let ts_event = handler.event.ts_event;
@@ -1069,6 +1079,14 @@ impl BacktestEngine {
             handler.run();
             self.drain_command_queues();
 
+            // Drop queued events on a handler-triggered shutdown so no later
+            // timer fires after the graceful stop
+            if self.kernel.is_shutdown_requested() {
+                self.accumulator.clear();
+                shutdown_at = Some(ts_event);
+                break;
+            }
+
             // Re-advance clocks to capture chained timers
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
@@ -1081,11 +1099,23 @@ impl BacktestEngine {
             self.run_venue_modules(ts);
         }
 
-        Self::set_all_clocks_time(clocks, ts_now);
-        logging_clock_set_static_time(ts_now.as_u64());
+        // On a mid-drain shutdown, anchor state at the firing timer's ts so
+        // post-run settlement and backtest_end reflect the graceful stop
+        if let Some(ts_event) = shutdown_at {
+            self.last_ns = ts_event;
+        } else {
+            Self::set_all_clocks_time(clocks, ts_now);
+            logging_clock_set_static_time(ts_now.as_u64());
+        }
     }
 
     fn flush_accumulator_events(&mut self, clocks: &[Rc<RefCell<dyn Clock>>], ts_now: UnixNanos) {
+        // Bail after shutdown so handler-scheduled alerts do not fire post-stop
+        if self.kernel.is_shutdown_requested() {
+            self.accumulator.clear();
+            return;
+        }
+
         for clock in clocks {
             Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
         }
@@ -1109,6 +1139,13 @@ impl BacktestEngine {
 
             handler.run();
             self.drain_command_queues();
+
+            // Drop queued events on a handler-triggered shutdown so no later
+            // timer fires after the graceful stop
+            if self.kernel.is_shutdown_requested() {
+                self.accumulator.clear();
+                break;
+            }
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {
@@ -1173,6 +1210,10 @@ impl BacktestEngine {
         // Only process and iterate venues that had pending commands each
         // pass, to avoid extra fill-model rolls on untouched venues.
         loop {
+            // Drain first so commands buffered in the trading queue (e.g. from
+            // on_stop handlers) reach the venues before we check for activity.
+            self.drain_command_queues();
+
             let active_venues: Vec<Venue> = self
                 .venues
                 .iter()
@@ -1286,7 +1327,7 @@ impl BacktestEngine {
 
             if let Some(account) = cache.account_for_venue(&ex.id) {
                 log::info!("Balances starting:");
-                let account_ref: &dyn Account = match account {
+                let account_ref: &dyn Account = match &*account {
                     AccountAny::Margin(margin) => margin,
                     AccountAny::Cash(cash) => cash,
                     AccountAny::Betting(betting) => betting,
@@ -1323,7 +1364,11 @@ impl BacktestEngine {
         let orders = cache.orders(None, None, None, None, None);
         let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
         let total_orders = orders.len();
-        let positions = cache.positions(None, None, None, None, None);
+        let positions: Vec<Position> = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|p| p.cloned())
+            .collect();
         let total_positions = positions.len();
 
         let config_id = self.run_config_id.as_deref().unwrap_or("None");

@@ -151,6 +151,29 @@ class TestTradingNodeConfiguration:
             == "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory"
         )
 
+    def test_node_config_accepts_pyo3_client_configs(self):
+        # Arrange
+        from nautilus_trader.adapters.interactive_brokers_pyo3 import (
+            InteractiveBrokersDataClientConfig,
+        )
+        from nautilus_trader.adapters.interactive_brokers_pyo3 import (
+            InteractiveBrokersExecClientConfig,
+        )
+
+        data_client_config = InteractiveBrokersDataClientConfig()
+        exec_client_config = InteractiveBrokersExecClientConfig()
+
+        # Act
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            data_clients={"IB": data_client_config},
+            exec_clients={"IB": exec_client_config},
+        )
+
+        # Assert
+        assert config.data_clients["IB"] is data_client_config
+        assert config.exec_clients["IB"] is exec_client_config
+
     def test_setting_instance_id(self, monkeypatch, event_loop_for_setup):
         # Arrange
         loop = event_loop_for_setup

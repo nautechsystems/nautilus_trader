@@ -24,11 +24,12 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENU
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import update_instrument
+from nautilus_trader.adapters.polymarket.common.retry import auto_load_retry_delay
+from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
@@ -68,6 +69,22 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Price
+
+
+def _resolve_with_exception(
+    pending: dict[InstrumentId, asyncio.Future[None]],
+    exc: BaseException,
+) -> None:
+    for future in pending.values():
+        if not future.done():
+            future.set_exception(exc)
+
+
+def _cancel_pending(pending: dict[InstrumentId, asyncio.Future[None]]) -> None:
+    for future in pending.values():
+        if not future.done():
+            future.cancel()
 
 
 class PolymarketDataClient(LiveMarketDataClient):
@@ -94,6 +111,10 @@ class PolymarketDataClient(LiveMarketDataClient):
         The custom client ID.
 
     """
+
+    # Narrow the base class annotation so mypy knows about the Polymarket
+    # provider's extra `transient_condition_ids` kwarg on `load_ids_async`.
+    _instrument_provider: PolymarketInstrumentProvider
 
     def __init__(
         self,
@@ -153,6 +174,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Hot caches
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._local_books: dict[InstrumentId, OrderBook] = {}
+
+        self._pending_snapshot_after_tick_change: set[InstrumentId] = set()
 
         # Auto-load coordination
         self._pending_instrument_loads: dict[InstrumentId, asyncio.Future[None]] = {}
@@ -289,26 +312,96 @@ class PolymarketDataClient(LiveMarketDataClient):
         if not pending:
             return
 
-        instrument_ids = list(pending.keys())
         self._log.info(
-            f"Auto-loading {len(instrument_ids)} missing instrument(s): {instrument_ids}",
+            f"Auto-loading {len(pending)} missing instrument(s): {list(pending.keys())}",
             LogColor.BLUE,
         )
 
-        try:
-            await self._instrument_provider.load_ids_async(instrument_ids)
-        except Exception as e:
-            self._log.error(f"Auto-load batch failed: {e}")
+        max_retries = self._config.auto_load_max_retries
+        base_secs = self._config.auto_load_retry_delay_initial_secs
+        max_secs = self._config.auto_load_retry_delay_max_secs
 
-            for future in pending.values():
-                if not future.done():
-                    future.set_exception(e)
-            return
+        try:
+            for attempt in range(max_retries + 1):
+                if self._disconnecting:
+                    return
+
+                transient: set[str] = set()
+                try:
+                    await self._instrument_provider.load_ids_async(
+                        list(pending.keys()),
+                        transient_condition_ids=transient,
+                    )
+                except Exception as e:
+                    self._log.error(f"Auto-load batch failed: {e}")
+                    _resolve_with_exception(pending, e)
+                    return
+
+                still_pending = self._dispatch_pending(pending, transient)
+
+                if not still_pending:
+                    return
+
+                if attempt >= max_retries:
+                    self._resolve_exhausted(still_pending, max_retries)
+                    return
+
+                pending = still_pending
+                delay = auto_load_retry_delay(
+                    attempt,
+                    base_secs=base_secs,
+                    max_secs=max_secs,
+                )
+                self._log.info(
+                    f"Auto-load retry {attempt + 1}/{max_retries} for "
+                    f"{len(still_pending)} transient instrument(s) in {delay:.1f}s",
+                    LogColor.YELLOW,
+                )
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            _cancel_pending(pending)
+            raise
+
+    def _dispatch_pending(
+        self,
+        pending: dict[InstrumentId, asyncio.Future[None]],
+        transient: set[str],
+    ) -> dict[InstrumentId, asyncio.Future[None]]:
+        # Dispatch each pending entry to a terminal outcome (loaded or
+        # terminal-miss) and return whatever is left in the transient state
+        # for the caller to retry.
+        still_pending: dict[InstrumentId, asyncio.Future[None]] = {}
 
         for instrument_id, future in pending.items():
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
                 self._handle_data(instrument)
+
+                if not future.done():
+                    future.set_result(None)
+            elif get_polymarket_condition_id(instrument_id) in transient:
+                still_pending[instrument_id] = future
+            else:
+                self._log.error(
+                    f"Cannot find instrument for {instrument_id}: not found on venue",
+                )
+
+                if not future.done():
+                    future.set_result(None)
+
+        return still_pending
+
+    def _resolve_exhausted(
+        self,
+        still_pending: dict[InstrumentId, asyncio.Future[None]],
+        max_retries: int,
+    ) -> None:
+        for instrument_id, future in still_pending.items():
+            self._log.error(
+                f"Cannot find instrument for {instrument_id}: empty token_id "
+                f"after {max_retries} retries (CLOB lifecycle race)",
+            )
+
             if not future.done():
                 future.set_result(None)
 
@@ -391,10 +484,23 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
+        self._discard_local_state_if_unwanted(command.instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
+        self._discard_local_state_if_unwanted(command.instrument_id)
+
+    def _discard_local_state_if_unwanted(self, instrument_id: InstrumentId) -> None:
+        # Stale local book leaks across resubscribes and corrupts the first
+        # `compute_effective_deltas` pass against the new snapshot.
+        if (
+            instrument_id not in self.subscribed_order_book_deltas()
+            and instrument_id not in self.subscribed_quote_ticks()
+        ):
+            self._pending_snapshot_after_tick_change.discard(instrument_id)
+            self._local_books.pop(instrument_id, None)
+            self._last_quotes.pop(instrument_id, None)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
@@ -479,7 +585,8 @@ class PolymarketDataClient(LiveMarketDataClient):
             else:
                 self._handle_ws_message(msg)
         except Exception as e:
-            self._log.exception(f"Failed to parse websocket message: {raw.decode()} with error", e)
+            raw_text = raw.decode(errors="replace")
+            self._log.exception(f"Failed to parse websocket message: {raw_text}", e)
 
     def _handle_ws_message(self, msg: Any) -> None:
         if isinstance(msg, PolymarketQuotes):
@@ -519,6 +626,13 @@ class PolymarketDataClient(LiveMarketDataClient):
         if deltas is None:
             # Skip empty snapshots (can occur near market resolution)
             return
+
+        if instrument.id in self._pending_snapshot_after_tick_change:
+            self._pending_snapshot_after_tick_change.discard(instrument.id)
+            self._log.info(
+                f"Resumed book for {instrument.id} after tick size change",
+                LogColor.BLUE,
+            )
 
         self._handle_deltas(instrument, deltas)
 
@@ -581,6 +695,12 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketQuotes,
         price_change: PolymarketQuote,
     ) -> None:
+        if instrument.id in self._pending_snapshot_after_tick_change:
+            self._log.debug(
+                f"Dropping price_change for {instrument.id}: awaiting snapshot after tick size change",
+            )
+            return
+
         now_ns = self._clock.timestamp_ns()
 
         order = BookOrder(
@@ -676,11 +796,15 @@ class PolymarketDataClient(LiveMarketDataClient):
         instrument: BinaryOption,
         ws_message: PolymarketTickSizeChange,
     ) -> None:
+        # No-op tick_size_change must not trigger an epoch transition.
+        if Price.from_str(ws_message.new_tick_size) == instrument.price_increment:
+            self._log.debug(
+                f"Ignoring duplicate tick size change for {instrument.id}: "
+                f"{ws_message.old_tick_size} -> {ws_message.new_tick_size}",
+            )
+            return
+
         now_ns = self._clock.timestamp_ns()
-
-        old_book = self._local_books.get(instrument.id)
-        old_quote = self._last_quotes.get(instrument.id)
-
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
 
         # Update local sources immediately so subsequent quotes use the correct precision
@@ -690,86 +814,13 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._log.warning(f"Instrument tick size changed: {instrument}")
         self._handle_data(instrument)
 
-        if old_book is not None:
-            self._reset_local_book_after_tick_size_change(
-                instrument=instrument,
-                change=ws_message,
-                old_book=old_book,
-                old_quote=old_quote,
-                ts_init=now_ns,
-            )
+        # Book epoch transition: see `Tick size change handling` in
+        # docs/integrations/polymarket.md.
+        self._local_books.pop(instrument.id, None)
+        self._last_quotes.pop(instrument.id, None)
 
-    def _reset_local_book_after_tick_size_change(
-        self,
-        instrument: BinaryOption,
-        change: PolymarketTickSizeChange,
-        old_book: OrderBook,
-        old_quote: QuoteTick | None,
-        ts_init: int,
-    ) -> None:
-        snapshot = self._build_snapshot_from_book(
-            instrument=instrument,
-            change=change,
-            book=old_book,
-        )
-
-        deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=ts_init)
-
-        if deltas is None:
-            self._local_books.pop(instrument.id, None)
-            self._last_quotes.pop(instrument.id, None)
-            return
-
-        new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
-        new_book.apply_deltas(deltas)
-        self._local_books[instrument.id] = new_book
-
-        if self._config.compute_effective_deltas:
-            effective = compute_effective_deltas(old_book, new_book, instrument)
-            if effective:
-                self._handle_data(effective)
-        else:
-            self._handle_data(deltas)
-
-        if instrument.id in self.subscribed_quote_ticks():
-            quote = snapshot.parse_to_quote(
-                instrument=instrument,
-                ts_init=ts_init,
-                drop_quotes_missing_side=self._config.drop_quotes_missing_side,
-            )
-
-            if quote is not None:
-                self._last_quotes[instrument.id] = quote
-                self._handle_data(quote)
-            elif old_quote is None:
-                self._last_quotes.pop(instrument.id, None)
-
-    def _build_snapshot_from_book(
-        self,
-        instrument: BinaryOption,
-        change: PolymarketTickSizeChange,
-        book: OrderBook,
-    ) -> PolymarketBookSnapshot:
-        bids_levels = [
-            PolymarketBookLevel(
-                price=str(instrument.make_price(float(level.price))),
-                size=str(instrument.make_qty(level.size())),
-            )
-            for level in reversed(book.bids())
-        ]
-
-        asks_levels = [
-            PolymarketBookLevel(
-                price=str(instrument.make_price(float(level.price))),
-                size=str(instrument.make_qty(level.size())),
-            )
-            for level in reversed(book.asks())
-        ]
-
-        return PolymarketBookSnapshot(
-            market=change.market,
-            asset_id=change.asset_id,
-            bids=bids_levels,
-            asks=asks_levels,
-            timestamp=change.timestamp,
-        )
+        if (
+            instrument.id in self.subscribed_order_book_deltas()
+            or instrument.id in self.subscribed_quote_ticks()
+        ):
+            self._pending_snapshot_after_tick_change.add(instrument.id)

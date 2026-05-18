@@ -77,7 +77,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
     drop(clock); // Memory freed here
 }
 
-/// Registers the default callback handler for TestClock.
+/// Registers the default callback handler for `TestClock`.
 ///
 /// # Safety
 ///
@@ -101,6 +101,18 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
+}
+
+/// Cancels the default callback handler for `TestClock` (releases the held callback).
+#[unsafe(no_mangle)]
+pub extern "C" fn test_clock_cancel_default_handler(clock: &mut TestClock_API) {
+    clock.cancel_default_handler();
+}
+
+/// Cancels all registered named callbacks for `TestClock` (releases held callbacks).
+#[unsafe(no_mangle)]
+pub extern "C" fn test_clock_cancel_callbacks(clock: &mut TestClock_API) {
+    clock.cancel_callbacks();
 }
 
 #[unsafe(no_mangle)]
@@ -362,6 +374,18 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
+}
+
+/// Cancels the default callback handler for `LiveClock` (releases the held callback).
+#[unsafe(no_mangle)]
+pub extern "C" fn live_clock_cancel_default_handler(clock: &mut LiveClock_API) {
+    clock.cancel_default_handler();
+}
+
+/// Cancels all registered named callbacks for `LiveClock` (releases held callbacks).
+#[unsafe(no_mangle)]
+pub extern "C" fn live_clock_cancel_callbacks(clock: &mut LiveClock_API) {
+    clock.cancel_callbacks();
 }
 
 #[unsafe(no_mangle)]

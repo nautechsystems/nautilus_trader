@@ -335,8 +335,8 @@ impl Serialize for StackStr {
 
 impl<'de> Deserialize<'de> for StackStr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = <&str>::deserialize(deserializer)?;
-        Self::new_checked(s).map_err(serde::de::Error::custom)
+        let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::new_checked(s.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -669,8 +669,10 @@ mod tests {
     fn test_null_terminator_present() {
         let s = StackStr::new("test");
         let ptr = s.as_ptr();
-        // Read byte at position 4 (after "test")
-        let null_byte = unsafe { *ptr.add(4) };
+        // SAFETY: StackStr buffer reserves at least 5 bytes (4 chars + null)
+        let p = unsafe { ptr.add(4) };
+        // SAFETY: position 4 is in-bounds and contains the null terminator
+        let null_byte = unsafe { *p };
         assert_eq!(null_byte, 0);
     }
 

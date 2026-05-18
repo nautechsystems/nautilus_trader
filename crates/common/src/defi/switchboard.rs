@@ -22,6 +22,10 @@ use crate::msgbus::{MStr, MessagingSwitchboard, Topic, get_message_bus};
 
 /// DeFi-specific switchboard state.
 #[derive(Clone, Debug, Default)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "topic suffix consistently identifies routing maps"
+)]
 pub(crate) struct DefiSwitchboard {
     pub(crate) block_topics: AHashMap<Blockchain, MStr<Topic>>,
     pub(crate) pool_topics: AHashMap<InstrumentId, MStr<Topic>>,

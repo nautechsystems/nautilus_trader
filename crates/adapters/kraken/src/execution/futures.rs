@@ -521,7 +521,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account(&self.core.account_id).cloned()
+        self.core.cache().account_owned(&self.core.account_id)
     }
 
     fn generate_account_state(
@@ -848,7 +848,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {}", cmd.client_order_id))?;
         self.submit_single_order(&order, "submit_order");
         Ok(())
@@ -1080,12 +1080,12 @@ impl KrakenFuturesExecutionClient {
         let cache = self.core.cache();
 
         if let Some(client_order_id) = cmd.client_order_id {
-            return cache.order(&client_order_id).cloned();
+            return cache.order(&client_order_id).map(|o| o.clone());
         }
 
         let venue_order_id = cmd.venue_order_id?;
         let client_order_id = *cache.client_order_id(&venue_order_id)?;
-        cache.order(&client_order_id).cloned()
+        cache.order(&client_order_id).map(|o| o.clone())
     }
 }
 

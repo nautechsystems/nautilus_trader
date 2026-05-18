@@ -60,8 +60,8 @@ pub fn deserialize_hex_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let hex_string = String::deserialize(deserializer)?;
-    from_str_hex_to_u64(hex_string.as_str()).map_err(serde::de::Error::custom)
+    let hex_string: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+    from_str_hex_to_u64(hex_string.as_ref()).map_err(serde::de::Error::custom)
 }
 
 /// Custom deserializer that converts an optional hexadecimal string into an `Option<u64>`.
@@ -127,8 +127,8 @@ pub fn deserialize_hex_timestamp<'de, D>(deserializer: D) -> Result<UnixNanos, D
 where
     D: Deserializer<'de>,
 {
-    let hex_string = String::deserialize(deserializer)?;
-    let seconds = from_str_hex_to_u64(hex_string.as_str()).map_err(serde::de::Error::custom)?;
+    let hex_string: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+    let seconds = from_str_hex_to_u64(hex_string.as_ref()).map_err(serde::de::Error::custom)?;
 
     // Protect against multiplication overflow (extremely far future dates or malicious input).
     seconds

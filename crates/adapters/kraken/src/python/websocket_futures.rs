@@ -79,7 +79,7 @@ impl KrakenFuturesWebSocketClient {
         api_secret: Option<String>,
         proxy_url: Option<String>,
     ) -> Self {
-        let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
+        let env = environment.unwrap_or(KrakenEnvironment::Live);
         let demo = env == KrakenEnvironment::Demo;
         let url = base_url.unwrap_or_else(|| {
             get_kraken_ws_public_url(KrakenProductType::Futures, env).to_string()

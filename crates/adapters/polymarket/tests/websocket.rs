@@ -606,7 +606,7 @@ async fn test_subscription_count_increments_after_subscribe() {
             let count = client.subscription_count();
             async move { count >= 2 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 

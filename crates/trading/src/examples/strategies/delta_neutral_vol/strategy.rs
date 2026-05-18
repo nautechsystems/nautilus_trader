@@ -192,7 +192,7 @@ impl DeltaNeutralVol {
             json!(call_entry_iv.to_string()),
         );
 
-        self.submit_order_with_params(call_order, None, Some(client_id), call_params)?;
+        self.submit_order(call_order, None, Some(client_id), Some(call_params))?;
 
         let put_order = self.core.order_factory().limit(
             put_id,
@@ -219,7 +219,7 @@ impl DeltaNeutralVol {
             json!(put_entry_iv.to_string()),
         );
 
-        self.submit_order_with_params(put_order, None, Some(client_id), put_params)?;
+        self.submit_order(put_order, None, Some(client_id), Some(put_params))?;
 
         Ok(())
     }
@@ -271,7 +271,7 @@ impl DeltaNeutralVol {
 
         self.hedge_pending = true;
 
-        if let Err(e) = self.submit_order(order, None, Some(self.config.client_id)) {
+        if let Err(e) = self.submit_order(order, None, Some(self.config.client_id), None) {
             self.hedge_pending = false;
             return Err(e);
         }
@@ -493,16 +493,16 @@ impl DataActor for DeltaNeutralVol {
         }
 
         if let Some(call_id) = self.call_instrument_id {
-            self.cancel_all_orders(call_id, None, None)?;
+            self.cancel_all_orders(call_id, None, None, None)?;
         }
 
         if let Some(put_id) = self.put_instrument_id {
-            self.cancel_all_orders(put_id, None, None)?;
+            self.cancel_all_orders(put_id, None, None, None)?;
         }
 
         let hedge_id = self.config.hedge_instrument_id;
         self.unsubscribe_quotes(hedge_id, None, None);
-        self.cancel_all_orders(hedge_id, None, None)?;
+        self.cancel_all_orders(hedge_id, None, None, None)?;
         self.hedge_pending = false;
 
         log::info!("Delta-neutral vol strategy stopped, positions left unchanged");

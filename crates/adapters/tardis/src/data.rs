@@ -596,12 +596,12 @@ impl DataClient for TardisDataClient {
 mod tests {
     use chrono::NaiveDate;
     use nautilus_common::live::runner::set_data_event_sender;
-    use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
     use super::*;
     use crate::{
-        common::enums::TardisExchange, config::TardisDataClientConfig,
+        common::{consts::TARDIS_CLIENT_ID, enums::TardisExchange},
+        config::TardisDataClientConfig,
         machine::types::ReplayNormalizedRequestOptions,
     };
 
@@ -636,7 +636,7 @@ mod tests {
             ..Default::default()
         };
 
-        let client = TardisDataClient::new(ClientId::new("TARDIS"), config).unwrap();
+        let client = TardisDataClient::new(*TARDIS_CLIENT_ID, config).unwrap();
         let url = client.build_ws_url("ws://localhost:8001").unwrap();
 
         assert!(
@@ -662,7 +662,7 @@ mod tests {
             ..Default::default()
         };
 
-        let client = TardisDataClient::new(ClientId::new("TARDIS"), config).unwrap();
+        let client = TardisDataClient::new(*TARDIS_CLIENT_ID, config).unwrap();
         let ws_url = client.build_ws_url("ws://localhost:8001").unwrap();
 
         let decoded = urlencoding::decode(ws_url.split("options=").nth(1).unwrap()).unwrap();

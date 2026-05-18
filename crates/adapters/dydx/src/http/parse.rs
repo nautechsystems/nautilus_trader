@@ -406,6 +406,62 @@ pub fn parse_instrument_any(
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
+/// Serde helper for fields encoded as a string of a `Display`/`FromStr` value.
+pub(super) mod display_fromstr {
+    use std::{fmt::Display, str::FromStr};
+
+    use serde::{Deserialize, Deserializer, Serializer, de};
+
+    pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Display,
+        S: Serializer,
+    {
+        serializer.collect_str(value)
+    }
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+    where
+        T: FromStr,
+        T::Err: Display,
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(de::Error::custom)
+    }
+}
+
+/// Serde helper for `Option<T>` fields encoded as a string (or null/missing) of a
+/// `Display`/`FromStr` value. Pair with `#[serde(default)]` so missing fields parse as `None`.
+pub(super) mod display_fromstr_opt {
+    use std::{fmt::Display, str::FromStr};
+
+    use serde::{Deserialize, Deserializer, Serializer, de};
+
+    pub fn serialize<T, S>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Display,
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.collect_str(v),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+    where
+        T: FromStr,
+        T::Err: Display,
+        D: Deserializer<'de>,
+    {
+        match Option::<String>::deserialize(deserializer)? {
+            Some(s) => s.parse().map(Some).map_err(de::Error::custom),
+            None => Ok(None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -1033,7 +1089,7 @@ use std::str::FromStr;
 
 use nautilus_core::UUID4;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderStatus, PositionSide, TriggerType},
+    enums::{LiquiditySide, OrderStatus, OrderType, PositionSide, TriggerType},
     identifiers::{AccountId, ClientOrderId, VenueOrderId},
     instruments::Instrument,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -1077,7 +1133,30 @@ pub fn parse_order_status_report(
         Some(ClientOrderId::new(&order.client_id))
     };
 
-    let order_type = order.order_type.into();
+    let mut order_type: OrderType = order.order_type.into();
+    // Track the dYdX-side type alongside the Nautilus type so the TIF resolver
+    // sees the same reclassification (e.g. TakeProfitLimit -> TakeProfitMarket).
+    let mut dydx_order_type = order.order_type;
+
+    // Disambiguate MarketIfTouched vs LimitIfTouched on reconcile.
+    //
+    // dYdX's Indexer reports both submitted variants under `TAKE_PROFIT`, so
+    // `DydxOrderType::TakeProfitLimit` (the deserialized form) maps to Nautilus
+    // `LimitIfTouched` by default. We submit `MarketIfTouched` with the limit price set
+    // to the 5% pay-through worst case (see `DEFAULT_MARKET_ORDER_SLIPPAGE`), so when the
+    // limit price is far from the trigger price we infer the original was a market-style
+    // take-profit. Threshold of 2% safely separates pay-through (~5%) from typical LIT
+    // user offsets (well under 1%).
+    if order_type == OrderType::LimitIfTouched
+        && let Some(trigger_dec) = order.trigger_price
+        && !trigger_dec.is_zero()
+    {
+        let drift = (order.price - trigger_dec).abs() / trigger_dec;
+        if drift >= rust_decimal::Decimal::new(2, 2) {
+            order_type = OrderType::MarketIfTouched;
+            dydx_order_type = DydxOrderType::TakeProfitMarket;
+        }
+    }
 
     let execution = order.execution.or({
         // Infer execution type from post_only flag if not explicitly set
@@ -1088,7 +1167,7 @@ pub fn parse_order_status_report(
         }
     });
     let time_in_force = calculate_time_in_force(
-        order.order_type,
+        dydx_order_type,
         order.time_in_force,
         order.reduce_only,
         execution,
@@ -1137,13 +1216,25 @@ pub fn parse_order_status_report(
             .context("failed to parse trigger_price")?;
         report = report.with_trigger_price(trigger_price);
 
-        if let Some(condition_type) = order.condition_type {
-            let trigger_type = match condition_type {
-                DydxConditionType::StopLoss => TriggerType::LastPrice,
-                DydxConditionType::TakeProfit => TriggerType::LastPrice,
-                DydxConditionType::Unspecified => TriggerType::Default,
-            };
-            report = report.with_trigger_type(trigger_type);
+        let trigger_type = match order.condition_type {
+            Some(DydxConditionType::StopLoss) => TriggerType::LastPrice,
+            Some(DydxConditionType::TakeProfit) => TriggerType::LastPrice,
+            Some(DydxConditionType::Unspecified) | None => TriggerType::Default,
+        };
+        report = report.with_trigger_type(trigger_type);
+    }
+
+    if let Some(good_til_block_time) = order.good_til_block_time {
+        let expire_ns = good_til_block_time.timestamp_millis() as u64 * 1_000_000;
+        report = report.with_expire_time(UnixNanos::from(expire_ns));
+
+        // dYdX reports a long-term order that has crossed `good_til_block_time`
+        // as `Canceled`. Reclassify to `Expired` so reconciliation surfaces
+        // `OrderExpired` (matching the WS dispatch path), not `OrderCanceled`.
+        if report.order_status == OrderStatus::Canceled
+            && report.ts_last >= UnixNanos::from(expire_ns)
+        {
+            report.order_status = OrderStatus::Expired;
         }
     }
 
@@ -1576,7 +1667,7 @@ mod reconciliation_tests {
     use chrono::Utc;
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, TimeInForce},
-        identifiers::{AccountId, InstrumentId, Symbol, Venue},
+        identifiers::{AccountId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, Instrument},
         types::Currency,
     };
@@ -1586,9 +1677,10 @@ mod reconciliation_tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::common::consts::DYDX_VENUE;
 
     fn create_test_instrument() -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *DYDX_VENUE);
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
@@ -1736,6 +1828,250 @@ mod reconciliation_tests {
         assert_eq!(report.client_order_id, None);
         assert!(report.trigger_price.is_some());
         assert_eq!(report.trigger_price.unwrap().as_f64(), 49000.0);
+    }
+
+    /// dYdX reports a long-term order that crossed `good_til_block_time`
+    /// as `Canceled`. The parser must reclassify these to `Expired` so
+    /// reconciliation surfaces `OrderExpired`, matching the WS dispatch path.
+    #[rstest]
+    fn test_parse_order_status_report_canceled_after_expiry_becomes_expired() {
+        use chrono::Duration;
+
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_millis() as u64 * 1_000_000);
+
+        // good_til_block_time is one hour in the past; updated_at after it.
+        let expired_at = now - Duration::hours(1);
+
+        let order = Order {
+            id: "order-expired".to_string(),
+            subaccount_id: "subacct1".to_string(),
+            client_id: "client1".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price: dec!(50000.0),
+            status: DydxOrderStatus::Canceled,
+            order_type: DydxOrderType::Limit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: None,
+            good_til_block_time: Some(expired_at),
+            created_at_height: Some(1000),
+            client_metadata: 0,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: Some(now),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        };
+
+        let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
+        assert_eq!(report.order_status, OrderStatus::Expired);
+        assert!(report.expire_time.is_some());
+    }
+
+    /// A `Canceled` order whose `good_til_block_time` is still in the future
+    /// must remain `Canceled` (user/system cancel, not expiry).
+    #[rstest]
+    fn test_parse_order_status_report_canceled_before_expiry_stays_canceled() {
+        use chrono::Duration;
+
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_millis() as u64 * 1_000_000);
+        let future_expiry = now + Duration::hours(1);
+
+        let order = Order {
+            id: "order-cancel".to_string(),
+            subaccount_id: "subacct1".to_string(),
+            client_id: "client1".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price: dec!(50000.0),
+            status: DydxOrderStatus::Canceled,
+            order_type: DydxOrderType::Limit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: None,
+            good_til_block_time: Some(future_expiry),
+            created_at_height: Some(1000),
+            client_metadata: 0,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: Some(now),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        };
+
+        let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+    }
+
+    // dYdX's Indexer collapses both submitted variants (TakeProfitMarket,
+    // TakeProfitLimit) under `TAKE_PROFIT`. The parser disambiguates by drift:
+    // a price `>= 2%` away from the trigger means the original was a market-style
+    // pay-through order, so we reclassify to MarketIfTouched. The companion
+    // `dydx_order_type` reclassification ensures the resulting TIF is IOC for
+    // MIT (vs the default Gtc the LimitIfTouched branch returns).
+    #[rstest]
+    #[case(OrderSide::Buy, dec!(50000.0), dec!(50100.0), OrderType::LimitIfTouched, TimeInForce::Gtc)]
+    #[case(OrderSide::Buy, dec!(50000.0), dec!(52500.0), OrderType::MarketIfTouched, TimeInForce::Ioc)]
+    #[case(OrderSide::Sell, dec!(50000.0), dec!(49900.0), OrderType::LimitIfTouched, TimeInForce::Gtc)]
+    #[case(OrderSide::Sell, dec!(50000.0), dec!(47500.0), OrderType::MarketIfTouched, TimeInForce::Ioc)]
+    #[case(OrderSide::Buy, dec!(50000.0), dec!(51000.0), OrderType::MarketIfTouched, TimeInForce::Ioc)]
+    fn test_parse_order_status_report_take_profit_disambiguation(
+        #[case] side: OrderSide,
+        #[case] trigger: rust_decimal::Decimal,
+        #[case] price: rust_decimal::Decimal,
+        #[case] expected_type: OrderType,
+        #[case] expected_tif: TimeInForce,
+    ) {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        let order = Order {
+            id: "order-tp".to_string(),
+            subaccount_id: "subacct1".to_string(),
+            client_id: "client1".to_string(),
+            clob_pair_id: 1,
+            side,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price,
+            status: DydxOrderStatus::Untriggered,
+            order_type: DydxOrderType::TakeProfitLimit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: None,
+            good_til_block_time: Some(Utc::now()),
+            created_at_height: Some(1000),
+            client_metadata: 0,
+            trigger_price: Some(trigger),
+            condition_type: None,
+            conditional_order_trigger_subticks: Some(490_000),
+            execution: None,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        };
+
+        let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
+        assert_eq!(report.order_type, expected_type);
+        assert_eq!(report.time_in_force, expected_tif);
+    }
+
+    // When the dYdX Indexer omits `condition_type` (typical for WebSocket-fed
+    // reports rebuilt through this parser) but a trigger price is set, the
+    // parser must default to `TriggerType::Default` so the Python
+    // `OrderStatusReport.__init__` validator accepts the report. Without this
+    // default, reports historically failed reconciliation with
+    // `Condition.not_equal(trigger_type, NO_TRIGGER, ...)`.
+    #[rstest]
+    fn test_parse_order_status_report_default_trigger_type_when_condition_none() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        let order = Order {
+            id: "order-default-trigger".to_string(),
+            subaccount_id: "subacct1".to_string(),
+            client_id: "client1".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price: dec!(50000.0),
+            status: DydxOrderStatus::Untriggered,
+            order_type: DydxOrderType::StopLimit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: None,
+            good_til_block_time: Some(Utc::now()),
+            created_at_height: Some(1000),
+            client_metadata: 0,
+            trigger_price: Some(dec!(49000.0)),
+            condition_type: None,
+            conditional_order_trigger_subticks: Some(490_000),
+            execution: None,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        };
+
+        let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+    }
+
+    // A `Canceled` report whose `ts_last` matches the expiry boundary exactly
+    // must still reclassify to `Expired`. Locks the `>=` semantics from
+    // accidentally drifting to `>`.
+    #[rstest]
+    fn test_parse_order_status_report_canceled_at_expiry_boundary_becomes_expired() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let expire_at = Utc::now();
+        let ts_init = UnixNanos::from(expire_at.timestamp_millis() as u64 * 1_000_000);
+
+        let order = Order {
+            id: "order-expired-boundary".to_string(),
+            subaccount_id: "subacct1".to_string(),
+            client_id: "client1".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price: dec!(50000.0),
+            status: DydxOrderStatus::Canceled,
+            order_type: DydxOrderType::Limit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: None,
+            good_til_block_time: Some(expire_at),
+            created_at_height: Some(1000),
+            client_metadata: 0,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: Some(expire_at),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        };
+
+        let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
+        assert_eq!(report.order_status, OrderStatus::Expired);
     }
 
     #[rstest]

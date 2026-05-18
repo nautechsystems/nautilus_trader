@@ -14,6 +14,18 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides the HTTP client for the Polymarket Gamma API.
+//!
+//! Gamma `/markets` server-side constraints honored by the paginator and
+//! `load_ids` chunker:
+//!
+//! - `limit` is silently capped at 100 items per page, so a larger requested
+//!   `limit` makes the "last page" check (`page_len < page_size`) trip after
+//!   page one.
+//! - `offset > 10000` is rejected with HTTP 422, so a paginator cannot walk
+//!   the full universe; callers fetching many markets must use
+//!   `condition_ids=` filtering.
+//! - `condition_ids=` accepts at most 100 IDs per request, so `load_ids` for
+//!   larger sets chunks the request and unions the responses.
 
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
@@ -248,7 +260,7 @@ impl PolymarketGammaHttpClient {
         &self,
         base_params: GetGammaMarketsParams,
     ) -> anyhow::Result<Vec<GammaMarket>> {
-        const PAGE_LIMIT: u32 = 500;
+        const PAGE_LIMIT: u32 = 100;
         let page_size = base_params.limit.unwrap_or(PAGE_LIMIT);
         let max_markets = base_params.max_markets;
         let mut all_markets = Vec::new();

@@ -21,7 +21,7 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::Clock,
-    factories::{ClientConfig, ExecutionClientFactory},
+    factories::{ClientConfig, SimulatedExecutionClientFactory},
     live::clock::LiveClock,
 };
 use nautilus_execution::client::core::ExecutionClientCore;
@@ -47,7 +47,7 @@ impl SandboxExecutionClientFactory {
     }
 }
 
-impl ExecutionClientFactory for SandboxExecutionClientFactory {
+impl SimulatedExecutionClientFactory for SandboxExecutionClientFactory {
     fn create(
         &self,
         name: &str,

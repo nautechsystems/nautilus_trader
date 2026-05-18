@@ -13,11 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
+from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class TestHyperliquidInstrumentProvider:
@@ -126,3 +136,126 @@ class TestHyperliquidInstrumentProvider:
 
         # Assert
         assert isinstance(result, list)
+
+    @pytest.mark.parametrize(
+        ("product_types", "expected_kwargs"),
+        [
+            (
+                [HyperliquidProductType.OUTCOME],
+                {
+                    "include_spot": False,
+                    "include_perps": False,
+                    "include_perps_hip3": False,
+                    "include_outcomes": True,
+                },
+            ),
+            (
+                [HyperliquidProductType.PERP],
+                {
+                    "include_spot": False,
+                    "include_perps": True,
+                    "include_perps_hip3": False,
+                    "include_outcomes": False,
+                },
+            ),
+            (
+                [HyperliquidProductType.SPOT, HyperliquidProductType.OUTCOME],
+                {
+                    "include_spot": True,
+                    "include_perps": False,
+                    "include_perps_hip3": False,
+                    "include_outcomes": True,
+                },
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_load_all_async_passes_include_outcomes(
+        self,
+        mock_http_client,
+        product_types,
+        expected_kwargs,
+    ):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(),
+            product_types=product_types,
+        )
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_http_client.load_instrument_definitions.assert_called_once_with(**expected_kwargs)
+
+    def test_instrument_product_type_recognizes_binary_option(self, mock_http_client):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(),
+            product_types=[HyperliquidProductType.OUTCOME],
+        )
+        binary_option = _make_outcome_binary_option()
+
+        # Act
+        product_type = provider._instrument_product_type(binary_option)
+
+        # Assert
+        assert product_type is HyperliquidProductType.OUTCOME
+
+    @pytest.mark.parametrize(
+        ("filters", "expected"),
+        [
+            ({"market_types": ["outcome"]}, True),
+            ({"market_types": ["spot", "perp"]}, False),
+            ({"market_types": ["outcome", "spot"]}, True),
+            ({}, True),
+            (None, True),
+        ],
+    )
+    def test_accept_instrument_outcome_market_type_filter(
+        self,
+        mock_http_client,
+        filters,
+        expected,
+    ):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(),
+            product_types=[HyperliquidProductType.OUTCOME],
+        )
+        binary_option = _make_outcome_binary_option()
+
+        # Act
+        accepted = provider._accept_instrument(binary_option, filters)
+
+        # Assert
+        assert accepted is expected
+
+
+def _make_outcome_binary_option() -> BinaryOption:
+    instrument_id = InstrumentId(Symbol("+50"), HYPERLIQUID_VENUE)
+    price_increment = Price.from_str("0.0001")
+    size_increment = Quantity.from_str("0.01")
+    return BinaryOption(
+        instrument_id=instrument_id,
+        raw_symbol=Symbol("#50"),
+        outcome="Yes",
+        description="class:priceBinary|underlying:BTC|expiry:20260508-0600",
+        asset_class=AssetClass.ALTERNATIVE,
+        currency=USDC,
+        price_precision=price_increment.precision,
+        price_increment=price_increment,
+        size_precision=size_increment.precision,
+        size_increment=size_increment,
+        activation_ns=0,
+        expiration_ns=0,
+        max_quantity=None,
+        min_quantity=Quantity.from_int(1),
+        maker_fee=Decimal(0),
+        taker_fee=Decimal(0),
+        ts_event=0,
+        ts_init=0,
+    )

@@ -747,19 +747,29 @@ pub fn decode_mbp10_msg(
     let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
     for level in &msg.levels {
-        let bid_order = BookOrder::new(
-            OrderSide::Buy,
-            decode_price_or_undef(level.bid_px, price_precision),
-            decode_quantity(level.bid_sz as u64),
-            0,
-        );
+        // Empty Databento levels carry the i64::MAX sentinel; decode them as
+        // NULL_ORDER so the matching engine's precision check skips them.
+        let bid_order = if level.bid_px == i64::MAX {
+            BookOrder::default()
+        } else {
+            BookOrder::new(
+                OrderSide::Buy,
+                decode_price_or_undef(level.bid_px, price_precision),
+                decode_quantity(level.bid_sz as u64),
+                0,
+            )
+        };
 
-        let ask_order = BookOrder::new(
-            OrderSide::Sell,
-            decode_price_or_undef(level.ask_px, price_precision),
-            decode_quantity(level.ask_sz as u64),
-            0,
-        );
+        let ask_order = if level.ask_px == i64::MAX {
+            BookOrder::default()
+        } else {
+            BookOrder::new(
+                OrderSide::Sell,
+                decode_price_or_undef(level.ask_px, price_precision),
+                decode_quantity(level.ask_sz as u64),
+                0,
+            )
+        };
 
         bids.push(bid_order);
         asks.push(ask_order);
@@ -1209,43 +1219,48 @@ const fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNano
 /// # Errors
 ///
 /// Returns an error if decoding the `InstrumentDefMsg` fails.
+///
+/// Returns `Ok(None)` for instrument classes with no Nautilus equivalent (`'I'` Index,
+/// `'B'` Bond, `'X'` FX spot, or any future class).
 pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<InstrumentAny> {
+) -> anyhow::Result<Option<InstrumentAny>> {
     match msg.instrument_class as u8 as char {
-        'K' => Ok(InstrumentAny::Equity(decode_equity(
+        'K' => Ok(Some(InstrumentAny::Equity(decode_equity(
             msg,
             instrument_id,
             ts_init,
-        )?)),
-        'F' => Ok(InstrumentAny::FuturesContract(decode_futures_contract(
+        )?))),
+        'F' => Ok(Some(InstrumentAny::FuturesContract(
+            decode_futures_contract(msg, instrument_id, ts_init)?,
+        ))),
+        'S' => Ok(Some(InstrumentAny::FuturesSpread(decode_futures_spread(
             msg,
             instrument_id,
             ts_init,
-        )?)),
-        'S' => Ok(InstrumentAny::FuturesSpread(decode_futures_spread(
+        )?))),
+        'C' | 'P' => Ok(Some(InstrumentAny::OptionContract(decode_option_contract(
             msg,
             instrument_id,
             ts_init,
-        )?)),
-        'C' | 'P' => Ok(InstrumentAny::OptionContract(decode_option_contract(
+        )?))),
+        'T' | 'M' => Ok(Some(InstrumentAny::OptionSpread(decode_option_spread(
             msg,
             instrument_id,
             ts_init,
-        )?)),
-        'T' | 'M' => Ok(InstrumentAny::OptionSpread(decode_option_spread(
-            msg,
-            instrument_id,
-            ts_init,
-        )?)),
-        'B' => anyhow::bail!("Unsupported `instrument_class` 'B' (Bond)"),
-        'X' => anyhow::bail!("Unsupported `instrument_class` 'X' (FX spot)"),
-        _ => anyhow::bail!(
-            "Unsupported `instrument_class` '{}'",
-            msg.instrument_class as u8 as char
-        ),
+        )?))),
+        other => {
+            let label = match other {
+                'I' => "'I' (Index)".to_string(),
+                'B' => "'B' (Bond)".to_string(),
+                'X' => "'X' (FX spot)".to_string(),
+                _ => format!("'{other}'"),
+            };
+            log::warn!("Skipping unsupported `instrument_class` {label} for {instrument_id}",);
+            Ok(None)
+        }
     }
 }
 
@@ -1531,16 +1546,28 @@ pub fn decode_imbalance_msg(
 ///
 /// # Errors
 ///
-/// Returns an error if constructing `DatabentoStatistics` fails or if `msg.stat_type` or
-/// `msg.update_action` is not a valid enum variant.
+/// Returns an error if constructing `DatabentoStatistics` fails or if `msg.update_action`
+/// is not a valid enum variant.
+///
+/// Returns `Ok(None)` when `msg.stat_type` does not map to a Nautilus variant: covers
+/// `VenueSpecificVolume1` (10001) and `VenueSpecificPrice1` (10002), which exceed the
+/// `u8` Arrow column width, plus any future dbn value.
 pub fn decode_statistics_msg(
     msg: &dbn::StatMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<DatabentoStatistics> {
-    let stat_type = DatabentoStatisticType::from_u8(msg.stat_type as u8)
-        .ok_or_else(|| anyhow::anyhow!("Invalid value for `stat_type`: {}", msg.stat_type))?;
+) -> anyhow::Result<Option<DatabentoStatistics>> {
+    let Some(stat_type) = u8::try_from(msg.stat_type)
+        .ok()
+        .and_then(DatabentoStatisticType::from_u8)
+    else {
+        log::warn!(
+            "Skipping unsupported `stat_type` {} for {instrument_id}",
+            msg.stat_type,
+        );
+        return Ok(None);
+    };
     let update_action =
         DatabentoStatisticUpdateAction::from_u8(msg.update_action).ok_or_else(|| {
             anyhow::anyhow!("Invalid value for `update_action`: {}", msg.update_action)
@@ -1548,7 +1575,7 @@ pub fn decode_statistics_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(DatabentoStatistics::new(
+    Ok(Some(DatabentoStatistics::new(
         instrument_id,
         stat_type,
         update_action,
@@ -1562,7 +1589,20 @@ pub fn decode_statistics_msg(
         msg.hd.ts_event.into(),
         ts_event,
         ts_init,
-    ))
+    )))
+}
+
+/// Returns `true` if `stat_type` maps to a modeled [`DatabentoStatisticType`] variant.
+///
+/// Callers should precheck with this helper before resolving price precision or other
+/// per-record setup, so unmodeled records can be skipped without surfacing unrelated
+/// errors.
+#[must_use]
+pub fn is_supported_stat_type(stat_type: u16) -> bool {
+    u8::try_from(stat_type)
+        .ok()
+        .and_then(DatabentoStatisticType::from_u8)
+        .is_some()
 }
 
 #[cfg(test)]
@@ -2385,8 +2425,10 @@ mod tests {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()));
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
+        let instrument = result
+            .expect("decode failed")
+            .expect("definition class should produce an instrument");
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
     }
 
     #[rstest]
@@ -2436,6 +2478,99 @@ mod tests {
     }
 
     #[rstest]
+    #[case::index('I' as c_char)]
+    #[case::bond('B' as c_char)]
+    #[case::fx_spot('X' as c_char)]
+    #[case::unknown('Z' as c_char)]
+    fn test_decode_instrument_def_msg_unsupported_class_returns_none(
+        #[case] instrument_class: c_char,
+    ) {
+        // Regression: dbn 0.58 publishers (e.g. CGIF.TITANIUM = 110) emit class 'I'
+        let msg = dbn::InstrumentDefMsg {
+            hd: dbn::RecordHeader::new::<dbn::InstrumentDefMsg>(
+                dbn::enums::rtype::INSTRUMENT_DEF,
+                1,
+                1,
+                1_000_000_000,
+            ),
+            ts_recv: 1_000_000_000,
+            instrument_class,
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::from("SPX.XCBO");
+        let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+            .expect("decoder should not bail on unsupported class");
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    #[case::volatility(14, DatabentoStatisticType::Volatility)]
+    #[case::delta(15, DatabentoStatisticType::Delta)]
+    #[case::uncrossing_price(16, DatabentoStatisticType::UncrossingPrice)]
+    #[case::upper_price_limit(17, DatabentoStatisticType::UpperPriceLimit)]
+    #[case::lower_price_limit(18, DatabentoStatisticType::LowerPriceLimit)]
+    #[case::block_volume(19, DatabentoStatisticType::BlockVolume)]
+    #[case::indicative_close(20, DatabentoStatisticType::IndicativeClosePrice)]
+    fn test_decode_statistics_msg_dbn_058_stat_types(
+        #[case] stat_type_raw: u16,
+        #[case] expected: DatabentoStatisticType,
+    ) {
+        // Regression: dbn 0.58 added stat types 14-20 (Volatility..IndicativeClosePrice)
+        let msg = dbn::StatMsg {
+            hd: dbn::RecordHeader::new::<dbn::StatMsg>(
+                dbn::enums::rtype::STATISTICS,
+                1,
+                1,
+                1_000_000_000,
+            ),
+            ts_recv: 1_000_000_000,
+            ts_ref: 1_000_000_000,
+            stat_type: stat_type_raw,
+            update_action: 1, // Added
+            price: 100_000_000_000,
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let statistics = decode_statistics_msg(&msg, instrument_id, 2, Some(0.into()))
+            .expect("decoder should accept dbn 0.58 stat types")
+            .expect("known stat type should produce a statistics record");
+        assert_eq!(statistics.stat_type, expected);
+        assert_eq!(
+            statistics.update_action,
+            DatabentoStatisticUpdateAction::Added
+        );
+    }
+
+    #[rstest]
+    #[case::venue_specific_volume1(10_001)]
+    #[case::venue_specific_price1(10_002)]
+    #[case::unknown_future(12_345)]
+    fn test_decode_statistics_msg_unknown_stat_type_returns_none(#[case] stat_type_raw: u16) {
+        // Wire values 10001/10002 exceed the u8 Arrow column width; must skip not bail
+        let msg = dbn::StatMsg {
+            hd: dbn::RecordHeader::new::<dbn::StatMsg>(
+                dbn::enums::rtype::STATISTICS,
+                1,
+                1,
+                1_000_000_000,
+            ),
+            ts_recv: 1_000_000_000,
+            ts_ref: 1_000_000_000,
+            stat_type: stat_type_raw,
+            update_action: 1,
+            price: 100_000_000_000,
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let result = decode_statistics_msg(&msg, instrument_id, 2, Some(0.into()))
+            .expect("decoder should not bail on unknown stat type");
+        assert!(result.is_none());
+    }
+
+    #[rstest]
     fn test_decode_statistics_msg() {
         let path = test_data_path().join("test_data.statistics.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
@@ -2444,7 +2579,9 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let statistics = decode_statistics_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let statistics = decode_statistics_msg(msg, instrument_id, 2, Some(0.into()))
+            .unwrap()
+            .expect("fixture stat type should map to a Nautilus variant");
 
         assert_eq!(statistics.instrument_id, instrument_id);
         assert_eq!(statistics.stat_type, DatabentoStatisticType::LowestOffer);
@@ -2538,6 +2675,45 @@ mod tests {
         assert_eq!(depth.asks.len(), 10);
         assert_eq!(depth.bid_counts.len(), 10);
         assert_eq!(depth.ask_counts.len(), 10);
+    }
+
+    #[rstest]
+    fn test_decode_mbp10_msg_with_undefined_levels() {
+        let mut msg = dbn::Mbp10Msg::default();
+        for i in 0..10 {
+            msg.levels[i].bid_px = 100_000_000_000 - i as i64 * 10_000_000;
+            msg.levels[i].ask_px = 100_010_000_000 + i as i64 * 10_000_000;
+            msg.levels[i].bid_sz = 10 + i as u32;
+            msg.levels[i].ask_sz = 10 + i as u32;
+            msg.levels[i].bid_ct = 1 + i as u32;
+            msg.levels[i].ask_ct = 1 + i as u32;
+        }
+        // Levels 5 (bid) and 7 (ask) are undefined per Databento sentinel.
+        msg.levels[5].bid_px = i64::MAX;
+        msg.levels[5].bid_sz = 0;
+        msg.levels[5].bid_ct = 0;
+        msg.levels[7].ask_px = i64::MAX;
+        msg.levels[7].ask_sz = 0;
+        msg.levels[7].ask_ct = 0;
+        msg.ts_recv = 1_609_160_400_000_704_060;
+
+        let instrument_id = InstrumentId::from("TEST.VENUE");
+        let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
+
+        assert_eq!(depth.bids[5].side, OrderSide::NoOrderSide);
+        assert_eq!(depth.bids[5].price.raw, 0);
+        assert_eq!(depth.bids[5].price.precision, 0);
+        assert_eq!(depth.bids[5].size.raw, 0);
+        assert_eq!(depth.asks[7].side, OrderSide::NoOrderSide);
+        assert_eq!(depth.asks[7].price.raw, 0);
+        assert_eq!(depth.asks[7].price.precision, 0);
+        assert_eq!(depth.asks[7].size.raw, 0);
+
+        // Defined neighbours keep their normal side and instrument precision
+        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bids[0].price.precision, 2);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.asks[0].price.precision, 2);
     }
 
     #[rstest]

@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL},
@@ -25,7 +26,8 @@ use crate::common::{
 };
 
 /// Configuration for the BitMEX live data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
@@ -142,7 +144,8 @@ impl BitmexDataClientConfig {
 }
 
 /// Configuration for the BitMEX live execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
@@ -271,5 +274,50 @@ impl BitmexExecClientConfig {
                 BitmexEnvironment::Testnet => BITMEX_WS_TESTNET_URL.to_string(),
                 BitmexEnvironment::Mainnet => BITMEX_WS_URL.to_string(),
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: BitmexDataClientConfig = toml::from_str(
+            r#"
+environment = "testnet"
+http_timeout_secs = 30
+active_only = false
+max_requests_per_second = 5
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, BitmexEnvironment::Testnet);
+        assert_eq!(config.http_timeout_secs, 30);
+        assert!(!config.active_only);
+        assert_eq!(config.max_requests_per_second, 5);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: BitmexExecClientConfig = toml::from_str("").unwrap();
+        let expected = BitmexExecClientConfig::default();
+
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(
+            config.heartbeat_interval_secs,
+            expected.heartbeat_interval_secs,
+        );
+        assert_eq!(config.recv_window_ms, expected.recv_window_ms);
+        assert_eq!(config.active_only, expected.active_only);
+        assert_eq!(
+            config.max_requests_per_second,
+            expected.max_requests_per_second,
+        );
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

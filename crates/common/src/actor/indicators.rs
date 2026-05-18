@@ -25,6 +25,10 @@ use nautilus_model::{data::BarType, identifiers::InstrumentId};
 
 /// Contains all indicator-related references.
 #[derive(Clone, Default)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "indicator-prefixed fields denote distinct indicator collections"
+)]
 pub(crate) struct Indicators {
     pub indicators: Vec<Arc<dyn Indicator>>,
     pub indicators_for_quotes: HashMap<InstrumentId, Vec<Arc<dyn Indicator>>>,

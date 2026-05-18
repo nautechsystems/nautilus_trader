@@ -54,7 +54,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::BybitHttpError,
+    error::{BybitHttpError, BybitSubmitOrderError},
     models::{
         BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
         BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
@@ -90,9 +90,9 @@ use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
-        BybitAccountType, BybitContractType, BybitEnvironment, BybitMarginMode, BybitOpenOnly,
-        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitPositionMode,
-        BybitProductType,
+        BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
+        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
+        BybitPositionMode, BybitProductType,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2422,6 +2422,8 @@ impl BybitHttpClient {
         is_quote_quantity: bool,
         is_leverage: bool,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<BybitBboSideType>,
+        bbo_level: Option<String>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2456,7 +2458,9 @@ impl BybitHttpClient {
         order_entry.market_unit(market_unit);
         order_entry.trigger_direction(trigger_dir);
 
-        if let Some(price) = price {
+        if bbo_side_type.is_none()
+            && let Some(price) = price
+        {
             order_entry.price(Some(price.to_string()));
         }
 
@@ -2474,6 +2478,9 @@ impl BybitHttpClient {
             order_entry.position_idx(Some(idx));
         }
 
+        order_entry.bbo_side_type(bbo_side_type);
+        order_entry.bbo_level(bbo_level);
+
         let order_entry = order_entry.build().build_anyhow()?;
 
         let mut params = BybitPlaceOrderParamsBuilder::default();
@@ -2488,7 +2495,7 @@ impl BybitHttpClient {
         let order_id = response
             .result
             .order_id
-            .ok_or_else(|| anyhow::anyhow!("No order_id in response"))?;
+            .ok_or(BybitSubmitOrderError::MissingOrderId)?;
 
         let order = self
             .query_order_by_id(
@@ -2497,14 +2504,18 @@ impl BybitHttpClient {
                 BYBIT_ORDER_REALTIME,
                 "after submission",
             )
-            .await?;
+            .await
+            .map_err(|source| BybitSubmitOrderError::PostSubmitLookup { source })?;
 
         // Only bail on rejection if there are no fills
         // If the order has fills (cum_exec_qty > 0), let the parser remap Rejected -> Canceled
         if order.order_status == crate::common::enums::BybitOrderStatus::Rejected
             && (order.cum_exec_qty.as_str() == "0" || order.cum_exec_qty.is_empty())
         {
-            anyhow::bail!("Order rejected: {}", order.reject_reason);
+            return Err(BybitSubmitOrderError::Rejected {
+                reason: order.reject_reason.to_string(),
+            }
+            .into());
         }
 
         let ts_init = self.generate_ts_init();

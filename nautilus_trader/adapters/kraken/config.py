@@ -18,6 +18,7 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.core.nautilus_pyo3 import KrakenEnvironment
 from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
+from nautilus_trader.model.enums import AccountType
 
 
 class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -38,8 +39,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
@@ -54,6 +55,9 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will use the default URL based on environment.
     base_url_ws_futures : str, optional
         The base URL for Kraken Futures WebSocket API.
+        If ``None`` then will use the default URL based on environment.
+    base_url_ws_l3_spot : str, optional
+        The base URL for Kraken Spot L3 WebSocket API.
         If ``None`` then will use the default URL based on environment.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
@@ -72,6 +76,9 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     max_requests_per_second : PositiveInt, optional
         The maximum number of requests per second for rate limiting.
         If ``None`` then will use the default of 5 requests per second.
+    validate_l3_checksum : bool, default True
+        If True, CRC32 checksums on ``level3`` book updates are verified and
+        a clear delta is emitted downstream on mismatch.
 
     """
 
@@ -83,6 +90,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http_futures: str | None = None
     base_url_ws_spot: str | None = None
     base_url_ws_futures: str | None = None
+    base_url_ws_l3_spot: str | None = None
     proxy_url: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
@@ -91,6 +99,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     http_timeout_secs: PositiveInt | None = None
     ws_heartbeat_secs: PositiveInt = 30
     max_requests_per_second: PositiveInt | None = None
+    validate_l3_checksum: bool = True
 
 
 class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -111,12 +120,12 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
-        Note: SPOT uses a CASH account type, FUTURES uses MARGIN account type.
+        Note: FUTURES always uses MARGIN; SPOT uses ``spot_account_type`` (default CASH).
     base_url_http_spot : str, optional
         The base URL for Kraken Spot HTTP API.
         If ``None`` then will use the default URL based on environment.
@@ -153,6 +162,53 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     spot_positions_quote_currency : str, default "USDT"
         The quote currency to use when generating spot position reports.
         Only instruments with this quote currency will have positions reported.
+    spot_account_type : AccountType, default AccountType.CASH
+        The account type for spot trading. Set to ``AccountType.MARGIN`` to enable:
+        - ``TradeBalance``-based margin reporting (used margin, free margin, equity).
+        - ``OpenPositions``-based position reconciliation.
+        - Per-order leverage via ``SubmitOrder.params = {"leverage": N}``.
+        Has no effect when ``product_types`` includes ``KrakenProductType.FUTURES``.
+    default_leverage : int, optional
+        Default leverage multiplier for spot margin orders when not specified per-order.
+        For example, ``3`` sends ``"3:1"`` to Kraken. ``None`` means cash (no leverage sent).
+        Per-order override: pass ``{"leverage": N}`` in ``SubmitOrder.params``.
+    margin_balance_asset : str, optional
+        Summary-display asset for ``TradeBalance`` margin metrics (e.g. ``"ZUSD"``,
+        ``"ZGBP"``, ``"ZEUR"``, ``"USDT"``). Controls the denomination of equity,
+        free margin, used margin, and other summary figures returned by Kraken's
+        ``TradeBalance`` endpoint. ``None`` lets Kraken default to ``ZUSD``.
+        Display-only: Kraken converts internally; per-position figures from
+        ``OpenPositions`` remain in the traded pair's quote currency.
+        Only effective when ``spot_account_type=AccountType.MARGIN``.
+
+    Examples
+    --------
+    Spot margin account with 3x default leverage:
+
+    .. code-block:: python
+
+        from nautilus_trader.model.enums import AccountType
+        from nautilus_trader.adapters.kraken.config import KrakenExecClientConfig
+
+        config = KrakenExecClientConfig(
+            api_key="...",
+            api_secret="...",
+            spot_account_type=AccountType.MARGIN,
+            default_leverage=3,
+        )
+
+    Override leverage on a single order:
+
+    .. code-block:: python
+
+        order = strategy.order_factory.limit(
+            instrument_id=BTC_USD,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.01"),
+            price=Price.from_str("50000.00"),
+            params={"leverage": 5},  # overrides default_leverage for this order
+        )
+        strategy.submit_order(order)
 
     """
 
@@ -173,3 +229,13 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     max_requests_per_second: PositiveInt | None = None
     use_spot_position_reports: bool = False
     spot_positions_quote_currency: str = "USDT"
+    spot_account_type: AccountType = AccountType.CASH
+    default_leverage: int | None = None
+    margin_balance_asset: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.default_leverage is not None and self.spot_account_type != AccountType.MARGIN:
+            raise ValueError(
+                "default_leverage requires spot_account_type=AccountType.MARGIN "
+                f"(got {self.spot_account_type!r})",
+            )

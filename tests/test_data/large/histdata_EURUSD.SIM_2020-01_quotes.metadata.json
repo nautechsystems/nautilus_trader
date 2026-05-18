@@ -1,0 +1,15 @@
+{
+  "file": "histdata_EURUSD.SIM_2020-01_quotes.parquet",
+  "sha256": "9c610a233b8408562ea9024df0bd3192608f16ed00fce6f5d761a321a3d897c2",
+  "size_bytes": 31434814,
+  "original_url": "https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/EURUSD/2020/1",
+  "licence": "HISTDATA.com free-data terms; transformed to NautilusTrader QuoteTick Parquet for testing use. Raw csv remains user-fetched.",
+  "added_at": "2026-05-12T23:38:13Z",
+  "instrument": "EURUSD.SIM",
+  "date": "2020-01",
+  "format": "NautilusTrader QuoteTick Parquet",
+  "original_file": "DAT_ASCII_EURUSD_T_202001.csv.gz",
+  "parser": "nautilus_data.hist_data_to_catalog via QuoteTickDataWrangler",
+  "records": 1637768,
+  "compression": "SNAPPY"
+}

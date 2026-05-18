@@ -1046,7 +1046,8 @@ mod tests {
             .order_side(order_side)
             .quantity(Quantity::from(10_000))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         let result = order.signed_decimal_qty();
         assert_eq!(result, expected);
@@ -1073,7 +1074,8 @@ mod tests {
             .order_side(order_side)
             .quantity(order_qty)
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert_eq!(
             order.would_reduce_only(position_side, position_qty),
@@ -1083,7 +1085,7 @@ mod tests {
 
     #[rstest]
     fn test_order_state_transition_denied() {
-        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
         let denied = OrderDeniedSpec::builder().build();
         let event = OrderEventAny::Denied(denied);
 
@@ -1103,7 +1105,7 @@ mod tests {
         let accepted = OrderAcceptedSpec::builder().build();
         let filled = OrderFilledSpec::builder().build();
 
-        let mut order: MarketOrder = init.clone().into();
+        let mut order: MarketOrder = init.clone().try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(filled)).unwrap();
@@ -1140,7 +1142,7 @@ mod tests {
             .trade_id(TradeId::from("TRADE-2"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(fill1)).unwrap();
@@ -1155,7 +1157,7 @@ mod tests {
 
     #[rstest]
     fn test_order_state_transition_to_canceled() {
-        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
         let submitted = OrderSubmittedSpec::builder().build();
         let canceled = OrderCanceledSpec::builder().build();
 
@@ -1176,7 +1178,7 @@ mod tests {
             .last_qty(Quantity::from(50_000))
             .build();
 
-        let mut order: MarketOrder = init.clone().into();
+        let mut order: MarketOrder = init.clone().try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(filled)).unwrap();
@@ -1191,7 +1193,7 @@ mod tests {
 
     #[rstest]
     fn test_order_commission_calculation() {
-        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
         order
             .commissions
             .insert(Currency::USD(), Money::new(10.0, Currency::USD()));
@@ -1213,7 +1215,8 @@ mod tests {
             .exec_spawn_id(ClientOrderId::from("O-001"))
             .client_order_id(ClientOrderId::from("O-001"))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert!(order.is_primary());
         assert!(!order.is_spawned());
@@ -1226,7 +1229,8 @@ mod tests {
             .exec_spawn_id(ClientOrderId::from("O-002"))
             .client_order_id(ClientOrderId::from("O-001"))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert!(!order.is_primary());
         assert!(order.is_spawned());
@@ -1237,7 +1241,8 @@ mod tests {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .contingency_type(ContingencyType::Oto)
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert!(order.is_contingency());
         assert!(order.is_parent_order());
@@ -1249,7 +1254,8 @@ mod tests {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .parent_order_id(ClientOrderId::from("PARENT-001"))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         assert!(order.is_child_order());
         assert!(!order.is_parent_order());
@@ -1270,7 +1276,7 @@ mod tests {
             .ts_event(UnixNanos::from(2_000_000))
             .build();
 
-        let mut order: LimitOrder = init.into();
+        let mut order: LimitOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
@@ -1290,7 +1296,7 @@ mod tests {
             .account_id(AccountId::from("EXTERNAL-001"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
 
         // Verify account_id is initially None
         assert_eq!(order.account_id(), None);
@@ -1314,7 +1320,7 @@ mod tests {
             .account_id(AccountId::from("ACCEPTED-001"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
         // After submitted, account_id should be set
@@ -1340,7 +1346,7 @@ mod tests {
             .last_qty(Quantity::from(110_000)) // Overfill: 110k > 100k
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(overfill)).unwrap();
@@ -1369,7 +1375,7 @@ mod tests {
             .trade_id(TradeId::from("TRADE-2"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(fill1)).unwrap();
@@ -1400,7 +1406,7 @@ mod tests {
             .last_qty(Quantity::from(100_000)) // Exact fill
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(filled)).unwrap();
@@ -1430,7 +1436,7 @@ mod tests {
             .trade_id(TradeId::from("TRADE-2"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(fill1)).unwrap();
@@ -1455,7 +1461,8 @@ mod tests {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         // Fill qty less than order qty - no overfill
         let overfill = order.calculate_overfill(Quantity::from(50_000));
@@ -1471,7 +1478,8 @@ mod tests {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         // Fill qty exceeds order qty
         let overfill = order.calculate_overfill(Quantity::from(110_000));
@@ -1489,7 +1497,7 @@ mod tests {
             .last_qty(Quantity::from(60_000))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
@@ -1509,7 +1517,8 @@ mod tests {
         let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from("2450.5"))
             .build()
-            .into();
+            .try_into()
+            .unwrap();
 
         // Simulates the exact scenario from user's log
         // Order for 2450.5, if fill of 2488.0 arrives
@@ -1528,7 +1537,7 @@ mod tests {
             .last_qty(Quantity::from("0.072"))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
@@ -1554,7 +1563,7 @@ mod tests {
             .trade_id(TradeId::from("TRADE-001")) // Same trade_id as fill1
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(fill1)).unwrap();
@@ -1625,7 +1634,7 @@ mod tests {
             .trade_id(TradeId::from("TRADE-002")) // Different trade_id
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(fill1)).unwrap();
@@ -1649,7 +1658,7 @@ mod tests {
             .quantity(Quantity::from(50_000))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
@@ -1682,7 +1691,7 @@ mod tests {
             .quantity(Quantity::from(80_000)) // Reduce to 80k (still > 40k filled)
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
@@ -1741,7 +1750,7 @@ mod tests {
             .is_quote_quantity(false)
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         assert!(order.is_quote_quantity());
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1766,7 +1775,7 @@ mod tests {
             .quantity(Quantity::new(8.0, 6))
             .build();
 
-        let mut order: MarketOrder = init.into();
+        let mut order: MarketOrder = init.try_into().unwrap();
         assert!(order.is_quote_quantity());
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1779,7 +1788,7 @@ mod tests {
 
     #[rstest]
     fn test_canceled_then_partial_fill_then_canceled() {
-        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
         let canceled1 = OrderCanceledSpec::builder().build();

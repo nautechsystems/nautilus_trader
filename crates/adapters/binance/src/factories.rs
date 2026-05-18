@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -70,7 +70,7 @@ impl DataClientFactory for BinanceDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let binance_config = config
@@ -147,7 +147,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let binance_config = config
             .as_any()
@@ -231,13 +231,13 @@ mod tests {
     #[rstest]
     fn test_binance_data_client_factory_creation() {
         let factory = BinanceDataClientFactory::new();
-        assert_eq!(factory.name(), "BINANCE");
+        assert_eq!(factory.name(), BINANCE);
         assert_eq!(factory.config_type(), "BinanceDataClientConfig");
     }
 
     #[rstest]
     fn test_binance_data_client_factory_default() {
         let factory = BinanceDataClientFactory;
-        assert_eq!(factory.name(), "BINANCE");
+        assert_eq!(factory.name(), BINANCE);
     }
 }

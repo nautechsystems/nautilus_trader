@@ -23,13 +23,14 @@ use nautilus_core::{
     correctness::{check_equal, check_slice_not_empty},
 };
 use nautilus_model::{
-    enums::{ContingencyType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
         LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny,
-        OrderList, StopLimitOrder, StopMarketOrder, TrailingStopMarketOrder,
+        OrderList, StopLimitOrder, StopMarketOrder, TrailingStopLimitOrder,
+        TrailingStopMarketOrder,
     },
     types::{Price, Quantity},
 };
@@ -50,6 +51,7 @@ pub struct OrderFactory {
     order_list_id_generator: OrderListIdGenerator,
 }
 
+#[bon::bon]
 impl OrderFactory {
     /// Creates a new [`OrderFactory`] instance.
     pub fn new(
@@ -559,7 +561,7 @@ impl OrderFactory {
             .unwrap();
         }
         let order_list_id = self.generate_order_list_id();
-        let order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.client_order_id()).collect();
+        let order_ids: Vec<ClientOrderId> = orders.iter().map(OrderAny::client_order_id).collect();
 
         // Propagate list ID back to each order
         for order in orders.iter_mut() {
@@ -575,122 +577,130 @@ impl OrderFactory {
         )
     }
 
-    /// Creates a bracket order with entry order and attached stop-loss and take-profit orders.
-    #[expect(clippy::too_many_arguments)]
+    /// Creates a bracket order with an entry order and attached take-profit and stop-loss legs.
+    ///
+    /// Defaults:
+    /// - `contingency_type`: `Ouo` for the TP/SL legs.
+    /// - `entry_order_type`: `Market`; `tp_order_type`: `Limit`; `sl_order_type`: `StopMarket`.
+    /// - `entry_tags`: `["ENTRY"]`; `tp_tags`: `["TAKE_PROFIT"]`; `sl_tags`: `["STOP_LOSS"]`.
+    /// - `tp_post_only`: `true` for `Limit` and `LimitIfTouched`; `entry_post_only`: `false`.
+    /// - TP and SL legs are always `reduce_only = true`; the entry is `reduce_only = false`.
+    /// - TP and SL legs do not inherit `expire_time` from the entry.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `entry_order_type`, `tp_order_type`, or `sl_order_type` is not one of the
+    /// supported variants, or if a required price/trigger field is missing for the chosen type.
+    #[expect(clippy::too_many_lines)]
+    #[builder]
     pub fn bracket(
         &mut self,
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
-        entry_price: Option<Price>,
-        sl_trigger_price: Price,
-        sl_trigger_type: Option<TriggerType>,
-        tp_price: Price,
-        entry_trigger_price: Option<Price>,
-        time_in_force: Option<TimeInForce>,
-        expire_time: Option<nautilus_core::UnixNanos>,
-        sl_time_in_force: Option<TimeInForce>,
-        post_only: Option<bool>,
-        reduce_only: Option<bool>,
-        quote_quantity: Option<bool>,
+        #[builder(default = false)] quote_quantity: bool,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
-        exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
-        tags: Option<Vec<Ustr>>,
+        #[builder(default = ContingencyType::Ouo)] contingency_type: ContingencyType,
+        // Entry order
+        #[builder(default = OrderType::Market)] entry_order_type: OrderType,
+        entry_price: Option<Price>,
+        entry_trigger_price: Option<Price>,
+        expire_time: Option<nautilus_core::UnixNanos>,
+        #[builder(default = TimeInForce::Gtc)] time_in_force: TimeInForce,
+        #[builder(default = false)] entry_post_only: bool,
+        entry_exec_algorithm_id: Option<ExecAlgorithmId>,
+        entry_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        #[builder(default = vec![Ustr::from("ENTRY")])] entry_tags: Vec<Ustr>,
+        entry_client_order_id: Option<ClientOrderId>,
+        // Take-profit order
+        #[builder(default = OrderType::Limit)] tp_order_type: OrderType,
+        tp_price: Option<Price>,
+        tp_trigger_price: Option<Price>,
+        #[builder(default = TriggerType::Default)] tp_trigger_type: TriggerType,
+        tp_activation_price: Option<Price>,
+        tp_trailing_offset: Option<Decimal>,
+        #[builder(default = TrailingOffsetType::Price)] tp_trailing_offset_type: TrailingOffsetType,
+        tp_limit_offset: Option<Decimal>,
+        #[builder(default = TimeInForce::Gtc)] tp_time_in_force: TimeInForce,
+        #[builder(default = true)] tp_post_only: bool,
+        tp_exec_algorithm_id: Option<ExecAlgorithmId>,
+        tp_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        #[builder(default = vec![Ustr::from("TAKE_PROFIT")])] tp_tags: Vec<Ustr>,
+        tp_client_order_id: Option<ClientOrderId>,
+        // Stop-loss order
+        #[builder(default = OrderType::StopMarket)] sl_order_type: OrderType,
+        sl_trigger_price: Option<Price>,
+        #[builder(default = TriggerType::Default)] sl_trigger_type: TriggerType,
+        sl_activation_price: Option<Price>,
+        sl_trailing_offset: Option<Decimal>,
+        #[builder(default = TrailingOffsetType::Price)] sl_trailing_offset_type: TrailingOffsetType,
+        #[builder(default = TimeInForce::Gtc)] sl_time_in_force: TimeInForce,
+        sl_exec_algorithm_id: Option<ExecAlgorithmId>,
+        sl_exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        #[builder(default = vec![Ustr::from("STOP_LOSS")])] sl_tags: Vec<Ustr>,
+        sl_client_order_id: Option<ClientOrderId>,
     ) -> Vec<OrderAny> {
         let order_list_id = self.generate_order_list_id();
         let ts_init = self.clock.borrow().timestamp_ns();
 
-        let entry_client_order_id = self.generate_client_order_id();
-        let sl_client_order_id = self.generate_client_order_id();
-        let tp_client_order_id = self.generate_client_order_id();
+        let entry_client_order_id =
+            entry_client_order_id.unwrap_or_else(|| self.generate_client_order_id());
+        let sl_client_order_id =
+            sl_client_order_id.unwrap_or_else(|| self.generate_client_order_id());
+        let tp_client_order_id =
+            tp_client_order_id.unwrap_or_else(|| self.generate_client_order_id());
 
-        // Exec spawn IDs for algorithm orders
-        let entry_exec_spawn_id = exec_algorithm_id.as_ref().map(|_| entry_client_order_id);
-        let sl_exec_spawn_id = exec_algorithm_id.as_ref().map(|_| sl_client_order_id);
-        let tp_exec_spawn_id = exec_algorithm_id.as_ref().map(|_| tp_client_order_id);
+        let entry_exec_spawn_id = entry_exec_algorithm_id
+            .as_ref()
+            .map(|_| entry_client_order_id);
+        let tp_exec_spawn_id = tp_exec_algorithm_id.as_ref().map(|_| tp_client_order_id);
+        let sl_exec_spawn_id = sl_exec_algorithm_id.as_ref().map(|_| sl_client_order_id);
 
-        // Entry order linkage
+        let entry_tags = Some(entry_tags);
+        let tp_tags = Some(tp_tags);
+        let sl_tags = Some(sl_tags);
+
         let entry_contingency_type = Some(ContingencyType::Oto);
         let entry_order_list_id = Some(order_list_id);
         let entry_linked_order_ids = Some(vec![sl_client_order_id, tp_client_order_id]);
-        let entry_parent_order_id = None;
+        let entry_parent_order_id: Option<ClientOrderId> = None;
 
-        let entry_order = if let Some(trigger_price) = entry_trigger_price {
-            if let Some(price) = entry_price {
-                OrderAny::StopLimit(StopLimitOrder::new(
-                    self.trader_id,
-                    self.strategy_id,
-                    instrument_id,
-                    entry_client_order_id,
-                    order_side,
-                    quantity,
-                    price,
-                    trigger_price,
-                    TriggerType::Default,
-                    time_in_force.unwrap_or(TimeInForce::Gtc),
-                    expire_time,
-                    post_only.unwrap_or(false),
-                    reduce_only.unwrap_or(false),
-                    quote_quantity.unwrap_or(false),
-                    None, // display_qty
-                    emulation_trigger,
-                    trigger_instrument_id,
-                    entry_contingency_type,
-                    entry_order_list_id,
-                    entry_linked_order_ids,
-                    entry_parent_order_id,
-                    exec_algorithm_id,
-                    exec_algorithm_params.clone(),
-                    entry_exec_spawn_id,
-                    tags.clone(),
-                    UUID4::new(),
-                    ts_init,
-                ))
-            } else {
-                OrderAny::StopMarket(StopMarketOrder::new(
-                    self.trader_id,
-                    self.strategy_id,
-                    instrument_id,
-                    entry_client_order_id,
-                    order_side,
-                    quantity,
-                    trigger_price,
-                    TriggerType::Default,
-                    time_in_force.unwrap_or(TimeInForce::Gtc),
-                    expire_time,
-                    reduce_only.unwrap_or(false),
-                    quote_quantity.unwrap_or(false),
-                    None, // display_qty
-                    emulation_trigger,
-                    trigger_instrument_id,
-                    entry_contingency_type,
-                    entry_order_list_id,
-                    entry_linked_order_ids,
-                    entry_parent_order_id,
-                    exec_algorithm_id,
-                    exec_algorithm_params.clone(),
-                    entry_exec_spawn_id,
-                    tags.clone(),
-                    UUID4::new(),
-                    ts_init,
-                ))
-            }
-        } else if let Some(price) = entry_price {
-            OrderAny::Limit(LimitOrder::new(
+        let entry_order = match entry_order_type {
+            OrderType::Market => OrderAny::Market(MarketOrder::new(
                 self.trader_id,
                 self.strategy_id,
                 instrument_id,
                 entry_client_order_id,
                 order_side,
                 quantity,
-                price,
-                time_in_force.unwrap_or(TimeInForce::Gtc),
+                time_in_force,
+                UUID4::new(),
+                ts_init,
+                false, // reduce_only
+                quote_quantity,
+                entry_contingency_type,
+                entry_order_list_id,
+                entry_linked_order_ids,
+                entry_parent_order_id,
+                entry_exec_algorithm_id,
+                entry_exec_algorithm_params,
+                entry_exec_spawn_id,
+                entry_tags,
+            )),
+            OrderType::Limit => OrderAny::Limit(LimitOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                entry_client_order_id,
+                order_side,
+                quantity,
+                entry_price.expect("`entry_price` is required for a LIMIT entry"),
+                time_in_force,
                 expire_time,
-                post_only.unwrap_or(false),
-                reduce_only.unwrap_or(false),
-                quote_quantity.unwrap_or(false),
+                entry_post_only,
+                false, // reduce_only
+                quote_quantity,
                 None, // display_qty
                 emulation_trigger,
                 trigger_instrument_id,
@@ -698,35 +708,101 @@ impl OrderFactory {
                 entry_order_list_id,
                 entry_linked_order_ids,
                 entry_parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params.clone(),
+                entry_exec_algorithm_id,
+                entry_exec_algorithm_params,
                 entry_exec_spawn_id,
-                tags.clone(),
+                entry_tags,
                 UUID4::new(),
                 ts_init,
-            ))
-        } else {
-            OrderAny::Market(MarketOrder::new(
+            )),
+            OrderType::MarketIfTouched => OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
                 self.trader_id,
                 self.strategy_id,
                 instrument_id,
                 entry_client_order_id,
                 order_side,
                 quantity,
-                time_in_force.unwrap_or(TimeInForce::Gtc),
-                UUID4::new(),
-                ts_init,
-                reduce_only.unwrap_or(false),
-                quote_quantity.unwrap_or(false),
+                entry_trigger_price
+                    .expect("`entry_trigger_price` is required for a MARKET_IF_TOUCHED entry"),
+                TriggerType::Default,
+                time_in_force,
+                expire_time,
+                false, // reduce_only
+                quote_quantity,
+                emulation_trigger,
+                trigger_instrument_id,
                 entry_contingency_type,
                 entry_order_list_id,
                 entry_linked_order_ids,
                 entry_parent_order_id,
-                exec_algorithm_id,
-                exec_algorithm_params.clone(),
+                entry_exec_algorithm_id,
+                entry_exec_algorithm_params,
                 entry_exec_spawn_id,
-                tags.clone(),
-            ))
+                entry_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::LimitIfTouched => OrderAny::LimitIfTouched(LimitIfTouchedOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                entry_client_order_id,
+                order_side,
+                quantity,
+                entry_price.expect("`entry_price` is required for a LIMIT_IF_TOUCHED entry"),
+                entry_trigger_price
+                    .expect("`entry_trigger_price` is required for a LIMIT_IF_TOUCHED entry"),
+                TriggerType::Default,
+                time_in_force,
+                expire_time,
+                entry_post_only,
+                false, // reduce_only
+                quote_quantity,
+                None, // display_qty
+                emulation_trigger,
+                trigger_instrument_id,
+                entry_contingency_type,
+                entry_order_list_id,
+                entry_linked_order_ids,
+                entry_parent_order_id,
+                entry_exec_algorithm_id,
+                entry_exec_algorithm_params,
+                entry_exec_spawn_id,
+                entry_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::StopLimit => OrderAny::StopLimit(StopLimitOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                entry_client_order_id,
+                order_side,
+                quantity,
+                entry_price.expect("`entry_price` is required for a STOP_LIMIT entry"),
+                entry_trigger_price
+                    .expect("`entry_trigger_price` is required for a STOP_LIMIT entry"),
+                TriggerType::Default,
+                time_in_force,
+                expire_time,
+                entry_post_only,
+                false, // reduce_only
+                quote_quantity,
+                None, // display_qty
+                emulation_trigger,
+                trigger_instrument_id,
+                entry_contingency_type,
+                entry_order_list_id,
+                entry_linked_order_ids,
+                entry_parent_order_id,
+                entry_exec_algorithm_id,
+                entry_exec_algorithm_params,
+                entry_exec_spawn_id,
+                entry_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            other => panic!("invalid `entry_order_type`, was {other}"),
         };
 
         let sl_tp_side = match order_side {
@@ -735,73 +811,259 @@ impl OrderFactory {
             OrderSide::NoOrderSide => OrderSide::NoOrderSide,
         };
 
-        // SL order linkage
-        let sl_contingency_type = Some(ContingencyType::Oco);
-        let sl_order_list_id = Some(order_list_id);
-        let sl_linked_order_ids = Some(vec![tp_client_order_id]);
-        let sl_parent_order_id = Some(entry_client_order_id);
-
-        let sl_order = OrderAny::StopMarket(StopMarketOrder::new(
-            self.trader_id,
-            self.strategy_id,
-            instrument_id,
-            sl_client_order_id,
-            sl_tp_side,
-            quantity,
-            sl_trigger_price,
-            sl_trigger_type.unwrap_or(TriggerType::Default),
-            sl_time_in_force.unwrap_or(TimeInForce::Gtc),
-            None, // SL has no independent expire time
-            true, // SL/TP should only reduce positions
-            quote_quantity.unwrap_or(false),
-            None, // display_qty
-            emulation_trigger,
-            trigger_instrument_id,
-            sl_contingency_type,
-            sl_order_list_id,
-            sl_linked_order_ids,
-            sl_parent_order_id,
-            exec_algorithm_id,
-            exec_algorithm_params.clone(),
-            sl_exec_spawn_id,
-            tags.clone(),
-            UUID4::new(),
-            ts_init,
-        ));
-
-        // TP order linkage
-        let tp_contingency_type = Some(ContingencyType::Oco);
+        let tp_contingency_type = Some(contingency_type);
         let tp_order_list_id = Some(order_list_id);
         let tp_linked_order_ids = Some(vec![sl_client_order_id]);
         let tp_parent_order_id = Some(entry_client_order_id);
 
-        let tp_order = OrderAny::Limit(LimitOrder::new(
-            self.trader_id,
-            self.strategy_id,
-            instrument_id,
-            tp_client_order_id,
-            sl_tp_side,
-            quantity,
-            tp_price,
-            time_in_force.unwrap_or(TimeInForce::Gtc),
-            expire_time,
-            post_only.unwrap_or(false),
-            true, // SL/TP should only reduce positions
-            quote_quantity.unwrap_or(false),
-            None, // display_qty
-            emulation_trigger,
-            trigger_instrument_id,
-            tp_contingency_type,
-            tp_order_list_id,
-            tp_linked_order_ids,
-            tp_parent_order_id,
-            exec_algorithm_id,
-            exec_algorithm_params,
-            tp_exec_spawn_id,
-            tags,
-            UUID4::new(),
-            ts_init,
-        ));
+        let tp_order = match tp_order_type {
+            OrderType::Limit => OrderAny::Limit(LimitOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                tp_client_order_id,
+                sl_tp_side,
+                quantity,
+                tp_price.expect("`tp_price` is required for a LIMIT take-profit"),
+                tp_time_in_force,
+                None, // expire_time
+                tp_post_only,
+                true, // reduce_only
+                quote_quantity,
+                None, // display_qty
+                emulation_trigger,
+                trigger_instrument_id,
+                tp_contingency_type,
+                tp_order_list_id,
+                tp_linked_order_ids,
+                tp_parent_order_id,
+                tp_exec_algorithm_id,
+                tp_exec_algorithm_params,
+                tp_exec_spawn_id,
+                tp_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::LimitIfTouched => OrderAny::LimitIfTouched(LimitIfTouchedOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                tp_client_order_id,
+                sl_tp_side,
+                quantity,
+                tp_price.expect("`tp_price` is required for a LIMIT_IF_TOUCHED take-profit"),
+                tp_trigger_price
+                    .expect("`tp_trigger_price` is required for a LIMIT_IF_TOUCHED take-profit"),
+                tp_trigger_type,
+                tp_time_in_force,
+                None, // expire_time
+                tp_post_only,
+                true, // reduce_only
+                quote_quantity,
+                None, // display_qty
+                emulation_trigger,
+                trigger_instrument_id,
+                tp_contingency_type,
+                tp_order_list_id,
+                tp_linked_order_ids,
+                tp_parent_order_id,
+                tp_exec_algorithm_id,
+                tp_exec_algorithm_params,
+                tp_exec_spawn_id,
+                tp_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::MarketIfTouched => OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                tp_client_order_id,
+                sl_tp_side,
+                quantity,
+                tp_trigger_price
+                    .expect("`tp_trigger_price` is required for a MARKET_IF_TOUCHED take-profit"),
+                tp_trigger_type,
+                tp_time_in_force,
+                None, // expire_time
+                true, // reduce_only
+                quote_quantity,
+                emulation_trigger,
+                trigger_instrument_id,
+                tp_contingency_type,
+                tp_order_list_id,
+                tp_linked_order_ids,
+                tp_parent_order_id,
+                tp_exec_algorithm_id,
+                tp_exec_algorithm_params,
+                tp_exec_spawn_id,
+                tp_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::TrailingStopMarket => {
+                let tp_trailing_offset = tp_trailing_offset.expect(
+                    "`tp_trailing_offset` is required for a TRAILING_STOP_MARKET take-profit",
+                );
+                let trigger_price = tp_trigger_price.or(tp_activation_price).expect(
+                    "TRAILING_STOP_MARKET take-profit requires `tp_trigger_price` or `tp_activation_price`",
+                );
+                let mut order = TrailingStopMarketOrder::new(
+                    self.trader_id,
+                    self.strategy_id,
+                    instrument_id,
+                    tp_client_order_id,
+                    sl_tp_side,
+                    quantity,
+                    trigger_price,
+                    tp_trigger_type,
+                    tp_trailing_offset,
+                    tp_trailing_offset_type,
+                    tp_time_in_force,
+                    None, // expire_time
+                    true, // reduce_only
+                    quote_quantity,
+                    None, // display_qty
+                    emulation_trigger,
+                    trigger_instrument_id,
+                    tp_contingency_type,
+                    tp_order_list_id,
+                    tp_linked_order_ids,
+                    tp_parent_order_id,
+                    tp_exec_algorithm_id,
+                    tp_exec_algorithm_params,
+                    tp_exec_spawn_id,
+                    tp_tags,
+                    UUID4::new(),
+                    ts_init,
+                );
+                order.activation_price = tp_activation_price;
+                OrderAny::TrailingStopMarket(order)
+            }
+            OrderType::TrailingStopLimit => {
+                let tp_trailing_offset = tp_trailing_offset.expect(
+                    "`tp_trailing_offset` is required for a TRAILING_STOP_LIMIT take-profit",
+                );
+                let tp_limit_offset = tp_limit_offset
+                    .expect("`tp_limit_offset` is required for a TRAILING_STOP_LIMIT take-profit");
+                let trigger_price = tp_trigger_price.or(tp_activation_price).expect(
+                    "TRAILING_STOP_LIMIT take-profit requires `tp_trigger_price` or `tp_activation_price`",
+                );
+                let price =
+                    tp_price.expect("`tp_price` is required for a TRAILING_STOP_LIMIT take-profit");
+                let mut order = TrailingStopLimitOrder::new(
+                    self.trader_id,
+                    self.strategy_id,
+                    instrument_id,
+                    tp_client_order_id,
+                    sl_tp_side,
+                    quantity,
+                    price,
+                    trigger_price,
+                    tp_trigger_type,
+                    tp_limit_offset,
+                    tp_trailing_offset,
+                    tp_trailing_offset_type,
+                    tp_time_in_force,
+                    None,  // expire_time
+                    false, // post_only (TRAILING_STOP_LIMIT TP must not be post-only)
+                    true,  // reduce_only
+                    quote_quantity,
+                    None, // display_qty
+                    emulation_trigger,
+                    trigger_instrument_id,
+                    tp_contingency_type,
+                    tp_order_list_id,
+                    tp_linked_order_ids,
+                    tp_parent_order_id,
+                    tp_exec_algorithm_id,
+                    tp_exec_algorithm_params,
+                    tp_exec_spawn_id,
+                    tp_tags,
+                    UUID4::new(),
+                    ts_init,
+                );
+                order.activation_price = tp_activation_price;
+                OrderAny::TrailingStopLimit(order)
+            }
+            other => panic!("invalid `tp_order_type`, was {other}"),
+        };
+
+        let sl_contingency_type = Some(contingency_type);
+        let sl_order_list_id = Some(order_list_id);
+        let sl_linked_order_ids = Some(vec![tp_client_order_id]);
+        let sl_parent_order_id = Some(entry_client_order_id);
+
+        let sl_order = match sl_order_type {
+            OrderType::StopMarket => OrderAny::StopMarket(StopMarketOrder::new(
+                self.trader_id,
+                self.strategy_id,
+                instrument_id,
+                sl_client_order_id,
+                sl_tp_side,
+                quantity,
+                sl_trigger_price
+                    .expect("`sl_trigger_price` is required for a STOP_MARKET stop-loss"),
+                sl_trigger_type,
+                sl_time_in_force,
+                None, // expire_time
+                true, // reduce_only
+                quote_quantity,
+                None, // display_qty
+                emulation_trigger,
+                trigger_instrument_id,
+                sl_contingency_type,
+                sl_order_list_id,
+                sl_linked_order_ids,
+                sl_parent_order_id,
+                sl_exec_algorithm_id,
+                sl_exec_algorithm_params,
+                sl_exec_spawn_id,
+                sl_tags,
+                UUID4::new(),
+                ts_init,
+            )),
+            OrderType::TrailingStopMarket => {
+                let sl_trailing_offset = sl_trailing_offset.expect(
+                    "`sl_trailing_offset` is required for a TRAILING_STOP_MARKET stop-loss",
+                );
+                let trigger_price = sl_trigger_price.or(sl_activation_price).expect(
+                    "TRAILING_STOP_MARKET stop-loss requires `sl_trigger_price` or `sl_activation_price`",
+                );
+                let mut order = TrailingStopMarketOrder::new(
+                    self.trader_id,
+                    self.strategy_id,
+                    instrument_id,
+                    sl_client_order_id,
+                    sl_tp_side,
+                    quantity,
+                    trigger_price,
+                    sl_trigger_type,
+                    sl_trailing_offset,
+                    sl_trailing_offset_type,
+                    sl_time_in_force,
+                    None, // expire_time
+                    true, // reduce_only
+                    quote_quantity,
+                    None, // display_qty
+                    emulation_trigger,
+                    trigger_instrument_id,
+                    sl_contingency_type,
+                    sl_order_list_id,
+                    sl_linked_order_ids,
+                    sl_parent_order_id,
+                    sl_exec_algorithm_id,
+                    sl_exec_algorithm_params,
+                    sl_exec_spawn_id,
+                    sl_tags,
+                    UUID4::new(),
+                    ts_init,
+                );
+                order.activation_price = sl_activation_price;
+                OrderAny::TrailingStopMarket(order)
+            }
+            other => panic!("invalid `sl_order_type`, was {other}"),
+        };
 
         vec![entry_order, sl_order, tp_order]
     }
@@ -813,7 +1075,9 @@ pub mod tests {
 
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
+        enums::{
+            ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        },
         identifiers::{
             ClientOrderId, InstrumentId, OrderListId,
             stubs::{strategy_id_ema_cross, trader_id},
@@ -822,6 +1086,8 @@ pub mod tests {
         types::Price,
     };
     use rstest::{fixture, rstest};
+    use rust_decimal::Decimal;
+    use ustr::Ustr;
 
     use crate::{clock::TestClock, factories::OrderFactory};
 
@@ -1214,27 +1480,14 @@ pub mod tests {
 
     #[rstest]
     fn test_bracket_order_with_market_entry(mut order_factory: OrderFactory) {
-        let orders = order_factory.bracket(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            OrderSide::Buy,
-            100.into(),
-            None,                    // market entry
-            Price::from("45000.00"), // SL trigger
-            None,                    // sl_trigger_type
-            Price::from("55000.00"), // TP price
-            None,                    // no entry trigger
-            Some(TimeInForce::Gtc),
-            None,
-            None, // sl_time_in_force
-            Some(false),
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
 
         assert_eq!(orders.len(), 3);
         assert_eq!(orders[0].instrument_id(), "BTCUSDT.BINANCE".into());
@@ -1253,123 +1506,71 @@ pub mod tests {
 
     #[rstest]
     fn test_bracket_order_with_limit_entry(mut order_factory: OrderFactory) {
-        let orders = order_factory.bracket(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            OrderSide::Buy,
-            100.into(),
-            Some(Price::from("49000.00")), // limit entry
-            Price::from("45000.00"),       // SL trigger
-            None,                          // sl_trigger_type
-            Price::from("55000.00"),       // TP price
-            None,                          // no entry trigger
-            Some(TimeInForce::Gtc),
-            None,
-            None, // sl_time_in_force
-            Some(false),
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("49000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
 
         assert_eq!(orders.len(), 3);
-
-        // Entry should be limit order at entry price
         assert_eq!(orders[0].price(), Some(Price::from("49000.00")));
     }
 
     #[rstest]
-    fn test_bracket_order_with_stop_entry(mut order_factory: OrderFactory) {
-        let orders = order_factory.bracket(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            OrderSide::Buy,
-            100.into(),
-            None,                          // no limit price (stop-market entry)
-            Price::from("45000.00"),       // SL trigger
-            None,                          // sl_trigger_type
-            Price::from("55000.00"),       // TP price
-            Some(Price::from("51000.00")), // entry trigger (stop entry)
-            Some(TimeInForce::Gtc),
-            None,
-            None, // sl_time_in_force
-            Some(false),
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+    fn test_bracket_order_with_stop_limit_entry(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::StopLimit)
+            .entry_price(Price::from("51500.00"))
+            .entry_trigger_price(Price::from("51000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
 
         assert_eq!(orders.len(), 3);
-
-        // Entry should be stop-market order
         assert_eq!(orders[0].trigger_price(), Some(Price::from("51000.00")));
+        assert_eq!(orders[0].price(), Some(Price::from("51500.00")));
     }
 
     #[rstest]
     fn test_bracket_order_sell_side(mut order_factory: OrderFactory) {
-        let orders = order_factory.bracket(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            OrderSide::Sell,
-            100.into(),
-            Some(Price::from("51000.00")), // limit entry
-            Price::from("55000.00"),       // SL trigger (above entry for sell)
-            None,                          // sl_trigger_type
-            Price::from("45000.00"),       // TP price (below entry for sell)
-            None,
-            Some(TimeInForce::Gtc),
-            None,
-            None, // sl_time_in_force
-            Some(false),
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Sell)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("51000.00"))
+            .tp_price(Price::from("45000.00"))
+            .sl_trigger_price(Price::from("55000.00"))
+            .call();
 
         assert_eq!(orders.len(), 3);
-
-        // Entry should be sell
         assert_eq!(orders[0].order_side(), OrderSide::Sell);
-
-        // SL should be buy (opposite)
         assert_eq!(orders[1].order_side(), OrderSide::Buy);
-
-        // TP should be buy (opposite)
         assert_eq!(orders[2].order_side(), OrderSide::Buy);
     }
 
     #[rstest]
     fn test_bracket_order_sets_contingencies(mut order_factory: OrderFactory) {
-        let orders = order_factory.bracket(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            OrderSide::Buy,
-            100.into(),
-            Some(Price::from("50000.00")), // entry_price
-            Price::from("45000.00"),       // sl_trigger_price
-            None,                          // sl_trigger_type
-            Price::from("55000.00"),       // tp_price
-            None,                          // entry_trigger_price
-            Some(TimeInForce::Gtc),
-            None,
-            None, // sl_time_in_force
-            Some(false),
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
 
         let entry = &orders[0];
         let stop = &orders[1];
@@ -1385,14 +1586,393 @@ pub mod tests {
         );
 
         assert_eq!(stop.order_list_id(), Some(order_list_id));
-        assert_eq!(stop.contingency_type(), Some(ContingencyType::Oco));
+        assert_eq!(stop.contingency_type(), Some(ContingencyType::Ouo));
         assert_eq!(stop.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(stop.linked_order_ids().unwrap(), &[take.client_order_id()]);
 
         assert_eq!(take.order_list_id(), Some(order_list_id));
-        assert_eq!(take.contingency_type(), Some(ContingencyType::Oco));
+        assert_eq!(take.contingency_type(), Some(ContingencyType::Ouo));
         assert_eq!(take.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(take.linked_order_ids().unwrap(), &[stop.client_order_id()]);
+    }
+
+    #[rstest]
+    fn test_bracket_order_default_tags(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[0].tags(), Some(&vec![Ustr::from("ENTRY")][..]));
+        assert_eq!(orders[1].tags(), Some(&vec![Ustr::from("STOP_LOSS")][..]));
+        assert_eq!(orders[2].tags(), Some(&vec![Ustr::from("TAKE_PROFIT")][..]));
+    }
+
+    #[rstest]
+    fn test_bracket_order_custom_tags(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .entry_tags(vec![Ustr::from("ALPHA"), Ustr::from("ENTRY-V2")])
+            .tp_tags(vec![Ustr::from("TP-V2")])
+            .sl_tags(vec![Ustr::from("SL-V2")])
+            .call();
+
+        assert_eq!(
+            orders[0].tags(),
+            Some(&vec![Ustr::from("ALPHA"), Ustr::from("ENTRY-V2")][..])
+        );
+        assert_eq!(orders[1].tags(), Some(&vec![Ustr::from("SL-V2")][..]));
+        assert_eq!(orders[2].tags(), Some(&vec![Ustr::from("TP-V2")][..]));
+    }
+
+    #[rstest]
+    fn test_bracket_order_custom_contingency_type(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .contingency_type(ContingencyType::Oco)
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[1].contingency_type(), Some(ContingencyType::Oco));
+        assert_eq!(orders[2].contingency_type(), Some(ContingencyType::Oco));
+    }
+
+    #[rstest]
+    fn test_bracket_order_custom_client_order_ids(mut order_factory: OrderFactory) {
+        let entry_id = ClientOrderId::new("CUSTOM-ENTRY");
+        let tp_id = ClientOrderId::new("CUSTOM-TP");
+        let sl_id = ClientOrderId::new("CUSTOM-SL");
+
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .entry_client_order_id(entry_id)
+            .tp_client_order_id(tp_id)
+            .sl_client_order_id(sl_id)
+            .call();
+
+        assert_eq!(orders[0].client_order_id(), entry_id);
+        assert_eq!(orders[1].client_order_id(), sl_id);
+        assert_eq!(orders[2].client_order_id(), tp_id);
+    }
+
+    #[rstest]
+    fn test_bracket_order_per_leg_order_types(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .tp_order_type(OrderType::MarketIfTouched)
+            .tp_trigger_price(Price::from("55000.00"))
+            .tp_trigger_type(TriggerType::LastPrice)
+            .sl_order_type(OrderType::TrailingStopMarket)
+            .sl_trigger_price(Price::from("45000.00"))
+            .sl_activation_price(Price::from("44000.00"))
+            .sl_trailing_offset(Decimal::new(50, 2))
+            .sl_trailing_offset_type(TrailingOffsetType::BasisPoints)
+            .call();
+
+        // Entry: limit
+        assert_eq!(orders[0].order_type(), OrderType::Limit);
+        // SL: trailing stop market with non-default offset type
+        assert_eq!(orders[1].order_type(), OrderType::TrailingStopMarket);
+        assert_eq!(orders[1].trigger_price(), Some(Price::from("45000.00")));
+        assert_eq!(orders[1].activation_price(), Some(Price::from("44000.00")));
+        assert_eq!(orders[1].trailing_offset(), Some(Decimal::new(50, 2)));
+        assert_eq!(
+            orders[1].trailing_offset_type(),
+            Some(TrailingOffsetType::BasisPoints)
+        );
+        // TP: market-if-touched with non-default trigger type
+        assert_eq!(orders[2].order_type(), OrderType::MarketIfTouched);
+        assert_eq!(orders[2].trigger_price(), Some(Price::from("55000.00")));
+        assert_eq!(orders[2].trigger_type(), Some(TriggerType::LastPrice));
+    }
+
+    #[rstest]
+    fn test_bracket_order_reduce_only_flags(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert!(!orders[0].is_reduce_only(), "entry must not be reduce-only");
+        assert!(orders[1].is_reduce_only(), "SL must be reduce-only");
+        assert!(orders[2].is_reduce_only(), "TP must be reduce-only");
+    }
+
+    #[rstest]
+    fn test_bracket_order_default_post_only(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert!(!orders[0].is_post_only(), "entry default is not post-only");
+        assert!(orders[2].is_post_only(), "Limit TP default is post-only");
+    }
+
+    #[rstest]
+    fn test_bracket_order_trailing_stop_limit_tp_forces_no_post_only(
+        mut order_factory: OrderFactory,
+    ) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::TrailingStopLimit)
+            .tp_price(Price::from("55000.00"))
+            .tp_trigger_price(Price::from("54000.00"))
+            .tp_trailing_offset(Decimal::new(50, 2))
+            .tp_limit_offset(Decimal::new(10, 2))
+            .tp_post_only(true) // explicitly true; constructor must override to false
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[2].order_type(), OrderType::TrailingStopLimit);
+        assert!(
+            !orders[2].is_post_only(),
+            "TRAILING_STOP_LIMIT TP must never be post-only"
+        );
+    }
+
+    #[rstest]
+    fn test_bracket_order_expire_time_entry_only(mut order_factory: OrderFactory) {
+        let expire_time = UnixNanos::from(1_700_000_000_000_000_000_u64);
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::Limit)
+            .entry_price(Price::from("50000.00"))
+            .expire_time(expire_time)
+            .time_in_force(TimeInForce::Gtd)
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[0].expire_time(), Some(expire_time));
+        assert_eq!(orders[1].expire_time(), None);
+        assert_eq!(orders[2].expire_time(), None);
+    }
+
+    #[rstest]
+    fn test_bracket_order_with_market_if_touched_entry(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::MarketIfTouched)
+            .entry_trigger_price(Price::from("51000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[0].order_type(), OrderType::MarketIfTouched);
+        assert_eq!(orders[0].trigger_price(), Some(Price::from("51000.00")));
+    }
+
+    #[rstest]
+    fn test_bracket_order_with_limit_if_touched_entry(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::LimitIfTouched)
+            .entry_price(Price::from("51500.00"))
+            .entry_trigger_price(Price::from("51000.00"))
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[0].order_type(), OrderType::LimitIfTouched);
+        assert_eq!(orders[0].price(), Some(Price::from("51500.00")));
+        assert_eq!(orders[0].trigger_price(), Some(Price::from("51000.00")));
+    }
+
+    #[rstest]
+    fn test_bracket_order_with_limit_if_touched_tp(mut order_factory: OrderFactory) {
+        // BUY entry => SELL TP; SELL LimitIfTouched requires trigger_price >= price.
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::LimitIfTouched)
+            .tp_price(Price::from("54500.00"))
+            .tp_trigger_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[2].order_type(), OrderType::LimitIfTouched);
+        assert_eq!(orders[2].price(), Some(Price::from("54500.00")));
+        assert_eq!(orders[2].trigger_price(), Some(Price::from("55000.00")));
+        assert!(
+            orders[2].is_post_only(),
+            "LimitIfTouched TP default is post-only"
+        );
+    }
+
+    #[rstest]
+    fn test_bracket_order_with_trailing_stop_market_tp(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::TrailingStopMarket)
+            .tp_trigger_price(Price::from("55000.00"))
+            .tp_activation_price(Price::from("54500.00"))
+            .tp_trailing_offset(Decimal::new(75, 2))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[2].order_type(), OrderType::TrailingStopMarket);
+        assert_eq!(orders[2].trigger_price(), Some(Price::from("55000.00")));
+        assert_eq!(orders[2].activation_price(), Some(Price::from("54500.00")));
+        assert_eq!(orders[2].trailing_offset(), Some(Decimal::new(75, 2)));
+    }
+
+    #[rstest]
+    fn test_bracket_order_with_trailing_stop_limit_tp(mut order_factory: OrderFactory) {
+        let orders = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::TrailingStopLimit)
+            .tp_price(Price::from("55000.00"))
+            .tp_trigger_price(Price::from("54000.00"))
+            .tp_activation_price(Price::from("53500.00"))
+            .tp_trailing_offset(Decimal::new(50, 2))
+            .tp_limit_offset(Decimal::new(10, 2))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+
+        assert_eq!(orders[2].order_type(), OrderType::TrailingStopLimit);
+        assert_eq!(orders[2].price(), Some(Price::from("55000.00")));
+        assert_eq!(orders[2].trigger_price(), Some(Price::from("54000.00")));
+        assert_eq!(orders[2].activation_price(), Some(Price::from("53500.00")));
+        assert_eq!(orders[2].trailing_offset(), Some(Decimal::new(50, 2)));
+        assert_eq!(orders[2].limit_offset(), Some(Decimal::new(10, 2)));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`tp_price` is required for a LIMIT take-profit")]
+    fn test_bracket_order_panics_on_missing_tp_price(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`sl_trigger_price` is required for a STOP_MARKET stop-loss")]
+    fn test_bracket_order_panics_on_missing_sl_trigger_price(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_price(Price::from("55000.00"))
+            .call();
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "`tp_trailing_offset` is required for a TRAILING_STOP_MARKET take-profit"
+    )]
+    fn test_bracket_order_panics_on_missing_tp_trailing_offset(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::TrailingStopMarket)
+            .tp_trigger_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid `entry_order_type`")]
+    fn test_bracket_order_panics_on_invalid_entry_order_type(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .entry_order_type(OrderType::MarketToLimit)
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid `tp_order_type`")]
+    fn test_bracket_order_panics_on_invalid_tp_order_type(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .tp_order_type(OrderType::StopMarket)
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid `sl_order_type`")]
+    fn test_bracket_order_panics_on_invalid_sl_order_type(mut order_factory: OrderFactory) {
+        let _ = order_factory
+            .bracket()
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .order_side(OrderSide::Buy)
+            .quantity(100.into())
+            .sl_order_type(OrderType::Limit)
+            .tp_price(Price::from("55000.00"))
+            .sl_trigger_price(Price::from("45000.00"))
+            .call();
     }
 
     #[rstest]

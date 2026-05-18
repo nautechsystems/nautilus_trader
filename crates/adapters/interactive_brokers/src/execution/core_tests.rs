@@ -48,6 +48,23 @@ fn create_test_leg_instrument() -> InstrumentId {
     InstrumentId::new(Symbol::from("SPY C400"), Venue::from("SMART"))
 }
 
+#[rstest]
+#[case(1, 0, 1)]
+#[case(1, 310, 310_000_001)]
+#[case(42, 1_402, 402_000_042)]
+#[case(450_000_123, 402, 450_000_123)]
+#[case(1, -12, 12_000_001)]
+fn apply_client_order_id_floor(
+    #[case] next_id: i32,
+    #[case] client_id: i32,
+    #[case] expected: i32,
+) {
+    assert_eq!(
+        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id),
+        expected
+    );
+}
+
 fn create_test_execution_data(
     order_id: i32,
     execution_id: &str,
@@ -799,6 +816,10 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
     let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
     let accepted_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
     let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_live_exec_data = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_terminal_orders = Arc::new(Mutex::new(AHashMap::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let order_id = 7001;
     let client_order_id = ClientOrderId::from("O-CANCEL-002");
@@ -808,6 +829,10 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
         .lock()
         .unwrap()
         .insert(order_id, client_order_id);
+    order_id_map
+        .lock()
+        .unwrap()
+        .insert(client_order_id, order_id);
     instrument_id_map
         .lock()
         .unwrap()
@@ -827,7 +852,7 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
 
     InteractiveBrokersExecutionClient::handle_order_status(
         &create_test_order_status(order_id, "Cancelled"),
-        &Arc::new(Mutex::new(AHashMap::new())),
+        &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
         &exec_sender,
@@ -842,6 +867,9 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
         &order_fill_progress,
         &accepted_orders,
         &pending_cancel_orders,
+        &spread_fill_tracking,
+        &pending_live_exec_data,
+        &pending_terminal_orders,
     )
     .await
     .unwrap();
@@ -860,6 +888,11 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
             .unwrap()
             .contains(&client_order_id)
     );
+    assert!(order_id_map.lock().unwrap().is_empty());
+    assert!(venue_order_id_map.lock().unwrap().is_empty());
+    assert!(instrument_id_map.lock().unwrap().is_empty());
+    assert!(trader_id_map.lock().unwrap().is_empty());
+    assert!(strategy_id_map.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -1004,6 +1037,9 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report() {
     exec_data.execution.order_reference = client_order_id.to_string();
 
     update_sender
+        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
+        .unwrap();
+    update_sender
         .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
             execution_id: String::from("exec-stream-001"),
             commission: 1.25,
@@ -1012,9 +1048,6 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report() {
             yields: None,
             yield_redemption_date: String::new(),
         })))
-        .unwrap();
-    update_sender
-        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
         .unwrap();
     drop(update_sender);
 
@@ -1051,6 +1084,97 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report() {
         }
         other => panic!("unexpected event: {other:?}"),
     }
+    assert!(commission_cache.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_process_order_update_stream_learns_order_ref_from_execution() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7004;
+    let contract_id = 12346;
+    let client_order_id = ClientOrderId::from("O-STREAM-EXEC-REF");
+    let venue_order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let instrument_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let trader_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let strategy_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+    let accepted_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let commission_cache = Arc::new(Mutex::new(AHashMap::new()));
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscription = Subscription::new(update_receiver);
+
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+
+    let mut exec_data = create_test_execution_data(order_id, "exec-stream-002", 100.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    exec_data.execution.order_reference = client_order_id.to_string();
+
+    update_sender
+        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
+        .unwrap();
+    update_sender
+        .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
+            execution_id: String::from("exec-stream-002"),
+            commission: 1.25,
+            currency: String::from("USD"),
+            realized_pnl: None,
+            yields: None,
+            yield_redemption_date: String::new(),
+        })))
+        .unwrap();
+    drop(update_sender);
+
+    InteractiveBrokersExecutionClient::process_order_update_stream(
+        &mut subscription,
+        &order_id_map,
+        &venue_order_id_map,
+        &instrument_provider,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        &commission_cache,
+        &instrument_id_map,
+        &trader_id_map,
+        &strategy_id_map,
+        &spread_fill_tracking,
+        &order_avg_prices,
+        &pending_combo_fills,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+        &accepted_orders,
+        &pending_cancel_orders,
+    )
+    .await;
+
+    let fill_event = exec_receiver.try_recv().unwrap();
+    match fill_event {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.client_order_id, Some(client_order_id));
+            assert_eq!(fill.instrument_id, instrument_id);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+    assert_eq!(
+        venue_order_id_map.lock().unwrap().get(&order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        order_id_map.lock().unwrap().get(&client_order_id),
+        Some(&order_id)
+    );
 }
 
 #[rstest]

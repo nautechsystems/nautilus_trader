@@ -272,7 +272,8 @@ impl BitmexWsFeedHandler {
                 }
             }
             Message::Binary(msg) => {
-                log::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary frame ({} bytes)", msg.len());
+                log::trace!("Raw binary: {msg:?}");
             }
             Message::Close(_) => {
                 log::debug!("Received close message, waiting for reconnection");

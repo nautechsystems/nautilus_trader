@@ -17,7 +17,7 @@ use ahash::AHashMap;
 use derive_builder::Builder;
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+        Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
         OrderBookDepth10, QuoteTick, TradeTick,
     },
     reports::{FillReport, OrderStatusReport},
@@ -1048,6 +1048,8 @@ pub enum NautilusWsMessage {
     IndexPrice(IndexPriceUpdate),
     /// Funding rate update.
     FundingRate(FundingRateUpdate),
+    /// Custom data (e.g. allMids).
+    CustomData(Data),
     /// Error occurred.
     Error(String),
     /// WebSocket reconnected.

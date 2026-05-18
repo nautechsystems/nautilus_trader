@@ -191,6 +191,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        types::Quantity,
     };
     use rstest::rstest;
 
@@ -316,6 +317,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
                 price: None,
+                quantity: Quantity::from("1"),
             },
         );
         dispatch_state

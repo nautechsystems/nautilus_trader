@@ -49,7 +49,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment,
+    common::{
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+        enums::HyperliquidEnvironment,
+    },
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
     http::{
@@ -58,10 +61,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    data::Data,
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::Instrument,
+    data::Data, enums::BookType, identifiers::InstrumentId, instruments::Instrument,
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -509,7 +509,7 @@ async fn test_data_client_connect_disconnect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -528,7 +528,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let mut instrument_count = 0;
@@ -556,7 +556,7 @@ async fn test_data_client_emits_hip3_instruments() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let mut standard_perp_symbols = Vec::new();
@@ -596,7 +596,7 @@ async fn test_data_client_subscribe_trades() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -605,7 +605,7 @@ async fn test_data_client_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -641,7 +641,7 @@ async fn test_data_client_subscribe_quotes() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -649,7 +649,7 @@ async fn test_data_client_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -680,7 +680,7 @@ async fn test_data_client_subscribe_book_deltas() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -689,7 +689,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -722,7 +722,7 @@ async fn test_data_client_reset_clears_state() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
 
     client.reset().unwrap();
     assert!(!client.is_connected());
@@ -743,7 +743,7 @@ async fn test_data_client_request_instruments() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -754,8 +754,8 @@ async fn test_data_client_request_instruments() {
     let request = RequestInstruments::new(
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
-        Some(Venue::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        Some(*HYPERLIQUID_VENUE),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -784,7 +784,7 @@ async fn test_data_client_request_instrument() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -797,7 +797,7 @@ async fn test_data_client_request_instrument() {
         instrument_id,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -826,7 +826,7 @@ async fn test_data_client_request_book_snapshot() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -838,7 +838,7 @@ async fn test_data_client_request_book_snapshot() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -872,7 +872,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -884,7 +884,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         Some(NonZeroUsize::new(2).unwrap()),
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -923,14 +923,14 @@ async fn test_request_trades_returns_not_supported_error() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
 
     let cmd = RequestTrades::new(
         InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -956,7 +956,7 @@ async fn test_request_funding_rates_non_perp_bails() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let spot_id = InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID");
@@ -965,7 +965,7 @@ async fn test_request_funding_rates_non_perp_bails() {
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -994,7 +994,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events emitted on connect.
@@ -1006,7 +1006,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -1035,6 +1035,185 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
         }
         other => panic!("expected FundingRates response, was: {other:?}"),
     }
+
+    client.disconnect().await.unwrap();
+}
+
+// Reconnect must install a fresh `CancellationToken` so the new
+// `spawn_ws` task does not clone a pre-cancelled token from the prior
+// session and exit on the first poll. Regression for the round-2 P1
+// finding in the review-fix loop.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_reconnect_after_disconnect_resumes_stream() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+
+    // First lifecycle: connect, then disconnect (cancels the token).
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+
+    // Drain any residual events from the first cycle.
+    while rx.try_recv().is_ok() {}
+
+    // Second lifecycle: the new connect must reset the token, otherwise
+    // the consumption loop spawns into a cancelled future and no trades
+    // ever arrive.
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    // Drain instrument events from the second connect.
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let cmd = SubscribeTrades::new(
+        instrument_id,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe_trades(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let found = loop {
+                match rx.try_recv() {
+                    Ok(DataEvent::Data(Data::Trade(_))) => break true,
+                    Ok(_) => {}
+                    Err(_) => break false,
+                }
+            };
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+// `disconnect()` must abort tracked subscribe tasks: after the call
+// completes, the spawned subscribe futures must not continue to surface
+// data events. This pins `abort_pending_tasks()` to an observable
+// behavior rather than relying on the cancellation token absorbing the
+// race.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_disconnect_stops_event_flow() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let disconnect_deadline = Duration::from_secs(5);
+    tokio::time::timeout(disconnect_deadline, client.disconnect())
+        .await
+        .expect("disconnect must complete promptly even with pending subscribes")
+        .unwrap();
+
+    assert!(!client.is_connected());
+
+    // Drain anything that arrived during the disconnect window, then
+    // assert the stream is quiet after disconnect returned.
+    while rx.try_recv().is_ok() {}
+
+    let quiet_window = Duration::from_millis(200);
+    let maybe_event = tokio::time::timeout(quiet_window, rx.recv()).await;
+    assert!(
+        maybe_event.is_err(),
+        "no data events should arrive after disconnect, was: {maybe_event:?}",
+    );
+}
+
+// `reset()` on a connected client with a live ws stream and an in-flight
+// subscribe handle must succeed without panic and leave the client in a
+// state where `connect()` is permitted again (matching the pre-existing
+// `reset()` contract). The existing `test_data_client_reset_clears_state`
+// never spawns the ws task before reset and so leaves the new branches
+// (`abort_pending_tasks` + `ws_stream_handle.take().abort()`) untested.
+//
+// Note: full data-flow restart after reset is not asserted because
+// `reset()` does not currently disconnect the inner `HyperliquidWebSocketClient`;
+// `disconnect()` is the supported path for that.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_reset_after_subscribe_clears_state() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    // Reset must succeed even with a live ws stream handle and an
+    // in-flight pending subscribe task outstanding. This exercises both
+    // `abort_pending_tasks()` and the `ws_stream_handle.take().abort()`
+    // branch added in `reset()`.
+    client.reset().unwrap();
+    assert!(!client.is_connected());
+
+    // The client must be willing to accept a fresh connect after reset;
+    // a stale cancellation token or undropped stream handle would surface
+    // here as a hang or error.
+    let reconnect = tokio::time::timeout(Duration::from_secs(5), client.connect())
+        .await
+        .expect("connect after reset must complete promptly");
+    reconnect.unwrap();
+    assert!(client.is_connected());
 
     client.disconnect().await.unwrap();
 }

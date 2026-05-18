@@ -203,7 +203,7 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 
 ### IDE integration
 
-- **PyCharm**: Right-click the tests folder or file → "Run pytest".
+- **PyCharm**: Right-click the tests folder or file -> "Run pytest".
 - **VS Code**: Use the Python Test Explorer extension.
 
 ## Test style

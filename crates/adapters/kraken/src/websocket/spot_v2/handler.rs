@@ -27,7 +27,8 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
 };
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Value, value::RawValue};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -36,7 +37,9 @@ use super::{
         KrakenSpotWsMessage, KrakenWsBookData, KrakenWsExecutionData, KrakenWsMessage,
         KrakenWsOhlcData, KrakenWsResponse, KrakenWsTickerData, KrakenWsTradeData,
     },
+    parse::parse_order_response,
 };
+use crate::websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -46,6 +49,7 @@ pub enum SpotHandlerCommand {
     Subscribe { payload: String },
     Unsubscribe { payload: String },
     Ping { payload: String },
+    SendOrderRequest { req_id: u64, payload: String },
 }
 
 /// WebSocket message handler for Kraken Spot v2.
@@ -112,6 +116,23 @@ impl SpotFeedHandler {
                                 && let Err(e) = client.send_text(payload.clone(), None).await
                             {
                                 log::error!("Failed to send text: {e}");
+                            }
+                        }
+                        SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
+                            if let Some(client) = &self.inner {
+                                if let Err(e) = client.send_text(payload, None).await {
+                                    log::error!(
+                                        "Kraken WS send_order_request failed req_id={req_id}: {e}"
+                                    );
+                                } else {
+                                    log::debug!(
+                                        "Kraken WS send_order_request enqueued req_id={req_id}"
+                                    );
+                                }
+                            } else {
+                                log::error!(
+                                    "Kraken WS send_order_request without active client req_id={req_id}"
+                                );
                             }
                         }
                     }
@@ -195,6 +216,12 @@ impl SpotFeedHandler {
             }
         }
 
+        if text.contains("\"level3\"")
+            && let Some(msg) = parse_level3_text(text)
+        {
+            return self.handle_l3_message(msg);
+        }
+
         let value: Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
@@ -203,13 +230,16 @@ impl SpotFeedHandler {
             }
         };
 
-        // Control messages have "method" field
         if value.get("method").is_some() {
+            match parse_order_response(text) {
+                Ok(Some(msg)) => return Some(msg),
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse order response: {e}"),
+            }
             self.handle_control_message(value);
             return None;
         }
 
-        // Data messages have "channel" and "data" fields
         if value.get("channel").is_some() && value.get("data").is_some() {
             match serde_json::from_value::<KrakenWsMessage>(value) {
                 Ok(msg) => return self.handle_data_message(msg),
@@ -277,6 +307,9 @@ impl SpotFeedHandler {
             KrakenWsChannel::Trade => self.handle_trade_message(msg),
             KrakenWsChannel::Ohlc => self.handle_ohlc_message(msg),
             KrakenWsChannel::Executions => self.handle_executions_message(msg),
+            KrakenWsChannel::Level3 => {
+                unreachable!("level3 messages routed via fast-path in parse_message",)
+            }
             _ => {
                 log::warn!("Unhandled channel: {:?}", msg.channel);
                 None
@@ -384,6 +417,56 @@ impl SpotFeedHandler {
         } else {
             Some(KrakenSpotWsMessage::Execution(executions))
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct Level3RawMessage<'a> {
+    channel: &'a str,
+    #[serde(rename = "type")]
+    msg_type: &'a str,
+    #[serde(borrow)]
+    data: Vec<&'a RawValue>,
+}
+
+fn parse_level3_text(text: &str) -> Option<KrakenSpotWsMessage> {
+    let msg: Level3RawMessage<'_> = serde_json::from_str(text).ok()?;
+    if msg.channel != "level3" {
+        return None;
+    }
+    let first = msg.data.first()?.get();
+
+    match msg.msg_type {
+        "snapshot" => match serde_json::from_str::<KrakenL3Snapshot>(first) {
+            Ok(snap) => Some(KrakenSpotWsMessage::L3Snapshot(snap)),
+            Err(e) => {
+                log::warn!("Failed to deserialize L3 snapshot: {e}");
+                None
+            }
+        },
+        "update" => match serde_json::from_str::<KrakenL3UpdateData>(first) {
+            Ok(update) => Some(KrakenSpotWsMessage::L3Update(update)),
+            Err(e) => {
+                log::warn!("Failed to deserialize L3 update: {e}");
+                None
+            }
+        },
+        _ => None,
+    }
+}
+
+impl SpotFeedHandler {
+    fn handle_l3_message(&self, msg: KrakenSpotWsMessage) -> Option<KrakenSpotWsMessage> {
+        let symbol = match &msg {
+            KrakenSpotWsMessage::L3Snapshot(s) => &s.symbol,
+            KrakenSpotWsMessage::L3Update(u) => &u.symbol,
+            _ => return None,
+        };
+
+        if !self.is_subscribed(&format!("level3:{symbol}")) {
+            return None;
+        }
+        Some(msg)
     }
 }
 
@@ -570,6 +653,49 @@ mod tests {
     }
 
     #[rstest]
+    fn test_send_order_request_variant_construction() {
+        let cmd = SpotHandlerCommand::SendOrderRequest {
+            req_id: 7,
+            payload: r#"{"method":"add_order","req_id":7}"#.to_string(),
+        };
+
+        match cmd {
+            SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
+                assert_eq!(req_id, 7);
+                assert!(payload.contains("add_order"));
+            }
+            _ => panic!("Expected SendOrderRequest, was a different variant"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_order_request_without_active_client_does_not_panic() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let subscriptions = SubscriptionState::new(':');
+
+        let mut handler = SpotFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions);
+
+        cmd_tx
+            .send(SpotHandlerCommand::SendOrderRequest {
+                req_id: 42,
+                payload: r#"{"method":"add_order","req_id":42}"#.to_string(),
+            })
+            .unwrap();
+
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let result = handler.next().await;
+        assert!(
+            result.is_none(),
+            "Handler should return None when streams close"
+        );
+    }
+
+    #[rstest]
     fn test_quotes_and_book_subscriptions_independent() {
         let handler = create_test_handler();
         handler.subscriptions.mark_subscribe("quotes:BTC/USD");
@@ -618,5 +744,106 @@ mod tests {
             ticker_result.is_some(),
             "Ticker should pass with quotes subscription"
         );
+    }
+
+    #[rstest]
+    fn test_parse_message_routes_add_order_response_to_order_response_variant() {
+        use super::super::enums::KrakenWsMethod;
+
+        let handler = create_test_handler();
+        let json = r#"{"method":"add_order","req_id":42,"success":true,"time_in":"2026-05-05T10:00:00.123Z","time_out":"2026-05-05T10:00:00.125Z","result":{"order_id":"OABCDE-12345-FGHIJ","cl_ord_id":"O-20260505-000001","order_userref":0}}"#;
+
+        let result = handler.parse_message(json);
+        match result {
+            Some(KrakenSpotWsMessage::OrderResponse(resp)) => {
+                assert_eq!(resp.method, KrakenWsMethod::AddOrder);
+                assert_eq!(resp.req_id, Some(42));
+                assert!(resp.success);
+            }
+            other => panic!("expected OrderResponse, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_with_subscription_passes() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+
+        let json = r#"{
+            "channel": "level3",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let result = handler.parse_message(json);
+        assert!(matches!(result, Some(KrakenSpotWsMessage::L3Snapshot(_))));
+    }
+
+    #[rstest]
+    fn test_parse_level3_update_without_subscription_filtered() {
+        let handler = create_test_handler();
+        let json = r#"{
+            "channel": "level3",
+            "type": "update",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let result = handler.parse_message(json);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_compact_json() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+        let json = r#"{"channel":"level3","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[],"asks":[],"checksum":0,"timestamp":"2024-01-01T00:00:00Z"}]}"#;
+        assert!(matches!(
+            handler.parse_message(json),
+            Some(KrakenSpotWsMessage::L3Snapshot(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_preserves_raw_decimal() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+
+        let json = r#"{
+            "channel": "level3",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [{
+                    "order_id": "order-bid-1",
+                    "limit_price": 42000.50000,
+                    "order_qty": 0.01000000,
+                    "timestamp": "2024-01-01T00:00:00Z"
+                }],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let Some(KrakenSpotWsMessage::L3Snapshot(snap)) = handler.parse_message(json) else {
+            panic!("expected L3 snapshot");
+        };
+        assert_eq!(snap.bids[0].limit_price.raw, "42000.50000");
+        assert_eq!(snap.bids[0].order_qty.raw, "0.01000000");
     }
 }

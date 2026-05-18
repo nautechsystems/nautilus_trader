@@ -48,7 +48,7 @@ use crate::{
     common::{
         consts::BYBIT_VENUE,
         enums::{BybitEnvironment, BybitPositionIdx, BybitProductType},
-        parse::make_bybit_symbol,
+        parse::{make_bybit_symbol, parse_bbo_level, parse_bbo_side_type},
     },
     python::params::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     websocket::{
@@ -61,8 +61,8 @@ use crate::{
             parse_ticker_linear_mark_price, parse_ticker_linear_quote, parse_ticker_option_greeks,
             parse_ticker_option_index_price, parse_ticker_option_mark_price,
             parse_ticker_option_quote, parse_ws_account_state, parse_ws_fill_report,
-            parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
-            parse_ws_trade_tick,
+            parse_ws_fill_report_fast, parse_ws_kline_bar, parse_ws_order_status_report,
+            parse_ws_position_status_report, parse_ws_trade_tick,
         },
     },
 };
@@ -384,6 +384,16 @@ impl BybitWebSocketClient {
                         }
                         BybitWsMessage::AccountExecution(ref msg) => {
                             handle_account_execution(
+                                msg,
+                                &instruments,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
+                        }
+                        BybitWsMessage::AccountExecutionFast(ref msg) => {
+                            handle_account_execution_fast(
                                 msg,
                                 &instruments,
                                 account_id,
@@ -852,6 +862,8 @@ impl BybitWebSocketClient {
         reduce_only=None,
         is_leverage=false,
         position_idx=None,
+        bbo_side_type=None,
+        bbo_level=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -874,9 +886,24 @@ impl BybitWebSocketClient {
         reduce_only: Option<bool>,
         is_leverage: bool,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<String>,
+        bbo_level: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let pending_py_requests = Arc::clone(self.pending_py_requests());
+        let bbo_side_type = bbo_side_type
+            .map(|value| parse_bbo_side_type(&value))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+        let bbo_level = bbo_level
+            .map(parse_bbo_level)
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+        if bbo_side_type.is_some() != bbo_level.is_some() {
+            return Err(to_pyvalue_err(anyhow::anyhow!(
+                "'bbo_side_type' and 'bbo_level' must be provided together"
+            )));
+        }
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let req_id = client
@@ -896,6 +923,8 @@ impl BybitWebSocketClient {
                     reduce_only,
                     is_leverage,
                     position_idx,
+                    bbo_side_type,
+                    bbo_level,
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
@@ -1033,6 +1062,8 @@ impl BybitWebSocketClient {
         take_profit=None,
         stop_loss=None,
         position_idx=None,
+        bbo_side_type=None,
+        bbo_level=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_build_place_order_params(
@@ -1054,7 +1085,23 @@ impl BybitWebSocketClient {
         take_profit: Option<Price>,
         stop_loss: Option<Price>,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<String>,
+        bbo_level: Option<String>,
     ) -> PyResult<BybitWsPlaceOrderParams> {
+        let bbo_side_type = bbo_side_type
+            .map(|value| parse_bbo_side_type(&value))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+        let bbo_level = bbo_level
+            .map(parse_bbo_level)
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+        if bbo_side_type.is_some() != bbo_level.is_some() {
+            return Err(to_pyvalue_err(anyhow::anyhow!(
+                "'bbo_side_type' and 'bbo_level' must be provided together"
+            )));
+        }
+
         let params = self
             .build_place_order_params(
                 product_type,
@@ -1074,6 +1121,8 @@ impl BybitWebSocketClient {
                 take_profit,
                 stop_loss,
                 position_idx,
+                bbo_side_type,
+                bbo_level,
             )
             .map_err(to_pyruntime_err)?;
         Ok(params.into())
@@ -1628,6 +1677,33 @@ fn handle_account_execution(
         match parse_ws_fill_report(exec, account_id, &instrument, ts_init) {
             Ok(report) => send_to_python(report, call_soon, callback),
             Err(e) => log::error!("Failed to parse fill report: {e}"),
+        }
+    }
+}
+
+fn handle_account_execution_fast(
+    msg: &crate::websocket::messages::BybitWsAccountExecutionFastMsg,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+
+    for exec in &msg.data {
+        let symbol = make_bybit_symbol(exec.symbol, exec.category);
+        let Some(instrument) = instruments.get_cloned(&symbol) else {
+            log::warn!("No instrument for fast-execution update: {symbol}");
+            continue;
+        };
+        let Some(account_id) = account_id else {
+            continue;
+        };
+
+        match parse_ws_fill_report_fast(exec, account_id, &instrument, None, ts_init) {
+            Ok(report) => send_to_python(report, call_soon, callback),
+            Err(e) => log::error!("Failed to parse fast fill report: {e}"),
         }
     }
 }

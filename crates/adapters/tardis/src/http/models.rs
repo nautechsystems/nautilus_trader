@@ -20,7 +20,7 @@ use ustr::Ustr;
 
 use crate::common::{
     enums::{TardisExchange, TardisInstrumentType, TardisOptionType},
-    parse::deserialize_uppercase,
+    parse::{deserialize_f64_or_string, deserialize_opt_f64_or_string, deserialize_uppercase},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,20 +54,26 @@ pub struct TardisInstrumentInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expiry: Option<DateTime<Utc>>,
     /// The instrument price increment.
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub price_increment: f64,
     /// The instrument size increment.
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub amount_increment: f64,
     /// The minimum tradeable size for the instrument.
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub min_trade_amount: f64,
     /// The instrument maker fee: consider it as illustrative only, as it depends in practice on account traded volume levels, different categories, VIP levels, owning exchange currency etc.
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub maker_fee: f64,
     /// The instrument taker fee: consider it as illustrative only, as it depends in practice on account traded volume levels, different categories, VIP levels, owning exchange currency etc.
+    #[serde(deserialize_with = "deserialize_f64_or_string")]
     pub taker_fee: f64,
     /// If the instrument is inverse (only for derivatives such as futures and perpetual swaps).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inverse: Option<bool>,
     /// The instrument contract multiplier (only for derivatives).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub contract_multiplier: Option<f64>,
     /// If the instrument is quanto (only for quanto instruments).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +83,7 @@ pub struct TardisInstrumentInfo {
     pub settlement_currency: Option<Ustr>,
     /// The instrument strike price (only for options).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub strike_price: Option<f64>,
     /// The option type (only for options).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,23 +104,23 @@ pub struct TardisInstrumentChanges {
     pub until: DateTime<Utc>,
     /// The minimum price increment (tick size).
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub price_increment: Option<f64>,
     /// The minimum size increment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub amount_increment: Option<f64>,
     /// The instrument contract multiplier (only for derivatives).
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub contract_multiplier: Option<f64>,
     /// The maker fee rate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub maker_fee: Option<f64>,
     /// The taker fee rate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_opt_f64_or_string")]
     pub taker_fee: Option<f64>,
     /// Additional fields from the Tardis API not explicitly modeled above.
     #[serde(flatten)]

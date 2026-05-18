@@ -665,7 +665,7 @@ def adjust_fills_for_partial_window(
 
     for instrument, pyo3_instrument in zip(instruments, pyo3_instruments, strict=False):
         assert instrument.id.value == pyo3_instrument.id.value
-        pyo3_orders, pyo3_fills = nautilus_pyo3.adjust_fills_for_partial_window(
+        pyo3_orders, pyo3_fills = nautilus_pyo3.process_mass_status_for_reconciliation(
             pyo3_mass_status,
             pyo3_instrument,
         )

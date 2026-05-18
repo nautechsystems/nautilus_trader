@@ -1,0 +1,75 @@
+name: nightly-miri
+
+# Runs Miri across the foundational `nautilus-core` and `nautilus-model` crates
+# to detect undefined behaviour in unsafe code (raw pointer / `CStr` handling
+# in `string::stack_str`, FFI-adjacent invariants, aliasing rules) and confirm
+# that the type-safe domain model holds up against Miri's strict provenance and
+# Stacked Borrows checks.
+#
+# Scheduled separately from `nightly-tests` because Miri is roughly 10-100x
+# slower than native execution and has no value gating PR builds; running it on
+# its own cron keeps it from blocking the rest of the nightly diagnostics.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [test-nightly-miri]
+  schedule:
+    - cron: "0 13 * * *" # Daily at 13:00 UTC (1hr after nightly-tests cron at 12:00 UTC)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  miri:
+    name: miri (${{ matrix.crate }})
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - core
+          - model
+    env:
+      # Dedicated target directory: Miri rebuilds against a different sysroot,
+      # so sharing a target dir with stable jobs only churns the cache.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/miri-${{ matrix.crate }}
+      # Pin a recent nightly so Miri behaviour is reproducible across runs.
+      # Bump when the channel rotates or when a newer Miri is needed.
+      MIRI_TOOLCHAIN: nightly-2026-04-16
+      RUST_BACKTRACE: 1
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
+          free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
+
+      - name: Install nightly toolchain with miri
+        run: |
+          rustup toolchain install "${MIRI_TOOLCHAIN}" --component miri --profile minimal
+          rustup +"${MIRI_TOOLCHAIN}" component add rust-src
+
+      - name: Setup miri sysroot
+        run: cargo +"${MIRI_TOOLCHAIN}" miri setup
+
+      - name: Run Miri
+        run: make cargo-miri-${{ matrix.crate }} MIRI_TOOLCHAIN="${MIRI_TOOLCHAIN}"

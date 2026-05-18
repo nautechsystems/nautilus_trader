@@ -254,6 +254,9 @@ impl BybitWsFeedHandler {
                         BybitWsFrame::AccountExecution(msg) => {
                             return Some(BybitWsMessage::AccountExecution(msg));
                         }
+                        BybitWsFrame::AccountExecutionFast(msg) => {
+                            return Some(BybitWsMessage::AccountExecutionFast(msg));
+                        }
                         BybitWsFrame::AccountWallet(msg) => {
                             return Some(BybitWsMessage::AccountWallet(msg));
                         }
@@ -391,7 +394,8 @@ impl BybitWsFeedHandler {
                 Some(parse_bybit_ws_frame(value))
             }
             Message::Binary(msg) => {
-                log::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary frame ({} bytes)", msg.len());
+                log::trace!("Raw binary: {msg:?}");
                 None
             }
             Message::Close(_) => {

@@ -112,8 +112,6 @@ impl PoolUpdater {
     }
 }
 
-// -- Typed handler wrappers -----------------------------------------------------
-
 /// Handler for pool swap events that delegates to a [`PoolUpdater`].
 #[derive(Debug)]
 pub struct PoolSwapHandler {

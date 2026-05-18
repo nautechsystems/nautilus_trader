@@ -674,6 +674,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_mark_price_msg_deserializes_optional_ap() {
+        let json = r#"{
+            "e": "markPriceUpdate",
+            "E": 1562305380000,
+            "s": "BTCUSDT",
+            "p": "11794.15000000",
+            "ap": "11792.85000000",
+            "i": "11784.62659091",
+            "P": "11784.25641265",
+            "r": "0.00038167",
+            "T": 1562306400000
+        }"#;
+
+        let msg: BinanceFuturesMarkPriceMsg = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.mark_price_moving_avg.as_deref(), Some("11792.85000000"));
+
+        let legacy: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
+        assert!(legacy.mark_price_moving_avg.is_none());
+    }
+
+    #[rstest]
     fn test_parse_mark_price_funding_rate_fields() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");

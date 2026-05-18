@@ -58,6 +58,8 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Quantity
 
 
 # Used to invalidate abnormal tick sizes that can signal data issues
@@ -762,6 +764,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
         instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}")
+            return
+
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
         price_magnifier = (
@@ -771,13 +777,28 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         )
         converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
         converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
+        bid_qty = self._make_market_data_qty(
+            instrument=instrument,
+            instrument_id=instrument_id,
+            size=bid_size,
+            size_name="bid_size",
+        )
+        ask_qty = self._make_market_data_qty(
+            instrument=instrument,
+            instrument_id=instrument_id,
+            size=ask_size,
+            size_name="ask_size",
+        )
+
+        if bid_qty is None or ask_qty is None:
+            return
 
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
             bid_price=instrument.make_price(converted_bid_price),
             ask_price=instrument.make_price(converted_ask_price),
-            bid_size=instrument.make_qty(bid_size),
-            ask_size=instrument.make_qty(ask_size),
+            bid_size=bid_qty,
+            ask_size=ask_qty,
             ts_event=ts_event,
             ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
@@ -808,6 +829,20 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
         instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}")
+            return
+
+        qty = self._make_market_data_qty(
+            instrument=instrument,
+            instrument_id=instrument_id,
+            size=size,
+            size_name="size",
+        )
+
+        if qty is None:
+            return
+
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
         price_magnifier = (
@@ -820,7 +855,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         trade_tick = TradeTick(
             instrument_id=instrument_id,
             price=instrument.make_price(converted_price),
-            size=instrument.make_qty(size),
+            size=qty,
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=generate_trade_id(ts_event=ts_event, price=converted_price, size=size),
             ts_event=ts_event,
@@ -926,6 +961,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             # Create quote tick
             instrument_id = InstrumentId.from_str(subscription.name[0])
             instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+
             ts_event = self._clock.timestamp_ns()
             price_magnifier = (
                 self._instrument_provider.get_price_magnifier(instrument_id)
@@ -934,13 +973,28 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             )
             converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
             converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
+            bid_qty = self._make_market_data_qty(
+                instrument=instrument,
+                instrument_id=instrument_id,
+                size=bid_size,
+                size_name="bid_size",
+            )
+            ask_qty = self._make_market_data_qty(
+                instrument=instrument,
+                instrument_id=instrument_id,
+                size=ask_size,
+                size_name="ask_size",
+            )
+
+            if bid_qty is None or ask_qty is None:
+                return
 
             quote_tick = QuoteTick(
                 instrument_id=instrument_id,
                 bid_price=instrument.make_price(converted_bid_price),
                 ask_price=instrument.make_price(converted_ask_price),
-                bid_size=instrument.make_qty(bid_size),
-                ask_size=instrument.make_qty(ask_size),
+                bid_size=bid_qty,
+                ask_size=ask_qty,
                 ts_event=ts_event,
                 ts_init=ts_event,
             )
@@ -1121,6 +1175,11 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                self._end_request(req_id)
+                return
+
             price_magnifier = (
                 self._instrument_provider.get_price_magnifier(instrument_id)
                 if self._instrument_provider
@@ -1131,13 +1190,28 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
                 converted_bid_price = ib_price_to_nautilus_price(tick.priceBid, price_magnifier)
                 converted_ask_price = ib_price_to_nautilus_price(tick.priceAsk, price_magnifier)
+                bid_qty = self._make_market_data_qty(
+                    instrument=instrument,
+                    instrument_id=instrument_id,
+                    size=tick.sizeBid,
+                    size_name="bid_size",
+                )
+                ask_qty = self._make_market_data_qty(
+                    instrument=instrument,
+                    instrument_id=instrument_id,
+                    size=tick.sizeAsk,
+                    size_name="ask_size",
+                )
+
+                if bid_qty is None or ask_qty is None:
+                    continue
 
                 quote_tick = QuoteTick(
                     instrument_id=instrument_id,
                     bid_price=instrument.make_price(converted_bid_price),
                     ask_price=instrument.make_price(converted_ask_price),
-                    bid_size=instrument.make_qty(tick.sizeBid),
-                    ask_size=instrument.make_qty(tick.sizeAsk),
+                    bid_size=bid_qty,
+                    ask_size=ask_qty,
                     ts_event=ts_event,
                     ts_init=ts_event,
                 )
@@ -1364,6 +1438,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                self._end_request(req_id)
+                return
 
             price_magnifier = (
                 self._instrument_provider.get_price_magnifier(instrument_id)
@@ -1374,11 +1452,20 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
                 converted_price = ib_price_to_nautilus_price(tick.price, price_magnifier)
+                qty = self._make_market_data_qty(
+                    instrument=instrument,
+                    instrument_id=instrument_id,
+                    size=tick.size,
+                    size_name="size",
+                )
+
+                if qty is None:
+                    continue
 
                 trade_tick = TradeTick(
                     instrument_id=instrument_id,
                     price=instrument.make_price(converted_price),
-                    size=instrument.make_qty(tick.size),
+                    size=qty,
                     aggressor_side=AggressorSide.NO_AGGRESSOR,
                     trade_id=generate_trade_id(
                         ts_event=ts_event,
@@ -1391,6 +1478,23 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 request.result.append(trade_tick)
 
             self._end_request(req_id)
+
+    def _make_market_data_qty(
+        self,
+        instrument: Instrument,
+        instrument_id: InstrumentId,
+        size: Decimal,
+        size_name: str,
+    ) -> Quantity | None:
+        try:
+            return instrument.make_qty(size)
+        except ValueError as e:
+            self._log.debug(
+                f"Ignoring market data tick for {instrument_id}: {size_name}={size} cannot be "
+                f"represented with size_precision={instrument.size_precision} and "
+                f"size_increment={instrument.size_increment}: {e}",
+            )
+            return None
 
     async def _handle_data(self, data: Data) -> None:
         """

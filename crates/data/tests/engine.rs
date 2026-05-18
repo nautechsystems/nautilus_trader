@@ -15,6 +15,8 @@
 
 mod common;
 
+#[cfg(feature = "streaming")]
+use std::path::{Path, PathBuf};
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, time::Duration};
 #[cfg(feature = "defi")]
 use std::{str::FromStr, sync::Arc};
@@ -36,28 +38,31 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        CustomDataResponse, DataCommand, DataResponse, InstrumentResponse, PARAMS_IS_PARENT,
+        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+        RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
-        self, MessageBus, TypedHandler, TypedIntoHandler,
-        stubs::get_typed_message_saving_handler,
+        self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
+        stubs::{get_any_saving_handler, get_typed_message_saving_handler},
         switchboard::{self, MessagingSwitchboard},
     },
     testing::wait_until,
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_data::{
+    client::DataClientAdapter,
+    engine::{DataEngine, config::DataEngineConfig},
+};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::tick_map::tick_math::get_tick_at_sqrt_ratio;
 #[cfg(feature = "defi")]
@@ -69,23 +74,34 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
-        TradeTick,
-        option_chain::StrikeRange,
-        stubs::{OrderBookDeltaTestBuilder, stub_delta, stub_deltas, stub_depth10},
+        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        greeks::OptionGreekValues,
+        option_chain::{OptionGreeks, StrikeRange},
+        stubs::{
+            OrderBookDeltaTestBuilder, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
+        },
     },
-    enums::{BookType, MarketStatusAction, OptionKind, PriceType},
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
+    enums::{
+        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType,
+    },
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
-        CurrencyPair, Instrument, InstrumentAny,
-        stubs::{audusd_sim, gbpusd_sim},
+        CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny, OptionContract,
+        SyntheticInstrument,
+        stubs::{audusd_sim, futures_spread_es, gbpusd_sim},
     },
     orderbook::OrderBook,
     stubs::TestDefault,
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
+#[cfg(feature = "streaming")]
+use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
 use rstest::*;
+use serde_json::json;
+use ustr::Ustr;
 
 #[fixture]
 fn client_id() -> ClientId {
@@ -160,6 +176,244 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+fn parent_params() -> Params {
+    let mut params = Params::new();
+    params.insert(PARAMS_IS_PARENT.to_string(), json!(true));
+    params
+}
+
+fn generic_futures_spread() -> FuturesSpread {
+    let mut spread = futures_spread_es();
+    spread.id = generic_futures_spread_id();
+    spread
+}
+
+fn generic_futures_spread_id() -> InstrumentId {
+    InstrumentId::from("(1)ESM4___((1))ESU4.GLBX")
+}
+
+fn generic_futures_spread_legs() -> (InstrumentId, InstrumentId) {
+    (
+        InstrumentId::from("ESM4.GLBX"),
+        InstrumentId::from("ESU4.GLBX"),
+    )
+}
+
+fn spread_quote_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+        "update_interval_seconds": null,
+    }))
+    .unwrap()
+}
+
+fn spread_quote_default_interval_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+    }))
+    .unwrap()
+}
+
+fn spread_quote_zero_interval_params() -> Params {
+    serde_json::from_value(json!({
+        "aggregate_spread_quotes": true,
+        "update_interval_seconds": 0,
+    }))
+    .unwrap()
+}
+
+#[cfg(feature = "streaming")]
+struct CatalogTempDir(PathBuf);
+
+#[cfg(feature = "streaming")]
+impl CatalogTempDir {
+    fn new(label: &str) -> Self {
+        let path =
+            std::env::temp_dir().join(format!("nautilus-data-engine-{label}-{}", UUID4::new()));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl Drop for CatalogTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn register_empty_catalog(data_engine: &mut DataEngine, label: &str) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_quote_catalog(
+    data_engine: &mut DataEngine,
+    instrument_id: InstrumentId,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("quotes");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![QuoteTick::new(
+                instrument_id,
+                Price::from("1.0000"),
+                Price::from("1.0001"),
+                Quantity::from(1),
+                Quantity::from(1),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_trade_catalog(
+    data_engine: &mut DataEngine,
+    instrument_id: InstrumentId,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("trades");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![TradeTick::new(
+                instrument_id,
+                Price::from("1.0000"),
+                Quantity::from(1),
+                AggressorSide::Buyer,
+                TradeId::new("T-1"),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_bar_catalog(
+    data_engine: &mut DataEngine,
+    bar_type: BarType,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("bars");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog
+        .write_to_parquet(
+            vec![Bar::new(
+                bar_type,
+                Price::from("1.0000"),
+                Price::from("1.0001"),
+                Price::from("0.9999"),
+                Price::from("1.0000"),
+                Quantity::from(1),
+                UnixNanos::from(last_timestamp),
+                UnixNanos::from(last_timestamp),
+            )],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn write_custom_catalog_file(
+    catalog_dir: &CatalogTempDir,
+    catalog: &ParquetDataCatalog,
+    type_name: &str,
+    identifier: Option<&str>,
+    start_timestamp: u64,
+    end_timestamp: u64,
+) {
+    let directory = catalog
+        .make_path_custom_data(type_name, identifier)
+        .unwrap();
+    let directory_path = catalog_dir.path().join(directory);
+    std::fs::create_dir_all(&directory_path).unwrap();
+
+    let filename = timestamps_to_filename(
+        UnixNanos::from(start_timestamp),
+        UnixNanos::from(end_timestamp),
+    );
+    std::fs::write(directory_path.join(filename), b"").unwrap();
+}
+
+#[cfg(feature = "streaming")]
+fn register_custom_catalog(
+    data_engine: &mut DataEngine,
+    data_type: &DataType,
+    last_timestamp: u64,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new("custom");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        data_type.type_name(),
+        data_type.identifier(),
+        last_timestamp,
+        last_timestamp,
+    );
+
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn register_recording_client(
+    data_engine: &mut DataEngine,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) -> Rc<RefCell<Vec<DataCommand>>> {
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, data_engine);
+    recorder
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_subscribe_command(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> SubscribeCommand {
+    let recorded = recorder.borrow();
+    let DataCommand::Subscribe(command) = &recorded[0] else {
+        panic!("expected subscribe command");
+    };
+    command.clone()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_subscribe_command_with_correlation(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    correlation_id: UUID4,
+) -> SubscribeCommand {
+    let command = recorded_subscribe_command(recorder);
+    assert_eq!(command.correlation_id(), Some(correlation_id));
+    command
 }
 
 #[rstest]
@@ -504,6 +758,68 @@ fn test_unsubscribe_book_deltas_removes_book_updater(
 }
 
 #[rstest]
+fn test_subscribe_book_deltas_unmanaged_skips_book_updater(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let deltas_topic = switchboard::get_book_deltas_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+
+    let sub_deltas =
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false, // unmanaged
+            None,
+            None,
+        )));
+    data_engine.execute(sub_deltas);
+
+    let sub_depth =
+        DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+            audusd_sim.id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false, // unmanaged
+            None,
+            None,
+        )));
+    data_engine.execute(sub_depth);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert!(
+        data_engine.get_cache().order_book(&audusd_sim.id).is_none(),
+        "unmanaged subscriptions must not auto-create an order book",
+    );
+}
+
+#[rstest]
 fn test_unsubscribe_depth10_keeps_deltas_book_updater(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -595,6 +911,1936 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+}
+
+fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
+    FuturesContract::new(
+        InstrumentId::from(instrument_id),
+        Symbol::from(symbol),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        UnixNanos::default(),
+        UnixNanos::from(2_000_000_000_000_000_000u64),
+        Currency::USD(),
+        2,
+        Price::from("0.01"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> OptionContract {
+    OptionContract::new(
+        InstrumentId::from(instrument_id),
+        Symbol::from(symbol),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        kind,
+        Price::from("4000.00"),
+        Currency::USD(),
+        UnixNanos::default(),
+        UnixNanos::from(2_000_000_000_000_000_000u64),
+        2,
+        Price::from("0.01"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[rstest]
+fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        emit_quotes_from_book_depths: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let messages = saver.get_messages();
+    assert_eq!(
+        messages.len(),
+        1,
+        "depth should emit exactly one synthetic quote",
+    );
+    let cached_quote = cache.borrow().quote(&instrument_id).copied();
+    assert!(cached_quote.is_some(), "synthetic quote should be cached",);
+
+    // Same top-of-book: must not republish
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    assert_eq!(saver.get_messages().len(), 1);
+
+    // Shifted top-of-book: must republish
+    let mut shifted = depth;
+    shifted.bids[0] = BookOrder::new(
+        depth.bids[0].side,
+        Price::new(98.50, 2),
+        depth.bids[0].size,
+        depth.bids[0].order_id,
+    );
+    shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
+    shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
+    data_engine.process_data(Data::Depth10(Box::new(shifted)));
+
+    let messages = saver.get_messages();
+    assert_eq!(
+        messages.len(),
+        2,
+        "different top-of-book must republish the synthetic quote",
+    );
+    assert_eq!(messages[1].bid_price, Price::new(98.50, 2));
+}
+
+#[rstest]
+fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        emit_quotes_from_book_depths: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let padded_bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let padded_asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let depth = OrderBookDepth10::new(
+        instrument_id,
+        padded_bids,
+        padded_asks,
+        [0; DEPTH10_LEN],
+        [0; DEPTH10_LEN],
+        0,
+        0,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "fully-padded NoOrderSide depth must not publish a synthetic quote",
+    );
+    assert!(
+        cache.borrow().quote(&instrument_id).is_none(),
+        "no quote should be cached for invalid depth padding",
+    );
+}
+
+#[rstest]
+#[case::ts_event_regression(2_000, 2_000, 1_000, 1_000, false)]
+#[case::ts_init_only_regression(2_000, 2_000, 2_000, 1_000, false)]
+#[case::strictly_forward(1_000, 1_000, 2_000, 2_000, true)]
+fn test_validate_data_sequence_drops_out_of_order_bar(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    #[case] first_ts_event: u64,
+    #[case] first_ts_init: u64,
+    #[case] second_ts_event: u64,
+    #[case] second_ts_init: u64,
+    #[case] expect_overwrite: bool,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        validate_data_sequence: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let bar_template = Bar::default();
+    let bar_type = bar_template.bar_type;
+    let make_bar = |ts_event: u64, ts_init: u64| {
+        Bar::new(
+            bar_type,
+            bar_template.open,
+            bar_template.high,
+            bar_template.low,
+            bar_template.close,
+            bar_template.volume,
+            UnixNanos::from(ts_event),
+            UnixNanos::from(ts_init),
+        )
+    };
+
+    let first = make_bar(first_ts_event, first_ts_init);
+    let second = make_bar(second_ts_event, second_ts_init);
+
+    data_engine.process_data(Data::Bar(first));
+    data_engine.process_data(Data::Bar(second));
+
+    let stored = cache.borrow().bar(&bar_type).copied();
+    let expected = if expect_overwrite { second } else { first };
+    assert_eq!(stored, Some(expected));
+}
+
+#[rstest]
+fn test_aggregator_emitted_bar_drops_out_of_sequence(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        validate_data_sequence: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("0.65000"),
+            Quantity::from("1000"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    // First trade emits a bar at ts=2_000
+    data_engine.process_data(Data::Trade(make_trade(2_000, "t1")));
+    let first_bar = cache
+        .borrow()
+        .bar(&bar_type)
+        .copied()
+        .expect("first bar must be cached");
+    assert_eq!(first_bar.ts_event, UnixNanos::from(2_000));
+
+    // Earlier ts_event: aggregator would emit a regressed bar
+    data_engine.process_data(Data::Trade(make_trade(1_000, "t2")));
+
+    let cached = cache
+        .borrow()
+        .bar(&bar_type)
+        .copied()
+        .expect("cache should still hold the first bar");
+    assert_eq!(
+        cached.ts_event, first_bar.ts_event,
+        "out-of-order aggregator-emitted bar must not overwrite the cached bar",
+    );
+}
+
+#[rstest]
+fn test_subscribe_book_deltas_composite_creates_books_per_underlying(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    assert!(composite_id.symbol.is_composite());
+    assert_eq!(composite_id.symbol.root(), "ES");
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&esz1_id).is_some(),
+        "underlying ESZ1.XCME book should be created",
+    );
+    assert!(
+        cache_view.order_book(&esh2_id).is_some(),
+        "underlying ESH2.XCME book should be created",
+    );
+}
+
+#[rstest]
+fn test_composite_book_deltas_route_to_per_underlying_book(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    let delta = OrderBookDeltaTestBuilder::new(esz1_id).build();
+    data_engine.process_data(Data::Delta(delta));
+
+    let cache_view = cache.borrow();
+    let esz1_book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book should exist after composite subscribe");
+    assert_eq!(
+        esz1_book.update_count, 1,
+        "per-underlying delta must reach the ESZ1 book via the composite wildcard subscription",
+    );
+
+    let esh2_book = cache_view
+        .order_book(&esh2_id)
+        .expect("ESH2 book should exist after composite subscribe");
+    assert_eq!(
+        esh2_book.update_count, 0,
+        "ESH2 book must remain untouched when only ESZ1 deltas are processed",
+    );
+}
+
+#[rstest]
+fn test_composite_book_deltas_route_each_underlying_independently(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 book must reflect exactly its own delta",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        1,
+        "ESH2 book must reflect exactly its own delta",
+    );
+}
+
+#[rstest]
+fn test_reset_unsubscribes_composite_book_deltas(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    let pre_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
+    assert_eq!(pre_reset_count, 1);
+
+    data_engine.reset();
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    let post_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
+    assert_eq!(
+        post_reset_count, pre_reset_count,
+        "composite BookUpdater must be unsubscribed on reset; new deltas must not mutate the book",
+    );
+}
+
+#[rstest]
+fn test_composite_and_exact_book_deltas_apply_once_per_publish(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            Some(parent_params()),
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 must apply each delta exactly once even when both composite and exact subs are active",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        0,
+        "ESH2 book stays untouched when only ESZ1 deltas are processed",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            Some(parent_params()),
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(parent_params()),
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 BookUpdater must remain alive (exact sub still active) after composite unsubscribe",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        0,
+        "ESH2 BookUpdater must be torn down (no remaining sub) after composite unsubscribe",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            Some(parent_params()),
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
+        SubscribeBookDepth10::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            Some(parent_params()),
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(parent_params()),
+        ),
+    )));
+
+    let mut depth = stub_depth10();
+    depth.instrument_id = esz1_id;
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let cache_view = cache.borrow();
+    let esz1_book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book must exist while composite depth10 sub is active");
+    assert!(
+        esz1_book.update_count >= 1,
+        "depth10 publish must reach the per-underlying book; \
+         composite depth10 sub kept alive after deltas unsubscribed",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
+        SubscribeBookDepth10::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            Some(parent_params()),
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(parent_params()),
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "exact depth10 sub keeps the per-underlying deltas handler alive after composite deltas unsubscribed",
+    );
+}
+
+#[rstest]
+fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            esz1_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let mut depth = stub_depth10();
+    depth.instrument_id = esz1_id;
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let cache_view = cache.borrow();
+    let book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book must exist while snapshot sub is active");
+    assert!(
+        book.update_count >= 1,
+        "depth10 publish must reach the per-underlying book; \
+         deltas-then-snapshots path now registers the depth10 handler",
+    );
+}
+
+#[rstest]
+fn test_subscribe_book_deltas_composite_with_no_underlyings_is_noop(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&composite_id).is_none(),
+        "no book should be created for the parent id itself",
+    );
+    assert!(
+        cache_view
+            .instruments_by_parent(&venue, &Ustr::from("ES"), InstrumentClass::Future)
+            .is_empty(),
+        "no FUT-class underlyings should exist for the parent root",
+    );
+}
+
+#[rstest]
+fn test_parent_book_deltas_filters_by_instrument_class(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let es_call = make_es_option("ES C4000.XCME", "ES C4000", OptionKind::Call);
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+    let es_call_id = es_call.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::OptionContract(es_call))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        parent_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&esz1_id).is_some(),
+        "ESZ1 future leaf book must be created",
+    );
+    assert!(
+        cache_view.order_book(&esh2_id).is_some(),
+        "ESH2 future leaf book must be created",
+    );
+    assert!(
+        cache_view.order_book(&es_call_id).is_none(),
+        "ES call option book must NOT be created when parent class is FUT",
+    );
+}
+
+#[rstest]
+fn test_parent_book_snapshots_filter_by_instrument_class(client_id: ClientId) {
+    let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let es_call = make_es_option("ES C4000.XCME", "ES C4000", OptionKind::Call);
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+    let es_call_id = es_call.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::OptionContract(es_call))
+            .unwrap();
+    }
+
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let interval_ms = NonZeroUsize::new(100).unwrap();
+    let parent_topic = switchboard::get_book_snapshots_topic(parent_id, interval_ms);
+
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBook>(None);
+    msgbus::subscribe_book_snapshots(parent_topic.into(), handler, None);
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+            SubscribeBookSnapshots::new(
+                parent_id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                interval_ms,
+                None,
+                Some(parent_params()),
+            ),
+        )));
+
+    // Feed deltas to populate each leaf's book so the snapshotter has
+    // something to publish.
+    process_book_delta(&data_engine, esz1_id);
+    process_book_delta(&data_engine, esh2_id);
+    process_book_delta(&data_engine, es_call_id);
+
+    advance_clock_and_dispatch(&clock, 200_000_000);
+
+    wait_until(
+        || saver.get_messages().len() >= 2,
+        Duration::from_millis(100),
+    );
+
+    let snapshots = saver.get_messages();
+    let snapshot_ids: Vec<InstrumentId> = snapshots.iter().map(|b| b.instrument_id).collect();
+
+    assert!(
+        snapshot_ids.contains(&esz1_id),
+        "parent snapshot subscription on ES.FUT.XCME must publish ESZ1 future snapshot",
+    );
+    assert!(
+        snapshot_ids.contains(&esh2_id),
+        "parent snapshot subscription on ES.FUT.XCME must publish ESH2 future snapshot",
+    );
+    assert!(
+        !snapshot_ids.contains(&es_call_id),
+        "parent snapshot subscription on ES.FUT.XCME must NOT publish the ES call option \
+         snapshot even though it shares the ES underlying root",
+    );
+}
+
+#[rstest]
+fn test_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    {
+        let cache_view = cache.borrow();
+        assert!(
+            cache_view.order_book(&runner).is_none(),
+            "parent subscribe with an unparsable Betfair runner id must NOT create a book; \
+             the engine should reject the command",
+        );
+    }
+    assert!(
+        !data_engine.subscribed_book_deltas().contains(&runner),
+        "rejected parent subscribe must NOT leave the id in book_deltas_subs",
+    );
+
+    // Retrying without the parent flag on the same id must succeed; the
+    // earlier rejection cannot have stuck the engine in a half-subscribed state.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(retry);
+    assert!(
+        cache.borrow().order_book(&runner).is_some(),
+        "concrete subscribe after a rejected parent attempt must still create the exact-id book",
+    );
+}
+
+#[rstest]
+fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        Some(parent_params()),
+    )));
+    data_engine.execute(sub);
+
+    {
+        let cache_view = cache.borrow();
+        assert!(
+            cache_view.order_book(&runner).is_none(),
+            "parent depth10 subscribe with an unparsable Betfair runner id must NOT create a book",
+        );
+    }
+    assert!(
+        !data_engine.subscribed_book_depth10().contains(&runner),
+        "rejected parent depth10 subscribe must NOT leave the id in book_depth10_subs",
+    );
+
+    // Retrying without the parent flag on the same id must succeed.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        runner,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(retry);
+    assert!(
+        cache.borrow().order_book(&runner).is_some(),
+        "concrete depth10 subscribe after a rejected parent attempt must still create the exact-id book",
+    );
+}
+
+#[rstest]
+fn test_snapshots_parent_subscribe_with_unparsable_id_returns_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("BETFAIR");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
+    let interval_ms = NonZeroUsize::new(1000).unwrap();
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            runner,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            interval_ms,
+            None,
+            Some(parent_params()),
+        ),
+    ));
+    data_engine.execute(sub);
+
+    assert!(
+        !data_engine.subscribed_book_snapshots().contains(&runner),
+        "rejected parent snapshots subscribe must NOT increment book_snapshot_counts \
+         for the (id, interval) key",
+    );
+
+    // Retrying without the parent flag on the same (id, interval) must succeed;
+    // the prior rejection cannot have left the snapshot counter in a half-incremented state.
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            runner,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            interval_ms,
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(retry);
+    assert!(
+        data_engine.subscribed_book_snapshots().contains(&runner),
+        "concrete snapshots subscribe after a rejected parent attempt must succeed",
+    );
+}
+
+#[rstest]
+fn test_concrete_subscribe_does_not_register_parent_expansion(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    // Concrete subscription: no Some(parent_params()), so the engine must NOT expand.
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        esz1_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&esz1_id).is_some(),
+        "concrete subscribe must create the exact-id book",
+    );
+    assert!(
+        cache_view.order_book(&esh2_id).is_none(),
+        "concrete subscribe on ESZ1 must NOT spawn a book for ESH2 \
+         even though both share the `ES` underlying root",
+    );
+}
+
+#[rstest]
+fn test_backtest_client_overrides_subscribe_routing(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let venue_client_id = ClientId::new("VENUE_LIVE");
+    let backtest_client_id = ClientId::new("BACKTEST");
+
+    let venue_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        venue_client_id,
+        venue,
+        None,
+        &venue_recorder,
+        &mut data_engine,
+    );
+
+    let backtest_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        backtest_client_id,
+        venue,
+        None,
+        &backtest_recorder,
+        &mut data_engine,
+    );
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(venue_client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    assert_eq!(
+        backtest_recorder.borrow().len(),
+        1,
+        "BACKTEST client should receive the subscribe override",
+    );
+    assert!(
+        venue_recorder.borrow().is_empty(),
+        "venue client should not receive subscribes when BACKTEST is registered",
+    );
+}
+
+#[rstest]
+fn test_backtest_client_overrides_when_registered_as_default(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let venue_client_id = ClientId::new("VENUE_LIVE");
+    let backtest_client_id = ClientId::new("BACKTEST");
+
+    let venue_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        venue_client_id,
+        venue,
+        None,
+        &venue_recorder,
+        &mut data_engine,
+    );
+
+    // `BacktestEngine` registers BACKTEST with venue=None, which lands the
+    // adapter in `default_client` rather than `clients`
+    let backtest_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let backtest = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        backtest_client_id,
+        None,
+        Some(backtest_recorder.clone()),
+    );
+    let backtest_adapter =
+        DataClientAdapter::new(backtest_client_id, None, true, true, Box::new(backtest));
+    data_engine.register_client(backtest_adapter, None);
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(venue_client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    assert_eq!(
+        backtest_recorder.borrow().len(),
+        1,
+        "BACKTEST default client must receive subscribes",
+    );
+    assert!(
+        venue_recorder.borrow().is_empty(),
+        "venue client must not receive subscribes when BACKTEST is the default",
+    );
+}
+
+#[rstest]
+fn test_emit_quotes_from_book_publishes_on_delta_apply(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        emit_quotes_from_book: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let deltas = stub_deltas();
+    let instrument_id = deltas.instrument_id;
+    let venue = instrument_id.venue;
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true, // managed
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    let deltas_api = OrderBookDeltas_API::new(deltas);
+    data_engine.process_data(Data::Deltas(deltas_api.clone()));
+
+    assert_eq!(
+        saver.get_messages().len(),
+        1,
+        "managed BookDeltas with emit_quotes_from_book must publish a top-of-book quote",
+    );
+
+    // Same deltas, same top-of-book: idempotent
+    data_engine.process_data(Data::Deltas(deltas_api));
+    assert_eq!(saver.get_messages().len(), 1);
+}
+
+#[rstest]
+fn test_emit_quotes_from_book_publishes_on_depth_apply(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        emit_quotes_from_book: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+    let venue = instrument_id.venue;
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let messages = saver.get_messages();
+    assert_eq!(
+        messages.len(),
+        1,
+        "managed depth subscription with emit_quotes_from_book must publish a top-of-book quote",
+    );
+}
+
+#[rstest]
+fn test_reset_clears_book_state_and_timers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let deltas_topic = switchboard::get_book_deltas_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+
+    let sub_deltas =
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        )));
+    data_engine.execute(sub_deltas);
+
+    let sub_snapshots = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(sub_snapshots);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert!(!data_engine.subscribed_book_snapshots().is_empty());
+    assert!(!data_engine.get_clock().timer_names().is_empty());
+
+    data_engine.reset();
+
+    // Engine-owned book state and timers cleared; adapter-tracked subs
+    // remain because `client.reset()` is a no-op
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert!(data_engine.subscribed_book_snapshots().is_empty());
+    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert_eq!(data_engine.command_count(), 0);
+    assert_eq!(data_engine.data_count(), 0);
+}
+
+#[rstest]
+fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let sim_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &sim_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let deribit_client_id = ClientId::new("DERIBIT");
+    let deribit_venue = Venue::new("DERIBIT");
+    let deribit_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        deribit_client_id,
+        deribit_venue,
+        Some(deribit_venue),
+        &deribit_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let book_id = audusd_sim.id;
+    let deltas_topic = switchboard::get_book_deltas_topic(book_id);
+    let depth_topic = switchboard::get_book_depth10_topic(book_id);
+    let greeks_topic = switchboard::get_option_greeks_topic(call_id);
+    let series_id = make_series_id();
+
+    let subscribe_all = |engine: &Rc<RefCell<DataEngine>>| {
+        engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+                SubscribeBookDeltas::new(
+                    book_id,
+                    BookType::L2_MBP,
+                    Some(client_id),
+                    Some(venue),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    true,
+                    None,
+                    None,
+                ),
+            )));
+        engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+                SubscribeBookSnapshots::new(
+                    book_id,
+                    BookType::L2_MBP,
+                    Some(client_id),
+                    Some(venue),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    NonZeroUsize::new(1000).unwrap(),
+                    None,
+                    None,
+                ),
+            )));
+        engine.borrow_mut().execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(deribit_client_id),
+            Some(deribit_venue),
+        ));
+    };
+
+    subscribe_all(&data_engine);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
+
+    data_engine.borrow_mut().reset();
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert!(data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(greeks_topic),
+        0
+    );
+
+    subscribe_all(&data_engine);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
 }
 
 #[rstest]
@@ -713,6 +2959,1009 @@ fn test_execute_subscribe_quotes(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_from_catalog(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_quote_catalog(&mut data_engine, audusd_sim.id, 1_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(1_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_preserves_existing_start_ns(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_quote_catalog(&mut data_engine, audusd_sim.id, 1_000);
+    let params: Params = serde_json::from_value(json!({"start_ns": 42})).unwrap();
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(42)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_quotes_sets_null_without_catalog_hit(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-quotes");
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let SubscribeCommand::Quotes(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected quotes subscribe");
+    };
+    let null_value = json!(null);
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get("start_ns")),
+        Some(&null_value)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_trades_from_catalog(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let _catalog_dir = register_trade_catalog(&mut data_engine, audusd_sim.id, 2_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
+
+    let SubscribeCommand::Trades(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected trades subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(2_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_external_bars_from_catalog(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 3_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let SubscribeCommand::Bars(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected bars subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(3_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_skips_internal_bars(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 4_000);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let SubscribeCommand::Bars(recorded) = recorded_subscribe_command(&recorder) else {
+        panic!("expected bars subscribe");
+    };
+    assert!(
+        recorded
+            .params
+            .as_ref()
+            .is_none_or(|params| !params.contains_key("start_ns"))
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_from_catalog(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//AUDUSD".to_string()));
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 5_000);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(5_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_sets_null_without_catalog_hit(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//MISSING".to_string()));
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-custom");
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    let null_value = json!(null);
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get("start_ns")),
+        Some(&null_value)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_without_identifier_merges_catalog_intervals(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let type_name = "CustomFeed";
+    let catalog_dir = CatalogTempDir::new("custom-no-identifier");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        type_name,
+        Some("SIM//AUDUSD"),
+        1_000,
+        10_000,
+    );
+    write_custom_catalog_file(
+        &catalog_dir,
+        &catalog,
+        type_name,
+        Some("SIM//EURUSD"),
+        5_000,
+        6_000,
+    );
+    data_engine.register_catalog(catalog, None);
+    let data_type = DataType::new(type_name, None, None);
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(10_001)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_preserves_existing_start_ns(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let data_type = DataType::new("CustomFeed", None, Some("SIM//AUDUSD".to_string()));
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 6_000);
+    let params: Params = serde_json::from_value(json!({"start_ns": 42})).unwrap();
+    let correlation_id = UUID4::new();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(42)
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_catalog_start_ns_prefill_custom_data_preserves_command_metadata(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
+    let metadata = serde_json::from_value(json!({
+        "instrument_id": "IGNORED.SIM",
+        "source": "metadata",
+    }))
+    .unwrap();
+    let data_type = DataType::new(
+        "CustomMetadataFeed",
+        Some(metadata),
+        Some("SIM//METADATA".to_string()),
+    );
+    let _catalog_dir = register_custom_catalog(&mut data_engine, &data_type, 7_000);
+    let command_id = UUID4::new();
+    let ts_init = UnixNanos::from(123);
+    let correlation_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({"source": "params"})).unwrap();
+
+    let sub = SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        command_id,
+        ts_init,
+        Some(correlation_id),
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Data(sub)));
+
+    let SubscribeCommand::Data(recorded) =
+        recorded_subscribe_command_with_correlation(&recorder, correlation_id)
+    else {
+        panic!("expected custom data subscribe");
+    };
+
+    assert_eq!(recorded.client_id, Some(client_id));
+    assert_eq!(recorded.venue, Some(venue));
+    assert_eq!(recorded.data_type.type_name(), data_type.type_name());
+    assert_eq!(recorded.data_type.metadata(), data_type.metadata());
+    assert_eq!(recorded.data_type.identifier(), data_type.identifier());
+    assert_eq!(recorded.command_id, command_id);
+    assert_eq!(recorded.ts_init, ts_init);
+    assert_eq!(recorded.correlation_id, Some(correlation_id));
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_u64("start_ns")),
+        Some(7_001)
+    );
+    assert_eq!(
+        recorded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("source")),
+        Some("params")
+    );
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes-timer")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_default_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    advance_clock_and_dispatch(&clock, 0);
+    assert!(saver.get_messages().is_empty());
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+    assert!(saver.get_messages().is_empty());
+
+    advance_clock_and_dispatch(&clock, 1_000_000_000);
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+    assert_eq!(spread_quotes[0].ts_event, UnixNanos::from(1_000_000_000));
+}
+
+#[rstest]
+fn test_subscribe_spread_quotes_with_zero_interval_publishes_spread_quote(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_zero_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let leg_subscriptions: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)) => Some(cmd.instrument_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(leg_subscriptions, vec![leg_a, leg_b]);
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty());
+
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_b));
+
+    let spread_quotes = saver.get_messages();
+    assert_eq!(spread_quotes.len(), 1);
+    assert_eq!(spread_quotes[0].instrument_id, spread_id);
+    assert_eq!(spread_quotes[0].bid_price, Price::from("1.00"));
+    assert_eq!(spread_quotes[0].ask_price, Price::from("3.00"));
+    assert_eq!(spread_quotes[0].bid_size, Quantity::from(5));
+    assert_eq!(spread_quotes[0].ask_size, Quantity::from(6));
+}
+
+#[rstest]
+fn test_unsubscribe_spread_quotes_stops_default_interval_timer(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let params = spread_quote_default_interval_params();
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    let unsub = UnsubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub)));
+
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        0
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_spread_quotes_removes_leg_handlers(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("spread-quotes")));
+    let spread_topic = switchboard::get_quotes_topic(spread_id);
+    msgbus::subscribe_quotes(spread_topic.into(), handler, None);
+
+    let params = spread_quote_params();
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+    recorder.borrow_mut().clear();
+
+    let unsub = UnsubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub)));
+
+    let leg_unsubscriptions: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(cmd)) => Some(cmd.instrument_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(leg_unsubscriptions, vec![leg_a, leg_b]);
+
+    let quote_a = QuoteTick::new(
+        leg_a,
+        Price::from("101.00"),
+        Price::from("102.00"),
+        Quantity::from(5),
+        Quantity::from(6),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    let quote_b = QuoteTick::new(
+        leg_b,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from(7),
+        Quantity::from(8),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    data_engine.process_data(Data::Quote(quote_b));
+
+    assert!(saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    let spread_any = InstrumentAny::FuturesSpread(spread);
+    data_engine.process(&spread_any as &dyn Any);
+
+    let sub = SubscribeQuotes::new(
+        spread_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(spread_quote_default_interval_params()),
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let timer_name = format!("SPREAD_QUOTE_{spread_id}");
+    assert!(
+        data_engine
+            .get_clock()
+            .timer_names()
+            .iter()
+            .any(|name| *name == timer_name)
+    );
+
+    data_engine.reset();
+
+    assert!(data_engine.get_clock().timer_names().is_empty());
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        0
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let topic = switchboard::get_quotes_topic(audusd_sim.id);
+    let (handler_a, saver_a) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("subscriber-a")));
+    let (handler_b, saver_b) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("subscriber-b")));
+    msgbus::subscribe_quotes(topic.into(), handler_a, None);
+    msgbus::subscribe_quotes(topic.into(), handler_b, None);
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
+    data_engine.execute(unsub_cmd);
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Quote(quote));
+
+    assert_eq!(saver_a.get_messages(), vec![quote]);
+    assert_eq!(saver_b.get_messages(), vec![quote]);
+}
+
+#[rstest]
+fn test_unsubscribe_quotes_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("wildcard-observer")));
+    msgbus::subscribe_quotes("data.quotes.*".into(), wildcard_handler, Some(10));
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
 #[rstest]
 fn test_execute_subscribe_trades(
     audusd_sim: CurrencyPair,
@@ -764,6 +4013,56 @@ fn test_execute_subscribe_trades(
     data_engine.execute(unsub_cmd.clone());
 
     assert!(!data_engine.subscribed_trades().contains(&audusd_sim.id));
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_trades_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("wildcard-trades")));
+    msgbus::subscribe_trades("data.trades.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -828,6 +4127,277 @@ fn test_execute_subscribe_bars(
 }
 
 #[rstest]
+fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // Bars excluded from the gate; venue unsubscribe must forward even with exact subscribers
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+    let (handler, _saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("exact-bar-subscriber")));
+    msgbus::subscribe_bars(bar_topic.into(), handler, None);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(UnsubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_bar_aggregator_quote_subscription_priority_is_between_4_and_6(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-BID-INTERNAL");
+    let quote_topic = switchboard::get_quotes_topic(audusd_sim.id);
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-6", move |_q: &QuoteTick| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_quotes(quote_topic.into(), handler_high, Some(6));
+
+    let order_low = dispatch_order.clone();
+    let handler_low = TypedHandler::from_with_id("prio-4", move |_q: &QuoteTick| {
+        order_low.borrow_mut().push("low");
+    });
+    msgbus::subscribe_quotes(quote_topic.into(), handler_low, Some(4));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(bar_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Quote(quote));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar", "low"]);
+}
+
+#[rstest]
+fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL");
+    let trades_topic = switchboard::get_trades_topic(audusd_sim.id);
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-6", move |_t: &TradeTick| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_trades(trades_topic.into(), handler_high, Some(6));
+
+    let order_low = dispatch_order.clone();
+    let handler_low = TypedHandler::from_with_id("prio-4", move |_t: &TradeTick| {
+        order_low.borrow_mut().push("low");
+    });
+    msgbus::subscribe_trades(trades_topic.into(), handler_low, Some(4));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(bar_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let trade = TradeTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new("T-1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Trade(trade));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar", "low"]);
+}
+
+#[rstest]
+fn test_composite_bar_aggregator_source_bar_subscription_uses_default_priority(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
+    let source_bar_type = bar_type.composite();
+    let source_topic = switchboard::get_bars_topic(source_bar_type);
+    let target_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-1", move |_b: &Bar| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_bars(source_topic.into(), handler_high, Some(1));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("target-bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(target_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let source_bar = Bar::new(
+        source_bar_type,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Price::from("0.9999"),
+        Price::from("1.0000"),
+        Quantity::from(1),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Bar(source_bar));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar"]);
+}
+
+#[rstest]
 fn test_execute_subscribe_mark_prices(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -886,6 +4456,112 @@ fn test_execute_subscribe_mark_prices(
             .subscribed_mark_prices()
             .contains(&audusd_sim.id)
     );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let topic = switchboard::get_mark_price_topic(audusd_sim.id);
+    let (handler_a, _saver_a) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("mark-a")));
+    let (handler_b, _saver_b) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("mark-b")));
+    msgbus::subscribe_mark_prices(topic.into(), handler_a, None);
+    msgbus::subscribe_mark_prices(topic.into(), handler_b, None);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd =
+        DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(unsub_cmd);
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_unsubscribe_mark_prices_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("wildcard-mark")));
+    msgbus::subscribe_mark_prices("data.mark_prices.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd =
+        DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -954,6 +4630,58 @@ fn test_execute_subscribe_index_prices(
 }
 
 #[rstest]
+fn test_unsubscribe_index_prices_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("wildcard-index")));
+    msgbus::subscribe_index_prices("data.index_prices.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(
+        UnsubscribeIndexPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
 fn test_execute_subscribe_funding_rates(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -1012,6 +4740,59 @@ fn test_execute_subscribe_funding_rates(
             .subscribed_funding_rates()
             .contains(&audusd_sim.id)
     );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_funding_rates_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<FundingRateUpdate>(Some(Ustr::from("wildcard-funding")));
+    msgbus::subscribe_funding_rates("data.funding_rates.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::FundingRates(SubscribeFundingRates::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(
+        UnsubscribeFundingRates::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -1186,6 +4967,59 @@ fn test_execute_subscribe_option_greeks(
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_option_greeks_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<OptionGreeks>(Some(Ustr::from("wildcard-greeks")));
+    msgbus::subscribe_option_greeks("data.option_greeks.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(
+        UnsubscribeOptionGreeks::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
     data_engine.execute(unsub_cmd.clone());
 
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
@@ -1543,14 +5377,15 @@ fn test_process_instrument(
 
     data_engine.borrow_mut().execute(cmd);
 
-    let handler = msgbus::stubs::get_message_saving_handler::<InstrumentAny>(None);
+    let (handler, saving_handler) =
+        msgbus::stubs::get_typed_message_saving_handler::<InstrumentAny>(None);
     let topic = switchboard::get_instrument_topic(audusd_sim.id());
-    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+    msgbus::subscribe_instruments(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
     let cache = &data_engine.get_cache();
-    let messages = msgbus::stubs::get_saved_messages::<InstrumentAny>(&handler);
+    let messages = saving_handler.get_messages();
 
     assert_eq!(
         cache.instrument(&audusd_sim.id()),
@@ -1754,6 +5589,541 @@ fn test_process_trade_tick(
     assert_eq!(cache.trade(&trade.instrument_id), Some(trade).as_ref());
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&trade));
+}
+
+#[rstest]
+fn test_synthetic_quote_subscription_publishes_from_component_quotes(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        synthetic_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let quote_a = QuoteTick::new(
+        component_a,
+        Price::from("100.00"),
+        Price::from("102.00"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty());
+
+    let quote_b = QuoteTick::new(
+        component_b,
+        Price::from("200.00"),
+        Price::from("204.00"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_b));
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let synthetic_quote = messages[0];
+    assert_eq!(synthetic_quote.instrument_id, synthetic_id);
+    assert_eq!(synthetic_quote.bid_price, Price::from("150.00"));
+    assert_eq!(synthetic_quote.ask_price, Price::from("153.00"));
+    assert_eq!(synthetic_quote.bid_size, Quantity::from(1));
+    assert_eq!(synthetic_quote.ask_size, Quantity::from(1));
+    assert_eq!(synthetic_quote.ts_event, quote_b.ts_event);
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(cache.borrow().quote(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_trade_subscription_publishes_from_component_trades(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    let sub = SubscribeTrades::new(
+        synthetic_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
+
+    let trade_a = TradeTick::new(
+        component_a,
+        Price::from("100.00"),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new("T-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Trade(trade_a));
+    assert!(saver.get_messages().is_empty());
+
+    let trade_b = TradeTick::new(
+        component_b,
+        Price::from("200.00"),
+        Quantity::from(2),
+        AggressorSide::Seller,
+        TradeId::new("T-2"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Trade(trade_b));
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let synthetic_trade = messages[0];
+    assert_eq!(synthetic_trade.instrument_id, synthetic_id);
+    assert_eq!(synthetic_trade.price, Price::from("150.00"));
+    assert_eq!(synthetic_trade.size, Quantity::from(1));
+    assert_eq!(synthetic_trade.aggressor_side, trade_b.aggressor_side);
+    assert_eq!(synthetic_trade.trade_id, trade_b.trade_id);
+    assert_eq!(synthetic_trade.ts_event, trade_b.ts_event);
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(cache.borrow().trade(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_quote_and_trade_commands_do_not_forward_to_client(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let engine_clock: Rc<RefCell<dyn Clock>> = clock.clone();
+    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (synthetic, _, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+        SubscribeQuotes::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(
+        SubscribeTrades::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    let subscribed_quotes = data_engine.subscribed_synthetic_quotes();
+    let subscribed_trades = data_engine.subscribed_synthetic_trades();
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+        UnsubscribeTrades::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert!(subscribed_quotes.contains(&synthetic_id));
+    assert!(subscribed_trades.contains(&synthetic_id));
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(recorder.borrow().is_empty());
+}
+
+#[rstest]
+fn test_duplicate_synthetic_quote_subscription_publishes_once(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "200.00", "204.00", 2)));
+
+    let subscribed = data_engine.subscribed_synthetic_quotes();
+    let messages = saver.get_messages();
+    assert_eq!(
+        subscribed.iter().filter(|id| **id == synthetic_id).count(),
+        1
+    );
+    assert_eq!(messages.len(), 1);
+}
+
+#[rstest]
+fn test_duplicate_synthetic_trade_subscription_publishes_once(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "200.00", "T-2", 2)));
+
+    let subscribed = data_engine.subscribed_synthetic_trades();
+    let messages = saver.get_messages();
+    assert_eq!(
+        subscribed.iter().filter(|id| **id == synthetic_id).count(),
+        1
+    );
+    assert_eq!(messages.len(), 1);
+}
+
+#[rstest]
+fn test_synthetic_quote_subscription_waits_for_all_component_quotes(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(saver.get_messages().is_empty());
+    assert!(cache.borrow().quote(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_trade_subscription_waits_for_all_component_trades(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(saver.get_messages().is_empty());
+    assert!(cache.borrow().trade(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_subscribe_missing_synthetic_does_not_register(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let synthetic_id = synthetic_instrument_id();
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_synthetic_quote_keeps_shared_component_feed(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let component_common = InstrumentId::from("BTC-USD.SIM");
+    let component_a = InstrumentId::from("ETH-USD.SIM");
+    let component_b = InstrumentId::from("SOL-USD.SIM");
+    let synthetic_a =
+        synthetic_index_with_components("BTC-ETH-INDEX", component_common, component_a);
+    let synthetic_b =
+        synthetic_index_with_components("BTC-SOL-INDEX", component_common, component_b);
+    let synthetic_a_id = synthetic_a.id;
+    let synthetic_b_id = synthetic_b.id;
+    cache.borrow_mut().add_synthetic(synthetic_a).unwrap();
+    cache.borrow_mut().add_synthetic(synthetic_b).unwrap();
+
+    let (handler_a, saver_a) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic_a = switchboard::get_quotes_topic(synthetic_a_id);
+    msgbus::subscribe_quotes(topic_a.into(), handler_a, None);
+    let (handler_b, saver_b) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic_b = switchboard::get_quotes_topic(synthetic_b_id);
+    msgbus::subscribe_quotes(topic_b.into(), handler_b, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_a_id));
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_b_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "300.00", "304.00", 2)));
+    data_engine.process_data(Data::Quote(quote_tick(
+        component_common,
+        "200.00",
+        "202.00",
+        3,
+    )));
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 1);
+
+    data_engine.execute(unsubscribe_synthetic_quotes_cmd(synthetic_a_id));
+    data_engine.process_data(Data::Quote(quote_tick(
+        component_common,
+        "220.00",
+        "222.00",
+        4,
+    )));
+
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 2);
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_a_id)
+    );
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_b_id)
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_synthetic_trade_keeps_shared_component_feed(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let component_common = InstrumentId::from("BTC-USD.SIM");
+    let component_a = InstrumentId::from("ETH-USD.SIM");
+    let component_b = InstrumentId::from("SOL-USD.SIM");
+    let synthetic_a =
+        synthetic_index_with_components("BTC-ETH-INDEX", component_common, component_a);
+    let synthetic_b =
+        synthetic_index_with_components("BTC-SOL-INDEX", component_common, component_b);
+    let synthetic_a_id = synthetic_a.id;
+    let synthetic_b_id = synthetic_b.id;
+    cache.borrow_mut().add_synthetic(synthetic_a).unwrap();
+    cache.borrow_mut().add_synthetic(synthetic_b).unwrap();
+
+    let (handler_a, saver_a) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic_a = switchboard::get_trades_topic(synthetic_a_id);
+    msgbus::subscribe_trades(topic_a.into(), handler_a, None);
+    let (handler_b, saver_b) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic_b = switchboard::get_trades_topic(synthetic_b_id);
+    msgbus::subscribe_trades(topic_b.into(), handler_b, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_a_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_b_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "300.00", "T-2", 2)));
+    data_engine.process_data(Data::Trade(trade_tick(
+        component_common,
+        "200.00",
+        "T-3",
+        3,
+    )));
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 1);
+
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_a_id));
+    data_engine.process_data(Data::Trade(trade_tick(
+        component_common,
+        "220.00",
+        "T-4",
+        4,
+    )));
+
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 2);
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_a_id)
+    );
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_b_id)
+    );
+}
+
+#[rstest]
+fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (quote_handler, quote_saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(quote_topic.into(), quote_handler, None);
+    let (trade_handler, trade_saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let trade_topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(trade_topic.into(), trade_handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.reset();
+
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "200.00", "204.00", 2)));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "200.00", "T-2", 2)));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(quote_saver.get_messages().is_empty());
+    assert!(trade_saver.get_messages().is_empty());
 }
 
 #[rstest]
@@ -5079,6 +9449,115 @@ fn test_process_instrument_status_expires_option_chain_instrument(
 }
 
 #[rstest]
+#[case::quote("quote")]
+#[case::greeks("greeks")]
+fn test_option_chain_market_data_at_expiry_expires_instrument(
+    #[case] data_kind: &str,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let series_id = make_series_id();
+    let cmd = make_subscribe_option_chain(
+        series_id,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    data_engine.borrow_mut().execute(cmd);
+
+    recorder.borrow_mut().clear();
+
+    match data_kind {
+        "quote" => {
+            let quote = QuoteTick::new(
+                call_id,
+                Price::from("100.00"),
+                Price::from("101.00"),
+                Quantity::from("1.0"),
+                Quantity::from("1.0"),
+                series_id.expiration_ns,
+                series_id.expiration_ns,
+            );
+            data_engine.borrow_mut().process_data(Data::Quote(quote));
+        }
+        "greeks" => {
+            let greeks = OptionGreeks {
+                instrument_id: call_id,
+                convention: GreeksConvention::BlackScholes,
+                greeks: OptionGreekValues {
+                    delta: 0.55,
+                    gamma: 0.001,
+                    vega: 15.0,
+                    theta: -5.0,
+                    rho: 0.02,
+                },
+                mark_iv: Some(0.65),
+                bid_iv: Some(0.63),
+                ask_iv: Some(0.67),
+                underlying_price: Some(50000.0),
+                open_interest: Some(1000.0),
+                ts_event: series_id.expiration_ns,
+                ts_init: series_id.expiration_ns,
+            };
+            data_engine.borrow_mut().process(&greeks);
+        }
+        other => panic!("unknown data kind: {other}"),
+    }
+
+    let recorded = recorder.borrow();
+    let quote_unsubs = recorded
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))))
+        .count();
+    let greeks_unsubs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(_))
+            )
+        })
+        .count();
+    let status_unsubs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(_))
+            )
+        })
+        .count();
+
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(quote_unsubs, 1);
+    assert_eq!(greeks_unsubs, 1);
+    assert_eq!(status_unsubs, 1);
+}
+
+#[rstest]
 fn test_process_option_greeks_caches_and_publishes(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -5217,8 +9696,103 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
 }
 
 fn synthetic_instrument_id() -> InstrumentId {
-    use nautilus_model::identifiers::Symbol;
     InstrumentId::new(Symbol::new("BTC-ETH-INDEX"), Venue::synthetic())
+}
+
+fn synthetic_index() -> (SyntheticInstrument, InstrumentId, InstrumentId) {
+    let component_a = InstrumentId::from("BTC-USD.SIM");
+    let component_b = InstrumentId::from("ETH-USD.SIM");
+    let synthetic = synthetic_index_with_components("BTC-ETH-INDEX", component_a, component_b);
+
+    (synthetic, component_a, component_b)
+}
+
+fn synthetic_index_with_components(
+    symbol: &str,
+    component_a: InstrumentId,
+    component_b: InstrumentId,
+) -> SyntheticInstrument {
+    let formula = format!("({component_a} + {component_b}) / 2.0");
+    SyntheticInstrument::new(
+        Symbol::new(symbol),
+        2,
+        vec![component_a, component_b],
+        &formula,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn subscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn unsubscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn unsubscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Unsubscribe(UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn trade_tick(instrument_id: InstrumentId, price: &str, trade_id: &str, ts: u64) -> TradeTick {
+    TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new(trade_id),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
 }
 
 #[rstest]
@@ -5554,8 +10128,6 @@ fn test_response_increments_response_count(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
 ) {
-    use nautilus_common::messages::data::{DataResponse, InstrumentResponse};
-
     let mut data_engine = data_engine.borrow_mut();
 
     let resp = InstrumentResponse::new(
@@ -5574,6 +10146,146 @@ fn test_response_increments_response_count(
 
     data_engine.reset();
     assert_eq!(data_engine.response_count(), 0);
+}
+
+#[rstest]
+fn test_custom_data_response_is_forwarded_with_metadata(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let correlation_id = UUID4::new();
+    let data_type = DataType::new(
+        "CustomFeed",
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let params = serde_json::from_value(json!({"source": "params"})).unwrap();
+    let start = UnixNanos::from(1_000);
+    let end = UnixNanos::from(2_000);
+    let ts_init = UnixNanos::from(3_000);
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-data-response")));
+    msgbus::register_response_handler(&correlation_id, handler);
+
+    let resp = CustomDataResponse::new(
+        correlation_id,
+        client_id,
+        Some(venue),
+        data_type.clone(),
+        "custom-payload".to_string(),
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    );
+    data_engine.response(DataResponse::Data(resp));
+
+    let responses = saver.get_messages();
+    assert_eq!(responses.len(), 1);
+
+    let forwarded = &responses[0];
+    assert_eq!(forwarded.correlation_id, correlation_id);
+    assert_eq!(forwarded.client_id, client_id);
+    assert_eq!(forwarded.venue, Some(venue));
+    assert_eq!(forwarded.data_type, data_type);
+    assert_eq!(forwarded.start, Some(start));
+    assert_eq!(forwarded.end, Some(end));
+    assert_eq!(forwarded.ts_init, ts_init);
+    assert_eq!(
+        forwarded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("source")),
+        Some("params")
+    );
+    assert_eq!(
+        forwarded
+            .data
+            .as_ref()
+            .downcast_ref::<String>()
+            .map(String::as_str),
+        Some("custom-payload")
+    );
+    assert_eq!(data_engine.response_count(), 1);
+    assert_eq!(stub_msgbus.borrow().res_count(), 1);
+}
+
+#[rstest]
+fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let correlation_id = UUID4::new();
+    let payload = stub_custom_data(
+        4_000,
+        42,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let data_type = payload.data_type.clone();
+    let params = serde_json::from_value(json!({"source": "params"})).unwrap();
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-response-only")));
+    msgbus::register_response_handler(&correlation_id, response_handler);
+
+    let (topic_handler, topic_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("custom-topic")));
+    let topic = switchboard::get_custom_topic(&data_type);
+    msgbus::subscribe_any(topic.into(), topic_handler, None);
+
+    let resp = CustomDataResponse::new(
+        correlation_id,
+        client_id,
+        Some(venue),
+        data_type,
+        payload.clone(),
+        None,
+        None,
+        UnixNanos::from(5_000),
+        Some(params),
+    );
+    data_engine.response(DataResponse::Data(resp));
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].data.as_ref().downcast_ref::<CustomData>(),
+        Some(&payload)
+    );
+    assert!(topic_saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_process_custom_data_through_any_publishes_to_custom_topic(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let custom = stub_custom_data(
+        6_000,
+        99,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let (handler, saver) = get_any_saving_handler::<CustomData>(None);
+    let topic = switchboard::get_custom_topic(&custom.data_type);
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    assert_eq!(data_engine.data_count(), 0);
+
+    data_engine.process(&custom as &dyn Any);
+    assert_eq!(saver.get_messages(), vec![custom.clone()]);
+    assert_eq!(data_engine.data_count(), 1);
+
+    data_engine.process_data(Data::Custom(custom.clone()));
+
+    assert_eq!(saver.get_messages(), vec![custom.clone(), custom]);
+    assert_eq!(data_engine.data_count(), 2);
 }
 
 #[cfg(feature = "defi")]
@@ -5648,4 +10360,728 @@ fn test_process_defi_data_increments_data_count(
     assert_eq!(data_engine.data_count(), 0);
     data_engine.process_defi_data(DefiData::Block(block));
     assert_eq!(data_engine.data_count(), 1);
+}
+
+fn historical_topic_of(live: &str) -> String {
+    format!("historical.{live}")
+}
+
+#[rstest]
+fn test_process_historical_quote_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let live_topic = switchboard::get_quotes_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-hist")));
+    msgbus::subscribe_quotes(live_topic.into(), live_handler, None);
+    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical quote must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], quote);
+}
+
+#[rstest]
+fn test_process_historical_quote_writes_cache_by_default(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&quote));
+}
+
+#[rstest]
+fn test_process_historical_skips_cache_when_disabled(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let config = DataEngineConfig {
+        disable_historical_cache: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let historical_topic_str =
+        historical_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-cache-disabled")));
+    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+
+    let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
+    data_engine.process_historical(Data::Quote(quote));
+
+    assert_eq!(
+        cache.borrow().quote(&instrument_id),
+        None,
+        "disable_historical_cache must suppress cache write",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(
+        hist_messages.len(),
+        1,
+        "historical publish must still occur with cache disabled",
+    );
+}
+
+#[rstest]
+fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let bar = Bar::default();
+    let live_topic = switchboard::get_bars_topic(bar.bar_type);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-hist")));
+    msgbus::subscribe_bars(live_topic.into(), live_handler, None);
+    msgbus::subscribe_bars(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Bar(bar));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical bar must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], bar);
+    assert_eq!(
+        cache.borrow().bar(&bar.bar_type),
+        Some(&bar),
+        "historical bar must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_increments_data_count(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let quote = quote_tick(audusd_sim.id, "1.00000", "1.00010", 1);
+    let bar = Bar::default();
+
+    assert_eq!(data_engine.data_count(), 0);
+    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_historical(Data::Bar(bar));
+    assert_eq!(
+        data_engine.data_count(),
+        2,
+        "process_historical must increment data_count like process_data",
+    );
+}
+
+#[rstest]
+fn test_process_historical_trade_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_trades_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-hist")));
+    msgbus::subscribe_trades(live_topic.into(), live_handler, None);
+    msgbus::subscribe_trades(historical_topic.into(), hist_handler, None);
+
+    let trade = trade_tick(instrument_id, "1.00000", "T-1", 1);
+    data_engine.process_historical(Data::Trade(trade));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical trade must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], trade);
+    assert_eq!(
+        cache.borrow().trade(&instrument_id),
+        Some(&trade),
+        "historical trade must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_mark_price_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_mark_price_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-hist")));
+    msgbus::subscribe_mark_prices(live_topic.into(), live_handler, None);
+    msgbus::subscribe_mark_prices(historical_topic.into(), hist_handler, None);
+
+    let mark_price = MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::MarkPriceUpdate(mark_price));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical mark price must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], mark_price);
+    assert_eq!(
+        cache.borrow().mark_price(&instrument_id),
+        Some(&mark_price),
+        "historical mark price must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_index_price_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_index_price_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-hist")));
+    msgbus::subscribe_index_prices(live_topic.into(), live_handler, None);
+    msgbus::subscribe_index_prices(historical_topic.into(), hist_handler, None);
+
+    let index_price = IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::IndexPriceUpdate(index_price));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical index price must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], index_price);
+    assert_eq!(
+        cache.borrow().index_price(&instrument_id),
+        Some(&index_price),
+        "historical index price must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let live_topic = switchboard::get_instrument_status_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    let status = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+    data_engine.process_historical(Data::InstrumentStatus(status));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical instrument status must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], status);
+    assert_eq!(
+        cache.borrow().instrument_status(&instrument_id),
+        Some(&status),
+        "historical instrument status must populate the cache by default",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let instrument_id = audusd_sim.id;
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let live_topic = switchboard::get_instrument_close_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    let close = InstrumentClose::new(
+        instrument_id,
+        Price::from("1.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    data_engine.process_historical(Data::InstrumentClose(close));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical instrument close must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], close);
+}
+
+#[rstest]
+fn test_process_historical_delta_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let delta = stub_delta();
+    let instrument_id = delta.instrument_id;
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-hist")));
+    msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Delta(delta));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical delta must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0].instrument_id, instrument_id);
+    assert_eq!(hist_messages[0].deltas.len(), 1);
+    assert_eq!(hist_messages[0].deltas[0], delta);
+}
+
+#[rstest]
+fn test_process_historical_deltas_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let deltas = stub_deltas();
+    let instrument_id = deltas.instrument_id;
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-hist")));
+    msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical deltas must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], deltas);
+}
+
+#[rstest]
+fn test_process_historical_depth10_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-live")));
+    let (hist_handler, hist_saver) =
+        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-hist")));
+    msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_depth10(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical depth10 must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], depth);
+}
+
+#[rstest]
+fn test_process_historical_custom_data_publishes_on_historical_topic_only(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let custom = stub_custom_data(
+        7_000,
+        7,
+        Some(serde_json::from_value(json!({"source": "metadata"})).unwrap()),
+        Some("SIM//CUSTOM".to_string()),
+    );
+    let live_topic = switchboard::get_custom_topic(&custom.data_type);
+    let historical_topic_str = historical_topic_of(live_topic.as_ref());
+    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+
+    let (live_handler, live_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-live")));
+    let (hist_handler, hist_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-hist")));
+    msgbus::subscribe_any(live_topic.into(), live_handler, None);
+    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+
+    data_engine.process_historical(Data::Custom(custom.clone()));
+
+    assert!(
+        live_saver.get_messages().is_empty(),
+        "historical custom data must not publish on the live topic",
+    );
+    let hist_messages = hist_saver.get_messages();
+    assert_eq!(hist_messages.len(), 1);
+    assert_eq!(hist_messages[0], custom);
+}
+
+#[rstest]
+fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let config = DataEngineConfig {
+        validate_data_sequence: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let template = Bar::default();
+    let bar_type = template.bar_type;
+    let make_bar = |ts: u64| {
+        Bar::new(
+            bar_type,
+            template.open,
+            template.high,
+            template.low,
+            template.close,
+            template.volume,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+
+    let first = make_bar(2_000);
+    let second = make_bar(1_000); // regresses on both ts_event and ts_init
+
+    data_engine.process_historical(Data::Bar(first));
+    data_engine.process_historical(Data::Bar(second));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type),
+        Some(&first),
+        "pipeline bar handler must honour validate_data_sequence and keep the first bar",
+    );
+}
+
+#[rstest]
+fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-synth-quote")));
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    // Register the synthetic feed via the public subscribe path so the live
+    // path would normally republish on component-quote arrival.
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id),
+    );
+
+    // Seed one component live so the synthetic calc could produce a quote.
+    let quote_a = quote_tick(component_a, "100.00", "102.00", 1);
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty()); // both components required
+
+    // Now drive the other component through the pipeline path. The live path
+    // would publish a synthetic quote here; the pipeline path must not.
+    let quote_b = quote_tick(component_b, "200.00", "204.00", 2);
+    data_engine.process_historical(Data::Quote(quote_b));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline mode must not republish synthetic quotes",
+    );
+}
+
+#[rstest]
+fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-synth-trade")));
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+
+    let trade_a = trade_tick(component_a, "100.00", "T-a", 1);
+    data_engine.process_data(Data::Trade(trade_a));
+    assert!(saver.get_messages().is_empty()); // both components required
+
+    let trade_b = trade_tick(component_b, "200.00", "T-b", 2);
+    data_engine.process_historical(Data::Trade(trade_b));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline mode must not republish synthetic trades",
+    );
+}
+
+#[rstest]
+fn test_process_historical_depth10_skips_derived_quote_emission(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    // Live path would derive a quote from depth top-of-book with this flag.
+    let config = DataEngineConfig {
+        emit_quotes_from_book_depths: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+
+    let depth = stub_depth10();
+    let instrument_id = depth.instrument_id;
+
+    let (handler, saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-depth-derived")));
+    let quote_topic = switchboard::get_quotes_topic(instrument_id);
+    msgbus::subscribe_quotes(quote_topic.into(), handler, None);
+
+    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+
+    assert!(
+        saver.get_messages().is_empty(),
+        "pipeline depth10 must not emit a derived quote even when emit_quotes_from_book_depths is set",
+    );
+    assert!(
+        cache.borrow().quote(&instrument_id).is_none(),
+        "no derived quote should be cached for pipeline depth10",
+    );
+}
+
+#[rstest]
+fn test_process_historical_instrument_status_skips_option_chain_expiry(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let series_id = make_series_id();
+    let cmd = make_subscribe_option_chain(
+        series_id,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    data_engine.borrow_mut().execute(cmd);
+
+    recorder.borrow_mut().clear();
+
+    // Drive a Close status through the pipeline; live path would expire the
+    // instrument and emit wire-level unsubscribes, pipeline must not.
+    let status = InstrumentStatus::new(
+        call_id,
+        MarketStatusAction::Close,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    );
+    data_engine
+        .borrow_mut()
+        .process_historical(Data::InstrumentStatus(status));
+
+    let unsubs: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(_)))
+        .cloned()
+        .collect();
+    assert!(
+        unsubs.is_empty(),
+        "pipeline instrument status must not trigger option chain expiry (got {unsubs:?})",
+    );
+    assert!(
+        data_engine.borrow().has_option_chain_manager(&series_id),
+        "option chain manager must remain intact after pipeline status",
+    );
 }

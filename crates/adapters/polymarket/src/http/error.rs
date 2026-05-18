@@ -150,6 +150,21 @@ impl Error {
         }
     }
 
+    /// Returns `true` when a submit POST may have reached the venue but the
+    /// adapter cannot prove whether the venue accepted or rejected the order.
+    pub fn is_submit_outcome_unknown(&self) -> bool {
+        match self {
+            Self::Transport(_)
+            | Self::Timeout
+            | Self::RateLimit { .. }
+            | Self::Serde(_)
+            | Self::Decode(_)
+            | Self::Io(_) => true,
+            Self::Http { status, .. } => *status >= 500,
+            Self::Auth(_) | Self::BadRequest(_) | Self::Exchange(_) | Self::UrlParse(_) => false,
+        }
+    }
+
     pub fn is_rate_limited(&self) -> bool {
         matches!(self, Self::RateLimit { .. })
     }
@@ -219,5 +234,18 @@ mod tests {
         assert!(!Error::auth("test").is_retryable());
         assert!(!Error::bad_request("test").is_retryable());
         assert!(!Error::decode("test").is_retryable());
+    }
+
+    #[rstest]
+    fn test_submit_outcome_unknown_errors() {
+        assert!(Error::transport("test").is_submit_outcome_unknown());
+        assert!(Error::Timeout.is_submit_outcome_unknown());
+        assert!(Error::rate_limit("test", 10, None).is_submit_outcome_unknown());
+        assert!(Error::http(500, "server error").is_submit_outcome_unknown());
+        assert!(Error::decode("bad json").is_submit_outcome_unknown());
+
+        assert!(!Error::auth("test").is_submit_outcome_unknown());
+        assert!(!Error::bad_request("test").is_submit_outcome_unknown());
+        assert!(!Error::http(404, "not found").is_submit_outcome_unknown());
     }
 }

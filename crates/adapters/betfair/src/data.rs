@@ -28,8 +28,10 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            SubscribeBookDeltas, SubscribeInstrumentStatus, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeInstrumentStatus, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData,
+            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     providers::InstrumentProvider,
@@ -866,7 +868,7 @@ impl DataClient for BetfairDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        log::info!(
+        log::warn!(
             "Unsubscribe book deltas not supported for Betfair: {}",
             cmd.instrument_id
         );
@@ -909,6 +911,61 @@ impl DataClient for BetfairDataClient {
         log::info!(
             "Unsubscribe instrument status not supported for Betfair: {}",
             cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+        // Close transitions arrive via marketDefinition.status="CLOSED" on the
+        // existing market subscription; no separate venue subscription exists.
+        log::debug!(
+            "Instrument close included in book subscription for {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_close(
+        &mut self,
+        cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        log::info!(
+            "Unsubscribe instrument close not supported for Betfair: {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        log::info!("Unsubscribe custom data not applicable for Betfair");
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        log::info!(
+            "Unsubscribe instrument not applicable for Betfair: {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        log::info!("Unsubscribe instruments not applicable for Betfair");
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        log::info!(
+            "Unsubscribe quotes not applicable for Betfair: {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        log::info!(
+            "Unsubscribe bars not applicable for Betfair: {}",
+            cmd.bar_type
         );
         Ok(())
     }

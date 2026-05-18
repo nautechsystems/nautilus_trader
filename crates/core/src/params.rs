@@ -146,7 +146,7 @@ impl<'a> IntoIterator for &'a Params {
 /// - the JSON is not a valid object
 pub fn from_pydict(
     py: pyo3::Python<'_>,
-    dict: pyo3::Py<pyo3::types::PyDict>,
+    dict: &pyo3::Py<pyo3::types::PyDict>,
 ) -> pyo3::PyResult<Option<Params>> {
     crate::python::params::pydict_to_params(py, dict)
 }

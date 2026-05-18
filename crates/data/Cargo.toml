@@ -22,7 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-streaming = ["nautilus-persistence"]
+streaming = ["dep:serde_json", "nautilus-persistence"]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
@@ -63,14 +63,23 @@ chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
+
+# Run with `cargo bench -p nautilus-data --bench engine`
+[[bench]]
+name = "engine"
+harness = false

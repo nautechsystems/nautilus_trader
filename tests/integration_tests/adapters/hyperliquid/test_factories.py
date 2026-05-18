@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 
 
 class TestHyperliquidDataClientConfig:
@@ -27,15 +28,15 @@ class TestHyperliquidDataClientConfig:
 
         # Assert
         assert config.base_url_ws is None
-        assert config.testnet is False
+        assert config.environment is None
         assert config.http_timeout_secs == 10
 
     def test_testnet_config(self):
         # Arrange & Act
-        config = HyperliquidDataClientConfig(testnet=True)
+        config = HyperliquidDataClientConfig(environment=HyperliquidEnvironment.TESTNET)
 
         # Assert
-        assert config.testnet is True
+        assert config.environment == HyperliquidEnvironment.TESTNET
 
     def test_custom_http_timeout(self):
         # Arrange & Act
@@ -86,7 +87,7 @@ class TestHyperliquidExecClientConfig:
         # Assert
         assert config.private_key is None
         assert config.vault_address is None
-        assert config.testnet is False
+        assert config.environment is None
         assert config.http_timeout_secs == 10
 
     def test_with_private_key(self):
@@ -125,10 +126,10 @@ class TestHyperliquidExecClientConfig:
 
     def test_testnet_config(self):
         # Arrange & Act
-        config = HyperliquidExecClientConfig(testnet=True)
+        config = HyperliquidExecClientConfig(environment=HyperliquidEnvironment.TESTNET)
 
         # Assert
-        assert config.testnet is True
+        assert config.environment == HyperliquidEnvironment.TESTNET
 
     def test_retry_config(self):
         # Arrange & Act
@@ -170,29 +171,29 @@ class TestHyperliquidExecClientConfig:
 
 class TestConfigValidation:
     @pytest.mark.parametrize(
-        ("testnet", "expected_testnet"),
+        ("environment", "expected_environment"),
         [
-            (False, False),
-            (True, True),
+            (None, None),
+            (HyperliquidEnvironment.TESTNET, HyperliquidEnvironment.TESTNET),
         ],
     )
-    def test_data_client_testnet_setting(self, testnet, expected_testnet):
+    def test_data_client_environment_setting(self, environment, expected_environment):
         # Arrange & Act
-        config = HyperliquidDataClientConfig(testnet=testnet)
+        config = HyperliquidDataClientConfig(environment=environment)
 
         # Assert
-        assert config.testnet == expected_testnet
+        assert config.environment == expected_environment
 
     @pytest.mark.parametrize(
-        ("testnet", "expected_testnet"),
+        ("environment", "expected_environment"),
         [
-            (False, False),
-            (True, True),
+            (None, None),
+            (HyperliquidEnvironment.TESTNET, HyperliquidEnvironment.TESTNET),
         ],
     )
-    def test_exec_client_testnet_setting(self, testnet, expected_testnet):
+    def test_exec_client_environment_setting(self, environment, expected_environment):
         # Arrange & Act
-        config = HyperliquidExecClientConfig(testnet=testnet)
+        config = HyperliquidExecClientConfig(environment=environment)
 
         # Assert
-        assert config.testnet == expected_testnet
+        assert config.environment == expected_environment

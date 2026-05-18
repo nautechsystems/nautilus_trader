@@ -31,7 +31,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    orders::OrderAny,
+    orders::{OrderAny, OrderError},
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -548,19 +548,21 @@ impl OrderEvent for OrderInitialized {
     }
 }
 
-impl From<OrderInitialized> for OrderAny {
-    fn from(order: OrderInitialized) -> Self {
-        match order.order_type {
-            OrderType::Limit => Self::Limit(order.into()),
-            OrderType::Market => Self::Market(order.into()),
-            OrderType::StopMarket => Self::StopMarket(order.into()),
-            OrderType::StopLimit => Self::StopLimit(order.into()),
-            OrderType::LimitIfTouched => Self::LimitIfTouched(order.into()),
-            OrderType::TrailingStopLimit => Self::TrailingStopLimit(order.into()),
-            OrderType::TrailingStopMarket => Self::TrailingStopMarket(order.into()),
-            OrderType::MarketToLimit => Self::MarketToLimit(order.into()),
-            OrderType::MarketIfTouched => Self::MarketIfTouched(order.into()),
-        }
+impl TryFrom<OrderInitialized> for OrderAny {
+    type Error = OrderError;
+
+    fn try_from(order: OrderInitialized) -> Result<Self, Self::Error> {
+        Ok(match order.order_type {
+            OrderType::Limit => Self::Limit(order.try_into()?),
+            OrderType::Market => Self::Market(order.try_into()?),
+            OrderType::StopMarket => Self::StopMarket(order.try_into()?),
+            OrderType::StopLimit => Self::StopLimit(order.try_into()?),
+            OrderType::LimitIfTouched => Self::LimitIfTouched(order.try_into()?),
+            OrderType::TrailingStopLimit => Self::TrailingStopLimit(order.try_into()?),
+            OrderType::TrailingStopMarket => Self::TrailingStopMarket(order.try_into()?),
+            OrderType::MarketToLimit => Self::MarketToLimit(order.try_into()?),
+            OrderType::MarketIfTouched => Self::MarketIfTouched(order.try_into()?),
+        })
     }
 }
 

@@ -25,6 +25,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 from ibapi.common import BarData
+from ibapi.common import HistoricalTickBidAsk
 from ibapi.common import HistoricalTickLast
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
@@ -1025,6 +1026,80 @@ async def test_process_trade_ticks(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_process_trade_ticks_skips_fractional_size_below_increment(ib_client):
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    ib_client._cache.add_instrument(instrument)
+    mock_request = Mock(spec=Request)
+    mock_request.name = [str(instrument.id)]
+    mock_request.result = []
+    ib_client._requests = Mock()
+    ib_client._requests.get.return_value = mock_request
+
+    request_id = 1
+    fractional_tick = HistoricalTickLast()
+    fractional_tick.time = 1704067200
+    fractional_tick.price = 100.01
+    fractional_tick.size = Decimal("0.5")
+    valid_tick = HistoricalTickLast()
+    valid_tick.time = 1704067205
+    valid_tick.price = 105.01
+    valid_tick.size = Decimal(200)
+
+    # Act
+    await ib_client._process_trade_ticks(request_id, [fractional_tick, valid_tick])
+
+    # Assert
+    assert len(mock_request.result) == 1
+    result = mock_request.result[0]
+    assert result.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result.price == Price(105.01, precision=2)
+    assert result.size == Quantity(200, precision=0)
+    assert result.trade_id == TradeId("1704067205-105.01-200")
+
+
+@pytest.mark.asyncio
+async def test_process_historical_ticks_bid_ask_skips_fractional_size_below_increment(ib_client):
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    ib_client._cache.add_instrument(instrument)
+    mock_request = Mock(spec=Request)
+    mock_request.name = [str(instrument.id)]
+    mock_request.result = []
+    ib_client._requests = Mock()
+    ib_client._requests.get.return_value = mock_request
+
+    fractional_tick = HistoricalTickBidAsk()
+    fractional_tick.time = 1704067200
+    fractional_tick.priceBid = 100.01
+    fractional_tick.priceAsk = 100.02
+    fractional_tick.sizeBid = Decimal("0.5")
+    fractional_tick.sizeAsk = Decimal(200)
+    valid_tick = HistoricalTickBidAsk()
+    valid_tick.time = 1704067205
+    valid_tick.priceBid = 105.01
+    valid_tick.priceAsk = 105.02
+    valid_tick.sizeBid = Decimal(100)
+    valid_tick.sizeAsk = Decimal(200)
+
+    # Act
+    await ib_client.process_historical_ticks_bid_ask(
+        req_id=1,
+        ticks=[fractional_tick, valid_tick],
+        done=True,
+    )
+
+    # Assert
+    assert len(mock_request.result) == 1
+    result = mock_request.result[0]
+    assert result.instrument_id == InstrumentId.from_str("AAPL.NASDAQ")
+    assert result.bid_price == Price(105.01, precision=2)
+    assert result.ask_price == Price(105.02, precision=2)
+    assert result.bid_size == Quantity(100, precision=0)
+    assert result.ask_size == Quantity(200, precision=0)
+
+
+@pytest.mark.asyncio
 async def test_tickByTickBidAsk(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
@@ -1056,6 +1131,33 @@ async def test_tickByTickBidAsk(ib_client):
         ts_init=1704067205000000000,
     )
     ib_client._handle_data.assert_called_once_with(quote_tick)
+
+
+@pytest.mark.asyncio
+async def test_tick_by_tick_bid_ask_skips_fractional_size_below_increment(ib_client):
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    instrument = IBTestContractStubs.aapl_instrument()
+    ib_client._cache.add_instrument(instrument)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = [str(instrument.id)]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+
+    # Act
+    await ib_client.process_tick_by_tick_bid_ask(
+        req_id=1,
+        time=1704067200,
+        bid_price=100.01,
+        ask_price=100.02,
+        bid_size=Decimal("0.5"),
+        ask_size=Decimal(200),
+        tick_attrib_bid_ask=TickAttribBidAsk(),
+    )
+
+    # Assert
+    ib_client._handle_data.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1091,6 +1193,34 @@ async def test_tickByTickAllLast(ib_client):
         ts_init=1704067205000000000,
     )
     ib_client._handle_data.assert_called_once_with(trade_tick)
+
+
+@pytest.mark.asyncio
+async def test_tick_by_tick_all_last_skips_fractional_size_below_increment(ib_client):
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    instrument = IBTestContractStubs.aapl_instrument()
+    ib_client._cache.add_instrument(instrument)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = [str(instrument.id)]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+
+    # Act
+    await ib_client.process_tick_by_tick_all_last(
+        req_id=1,
+        tick_type="AllLast",
+        time=1704067200,
+        price=100.01,
+        size=Decimal("0.5"),
+        tick_attrib_last=TickAttribLast(),
+        exchange="",
+        special_conditions="",
+    )
+
+    # Assert
+    ib_client._handle_data.assert_not_called()
 
 
 @pytest.mark.asyncio

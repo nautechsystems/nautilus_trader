@@ -35,22 +35,17 @@ use crate::reconciliation::{
     create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
 };
 
-/// Process mass status for position reconciliation.
+/// Process fill reports from a mass status for position reconciliation.
 ///
-/// Takes ExecutionMassStatus and Instrument, performs all reconciliation logic in Rust,
-/// and returns tuple of (order_reports, fill_reports) ready for processing.
-///
-/// # Returns
-///
-/// Tuple of `(Dict[str, OrderStatusReport], Dict[str, List[FillReport]])`
-///
-/// # Errors
-///
-/// Returns an error if instrument conversion or reconciliation fails.
-#[pyfunction(name = "adjust_fills_for_partial_window")]
+/// This is the main entry point for position reconciliation. It:
+/// 1. Extracts fills and position for the given instrument
+/// 2. Detects position discrepancies
+/// 3. Returns adjusted order/fill reports ready for processing
+#[pyfunction(name = "process_mass_status_for_reconciliation")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
-pub fn py_adjust_fills_for_partial_window(
+#[expect(clippy::missing_errors_doc)]
+pub fn py_process_mass_status_for_reconciliation(
     py: Python<'_>,
     mass_status: &Bound<'_, PyAny>,
     instrument: Py<PyAny>,
@@ -97,9 +92,9 @@ pub fn py_adjust_fills_for_partial_window(
 /// # Notes
 ///
 /// The function handles four scenarios:
-/// 1. Position to flat: reconciliation_px = current_avg_px (close at current average)
-/// 2. Flat to position: reconciliation_px = target_avg_px
-/// 3. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
+/// 1. Position to flat: `reconciliation_px` = `current_avg_px` (close at current average)
+/// 2. Flat to position: `reconciliation_px` = `target_avg_px`
+/// 3. Position flip (sign change): `reconciliation_px` = `target_avg_px` (due to value reset in simulation)
 /// 4. Accumulation/reduction: weighted average formula
 #[pyfunction(name = "calculate_reconciliation_price")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]

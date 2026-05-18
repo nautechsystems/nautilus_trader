@@ -46,11 +46,12 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+use ahash::AHashMap;
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    AtomicMap,
-    python::{call_python_threadsafe, to_pyruntime_err},
+    AtomicMap, UnixNanos,
+    python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -64,6 +65,7 @@ use nautilus_model::{
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use crate::{
     common::{
@@ -74,6 +76,11 @@ use crate::{
     config::KrakenDataClientConfig,
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
+        level_3::{
+            BookOrderIdHasher, KrakenL3WsMessage,
+            resync::retry_l3_resync,
+            runtime::{L3Sink, L3State, process_l3_message},
+        },
         messages::KrakenSpotWsMessage,
         parse::{
             parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar,
@@ -87,7 +94,19 @@ use crate::{
 impl KrakenSpotWebSocketClient {
     /// WebSocket client for the Kraken Spot v2 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None, proxy_url=None))]
+    #[pyo3(signature = (
+        environment=None,
+        private=false,
+        base_url=None,
+        heartbeat_secs=None,
+        api_key=None,
+        api_secret=None,
+        proxy_url=None,
+        l3=false,
+        validate_l3_checksum=true,
+        base_url_http=None,
+    ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         private: bool,
@@ -96,39 +115,53 @@ impl KrakenSpotWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         proxy_url: Option<String>,
-    ) -> Self {
-        let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
+        l3: bool,
+        validate_l3_checksum: bool,
+        base_url_http: Option<String>,
+    ) -> PyResult<Self> {
+        if l3 && private {
+            return Err(to_pyvalue_err("`l3` and `private` are mutually exclusive"));
+        }
+
+        let env = environment.unwrap_or(KrakenEnvironment::Live);
 
         let (resolved_api_key, resolved_api_secret) =
             crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)
                 .map(|c| c.into_parts())
                 .map_or((None, None), |(k, s)| (Some(k), Some(s)));
 
-        let (ws_public_url, ws_private_url) = if private {
-            // Use provided URL or default to the private endpoint
+        let (ws_public_url, ws_private_url, ws_l3_url) = if l3 {
+            (None, None, base_url)
+        } else if private {
             let private_url = base_url.unwrap_or_else(|| {
                 get_kraken_ws_private_url(KrakenProductType::Spot, env).to_string()
             });
-            (None, Some(private_url))
+            (None, Some(private_url), None)
         } else {
-            (base_url, None)
+            (base_url, None, None)
         };
 
         let config = KrakenDataClientConfig {
             environment: env,
+            base_url: base_url_http,
             ws_public_url,
             ws_private_url,
+            ws_l3_url,
             heartbeat_interval_secs: heartbeat_secs
                 .unwrap_or(KrakenDataClientConfig::default().heartbeat_interval_secs),
             api_key: resolved_api_key,
             api_secret: resolved_api_secret,
             proxy_url: proxy_url.clone(),
+            validate_l3_checksum,
             ..Default::default()
         };
 
         let token = CancellationToken::new();
-
-        Self::new(config, token, proxy_url)
+        Ok(if l3 {
+            Self::l3(config, token, proxy_url)
+        } else {
+            Self::new(config, token, proxy_url)
+        })
     }
 
     /// Returns the WebSocket URL.
@@ -137,6 +170,14 @@ impl KrakenSpotWebSocketClient {
     #[must_use]
     pub fn py_url(&self) -> &str {
         self.url()
+    }
+
+    /// Returns `true` if the client has API credentials configured
+    /// (post-environment-variable resolution).
+    #[getter]
+    #[pyo3(name = "has_credentials")]
+    fn py_has_credentials(&self) -> bool {
+        self.has_credentials()
     }
 
     /// Returns true if connected (not closed).
@@ -185,7 +226,8 @@ impl KrakenSpotWebSocketClient {
 
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-            instruments_map.insert(inst_any.id(), inst_any);
+            instruments_map.insert(inst_any.id(), inst_any.clone());
+            self.cache_instrument(inst_any);
         }
 
         let account_id = self.account_id_shared().clone();
@@ -203,6 +245,15 @@ impl KrakenSpotWebSocketClient {
                 tokio::pin!(stream);
                 let order_qty_cache: Arc<AtomicMap<String, f64>> =
                     Arc::new(AtomicMap::new());
+                let order_instrument_cache: Arc<AtomicMap<String, InstrumentAny>> =
+                    Arc::new(AtomicMap::new());
+
+                let mut l3_states: AHashMap<String, L3State> = AHashMap::new();
+                let l3_hasher = BookOrderIdHasher::new();
+                let l3_depths = client.l3_depths_handle();
+                let l3_instruments = client.instruments_handle();
+                let l3_validate = client.validate_l3_checksum();
+                let client_for_l3_resync = client.clone();
 
                 while let Some(msg) = stream.next().await {
                     let ts_init = clock.get_time_ns();
@@ -335,28 +386,41 @@ impl KrakenSpotWebSocketClient {
                             };
 
                             for exec in &executions {
-                                let symbol = match &exec.symbol {
-                                    Some(s) => s.as_str(),
-                                    None => {
+                                let inst = if let Some(ref symbol) = exec.symbol {
+                                    let instrument_id = InstrumentId::new(
+                                        Symbol::new(symbol.as_str()),
+                                        *KRAKEN_VENUE,
+                                    );
+                                    let Some(inst) =
+                                        instruments_map.load().get(&instrument_id).cloned()
+                                    else {
+                                        log::warn!("No instrument for symbol: {symbol}");
+                                        continue;
+                                    };
+
+                                    if let Some(ref id) = exec.cl_ord_id {
+                                        order_instrument_cache.insert(id.clone(), inst.clone());
+                                    }
+                                    order_instrument_cache
+                                        .insert(exec.order_id.clone(), inst.clone());
+                                    inst
+                                } else {
+                                    let cache = order_instrument_cache.load();
+                                    let found = exec
+                                        .cl_ord_id
+                                        .as_ref()
+                                        .and_then(|id| cache.get(id).cloned())
+                                        .or_else(|| cache.get(&exec.order_id).cloned());
+                                    let Some(inst) = found else {
                                         log::debug!(
-                                            "Execution without symbol: exec_type={:?}, order_id={}",
+                                            "Execution without symbol and no cached instrument: \
+                                             exec_type={:?}, order_id={}",
                                             exec.exec_type,
                                             exec.order_id
                                         );
                                         continue;
-                                    }
-                                };
-
-                                let instrument_id = InstrumentId::new(
-                                    Symbol::new(symbol),
-                                    *KRAKEN_VENUE,
-                                );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
-
-                                let Some(ref inst) = instrument else {
-                                    log::warn!("No instrument for symbol: {symbol}");
-                                    continue;
+                                    };
+                                    inst
                                 };
 
                                 let cached_qty = exec.cl_ord_id.as_ref().and_then(|id| {
@@ -370,7 +434,7 @@ impl KrakenSpotWebSocketClient {
                                 }
 
                                 match parse_ws_order_status_report(
-                                    exec, inst, acct_id, cached_qty, ts_init,
+                                    exec, &inst, acct_id, cached_qty, ts_init,
                                 ) {
                                     Ok(mut report) => {
                                         if let Some(ref cl_ord_id) = exec.cl_ord_id {
@@ -391,7 +455,7 @@ impl KrakenSpotWebSocketClient {
                                 }
 
                                 if exec.exec_id.is_some() {
-                                    match parse_ws_fill_report(exec, inst, acct_id, ts_init) {
+                                    match parse_ws_fill_report(exec, &inst, acct_id, ts_init) {
                                         Ok(mut report) => {
                                             if let Some(ref cl_ord_id) = exec.cl_ord_id {
                                                 let full_id = truncated_id_map
@@ -412,9 +476,51 @@ impl KrakenSpotWebSocketClient {
                                 }
                             }
                         }
+                        KrakenSpotWsMessage::L3Snapshot(snap) => {
+                            let mut sink = PyDeltaSink {
+                                call_soon: &call_soon,
+                                callback: &callback,
+                            };
+                            run_l3_state(
+                                KrakenL3WsMessage::Snapshot(snap),
+                                &mut sink,
+                                &l3_instruments,
+                                &l3_depths,
+                                &mut l3_states,
+                                &l3_hasher,
+                                l3_validate,
+                                ts_init,
+                                &client_for_l3_resync,
+                            )
+                            .await;
+                        }
+                        KrakenSpotWsMessage::L3Update(update) => {
+                            let mut sink = PyDeltaSink {
+                                call_soon: &call_soon,
+                                callback: &callback,
+                            };
+                            run_l3_state(
+                                KrakenL3WsMessage::Update(update),
+                                &mut sink,
+                                &l3_instruments,
+                                &l3_depths,
+                                &mut l3_states,
+                                &l3_hasher,
+                                l3_validate,
+                                ts_init,
+                                &client_for_l3_resync,
+                            )
+                            .await;
+                        }
                         KrakenSpotWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
+
+                            for state in l3_states.values_mut() {
+                                state.open_orders.clear();
+                                state.awaiting_snapshot = true;
+                            }
                         }
+                        KrakenSpotWsMessage::OrderResponse(_) => {}
                     }
                 }
             });
@@ -560,6 +666,50 @@ impl KrakenSpotWebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
+        })
+    }
+
+    /// Subscribes to the Kraken `level3` channel for the given symbol.
+    ///
+    /// `depth` must be 10, 100, or 1000.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the auth token is not cached (call `authenticate()` first)
+    /// or the subscribe message cannot be sent.
+    #[pyo3(name = "subscribe_l3_book")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_subscribe_l3_book<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        depth: u32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = Ustr::from(&symbol);
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_book_l3(symbol, depth)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    /// Unsubscribes from the Kraken `level3` channel for the given symbol.
+    #[pyo3(name = "unsubscribe_l3_book")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_unsubscribe_l3_book<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = Ustr::from(&symbol);
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book_l3(symbol)
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 
@@ -739,4 +889,56 @@ fn dispatch_fill_report(report: FillReport, call_soon: &Py<PyAny>, callback: &Py
             log::error!("Failed to convert FillReport to Python: {e}");
         }
     });
+}
+
+struct PyDeltaSink<'a> {
+    call_soon: &'a Py<PyAny>,
+    callback: &'a Py<PyAny>,
+}
+
+impl L3Sink for PyDeltaSink<'_> {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas_API) {
+        Python::attach(|py| {
+            let py_obj = data_to_pycapsule(py, Data::Deltas(deltas));
+            call_python_threadsafe(py, self.call_soon, self.callback, py_obj);
+        });
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+async fn run_l3_state(
+    msg: KrakenL3WsMessage,
+    sink: &mut PyDeltaSink<'_>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    depths: &Arc<std::sync::Mutex<AHashMap<String, u32>>>,
+    states: &mut AHashMap<String, L3State>,
+    hasher: &BookOrderIdHasher,
+    validate_checksum: bool,
+    ts_init: UnixNanos,
+    client: &KrakenSpotWebSocketClient,
+) {
+    let resync = process_l3_message(
+        msg,
+        sink,
+        instruments,
+        depths,
+        states,
+        hasher,
+        validate_checksum,
+        ts_init,
+    );
+
+    if let Some(request) = resync {
+        log::warn!(
+            "Resyncing Kraken L3 book: symbol={}, depth={}, reason={}",
+            request.symbol,
+            request.depth,
+            request.reason,
+        );
+        let symbol_ustr = Ustr::from(&request.symbol);
+        let client = client.clone();
+        get_runtime().spawn(async move {
+            retry_l3_resync(&client, symbol_ustr, request.depth).await;
+        });
+    }
 }

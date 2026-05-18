@@ -88,8 +88,9 @@ use super::{
 use crate::{
     common::{
         consts::{
-            BINANCE_FUTURES_USD_WS_API_TESTNET_URL, BINANCE_FUTURES_USD_WS_API_URL,
-            BINANCE_GTX_ORDER_REJECT_CODE, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE,
+            BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, BINANCE_FUTURES_USD_WS_API_TESTNET_URL,
+            BINANCE_FUTURES_USD_WS_API_URL, BINANCE_GTX_ORDER_REJECT_CODE,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE,
         },
         credential::resolve_credentials,
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
@@ -201,7 +202,7 @@ impl BinanceFuturesExecutionClient {
                     .base_url_ws_trading
                     .clone()
                     .or_else(|| match config.environment {
-                        BinanceEnvironment::Testnet => {
+                        BinanceEnvironment::Testnet | BinanceEnvironment::Demo => {
                             Some(BINANCE_FUTURES_USD_WS_API_TESTNET_URL.to_string())
                         }
                         _ => Some(BINANCE_FUTURES_USD_WS_API_URL.to_string()),
@@ -385,7 +386,7 @@ impl BinanceFuturesExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
 
         let emitter = self.emitter.clone();
@@ -417,6 +418,7 @@ impl BinanceFuturesExecutionClient {
                 order_side,
                 order_type,
                 price,
+                quantity,
             },
         );
 
@@ -518,6 +520,7 @@ impl BinanceFuturesExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
+
                     let rejected = OrderRejected::new(
                         trader_id,
                         strategy_id,
@@ -595,17 +598,10 @@ impl BinanceFuturesExecutionClient {
                     // Keep order registered - if HTTP failed due to timeout but order
                     // reached Binance, WebSocket updates will still arrive. The order
                     // will be cleaned up via WebSocket rejection or reconciliation.
-                    let due_post_only =
-                        e.downcast_ref::<BinanceFuturesHttpError>()
-                            .is_some_and(|be| {
-                                matches!(
-                                    be,
-                                    BinanceFuturesHttpError::BinanceError { code, .. }
-                                        if *code == BINANCE_GTX_ORDER_REJECT_CODE
-                                )
-                            });
+                    let due_post_only = classify_submit_order_error(&e);
                     let ts_now = clock.get_time_ns();
-                    let rejected_event = OrderRejected::new(
+
+                    let rejected = OrderRejected::new(
                         trader_id,
                         strategy_id,
                         instrument_id,
@@ -619,7 +615,7 @@ impl BinanceFuturesExecutionClient {
                         due_post_only,
                     );
 
-                    emitter.send_order_event(OrderEventAny::Rejected(rejected_event));
+                    emitter.send_order_event(OrderEventAny::Rejected(rejected));
 
                     return Err(e);
                 }
@@ -668,6 +664,7 @@ impl BinanceFuturesExecutionClient {
                     }
                     Err(e) => {
                         let ts_now = clock.get_time_ns();
+
                         let rejected = OrderCancelRejected::new(
                             trader_id,
                             command.strategy_id,
@@ -712,6 +709,7 @@ impl BinanceFuturesExecutionClient {
                 {
                     dispatch_state.pending_requests.remove(&request_id);
                     let ts_now = clock.get_time_ns();
+
                     let rejected = OrderCancelRejected::new(
                         trader_id,
                         command.strategy_id,
@@ -763,7 +761,8 @@ impl BinanceFuturesExecutionClient {
                 }
                 Err(e) => {
                     let ts_now = clock.get_time_ns();
-                    let rejected_event = OrderCancelRejected::new(
+
+                    let rejected = OrderCancelRejected::new(
                         trader_id,
                         command.strategy_id,
                         command.instrument_id,
@@ -777,7 +776,7 @@ impl BinanceFuturesExecutionClient {
                         Some(account_id),
                     );
 
-                    emitter.send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                    emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
 
                     return Err(e);
                 }
@@ -894,6 +893,29 @@ impl BinanceFuturesExecutionClient {
     }
 }
 
+/// Classifies a submit-order error for the rejection event.
+///
+/// Returns `true` when the venue indicated a post-only (GTX) rejection. Logs
+/// a hint when the error matches the UM/CM `dualSidePosition` sync rejection
+/// (`-4531`), which is an account/setup mismatch rather than a routing fault.
+pub(crate) fn classify_submit_order_error(err: &anyhow::Error) -> bool {
+    let venue_code = err
+        .downcast_ref::<BinanceFuturesHttpError>()
+        .and_then(|be| match be {
+            BinanceFuturesHttpError::BinanceError { code, .. } => Some(*code),
+            _ => None,
+        });
+
+    if venue_code == Some(BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE) {
+        log::warn!(
+            "Order rejected by Binance Futures with code -4531 \
+             (UM/CM dualSidePosition sync); confirm Portfolio Margin hedge mode \
+             matches the order positionSide before resubmitting"
+        );
+    }
+    venue_code == Some(BINANCE_GTX_ORDER_REJECT_CODE)
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for BinanceFuturesExecutionClient {
     fn is_connected(&self) -> bool {
@@ -917,7 +939,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account(&self.core.account_id).cloned()
+        self.core.cache().account_owned(&self.core.account_id)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -987,7 +1009,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             || get_ws_private_base_url(self.product_type, self.config.environment).to_string(),
             |url| {
                 if self.product_type == BinanceProductType::UsdM
-                    && self.config.environment == BinanceEnvironment::Mainnet
+                    && self.config.environment == BinanceEnvironment::Live
                 {
                     get_usdm_ws_route_base_url(&url, "private")
                 } else {
@@ -1732,7 +1754,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
 
         if order.is_closed() {
@@ -1808,7 +1830,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
-            cache.order(&cmd.client_order_id).cloned()
+            cache.order(&cmd.client_order_id).map(|o| o.clone())
         };
 
         let Some(order) = order else {
@@ -1817,7 +1839,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 cmd.client_order_id
             );
             let ts_init = self.clock.get_time_ns();
-            let rejected_event = OrderModifyRejected::new(
+
+            let rejected = OrderModifyRejected::new(
                 self.core.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
@@ -1832,7 +1855,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             );
 
             self.emitter
-                .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                .send_order_event(OrderEventAny::ModifyRejected(rejected));
             return Ok(());
         };
 
@@ -1853,7 +1876,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 cmd.client_order_id
             );
             let ts_init = self.clock.get_time_ns();
-            let rejected_event = OrderModifyRejected::new(
+
+            let rejected = OrderModifyRejected::new(
                 self.core.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
@@ -1868,7 +1892,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             );
 
             self.emitter
-                .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                .send_order_event(OrderEventAny::ModifyRejected(rejected));
             return Ok(());
         };
         let command = cmd;
@@ -1983,7 +2007,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 }
                 Err(e) => {
                     let ts_now = clock.get_time_ns();
-                    let rejected_event = OrderModifyRejected::new(
+
+                    let rejected = OrderModifyRejected::new(
                         trader_id,
                         command.strategy_id,
                         command.instrument_id,
@@ -1997,7 +2022,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         Some(account_id),
                     );
 
-                    emitter.send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                    emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
 
                     anyhow::bail!("Modify order failed: {e}");
                 }
@@ -2119,7 +2144,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                         .send_order_event(OrderEventAny::Canceled(canceled_event));
                                 }
                                 BatchOrderResult::Error(error) => {
-                                    let rejected_event = OrderCancelRejected::new(
+                                    let rejected = OrderCancelRejected::new(
                                         trader_id,
                                         cancel.strategy_id,
                                         cancel.instrument_id,
@@ -2137,16 +2162,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                         Some(account_id),
                                     );
 
-                                    emitter.send_order_event(OrderEventAny::CancelRejected(
-                                        rejected_event,
-                                    ));
+                                    emitter
+                                        .send_order_event(OrderEventAny::CancelRejected(rejected));
                                 }
                             }
                         }
                     }
                     Err(e) => {
                         for cancel in chunk {
-                            let rejected_event = OrderCancelRejected::new(
+                            let rejected = OrderCancelRejected::new(
                                 trader_id,
                                 cancel.strategy_id,
                                 cancel.instrument_id,
@@ -2160,7 +2184,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                 Some(account_id),
                             );
 
-                            emitter.send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                            emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
                         }
                     }
                 }
@@ -2170,5 +2194,45 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn http_error(code: i64) -> anyhow::Error {
+        anyhow::Error::new(BinanceFuturesHttpError::BinanceError {
+            code,
+            message: format!("test error {code}"),
+        })
+    }
+
+    #[rstest]
+    fn test_classify_submit_order_error_gtx_is_post_only() {
+        let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
+        assert!(classify_submit_order_error(&err));
+    }
+
+    #[rstest]
+    fn test_classify_submit_order_error_dual_side_sync_is_not_post_only() {
+        // -4531 is a hedge-mode/account-setup issue, not a post-only rejection.
+        // Make sure the new classifier branch does not mark it as post-only.
+        let err = http_error(BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE);
+        assert!(!classify_submit_order_error(&err));
+    }
+
+    #[rstest]
+    fn test_classify_submit_order_error_other_venue_code_is_not_post_only() {
+        let err = http_error(-2010);
+        assert!(!classify_submit_order_error(&err));
+    }
+
+    #[rstest]
+    fn test_classify_submit_order_error_non_binance_error_is_not_post_only() {
+        let err = anyhow::anyhow!("network failure");
+        assert!(!classify_submit_order_error(&err));
     }
 }

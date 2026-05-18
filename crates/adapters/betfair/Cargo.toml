@@ -84,6 +84,7 @@ axum = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+toml = { workspace = true }
 
 # Run with `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 [[example]]

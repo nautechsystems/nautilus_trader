@@ -111,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(databento_factory),
             Box::new(databento_config),
         )?
-        .add_exec_client(
+        .add_simulated_exec_client(
             Some("XCME".to_string()),
             Box::new(sandbox_factory),
             Box::new(sandbox_config),

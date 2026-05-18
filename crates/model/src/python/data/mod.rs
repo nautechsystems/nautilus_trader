@@ -68,7 +68,7 @@ impl DataType {
     ) -> PyResult<Self> {
         let params = match metadata {
             None => None,
-            Some(d) => pydict_to_params(py, d)?,
+            Some(d) => pydict_to_params(py, &d)?,
         };
         Ok(Self::new(type_name, params, identifier))
     }
@@ -415,7 +415,7 @@ fn py_json_deserialize_custom_data(
 
 /// Encodes `CustomData` items to `RecordBatch` via Python `encode_record_batch_py`.
 #[allow(unsafe_code)]
-#[cfg(feature = "python")]
+#[cfg(all(feature = "python", feature = "arrow"))]
 fn py_encode_custom_data_to_record_batch(
     items: &[std::sync::Arc<dyn crate::data::CustomDataTrait>],
 ) -> Result<arrow::record_batch::RecordBatch, anyhow::Error> {
@@ -466,9 +466,19 @@ fn py_encode_custom_data_to_record_batch(
     })
 }
 
+#[cfg(all(feature = "python", feature = "arrow"))]
+fn pyarrow_schema_to_arrow_schema(
+    py_schema: &pyo3::Bound<'_, pyo3::PyAny>,
+) -> PyResult<arrow::datatypes::Schema> {
+    let mut ffi_schema = arrow::ffi::FFI_ArrowSchema::empty();
+    py_schema.call_method1("_export_to_c", ((&raw mut ffi_schema as usize),))?;
+    arrow::datatypes::Schema::try_from(&ffi_schema)
+        .map_err(|e| to_pyvalue_err(format!("Failed to import PyArrow schema: {e}")))
+}
+
 /// Decodes `RecordBatch` to `CustomData` via Python `decode_record_batch_py`.
 #[allow(unsafe_code)]
-#[cfg(feature = "python")]
+#[cfg(all(feature = "python", feature = "arrow"))]
 fn py_decode_record_batch_to_custom_data(
     data_class: &pyo3::Py<pyo3::PyAny>,
     metadata: &std::collections::HashMap<String, String>,
@@ -565,17 +575,18 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
 
     let _py = data_class.py();
 
-    if !data_class.hasattr("decode_record_batch_py")? {
-        return Err(to_pytype_err(
-            "Custom data class must have decode_record_batch_py(metadata, batch) class method",
-        ));
-    }
-
     let type_name: String = if data_class.hasattr("type_name_static")? {
         data_class.call_method0("type_name_static")?.extract()?
     } else {
         data_class.getattr("__name__")?.extract()?
     };
+
+    #[cfg(feature = "arrow")]
+    if !data_class.hasattr("decode_record_batch_py")? {
+        return Err(to_pytype_err(
+            "Custom data class must have decode_record_batch_py(metadata, batch) class method",
+        ));
+    }
 
     if !data_class.hasattr("from_json")? {
         return Err(to_pytype_err(
@@ -590,7 +601,6 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     }
 
     let data_class_for_json = data_class.clone().unbind();
-    let data_class_for_decode = data_class.clone().unbind();
 
     let json_deserializer = Box::new(
         move |value: serde_json::Value| -> Result<Arc<dyn crate::data::CustomDataTrait>, anyhow::Error> {
@@ -606,34 +616,48 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
         ))
     })?;
 
-    let schema = Arc::new(arrow::datatypes::Schema::empty());
+    #[cfg(feature = "arrow")]
+    {
+        let data_class_for_decode = data_class.clone().unbind();
+        let pyarrow_schema = data_class
+            .getattr("_schema")
+            .ok()
+            .filter(|s| s.hasattr("_export_to_c").unwrap_or(false));
+        let schema = if let Some(py_schema) = pyarrow_schema {
+            Arc::new(pyarrow_schema_to_arrow_schema(&py_schema)?)
+        } else if let Some(schema) = registry::get_arrow_schema(&type_name) {
+            schema
+        } else {
+            Arc::new(arrow::datatypes::Schema::empty())
+        };
 
-    let encoder = Box::new(
-        move |items: &[Arc<dyn crate::data::CustomDataTrait>]| -> Result<
-            arrow::record_batch::RecordBatch,
-            anyhow::Error,
-        > { py_encode_custom_data_to_record_batch(items) },
-    );
+        let encoder = Box::new(
+            move |items: &[Arc<dyn crate::data::CustomDataTrait>]| -> Result<
+                arrow::record_batch::RecordBatch,
+                anyhow::Error,
+            > { py_encode_custom_data_to_record_batch(items) },
+        );
 
-    let decoder = Box::new(
-        move |metadata: &std::collections::HashMap<String, String>,
-              batch: arrow::record_batch::RecordBatch|
-              -> Result<Vec<crate::data::Data>, anyhow::Error> {
-            pyo3::Python::attach(|py| {
-                py_decode_record_batch_to_custom_data(
-                    &data_class_for_decode.clone_ref(py),
-                    metadata,
-                    batch,
-                )
-            })
-        },
-    );
+        let decoder = Box::new(
+            move |metadata: &std::collections::HashMap<String, String>,
+                  batch: arrow::record_batch::RecordBatch|
+                  -> Result<Vec<crate::data::Data>, anyhow::Error> {
+                pyo3::Python::attach(|py| {
+                    py_decode_record_batch_to_custom_data(
+                        &data_class_for_decode.clone_ref(py),
+                        metadata,
+                        batch,
+                    )
+                })
+            },
+        );
 
-    registry::ensure_arrow_registered(&type_name, schema, encoder, decoder).map_err(|e| {
-        to_pyruntime_err(format!(
-            "Failed to register Arrow encoder/decoder for {type_name}: {e}"
-        ))
-    })?;
+        registry::ensure_arrow_registered(&type_name, schema, encoder, decoder).map_err(|e| {
+            to_pyruntime_err(format!(
+                "Failed to register Arrow encoder/decoder for {type_name}: {e}"
+            ))
+        })?;
+    }
 
     Ok(())
 }

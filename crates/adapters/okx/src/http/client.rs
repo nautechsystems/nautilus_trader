@@ -82,7 +82,8 @@ use super::{
     error::OKXHttpError,
     models::{
         OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAttachAlgoOrdRequest,
-        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXFeeRate, OKXFundingRateHistory,
+        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXEventContractEvent,
+        OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory,
         OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot,
         OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
         OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
@@ -90,7 +91,8 @@ use super::{
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
-        GetCandlesticksParamsBuilder, GetFundingRateHistoryParams, GetIndexTickerParams,
+        GetCandlesticksParamsBuilder, GetEventContractEventsParams, GetEventContractMarketsParams,
+        GetEventContractSeriesParams, GetFundingRateHistoryParams, GetIndexTickerParams,
         GetIndexTickerParamsBuilder, GetInstrumentsParams, GetInstrumentsParamsBuilder,
         GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOptionSummaryParams, GetOrderBookParams,
         GetOrderHistoryParams, GetOrderHistoryParamsBuilder, GetOrderListParams,
@@ -182,11 +184,47 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
     String::new()
 }
 
+fn deserialize_okx_response<T: DeserializeOwned>(
+    response_body: &[u8],
+) -> Result<OKXResponse<T>, serde_json::Error> {
+    let mut value: serde_json::Value = serde_json::from_slice(response_body)?;
+    normalize_okx_duplicate_aliases(&mut value);
+    serde_json::from_value(value)
+}
+
+fn normalize_okx_duplicate_aliases(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.contains_key("instCategory") {
+                map.remove("category");
+            }
+
+            for value in map.values_mut() {
+                normalize_okx_duplicate_aliases(value);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                normalize_okx_duplicate_aliases(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde::Deserialize;
 
-    use super::resolve_okx_error_message;
+    use super::{deserialize_okx_response, resolve_okx_error_message};
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DuplicateFieldItem {
+        #[serde(alias = "category")]
+        inst_category: String,
+    }
 
     #[rstest]
     fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
@@ -205,6 +243,25 @@ mod tests {
             resolve_okx_error_message(body, "All operations failed"),
             "Test detailed failure",
         );
+    }
+
+    #[rstest]
+    fn test_deserialize_okx_response_accepts_duplicate_nested_fields() {
+        let body = br#"{
+            "code": "0",
+            "msg": "",
+            "data": [
+                {
+                    "category": "",
+                    "instCategory": "1"
+                }
+            ]
+        }"#;
+
+        let response =
+            deserialize_okx_response::<DuplicateFieldItem>(body).expect("valid response");
+
+        assert_eq!(response.data[0].inst_category, "1");
     }
 
     #[rstest]
@@ -615,8 +672,8 @@ impl OKXRawHttpClient {
                 log::trace!("Response: {resp:?}");
 
                 if resp.status.is_success() {
-                    let okx_response: OKXResponse<T> =
-                        serde_json::from_slice(&resp.body).map_err(|e| {
+                    let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
+                        .map_err(|e| {
                             log::error!("Failed to deserialize OKXResponse: {e}");
                             OKXHttpError::JsonError(e.to_string())
                         })?;
@@ -640,7 +697,7 @@ impl OKXRawHttpClient {
                         );
                     }
 
-                    if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
+                    if let Ok(parsed_error) = deserialize_okx_response::<T>(&resp.body) {
                         return Err(OKXHttpError::OkxError {
                             error_code: parsed_error.code,
                             message: resolve_okx_error_message(&resp.body, &parsed_error.msg),
@@ -757,6 +814,75 @@ impl OKXRawHttpClient {
         self.send_request(
             Method::GET,
             "/api/v5/public/instruments",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests OKX event contract series.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-series>.
+    pub async fn get_event_contract_series(
+        &self,
+        params: GetEventContractSeriesParams,
+    ) -> Result<Vec<OKXEventContractSeries>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/event-contract/series",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests OKX event contract events for a series.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-events>.
+    pub async fn get_event_contract_events(
+        &self,
+        params: GetEventContractEventsParams,
+    ) -> Result<Vec<OKXEventContractEvent>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/event-contract/events",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests OKX event contract markets for a series.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-markets>.
+    pub async fn get_event_contract_markets(
+        &self,
+        params: GetEventContractMarketsParams,
+    ) -> Result<Vec<OKXEventContractMarket>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/event-contract/markets",
             Some(&params),
             None,
             false,
@@ -1519,26 +1645,59 @@ impl OKXHttpClient {
         instrument_type: OKXInstrumentType,
         instrument_family: Option<String>,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<(Ustr, u64)>)> {
-        let mut params = GetInstrumentsParamsBuilder::default();
-        params.inst_type(instrument_type);
+        let resp = if instrument_type == OKXInstrumentType::Events {
+            let series_ids = if let Some(series_id) = instrument_family.clone() {
+                vec![series_id]
+            } else {
+                self.inner
+                    .get_event_contract_series(GetEventContractSeriesParams::default())
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?
+                    .into_iter()
+                    .map(|series| series.series_id)
+                    .collect()
+            };
 
-        if let Some(family) = instrument_family.clone() {
-            params.inst_family(family);
-        }
+            let mut event_instruments = Vec::new();
 
-        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+            for series_id in series_ids {
+                let mut params = GetInstrumentsParamsBuilder::default();
+                params.inst_type(OKXInstrumentType::Events);
+                params.series_id(series_id);
+                let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+                let mut page = self
+                    .inner
+                    .get_instruments(params)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                event_instruments.append(&mut page);
+            }
+            event_instruments
+        } else {
+            let mut params = GetInstrumentsParamsBuilder::default();
+            params.inst_type(instrument_type);
 
-        let resp = self
-            .inner
-            .get_instruments(params)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+            if let Some(family) = instrument_family.clone() {
+                params.inst_family(family);
+            }
+
+            let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+            self.inner
+                .get_instruments(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?
+        };
 
         let fee_rate_opt = {
             let fee_params = GetTradeFeeParams {
                 inst_type: instrument_type,
                 uly: None,
-                inst_family: instrument_family,
+                inst_family: if instrument_type == OKXInstrumentType::Events {
+                    None
+                } else {
+                    instrument_family
+                },
             };
 
             match self.inner.get_trade_fee(fee_params).await {
@@ -1631,17 +1790,45 @@ impl OKXHttpClient {
         let symbol = instrument_id.symbol.as_str();
         let instrument_type = okx_instrument_type_from_symbol(symbol);
 
-        let mut params = GetInstrumentsParamsBuilder::default();
-        params.inst_type(instrument_type);
-        params.inst_id(symbol);
+        let resp = if instrument_type == OKXInstrumentType::Events {
+            let series = self
+                .inner
+                .get_event_contract_series(GetEventContractSeriesParams::default())
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
 
-        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+            let mut matched = Vec::new();
 
-        let resp = self
-            .inner
-            .get_instruments(params)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+            for series in series {
+                let mut params = GetInstrumentsParamsBuilder::default();
+                params.inst_type(OKXInstrumentType::Events);
+                params.series_id(series.series_id);
+                params.inst_id(symbol);
+                let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+                let mut page = self
+                    .inner
+                    .get_instruments(params)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                matched.append(&mut page);
+                if !matched.is_empty() {
+                    break;
+                }
+            }
+            matched
+        } else {
+            let mut params = GetInstrumentsParamsBuilder::default();
+            params.inst_type(instrument_type);
+            params.inst_id(symbol);
+
+            let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+            self.inner
+                .get_instruments(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?
+        };
 
         let raw_inst = resp
             .first()
@@ -1706,6 +1893,42 @@ impl OKXHttpClient {
         self.cache_instrument(instrument.clone());
 
         Ok(instrument)
+    }
+
+    /// Requests event contract series metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    pub async fn request_event_contract_series(
+        &self,
+        params: GetEventContractSeriesParams,
+    ) -> Result<Vec<OKXEventContractSeries>, OKXHttpError> {
+        self.inner.get_event_contract_series(params).await
+    }
+
+    /// Requests event metadata for an event contract series from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    pub async fn request_event_contract_events(
+        &self,
+        params: GetEventContractEventsParams,
+    ) -> Result<Vec<OKXEventContractEvent>, OKXHttpError> {
+        self.inner.get_event_contract_events(params).await
+    }
+
+    /// Requests event contract market metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
+    pub async fn request_event_contract_markets(
+        &self,
+        params: GetEventContractMarketsParams,
+    ) -> Result<Vec<OKXEventContractMarket>, OKXHttpError> {
+        self.inner.get_event_contract_markets(params).await
     }
 
     /// Requests forward prices for OKX options using the option summary endpoint.
@@ -4088,6 +4311,9 @@ impl OKXHttpClient {
         attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
+        speed_bump: Option<String>,
+        outcome: Option<String>,
+        slippage_pct: Option<String>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXHttpError::ValidationError(format!(
@@ -4198,6 +4424,22 @@ impl OKXHttpClient {
             (OKXOrderType::from(order_type), price)
         };
 
+        let speed_bump = if instrument_type == OKXInstrumentType::Events {
+            if outcome.is_none() {
+                return Err(OKXHttpError::ValidationError(
+                    "OKX event contract orders require `outcome`".to_string(),
+                ));
+            }
+
+            if ord_type == OKXOrderType::PostOnly {
+                speed_bump
+            } else {
+                Some(speed_bump.unwrap_or_else(|| "1".to_string()))
+            }
+        } else {
+            speed_bump
+        };
+
         // reduceOnly is not applicable to options per OKX docs
         let reduce_only = if instrument_type == OKXInstrumentType::Option {
             None
@@ -4230,6 +4472,9 @@ impl OKXHttpClient {
             reduce_only,
             tgt_ccy,
             attach_algo_ords,
+            speed_bump,
+            outcome,
+            slippage_pct,
         };
 
         self.place_order(request).await

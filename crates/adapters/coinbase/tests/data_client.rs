@@ -36,7 +36,10 @@ use axum::{
     routing::get,
 };
 use futures_util::StreamExt;
-use nautilus_coinbase::{CoinbaseDataClient, CoinbaseDataClientConfig};
+use nautilus_coinbase::{
+    CoinbaseDataClient, CoinbaseDataClientConfig,
+    common::consts::{COINBASE_CLIENT_ID, COINBASE_VENUE},
+};
 use nautilus_common::{
     clients::DataClient,
     live::runner::set_data_event_sender,
@@ -55,7 +58,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, Data},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::InstrumentId,
 };
 use rstest::rstest;
 use serde::Deserialize;
@@ -342,7 +345,7 @@ async fn test_data_client_connect_disconnect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -361,7 +364,7 @@ async fn test_data_client_connect_is_idempotent() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
 
     client.connect().await.unwrap();
     assert!(client.is_connected());
@@ -381,7 +384,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let mut instrument_count = 0;
@@ -409,7 +412,7 @@ async fn test_data_client_reset_clears_state() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
 
     client.reset().unwrap();
     assert!(!client.is_connected());
@@ -430,7 +433,7 @@ async fn test_data_client_subscribe_trades() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -438,7 +441,7 @@ async fn test_data_client_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -474,7 +477,7 @@ async fn test_data_client_subscribe_quotes() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -482,7 +485,7 @@ async fn test_data_client_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -513,7 +516,7 @@ async fn test_data_client_subscribe_book_deltas() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -522,7 +525,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -555,7 +558,7 @@ async fn test_data_client_request_instruments() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -565,8 +568,8 @@ async fn test_data_client_request_instruments() {
     let request = RequestInstruments::new(
         None,
         None,
-        Some(ClientId::new("COINBASE")),
-        Some(Venue::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
+        Some(*COINBASE_VENUE),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -595,7 +598,7 @@ async fn test_data_client_request_instrument() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -607,7 +610,7 @@ async fn test_data_client_request_instrument() {
         instrument_id,
         None,
         None,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -636,7 +639,7 @@ async fn test_data_client_request_book_snapshot() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -647,7 +650,7 @@ async fn test_data_client_request_book_snapshot() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -681,7 +684,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -692,7 +695,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         Some(NonZeroUsize::new(2).unwrap()),
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -729,7 +732,7 @@ async fn test_data_client_request_bars() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -742,7 +745,7 @@ async fn test_data_client_request_bars() {
         None,
         None,
         None,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -781,7 +784,7 @@ async fn test_data_client_request_trades() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -794,7 +797,7 @@ async fn test_data_client_request_trades() {
         None,
         None,
         None,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -833,14 +836,14 @@ async fn test_data_client_unsubscribe_instrument_is_noop() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
 
     let cmd = UnsubscribeInstrument::new(
         InstrumentId::from("BTC-USD.COINBASE"),
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -869,7 +872,7 @@ async fn test_data_client_subscribe_bars() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -877,7 +880,7 @@ async fn test_data_client_subscribe_bars() {
     let bar_type = BarType::from("BTC-USD.COINBASE-5-MINUTE-LAST-EXTERNAL");
     let cmd = SubscribeBars::new(
         bar_type,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -918,14 +921,14 @@ async fn test_data_client_request_book_snapshot_does_not_retry_on_failure() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -948,7 +951,7 @@ async fn test_data_client_request_book_snapshot_does_not_retry_on_failure() {
 fn subscribe_index_cmd(instrument_id: InstrumentId) -> SubscribeIndexPrices {
     SubscribeIndexPrices::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -960,7 +963,7 @@ fn subscribe_index_cmd(instrument_id: InstrumentId) -> SubscribeIndexPrices {
 fn subscribe_funding_cmd(instrument_id: InstrumentId) -> SubscribeFundingRates {
     SubscribeFundingRates::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -972,7 +975,7 @@ fn subscribe_funding_cmd(instrument_id: InstrumentId) -> SubscribeFundingRates {
 fn unsubscribe_index_cmd(instrument_id: InstrumentId) -> UnsubscribeIndexPrices {
     UnsubscribeIndexPrices::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -984,7 +987,7 @@ fn unsubscribe_index_cmd(instrument_id: InstrumentId) -> UnsubscribeIndexPrices 
 fn unsubscribe_funding_cmd(instrument_id: InstrumentId) -> UnsubscribeFundingRates {
     UnsubscribeFundingRates::new(
         instrument_id,
-        Some(ClientId::new("COINBASE")),
+        Some(*COINBASE_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -1018,7 +1021,7 @@ async fn test_data_client_subscribe_index_and_funding_emits_both_kinds() {
     set_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -1112,7 +1115,7 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     set_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -1180,7 +1183,7 @@ async fn test_data_client_stop_halts_derivatives_poll() {
     set_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
@@ -1226,7 +1229,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
     set_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -1335,7 +1338,7 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
     set_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}

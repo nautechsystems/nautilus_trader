@@ -947,11 +947,11 @@ impl DataClient for OKXDataClient {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         if let Some(ref mut ws) = self.ws_public {
-            let _ = ws.close().await;
+            let _result = ws.close().await;
         }
 
         if let Some(ref mut ws) = self.ws_business {
-            let _ = ws.close().await;
+            let _result = ws.close().await;
         }
 
         let handles: Vec<_> = self.tasks.drain(..).collect();

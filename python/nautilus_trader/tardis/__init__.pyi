@@ -111,17 +111,17 @@ class TardisHttpClient:
     def instruments(
         self,
         exchange: str,
-        symbol: str | None = ...,
-        base_currency: typing.Sequence[str] | None = ...,
-        quote_currency: typing.Sequence[str] | None = ...,
-        instrument_type: typing.Sequence[str] | None = ...,
-        contract_type: typing.Sequence[str] | None = ...,
-        active: bool | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        available_offset: int | None = ...,
-        effective: int | None = ...,
-        ts_init: int | None = ...,
+        symbol: str | None = None,
+        base_currency: typing.Sequence[str] | None = None,
+        quote_currency: typing.Sequence[str] | None = None,
+        instrument_type: typing.Sequence[str] | None = None,
+        contract_type: typing.Sequence[str] | None = None,
+        active: bool | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        available_offset: int | None = None,
+        effective: int | None = None,
+        ts_init: int | None = None,
     ) -> typing.Any: ...
 
 @typing.final

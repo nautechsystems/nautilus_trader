@@ -15,9 +15,9 @@
 
 //! Example demonstrating live data testing with the Databento adapter.
 //!
-//! Run with: `cargo run --example databento-data-tester --package nautilus-databento --features live`
+//! Run with: `cargo run --example databento-data-tester --package nautilus-databento`
 
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
@@ -25,16 +25,20 @@ use nautilus_common::{
     log_info, nautilus_actor,
     timer::TimeEvent,
 };
-use nautilus_core::env::get_env_var;
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_core::{Params, env::get_env_var};
+use nautilus_databento::{
+    common::DATABENTO_CLIENT_ID,
+    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use serde_json::json;
 
-// Run with `cargo run --bin databento-node-test --features high-precision`
+const PRICE_PRECISION_PARAM: &str = "price_precision";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,8 +72,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_factory = DatabentoDataClientFactory::new();
 
-    let client_id = ClientId::new("DATABENTO");
-    let instrument_ids = vec![InstrumentId::from("ESM6.XCME")];
+    // ESM6.XCME
+    let instrument_id = InstrumentId::from("ESM6.XCME");
+    let price_precision = None; // Default
+
+    // 6EM6.XCME
+    // let instrument_id = InstrumentId::from("6EM6.XCME");
+    // let price_precision = Some(5); // Override default
+
+    let client_id = *DATABENTO_CLIENT_ID;
+    let instrument_ids = vec![instrument_id];
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
@@ -79,7 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(client_factory), Box::new(databento_config))?
         .build()?;
 
-    let actor_config = DatabentoSubscriberActorConfig::new(client_id, instrument_ids);
+    let actor_config =
+        DatabentoSubscriberActorConfig::new(client_id, instrument_ids, price_precision);
     let actor = DatabentoSubscriberActor::new(actor_config);
 
     node.add_actor(actor)?;
@@ -97,17 +110,32 @@ pub struct DatabentoSubscriberActorConfig {
     pub client_id: ClientId,
     /// Instrument IDs to subscribe to.
     pub instrument_ids: Vec<InstrumentId>,
+    /// Price precision override for subscribed instruments.
+    pub price_precision: Option<u8>,
 }
 
 impl DatabentoSubscriberActorConfig {
     /// Creates a new [`DatabentoSubscriberActorConfig`] instance.
     #[must_use]
-    pub fn new(client_id: ClientId, instrument_ids: Vec<InstrumentId>) -> Self {
+    pub fn new(
+        client_id: ClientId,
+        instrument_ids: Vec<InstrumentId>,
+        price_precision: Option<u8>,
+    ) -> Self {
         Self {
             base: DataActorConfig::default(),
             client_id,
             instrument_ids,
+            price_precision,
         }
+    }
+
+    fn subscription_params(&self) -> Option<Params> {
+        self.price_precision.map(|price_precision| {
+            let mut params = Params::new();
+            params.insert(PRICE_PRECISION_PARAM.to_string(), json!(price_precision));
+            params
+        })
     }
 }
 
@@ -130,31 +158,12 @@ impl DataActor for DatabentoSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
+        let params = self.config.subscription_params();
 
         for instrument_id in instrument_ids {
-            self.subscribe_quotes(instrument_id, Some(client_id), None);
-            self.subscribe_trades(instrument_id, Some(client_id), None);
+            self.subscribe_quotes(instrument_id, Some(client_id), params.clone());
+            self.subscribe_trades(instrument_id, Some(client_id), params.clone());
         }
-
-        self.clock().set_timer(
-            "TEST-TIMER-1-SECOND",
-            Duration::from_secs(1),
-            None,
-            None,
-            None,
-            Some(true),
-            Some(false),
-        )?;
-
-        self.clock().set_timer(
-            "TEST-TIMER-2-SECOND",
-            Duration::from_secs(2),
-            None,
-            None,
-            None,
-            Some(true),
-            Some(false),
-        )?;
 
         Ok(())
     }

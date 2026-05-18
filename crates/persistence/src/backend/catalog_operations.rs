@@ -886,7 +886,9 @@ impl ParquetDataCatalog {
             );
 
             if self.file_exists(&target_filename)? {
-                // Skip if target file already exists
+                // This period is already consolidated; do not let a later cleanup delete it.
+                let target_object_path = self.to_object_path(&target_filename)?.to_string();
+                existing_files.retain(|f| f != &target_object_path);
                 continue;
             }
 
@@ -1026,7 +1028,9 @@ impl ParquetDataCatalog {
             );
 
             if self.file_exists(&target_filename)? {
-                // Skip if target file already exists
+                // This period is already consolidated; do not let a later cleanup delete it.
+                let target_object_path = self.to_object_path(&target_filename)?.to_string();
+                existing_files.retain(|f| f != &target_object_path);
                 continue;
             }
 

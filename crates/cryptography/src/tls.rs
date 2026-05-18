@@ -19,6 +19,7 @@ use rustls::{ClientConfig, RootCertStore};
 use webpki_roots;
 
 /// Loads a TLS client configuration with certificates.
+#[must_use]
 pub fn create_tls_config() -> Arc<ClientConfig> {
     log::debug!("Loading certificates");
 

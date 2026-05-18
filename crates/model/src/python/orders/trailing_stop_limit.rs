@@ -138,8 +138,8 @@ impl TrailingStopLimitOrder {
 
     #[staticmethod]
     #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> Self {
-        Self::from(init)
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Self::try_from(init).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]

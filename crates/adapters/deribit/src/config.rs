@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
@@ -28,7 +29,8 @@ use crate::{
 };
 
 /// Configuration for the Deribit data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
@@ -72,6 +74,9 @@ pub struct DeribitDataClientConfig {
     /// Interval for refreshing instruments (in minutes).
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// If `true`, subscribes for uncached instruments lazy-load via HTTP; otherwise fail fast.
+    #[builder(default = false)]
+    pub auto_load_missing_instruments: bool,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -117,7 +122,8 @@ impl DeribitDataClientConfig {
 }
 
 /// Configuration for the Deribit execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
@@ -251,5 +257,40 @@ mod tests {
             ..Default::default()
         };
         assert!(config.has_api_credentials());
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: DeribitDataClientConfig = toml::from_str(
+            r#"
+environment = "testnet"
+product_types = ["future", "option"]
+heartbeat_interval_secs = 15
+auto_load_missing_instruments = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, DeribitEnvironment::Testnet);
+        assert_eq!(
+            config.product_types,
+            vec![DeribitProductType::Future, DeribitProductType::Option]
+        );
+        assert_eq!(config.heartbeat_interval_secs, 15);
+        assert!(config.auto_load_missing_instruments);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: DeribitExecClientConfig = toml::from_str("").unwrap();
+        let expected = DeribitExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.product_types, expected.product_types);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(config.max_retries, expected.max_retries);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

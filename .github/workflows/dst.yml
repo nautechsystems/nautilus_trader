@@ -5,9 +5,9 @@ name: dst
 # Builds the in-scope crates under `--cfg madsim --features simulation` and
 # runs the test subset known to work under simulation (all of nautilus-common
 # plus the cross-crate seam pinning tests in nautilus-network and
-# nautilus-core). Triggered on pushes to release-track branches (master,
-# nightly) and on manual dispatch. PRs and develop pushes do not gate on
-# this workflow. See docs/concepts/dst.md for the contract and scope.
+# nautilus-core). Triggered on pushes to nightly and test-ci and on manual
+# dispatch. PRs, master pushes, and develop pushes do not gate on this
+# workflow. See docs/concepts/dst.md for the contract and scope.
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ permissions:
 
 on:
   push:
-    branches: [master, nightly, test-ci]
+    branches: [nightly]
   workflow_dispatch:
 
 concurrency:
@@ -42,7 +42,7 @@ jobs:
       #   MADSIM_TEST_SEED=<n> MADSIM_TEST_NUM=5 make cargo-test-sim
       MADSIM_TEST_NUM: "5"
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -61,7 +61,7 @@ jobs:
           rust-cache-enabled: "false"
 
       - name: Run DST simulation smoke tests
-        run: |
+        run: |-
           export MADSIM_TEST_SEED=$((GITHUB_RUN_NUMBER * MADSIM_TEST_NUM))
           echo "MADSIM_TEST_SEED=$MADSIM_TEST_SEED MADSIM_TEST_NUM=$MADSIM_TEST_NUM"
           make cargo-test-sim NEXTEST_PROFILE=ci

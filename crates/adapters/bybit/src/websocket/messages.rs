@@ -22,8 +22,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit, BybitOrderSide,
-            BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitBboSideType, BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit,
+            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
             BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
             BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
             BybitWsOrderRequestOp,
@@ -80,6 +80,8 @@ pub enum BybitWsFrame {
     AccountOrder(BybitWsAccountOrderMsg),
     /// Execution/fill updates from private channel.
     AccountExecution(BybitWsAccountExecutionMsg),
+    /// Fast execution updates from private channel (slim payload).
+    AccountExecutionFast(BybitWsAccountExecutionFastMsg),
     /// Wallet/balance updates from private channel.
     AccountWallet(BybitWsAccountWalletMsg),
     /// Position updates from private channel.
@@ -111,6 +113,8 @@ pub enum BybitWsMessage {
     AccountOrder(BybitWsAccountOrderMsg),
     /// Execution/fill updates from private channel.
     AccountExecution(BybitWsAccountExecutionMsg),
+    /// Fast execution updates from private channel (slim payload).
+    AccountExecutionFast(BybitWsAccountExecutionFastMsg),
     /// Wallet/balance updates from private channel.
     AccountWallet(BybitWsAccountWalletMsg),
     /// Position updates from private channel.
@@ -301,6 +305,10 @@ pub struct BybitWsPlaceOrderParams {
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_side_type: Option<BybitBboSideType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_level: Option<String>,
 }
 
 /// Parameters for amending an order via WebSocket.
@@ -417,6 +425,10 @@ pub struct BybitWsBatchPlaceItem {
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_side_type: Option<BybitBboSideType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_level: Option<String>,
 }
 
 /// Arguments for batch place order operation via WebSocket.
@@ -846,6 +858,52 @@ pub struct BybitWsAccountExecutionMsg {
     pub data: Vec<BybitWsAccountExecution>,
 }
 
+/// Slim execution payload delivered on the `execution.fast` private channel.
+///
+/// The fast stream omits fee/exec-type metadata that the standard `execution`
+/// channel provides; subscribe to both if you need full fill data.
+///
+/// Note: `orderLinkId` is documented as always empty for maker fills (and for
+/// option maker fills); identity correlation by `orderLinkId` works only for
+/// taker fast fills.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/websocket/private/fast-execution>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsAccountExecutionFast {
+    pub category: BybitProductType,
+    pub symbol: Ustr,
+    pub exec_id: String,
+    pub exec_price: String,
+    pub exec_qty: String,
+    pub order_id: Ustr,
+    pub order_link_id: Ustr,
+    pub side: BybitOrderSide,
+    pub exec_time: String,
+    pub is_maker: bool,
+    #[serde(default = "default_ws_execution_fast_seq")]
+    pub seq: i64,
+}
+
+const fn default_ws_execution_fast_seq() -> i64 {
+    -1
+}
+
+/// Envelope for account fast-execution updates.
+///
+/// The fast stream envelope omits the `id` field that the standard `execution`
+/// envelope includes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsAccountExecutionFastMsg {
+    pub topic: Ustr,
+    #[serde(default)]
+    pub id: String,
+    pub creation_time: i64,
+    pub data: Vec<BybitWsAccountExecutionFast>,
+}
+
 /// Coin level wallet update payload on private streams.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -953,6 +1011,8 @@ pub struct BybitWsAccountPosition {
     pub mmr_sys_updated_time: String,
     #[serde(default)]
     pub leverage_sys_updated_time: String,
+    #[serde(default)]
+    pub open_time: i64,
 }
 
 const fn default_ws_position_seq() -> i64 {
@@ -975,6 +1035,49 @@ mod tests {
 
     use super::*;
     use crate::common::testing::load_test_json;
+
+    #[rstest]
+    fn deserialize_account_execution_fast_msg() {
+        // Sample payload from the venue docs: slim envelope without `id`,
+        // includes `isMaker`, taker fill with populated `orderLinkId`.
+        let json = load_test_json("ws_account_execution_fast.json");
+        let msg: BybitWsAccountExecutionFastMsg = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(msg.id, "");
+        assert_eq!(msg.creation_time, 1_716_800_399_338);
+        assert_eq!(msg.data.len(), 1);
+        let exec = &msg.data[0];
+        assert_eq!(exec.category, BybitProductType::Linear);
+        assert_eq!(exec.symbol, Ustr::from("ICPUSDT"));
+        assert_eq!(exec.exec_id, "3510f361-0add-5c7b-a2e7-9679810944fc");
+        assert_eq!(exec.exec_price, "12.015");
+        assert_eq!(exec.exec_qty, "3000");
+        assert_eq!(
+            exec.order_id,
+            Ustr::from("443d63fa-b4c3-4297-b7b1-23bca88b04dc")
+        );
+        assert_eq!(exec.order_link_id, Ustr::from("test-order-link-001"));
+        assert_eq!(exec.side, BybitOrderSide::Sell);
+        assert!(!exec.is_maker);
+        assert_eq!(exec.exec_time, "1716800399334");
+        assert_eq!(exec.seq, 34_771_365_464);
+    }
+
+    #[rstest]
+    fn deserialize_account_execution_fast_msg_accepts_envelope_id() {
+        // Forward-compat: if the venue adds an envelope `id` later, it must still parse.
+        let json = load_test_json("ws_account_execution_fast_envelope_id.json");
+        let msg: BybitWsAccountExecutionFastMsg = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg.id, "fast-1");
+        assert!(msg.data.is_empty());
+    }
+
+    #[rstest]
+    fn deserialize_account_position_with_open_time() {
+        let json = load_test_json("ws_account_position_with_open_time.json");
+        let position: BybitWsAccountPosition = serde_json::from_str(&json).unwrap();
+        assert_eq!(position.open_time, 1_700_000_000_123);
+    }
 
     #[rstest]
     fn serialize_place_params_includes_order_iv_when_set() {
@@ -1008,6 +1111,8 @@ mod tests {
             order_iv: Some("0.80".to_string()),
             mmp: Some(true),
             position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -1047,12 +1152,56 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("orderIv"));
         assert!(!json.contains("mmp"));
         assert!(!json.contains("positionIdx"));
+    }
+
+    #[rstest]
+    fn serialize_place_params_includes_bbo_when_set() {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: None,
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            mmp: None,
+            position_idx: None,
+            bbo_side_type: Some(BybitBboSideType::Queue),
+            bbo_level: Some("2".to_string()),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"bboSideType\":\"Queue\""));
+        assert!(json.contains("\"bboLevel\":\"2\""));
+        assert!(!json.contains("\"price\""));
     }
 
     #[rstest]
@@ -1092,6 +1241,8 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: Some(idx),
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -1134,6 +1285,8 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: idx,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();

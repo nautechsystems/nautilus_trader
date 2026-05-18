@@ -134,11 +134,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # Configuration
         self._config = config
-        self._env = (
-            config.environment
-            if config.environment is not None
-            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
-        )
+        self._env = config.environment or BitmexEnvironment.MAINNET
 
         self._log.info(f"environment={self._env}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)

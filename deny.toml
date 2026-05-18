@@ -17,37 +17,35 @@ feature-depth = 1
 [advisories]
 # Ignored advisories (use sparingly - document the reason)
 ignore = [
-  # paste is unmaintained but pulled in transitively via alloy (blockchain dependencies)
+  # paste unmaintained, transitive via alloy
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
-  { id = "RUSTSEC-2024-0436", reason = "paste crate is unmaintained but a transitive dependency via alloy" },
+  { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
 
-  # rustls-pemfile is unmaintained, pulled in via nautilus-network and various TLS dependencies
-  # Users are encouraged to migrate to rustls-pki-types directly but dependencies haven't updated yet
-  # This is not a security vulnerability, just a maintenance status advisory
-  # TODO: Monitor upstream TLS dependencies for migration
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)" },
+  # rustls-pemfile unmaintained, transitive via nautilus-network and various TLS deps.
+  # Migration target is rustls-pki-types; not a vulnerability.
+  # TODO: Monitor upstream TLS deps for migration
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
 
-  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen->rustpython-parser
-  # This is dev-time only for generating .pyi stub files, not a runtime security risk
+  # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0080", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0100", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 
-  # bincode is unmaintained, pulled in via hypersync-client (blockchain adapter)
-  # The team considers 1.3.3 a complete version, not a security vulnerability
-  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration to alternative serialization
-  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)" },
+  # bincode 1.3.3 unmaintained, transitive via hypersync-client. Not a vulnerability.
+  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration
+  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via hypersync-client (not a vulnerability)" },
 
-  # capnp unsound APIs in constant::Reader and StructSchema
-  # Transitive via hypersync-client, fix requires upstream update to capnp >= 0.24.0
-  # Low risk: only affects internal schema handling, not directly exposed
+  # capnp unsound APIs in constant::Reader and StructSchema, transitive via hypersync-client.
+  # Fix requires upstream update to capnp >= 0.24.0. Low risk: internal schema handling only.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
+  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative) and RUSTSEC-2023-0071 (rsa)
+  # which cargo-deny does not surface; those are listed only in .cargo/audit.toml.
 ]
 
 # =============================================================================
@@ -71,10 +69,7 @@ allow = [
   "Unicode-DFS-2016",
   "Unicode-3.0",
   "0BSD",
-  "LGPL-3.0",
-  "LGPL-3.0-only",
   "LGPL-3.0-or-later",
-  "OpenSSL",
   "Unlicense",
   "bzip2-1.0.6",
 ]
@@ -154,6 +149,10 @@ skip = [
   # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
   { crate = "syn" },
   { crate = "strsim" },
+
+  # bincode 1.3.3 (transitive via madsim dev-dep and hypersync-client) vs
+  # 2.0.1 (event_store envelope codec)
+  { crate = "bincode" },
 
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
   { crate = "strum" },

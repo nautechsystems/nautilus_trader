@@ -396,9 +396,10 @@ async fn drain_buffer(
         let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
 
         // Improve efficiency of this by batching
-        if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {
-            let min_timestamp_ms =
-                (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
+        if *last_trim_ms < unix_duration_now.saturating_sub(trim_buffer).as_millis() as usize {
+            let min_timestamp_ms = unix_duration_now
+                .saturating_sub(autotrim_duration.unwrap())
+                .as_millis() as usize;
             let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
                 .arg(stream_key.clone())
                 .arg(REDIS_MINID)

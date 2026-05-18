@@ -49,3 +49,12 @@ impl From<anyhow::Error> for KrakenHttpError {
         Self::NetworkError(err.to_string())
     }
 }
+
+/// Returns `true` if a request producing this error should be retried.
+pub fn kraken_http_should_retry(error: &KrakenHttpError) -> bool {
+    match error {
+        KrakenHttpError::NetworkError(_) => true,
+        KrakenHttpError::ApiError(errors) => errors.iter().any(|e| e.contains("Rate limit")),
+        _ => false,
+    }
+}

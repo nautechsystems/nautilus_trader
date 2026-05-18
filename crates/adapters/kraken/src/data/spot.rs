@@ -67,10 +67,28 @@ use crate::{
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
+        level_3::{
+            BookOrderIdHasher, KrakenL3WsMessage,
+            resync::retry_l3_resync,
+            runtime::{L3Sink, L3State, process_l3_message},
+        },
         messages::KrakenSpotWsMessage,
         parse::{parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar},
     },
 };
+
+/// `L3Sink` implementation that forwards deltas to the data engine.
+struct DataEventSink<'a> {
+    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+}
+
+impl L3Sink for DataEventSink<'_> {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas_API) {
+        if let Err(e) = self.sender.send(DataEvent::Data(Data::Deltas(deltas))) {
+            log::error!("Failed to send L3 deltas: {e}");
+        }
+    }
+}
 
 /// Kraken Spot data client.
 ///
@@ -83,6 +101,8 @@ pub struct KrakenSpotDataClient {
     config: KrakenDataClientConfig,
     http: KrakenSpotHttpClient,
     ws: KrakenSpotWebSocketClient,
+    ws_l3: Option<KrakenSpotWebSocketClient>,
+    l3_handler_alive: Arc<AtomicBool>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -120,6 +140,8 @@ impl KrakenSpotDataClient {
             config,
             http,
             ws,
+            ws_l3: None,
+            l3_handler_alive: Arc::new(AtomicBool::new(false)),
             is_connected: AtomicBool::new(false),
             cancellation_token,
             tasks: Vec::new(),
@@ -173,6 +195,183 @@ impl KrakenSpotDataClient {
                 log::error!("{context}: {e:?}");
             }
         });
+    }
+
+    fn subscribe_l3_book(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let symbol_ustr = instrument_id.symbol.inner();
+        let depth = cmd.depth.map_or(1000, |d| d.get() as u32);
+
+        if !matches!(depth, 10 | 100 | 1000) {
+            anyhow::bail!("Invalid L3 depth {depth} for Kraken Spot, valid values: 10, 100, 1000");
+        }
+
+        if !self.config.has_api_credentials() {
+            anyhow::bail!(
+                "L3 order book requires API credentials; configure api_key and api_secret"
+            );
+        }
+
+        let handler_dead = !self.l3_handler_alive.load(Ordering::Relaxed);
+        if self.ws_l3.is_none() || handler_dead {
+            if let Some(dead) = self.ws_l3.take() {
+                get_runtime().spawn(async move {
+                    let mut dead = dead;
+                    let _ = dead.close().await;
+                });
+            }
+
+            let ws_l3 = KrakenSpotWebSocketClient::l3(
+                self.config.clone(),
+                self.cancellation_token.clone(),
+                self.config.proxy_url.clone(),
+            );
+
+            self.spawn_l3_handler_task(ws_l3.clone());
+            self.ws_l3 = Some(ws_l3);
+        }
+
+        let ws_l3 = self
+            .ws_l3
+            .as_ref()
+            .expect("ws_l3 initialised above")
+            .clone();
+
+        self.spawn_ws(
+            async move {
+                ws_l3
+                    .wait_until_active(10.0)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("L3 WebSocket failed to become active: {e}"))?;
+                ws_l3
+                    .wait_until_authenticated(10.0)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("L3 WebSocket failed to authenticate: {e}"))?;
+                ws_l3
+                    .subscribe_book_l3(symbol_ustr, depth)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))
+            },
+            "subscribe l3 book",
+        );
+
+        log::info!("Subscribed to L3 book: instrument_id={instrument_id}");
+        Ok(())
+    }
+
+    fn spawn_l3_handler_task(&mut self, handler_client: KrakenSpotWebSocketClient) {
+        let data_sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let cancellation_token = self.cancellation_token.clone();
+        let clock = self.clock;
+        let alive = self.l3_handler_alive.clone();
+
+        alive.store(true, Ordering::Relaxed);
+
+        let handle = get_runtime().spawn(async move {
+            struct AliveGuard(Arc<AtomicBool>);
+            impl Drop for AliveGuard {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::Relaxed);
+                }
+            }
+            let _alive_guard = AliveGuard(alive);
+
+            let mut handler_client = handler_client;
+
+            if let Err(e) = handler_client.connect().await {
+                log::error!("L3 WebSocket connect failed: {e}");
+                return;
+            }
+
+            if let Err(e) = handler_client.wait_until_active(10.0).await {
+                log::error!("L3 WebSocket failed to become active: {e}");
+                return;
+            }
+
+            if let Err(e) = handler_client.authenticate().await {
+                log::error!("L3 WebSocket authentication failed: {e}");
+                return;
+            }
+
+            let stream = match handler_client.stream() {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("L3 stream() failed: {e}");
+                    return;
+                }
+            };
+            tokio::pin!(stream);
+
+            let mut states: AHashMap<String, L3State> = AHashMap::new();
+            let hasher = BookOrderIdHasher::new();
+            let l3_depths = handler_client.l3_depths_handle();
+            let validate_checksum = handler_client.validate_l3_checksum();
+            let resync_client = handler_client.clone();
+
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => break,
+                    msg = stream.next() => {
+                        let Some(msg) = msg else { break };
+                        let ts_init = clock.get_time_ns();
+
+                        let runtime_msg = match msg {
+                            KrakenSpotWsMessage::L3Snapshot(snap) => {
+                                KrakenL3WsMessage::Snapshot(snap)
+                            }
+                            KrakenSpotWsMessage::L3Update(update) => {
+                                KrakenL3WsMessage::Update(update)
+                            }
+                            KrakenSpotWsMessage::Reconnected => {
+                                log::info!("L3 WebSocket reconnected");
+
+                                for state in states.values_mut() {
+                                    state.open_orders.clear();
+                                    state.awaiting_snapshot = true;
+                                }
+                                continue;
+                            }
+                            _ => continue,
+                        };
+
+                        let mut sink = DataEventSink { sender: &data_sender };
+                        let resync = process_l3_message(
+                            runtime_msg,
+                            &mut sink,
+                            &instruments,
+                            &l3_depths,
+                            &mut states,
+                            &hasher,
+                            validate_checksum,
+                            ts_init,
+                        );
+
+                        if let Some(request) = resync {
+                            log::warn!(
+                                "Resyncing Kraken L3 book: symbol={}, depth={}, reason={}",
+                                request.symbol,
+                                request.depth,
+                                request.reason,
+                            );
+                            let symbol_ustr = Ustr::from(&request.symbol);
+                            let client_for_resync = resync_client.clone();
+
+                            get_runtime().spawn(async move {
+                                retry_l3_resync(
+                                    &client_for_resync,
+                                    symbol_ustr,
+                                    request.depth,
+                                )
+                                .await;
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        self.tasks.push(handle);
     }
 
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
@@ -357,6 +556,9 @@ impl KrakenSpotDataClient {
                 }
             }
             KrakenSpotWsMessage::Execution(_) => {}
+            KrakenSpotWsMessage::OrderResponse(_) => {}
+            KrakenSpotWsMessage::L3Snapshot(_) => {}
+            KrakenSpotWsMessage::L3Update(_) => {}
             KrakenSpotWsMessage::Reconnected => {
                 log::info!("Spot WebSocket reconnected");
             }
@@ -402,6 +604,12 @@ impl DataClient for KrakenSpotDataClient {
         get_runtime().spawn(async move {
             let _ = ws.close().await;
         });
+
+        if let Some(mut ws_l3) = self.ws_l3.take() {
+            get_runtime().spawn(async move {
+                let _ = ws_l3.close().await;
+            });
+        }
 
         self.instruments.store(ahash::AHashMap::new());
 
@@ -460,6 +668,10 @@ impl DataClient for KrakenSpotDataClient {
         self.cancellation_token.cancel();
         let _ = self.ws.close().await;
 
+        if let Some(mut ws_l3) = self.ws_l3.take() {
+            let _ = ws_l3.close().await;
+        }
+
         for handle in self.tasks.drain(..) {
             if let Err(e) = handle.await {
                 log::error!("Error joining WebSocket task: {e:?}");
@@ -487,12 +699,13 @@ impl DataClient for KrakenSpotDataClient {
         let instrument_id = cmd.instrument_id;
         let depth = cmd.depth;
 
-        if cmd.book_type != BookType::L2_MBP {
-            log::warn!(
-                "Book type {:?} not supported by Kraken, skipping subscription",
-                cmd.book_type
-            );
-            return Ok(());
+        match cmd.book_type {
+            BookType::L2_MBP => {}
+            BookType::L3_MBO => return self.subscribe_l3_book(&cmd),
+            other => {
+                log::warn!("Unsupported BookType {other:?} for Kraken Spot, skipping");
+                return Ok(());
+            }
         }
 
         if let Some(d) = depth {
@@ -607,8 +820,29 @@ impl DataClient for KrakenSpotDataClient {
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
 
+        if self.ws_l3.as_ref().is_some_and(|ws| {
+            ws.subscriptions_contains(&format!("level3:{}", instrument_id.symbol))
+        }) {
+            let symbol_ustr = instrument_id.symbol.inner();
+
+            if let Some(ws_l3) = self.ws_l3.clone() {
+                self.spawn_ws(
+                    async move {
+                        ws_l3
+                            .unsubscribe_book_l3(symbol_ustr)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("{e}"))?;
+                        log::info!("Unsubscribed from L3 book: instrument_id={instrument_id}");
+                        Ok(())
+                    },
+                    "unsubscribe l3 book",
+                );
+            }
+            return Ok(());
+        }
+
+        let ws = self.ws.clone();
         self.spawn_ws(
             async move {
                 ws.unsubscribe_book(instrument_id)
@@ -918,26 +1152,61 @@ impl DataClient for KrakenSpotDataClient {
 #[cfg(test)]
 mod tests {
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
-    use nautilus_model::identifiers::ClientId;
+    use nautilus_model::{
+        enums::BookAction,
+        instruments::{InstrumentAny, currency_pair::CurrencyPair},
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
-    use crate::config::KrakenDataClientConfig;
+    use crate::{
+        common::consts::KRAKEN_CLIENT_ID, config::KrakenDataClientConfig,
+        websocket::spot_v2::level_3::messages::KrakenL3Snapshot,
+    };
 
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
     }
 
+    fn make_instrument() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(CurrencyPair::new(
+            InstrumentId::from("BTC/USD.KRAKEN"),
+            Symbol::from("BTC/USD"),
+            Currency::BTC(),
+            Currency::USD(),
+            1,
+            8,
+            Price::from("0.1"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
     #[rstest]
     fn test_spot_data_client_new() {
         setup_test_env();
         let config = KrakenDataClientConfig::default();
-        let client = KrakenSpotDataClient::new(ClientId::from("KRAKEN"), config);
+        let client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config);
         assert!(client.is_ok());
 
         let client = client.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("KRAKEN"));
+        assert_eq!(client.client_id(), *KRAKEN_CLIENT_ID);
         assert_eq!(client.venue(), Some(*KRAKEN_VENUE));
         assert!(!client.is_connected());
         assert!(client.is_disconnected());
@@ -945,10 +1214,75 @@ mod tests {
     }
 
     #[rstest]
+    fn test_l3_snapshot_checksum_mismatch_emits_clear_and_requests_resync() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = make_instrument();
+        instruments.insert(instrument.id(), instrument);
+
+        let depths = Arc::new(Mutex::new(AHashMap::new()));
+        depths
+            .lock()
+            .expect("depths lock poisoned")
+            .insert("BTC/USD".to_string(), 1000);
+
+        let snapshot: KrakenL3Snapshot = serde_json::from_str(
+            r#"{
+                "symbol": "BTC/USD",
+                "bids": [{
+                    "order_id": "order-bid-1",
+                    "limit_price": 4199.0,
+                    "order_qty": 3.00000000,
+                    "timestamp": "2024-01-01T00:00:00Z"
+                }],
+                "asks": [{
+                    "order_id": "order-ask-1",
+                    "limit_price": 4200.0,
+                    "order_qty": 0.01000000,
+                    "timestamp": "2024-01-01T00:00:00Z"
+                }],
+                "checksum": 1,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }"#,
+        )
+        .unwrap();
+
+        let mut states = AHashMap::new();
+        let hasher = BookOrderIdHasher::new();
+        let mut sink = DataEventSink { sender: &sender };
+        let request = process_l3_message(
+            KrakenL3WsMessage::Snapshot(snapshot),
+            &mut sink,
+            &instruments,
+            &depths,
+            &mut states,
+            &hasher,
+            true,
+            get_atomic_clock_realtime().get_time_ns(),
+        )
+        .expect("expected resync request");
+
+        assert_eq!(request.symbol, "BTC/USD");
+        assert_eq!(request.depth, 1000);
+        assert_eq!(request.reason, "snapshot checksum mismatch");
+
+        let event = receiver.try_recv().expect("expected clear event");
+        let DataEvent::Data(Data::Deltas(deltas)) = event else {
+            panic!("expected deltas event");
+        };
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(states["BTC/USD"].awaiting_snapshot);
+        assert!(states["BTC/USD"].open_orders.is_empty());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_spot_data_client_start_stop() {
         setup_test_env();
         let config = KrakenDataClientConfig::default();
-        let mut client = KrakenSpotDataClient::new(ClientId::from("KRAKEN"), config).unwrap();
+        let mut client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
 
         assert!(client.start().is_ok());
         assert!(client.stop().is_ok());

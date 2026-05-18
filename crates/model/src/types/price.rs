@@ -776,8 +776,8 @@ impl<'de> Deserialize<'de> for Price {
     where
         D: Deserializer<'de>,
     {
-        let price_str: &str = Deserialize::deserialize(deserializer)?;
-        let price: Self = price_str.into();
+        let price_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let price: Self = price_str.as_ref().into();
         Ok(price)
     }
 }
@@ -1482,6 +1482,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_price_serde_json_from_value_round_trip() {
+        let price = Price::new(1.0500, 4);
+        let value = serde_json::to_value(price).unwrap();
+
+        let deserialized: Price = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized, price);
+        assert_eq!(deserialized.precision, 4);
+    }
+
+    #[rstest]
     fn test_from_mantissa_exponent_exact_precision() {
         let price = Price::from_mantissa_exponent(12345, -2, 2);
         assert_eq!(price.as_f64(), 123.45);
@@ -1520,7 +1530,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Overflow")]
+    #[should_panic(expected = "Price::from_mantissa_exponent")]
     fn test_from_mantissa_exponent_overflow_panics() {
         let _ = Price::from_mantissa_exponent(i64::MAX, 9, 0);
     }

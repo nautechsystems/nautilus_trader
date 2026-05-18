@@ -35,7 +35,7 @@ use nautilus_core::{
     correctness::{CorrectnessResultExt, FAILED, check_equal},
 };
 use nautilus_execution::{
-    matching_core::OrderMatchInfo,
+    matching_core::RestingOrder,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
 };
@@ -149,7 +149,7 @@ pub struct SimulatedExchange {
     use_reduce_only: bool,
     use_message_queue: bool,
     use_market_order_acks: bool,
-    _allow_cash_borrowing: bool,
+    allow_cash_borrowing: bool,
     frozen_account: bool,
     queue_position: bool,
     oto_full_trigger: bool,
@@ -229,7 +229,7 @@ impl SimulatedExchange {
             use_reduce_only: config.use_reduce_only,
             use_message_queue: config.use_message_queue,
             use_market_order_acks: config.use_market_order_acks,
-            _allow_cash_borrowing: config.allow_cash_borrowing,
+            allow_cash_borrowing: config.allow_cash_borrowing,
             frozen_account: config.frozen_account,
             queue_position: config.queue_position,
             oto_full_trigger: config.oto_full_trigger,
@@ -436,7 +436,7 @@ impl SimulatedExchange {
 
     /// Returns all open orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
@@ -453,34 +453,34 @@ impl SimulatedExchange {
 
     /// Returns all open bid orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_bid_orders().to_vec())
+                    .map(|engine| engine.get_open_bid_orders())
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_bid_orders().to_vec())
+                    .flat_map(|engine| engine.get_open_bid_orders())
                     .collect()
             })
     }
 
     /// Returns all open ask orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_ask_orders().to_vec())
+                    .map(|engine| engine.get_open_ask_orders())
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_ask_orders().to_vec())
+                    .flat_map(|engine| engine.get_open_ask_orders())
                     .collect()
             })
     }
@@ -520,7 +520,7 @@ impl SimulatedExchange {
                         current_balance.total = current_balance.total + adjustment;
                         current_balance.free = current_balance.free + adjustment;
 
-                        let margins = match account {
+                        let margins = match &*account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
                             _ => IndexMap::new(),
                         };
@@ -984,7 +984,7 @@ impl SimulatedExchange {
                         .cache
                         .borrow()
                         .order(&command.client_order_id)
-                        .cloned()
+                        .map(|o| o.clone())
                         .expect("Order must exist in cache");
                     matching_engine.process_order(&mut order, account_id);
                 }
@@ -1033,19 +1033,29 @@ impl SimulatedExchange {
                 .unwrap();
         }
 
-        if let Some(AccountAny::Margin(mut margin_account)) = self.get_account() {
-            margin_account.set_default_leverage(self.default_leverage);
-            for (instrument_id, leverage) in &self.leverages {
-                margin_account.set_leverage(*instrument_id, *leverage);
+        let calculate_account_state = !self.frozen_account;
+
+        if let Some(mut account) = self.get_account() {
+            account.set_calculate_account_state(calculate_account_state);
+
+            match &mut account {
+                AccountAny::Margin(margin_account) => {
+                    margin_account.set_default_leverage(self.default_leverage);
+                    for (instrument_id, leverage) in &self.leverages {
+                        margin_account.set_leverage(*instrument_id, *leverage);
+                    }
+
+                    if let Some(model) = &self.margin_model {
+                        margin_account.set_margin_model(model.clone());
+                    }
+                }
+                AccountAny::Cash(cash_account) => {
+                    cash_account.allow_borrowing = self.allow_cash_borrowing;
+                }
+                AccountAny::Betting(_) => {}
             }
 
-            if let Some(model) = &self.margin_model {
-                margin_account.set_margin_model(model.clone());
-            }
-            self.cache
-                .borrow_mut()
-                .update_account(&AccountAny::Margin(margin_account))
-                .unwrap();
+            self.cache.borrow_mut().update_account(&account).unwrap();
         }
     }
 }
@@ -1070,7 +1080,7 @@ mod tests {
         latency::StaticLatencyModel,
     };
     use nautilus_model::{
-        accounts::{AccountAny, MarginAccount},
+        accounts::{AccountAny, CashAccount, MarginAccount},
         data::{
             Bar, BarType, BookOrder, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
             QuoteTick, TradeTick,
@@ -1584,6 +1594,179 @@ mod tests {
         assert_eq!(current_balance.free, Money::new(1500.0, Currency::USD()));
         assert_eq!(current_balance.locked, Money::new(0.0, Currency::USD()));
         assert_eq!(current_balance.total, Money::new(1500.0, Currency::USD()));
+    }
+
+    fn build_exchange_with_frozen_account(
+        venue: Venue,
+        account_type: AccountType,
+        frozen_account: bool,
+        cache: Rc<RefCell<Cache>>,
+    ) -> Rc<RefCell<SimulatedExchange>> {
+        build_exchange_with_options(venue, account_type, frozen_account, false, cache)
+    }
+
+    fn build_exchange_with_options(
+        venue: Venue,
+        account_type: AccountType,
+        frozen_account: bool,
+        allow_cash_borrowing: bool,
+        cache: Rc<RefCell<Cache>>,
+    ) -> Rc<RefCell<SimulatedExchange>> {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(account_type)
+            .book_type(BookType::L2_MBP)
+            .starting_balances(vec![Money::new(1000.0, Currency::USD())])
+            .default_leverage(Decimal::ONE)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+            .frozen_account(frozen_account)
+            .allow_cash_borrowing(allow_cash_borrowing)
+            .build();
+        let exchange = Rc::new(RefCell::new(
+            SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+        ));
+        let exec_client = BacktestExecutionClient::new(
+            TraderId::test_default(),
+            AccountId::from(format!("{venue}-001").as_str()),
+            &exchange,
+            cache,
+            clock,
+            None,
+            Some(frozen_account),
+        );
+        exchange.borrow_mut().register_client(Rc::new(exec_client));
+        exchange
+    }
+
+    fn pre_populate_margin_account(cache: &mut Cache, account_id: &str) {
+        let margin_account = MarginAccount::new(
+            AccountState::new(
+                AccountId::from(account_id),
+                AccountType::Margin,
+                vec![AccountBalance::new(
+                    Money::from("1000 USD"),
+                    Money::from("0 USD"),
+                    Money::from("1000 USD"),
+                )],
+                vec![],
+                false,
+                UUID4::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            false,
+        );
+        cache
+            .add_account(AccountAny::Margin(margin_account))
+            .unwrap();
+        cache.build_index();
+    }
+
+    #[rstest]
+    fn test_initialize_account_enables_calculate_account_state() {
+        let mut cache = Cache::default();
+        let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+        msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+        pre_populate_margin_account(&mut cache, "SIM-001");
+
+        let cache = Rc::new(RefCell::new(cache));
+        let exchange = build_exchange_with_frozen_account(
+            Venue::new("SIM"),
+            AccountType::Margin,
+            false,
+            cache.clone(),
+        );
+        exchange.borrow_mut().initialize_account();
+
+        let cache_ref = cache.borrow();
+        let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
+        match &*account {
+            AccountAny::Margin(margin) => {
+                assert!(margin.base.calculate_account_state);
+            }
+            _ => panic!("expected margin account"),
+        }
+    }
+
+    fn pre_populate_cash_account(cache: &mut Cache, account_id: &str) {
+        let cash_account = CashAccount::new(
+            AccountState::new(
+                AccountId::from(account_id),
+                AccountType::Cash,
+                vec![AccountBalance::new(
+                    Money::from("1000 USD"),
+                    Money::from("0 USD"),
+                    Money::from("1000 USD"),
+                )],
+                vec![],
+                false,
+                UUID4::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            false,
+            false,
+        );
+        cache.add_account(AccountAny::Cash(cash_account)).unwrap();
+        cache.build_index();
+    }
+
+    #[rstest]
+    fn test_initialize_account_applies_allow_cash_borrowing() {
+        let mut cache = Cache::default();
+        let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+        msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+        pre_populate_cash_account(&mut cache, "SIM-001");
+
+        let cache = Rc::new(RefCell::new(cache));
+        let exchange = build_exchange_with_options(
+            Venue::new("SIM"),
+            AccountType::Cash,
+            false,
+            true,
+            cache.clone(),
+        );
+        exchange.borrow_mut().initialize_account();
+
+        let cache_ref = cache.borrow();
+        let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
+        match &*account {
+            AccountAny::Cash(cash) => {
+                assert!(cash.base.calculate_account_state);
+                assert!(cash.allow_borrowing);
+            }
+            _ => panic!("expected cash account"),
+        }
+    }
+
+    #[rstest]
+    fn test_initialize_account_frozen_disables_calculate_account_state() {
+        let mut cache = Cache::default();
+        let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+        msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+        pre_populate_margin_account(&mut cache, "SIM-001");
+
+        let cache = Rc::new(RefCell::new(cache));
+        let exchange = build_exchange_with_frozen_account(
+            Venue::new("SIM"),
+            AccountType::Margin,
+            true,
+            cache.clone(),
+        );
+        exchange.borrow_mut().initialize_account();
+
+        let cache_ref = cache.borrow();
+        let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
+        match &*account {
+            AccountAny::Margin(margin) => {
+                assert!(!margin.base.calculate_account_state);
+            }
+            _ => panic!("expected margin account"),
+        }
     }
 
     #[rstest]

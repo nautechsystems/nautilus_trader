@@ -62,13 +62,14 @@ impl DataEngineConfig {
         time_bars_skip_first_non_full_bar = None,
         time_bars_interval_type = None,
         time_bars_build_delay = None,
-        time_bars_origins = None,
+        time_bars_origin_offset = None,
         validate_data_sequence = None,
         buffer_deltas = None,
         emit_quotes_from_book = None,
         emit_quotes_from_book_depths = None,
         external_clients = None,
         debug = None,
+        disable_historical_cache = None,
     ))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
@@ -76,19 +77,20 @@ impl DataEngineConfig {
         time_bars_skip_first_non_full_bar: Option<bool>,
         time_bars_interval_type: Option<Py<PyAny>>,
         time_bars_build_delay: Option<u64>,
-        time_bars_origins: Option<HashMap<BarAggregation, u64>>,
+        time_bars_origin_offset: Option<HashMap<BarAggregation, u64>>,
         validate_data_sequence: Option<bool>,
         buffer_deltas: Option<bool>,
         emit_quotes_from_book: Option<bool>,
         emit_quotes_from_book_depths: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
+        disable_historical_cache: Option<bool>,
     ) -> PyResult<Self> {
         let time_bars_interval_type = match time_bars_interval_type {
             Some(value) => Some(coerce_bar_interval_type(&value)?),
             None => None,
         };
-        let time_bars_origins = time_bars_origins.map(|map| {
+        let time_bars_origin_offset = time_bars_origin_offset.map(|map| {
             map.into_iter()
                 .map(|(agg, nanos)| (agg, Duration::from_nanos(nanos)))
                 .collect()
@@ -99,11 +101,12 @@ impl DataEngineConfig {
             .maybe_time_bars_skip_first_non_full_bar(time_bars_skip_first_non_full_bar)
             .maybe_time_bars_interval_type(time_bars_interval_type)
             .maybe_time_bars_build_delay(time_bars_build_delay)
-            .maybe_time_bars_origins(time_bars_origins)
+            .maybe_time_bars_origin_offset(time_bars_origin_offset)
             .maybe_validate_data_sequence(validate_data_sequence)
             .maybe_buffer_deltas(buffer_deltas)
             .maybe_emit_quotes_from_book(emit_quotes_from_book)
             .maybe_emit_quotes_from_book_depths(emit_quotes_from_book_depths)
+            .maybe_disable_historical_cache(disable_historical_cache)
             .maybe_external_clients(external_clients)
             .maybe_debug(debug)
             .build())
@@ -161,6 +164,12 @@ impl DataEngineConfig {
     #[pyo3(name = "emit_quotes_from_book_depths")]
     const fn py_emit_quotes_from_book_depths(&self) -> bool {
         self.emit_quotes_from_book_depths
+    }
+
+    #[getter]
+    #[pyo3(name = "disable_historical_cache")]
+    const fn py_disable_historical_cache(&self) -> bool {
+        self.disable_historical_cache
     }
 
     #[getter]

@@ -34,8 +34,8 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::OrderInitialized,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     orders::OrderList,
     reports::{FillReport, OrderStatusReport},
@@ -43,6 +43,7 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
+    common::consts::{OKX_CLIENT_ID, OKX_VENUE},
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
     http::models::OKXCancelAlgoOrderResponse,
@@ -125,7 +126,7 @@ fn drain_events(
 fn test_batch_cancel_orders_builds_payload() {
     let trader_id = TraderId::from("TRADER-001");
     let strategy_id = StrategyId::from("STRATEGY-001");
-    let client_id = Some(ClientId::from("OKX"));
+    let client_id = Some(*OKX_CLIENT_ID);
     let instrument_id = InstrumentId::from("BTC-USDT.OKX");
     let client_order_id1 = ClientOrderId::new("order1");
     let client_order_id2 = ClientOrderId::new("order2");
@@ -188,7 +189,7 @@ fn test_batch_cancel_orders_builds_payload() {
 fn test_batch_cancel_orders_with_empty_cancels() {
     let cmd = BatchCancelOrders {
         trader_id: TraderId::from("TRADER-001"),
-        client_id: Some(ClientId::from("OKX")),
+        client_id: Some(*OKX_CLIENT_ID),
         strategy_id: StrategyId::from("STRATEGY-001"),
         instrument_id: InstrumentId::from("BTC-USDT.OKX"),
         cancels: vec![],
@@ -478,7 +479,7 @@ fn make_order_init(
 fn test_submit_order_list_builds_individual_commands() {
     let trader_id = TraderId::from("TESTER-001");
     let strategy_id = StrategyId::from("STRATEGY-001");
-    let client_id = Some(ClientId::from("OKX"));
+    let client_id = Some(*OKX_CLIENT_ID);
     let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
 
     let cid1 = ClientOrderId::new("order1");
@@ -565,7 +566,7 @@ fn test_submit_order_list_single_order() {
 
     let cmd = SubmitOrderList::new(
         trader_id,
-        Some(ClientId::from("OKX")),
+        Some(*OKX_CLIENT_ID),
         strategy_id,
         order_list,
         order_inits,
@@ -911,14 +912,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("OKX-001");
-    let client_id = ClientId::from("OKX");
+    let client_id = *OKX_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("OKX"),
+        *OKX_VENUE,
         OmsType::Hedging,
         account_id,
         AccountType::Margin,
@@ -958,7 +959,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("OKX")),
+        Some(*OKX_CLIENT_ID),
         AccountId::from("OKX-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -966,7 +967,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     );
 
     let result = client.query_account(cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || {

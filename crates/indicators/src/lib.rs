@@ -49,6 +49,7 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -56,6 +57,26 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::similar_names,
+    reason = "indicator fields such as period_d/period_k and value_d/value_k are intentionally parallel"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "indicator math casts between usize/i64/f64 with values bounded by configured periods"
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::float_cmp,
+        clippy::should_panic_without_expect,
+        clippy::unreadable_literal,
+        reason = "indicator tests assert exact float outputs and decimal constants from algorithm references"
+    )
+)]
 
 pub mod average;
 pub mod book;

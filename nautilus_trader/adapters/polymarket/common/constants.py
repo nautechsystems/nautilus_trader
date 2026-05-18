@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
@@ -37,6 +38,11 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
     TimeInForce.IOC,
 }
 
+VALID_POLYMARKET_MARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
+    TimeInForce.FOK,
+    TimeInForce.IOC,
+}
+
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
 POLYMARKET_CANCEL_ALREADY_DONE: Final[str] = "already canceled or matched"
 POLYMARKET_NAUTILUS_BUILDER_CODE: Final[str] = (
@@ -54,12 +60,25 @@ POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
 # Smaller positions are filtered as dust during reconciliation.
 DUST_POSITION_THRESHOLD: Final[float] = 0.01
 
-# Underfill tolerance for OrderFillTracker, in ulps of the instrument
-# size precision (resolves to 0.01 at size_precision=6).
-# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
-SNAP_UNDERFILL_ULPS: Final[float] = 10_000.0
+# Dust band (in shares) for fill quantity normalization. Set to one
+# cent-share, matching Polymarket's CLOB tick quantization.
+#
+# Live-fill snapping is overfill-only: when the venue fill exceeds
+# ``submitted_qty`` by less than ``DUST_SNAP_THRESHOLD``, the fill is snapped
+# DOWN to ``submitted_qty``. Underfill is preserved on the per-fill path and
+# resolved at terminal ``MATCHED`` status by the synthetic dust fill mechanism.
+# ``OrderStatusReport.filled_qty`` snapping at terminal ``Filled`` status uses
+# this same threshold in both directions.
+#
+# Two observed drift sources sit within this band:
+#
+# - CLOB cent-tick truncation (underfill, up to 0.01 shares).
+# - V2 market-BUY USDC-scale truncation in ``adjust_market_buy_amount``
+#   (overfill, microshares; largest reproduced production overage is 0.000066 shares).
+#
+# A diff at or above this threshold is left unsnapped and surfaces to the
+# engine. See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
+DUST_SNAP_THRESHOLD: Final[float] = 0.01
 
-# Overfill tolerance for OrderFillTracker, in ulps of the instrument
-# size precision (resolves to 0.0001 at size_precision=6).
-# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
-SNAP_OVERFILL_ULPS: Final[float] = 100.0
+# Decimal form of ``DUST_SNAP_THRESHOLD`` for Decimal arithmetic paths.
+DUST_SNAP_THRESHOLD_DEC: Final[Decimal] = Decimal("0.01")

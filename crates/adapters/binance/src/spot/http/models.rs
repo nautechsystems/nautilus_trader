@@ -148,6 +148,8 @@ pub struct BinanceNewOrderResponse {
     pub symbol: String,
     /// Order fills.
     pub fills: Vec<BinanceOrderFill>,
+    /// Expiry reason (schema 3:4; `None` when null/absent).
+    pub expiry_reason: Option<u8>,
 }
 
 /// Cancel order response.
@@ -236,6 +238,8 @@ pub struct BinanceOrderResponse {
     pub client_order_id: String,
     /// Symbol.
     pub symbol: String,
+    /// Expiry reason (schema 3:4; `None` when null/absent).
+    pub expiry_reason: Option<u8>,
 }
 
 /// Account balance for a single asset.

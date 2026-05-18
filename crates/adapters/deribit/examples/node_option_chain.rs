@@ -34,17 +34,21 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment, config::DeribitDataClientConfig,
-    factories::DeribitDataClientFactory, http::models::DeribitProductType,
+    common::{
+        consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
+        enums::DeribitEnvironment,
+    },
+    config::DeribitDataClientConfig,
+    factories::DeribitDataClientFactory,
+    http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::option_chain::{OptionChainSlice, StrikeRange},
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId},
     instruments::{Instrument, any::InstrumentAny},
     stubs::TestDefault,
 };
-use nautilus_network::websocket::TransportBackend;
 use ustr::Ustr;
 
 // ---------------------------------------------------------------------------
@@ -75,7 +79,7 @@ impl OptionChainTester {
 
 impl DataActor for OptionChainTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let venue = Venue::new("DERIBIT");
+        let venue = *DERIBIT_VENUE;
         let underlying_filter = Ustr::from("BTC");
 
         // Collect option instrument data from cache (owned copies to release borrow)
@@ -251,14 +255,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
-    let client_id = ClientId::new("DERIBIT");
+    let client_id = *DERIBIT_CLIENT_ID;
 
     let deribit_config = DeribitDataClientConfig {
         api_key: None,    // Will use 'DERIBIT_API_KEY' env var
         api_secret: None, // Will use 'DERIBIT_API_SECRET' env var
         product_types: vec![DeribitProductType::Option, DeribitProductType::Future],
         environment: DeribitEnvironment::Mainnet,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

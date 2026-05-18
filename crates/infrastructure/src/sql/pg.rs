@@ -15,6 +15,7 @@
 
 use derive_builder::Builder;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 fn validate_sql_identifier(value: &str, label: &str) -> anyhow::Result<()> {
@@ -34,7 +35,8 @@ fn escape_sql_string(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-#[derive(Debug, Clone, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[serde(deny_unknown_fields)]
 #[builder(default)]
 #[cfg_attr(
     feature = "python",
@@ -420,4 +422,30 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_postgres_connect_options_toml_round_trip() {
+        let config: PostgresConnectOptions = toml::from_str(
+            r#"
+host = "localhost"
+port = 5432
+username = "nautilus"
+password = "secret"
+database = "nautilus"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.port, 5432);
+        assert_eq!(config.username, "nautilus");
+        assert_eq!(config.database, "nautilus");
+    }
 }

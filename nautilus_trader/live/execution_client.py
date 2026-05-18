@@ -211,7 +211,15 @@ class LiveExecutionClient(ExecutionClient):
         try:
             e: BaseException | None = task.exception()
         except asyncio.CancelledError:
-            self._log.warning(f"Task '{task.get_name()}' was cancelled")
+            task_name = task.get_name()
+            if "cancel" in task_name.lower():
+                self._log.error(
+                    f"Task '{task_name}' was aborted before completion; "
+                    f"orders may still be open on the venue; "
+                    f"increase `timeout_post_stop` to allow cancels to finish",
+                )
+            else:
+                self._log.warning(f"Task '{task_name}' was cancelled")
             return
 
         if e:

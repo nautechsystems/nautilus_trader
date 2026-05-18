@@ -25,6 +25,7 @@ from ibapi.order_cancel import OrderCancel as IBOrderCancel
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import get_venue_order_id
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
@@ -204,6 +205,11 @@ async def test_process_open_order_when_request_not_present(ib_client):
     assert kwargs["order_ref"] == "O-20240102-1754-001-000-1"
     assert kwargs["order"].contract == IBContract(**contract.__dict__)
     assert kwargs["order"].order_state == order_state
+    venue_order_id = get_venue_order_id(order.orderId, order.permId)
+    assert ib_client._order_id_to_order_ref[venue_order_id] == AccountOrderRef(
+        account_id=order.account,
+        order_id="O-20240102-1754-001-000-1",
+    )
 
 
 @pytest.mark.asyncio
@@ -286,6 +292,47 @@ async def test_orderStatus_with_zero_avg_fill_price(ib_client):
         avg_fill_price=0.0,
         filled=Decimal(50),
         remaining=Decimal(50),
+        why_held="",
+    )
+
+
+@pytest.mark.asyncio
+async def test_orderStatus_falls_back_to_cached_venue_order_id(ib_client):
+    # Arrange
+    venue_order_id = VenueOrderId("2001")
+    client_order_id = ClientOrderId("O-CACHED-ORDER-STATUS-001")
+    ib_client._cache.add_venue_order_id(client_order_id, venue_order_id)
+    ib_client._account_ids = {"DU123456"}
+    handler_func = Mock()
+    ib_client._event_subscriptions = {"orderStatus-DU123456": handler_func}
+
+    # Act
+    await ib_client.process_order_status(
+        order_id=2001,
+        status="Submitted",
+        filled=Decimal(0),
+        remaining=Decimal(100),
+        avg_fill_price=0.0,
+        perm_id=0,
+        parent_id=0,
+        last_fill_price=0.0,
+        client_id=1,
+        why_held="",
+        mkt_cap_price=0.0,
+    )
+
+    # Assert
+    assert ib_client._order_id_to_order_ref[venue_order_id] == AccountOrderRef(
+        account_id="DU123456",
+        order_id=client_order_id.value,
+    )
+    handler_func.assert_called_once_with(
+        venue_order_id=venue_order_id,
+        order_ref=client_order_id.value,
+        order_status="Submitted",
+        avg_fill_price=0.0,
+        filled=Decimal(0),
+        remaining=Decimal(100),
         why_held="",
     )
 

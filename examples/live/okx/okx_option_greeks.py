@@ -140,7 +140,6 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.OPTION,),
             instrument_families=("BTC-USD",),
-            is_demo=True,
         ),
     },
     timeout_connection=30.0,

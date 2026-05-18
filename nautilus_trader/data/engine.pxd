@@ -130,6 +130,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, UUID4] _parent_request_id
     cdef readonly bint _disable_historical_cache
     cdef readonly dict[UUID4, dict[str, Any]] _bar_types_params
+    cdef readonly dict[BarType, object] _continuous_future_subscriptions
 
     cdef TopicCache _topic_cache
 
@@ -217,6 +218,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_funding_rates(self, MarketDataClient client, SubscribeFundingRates command)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command)
+    cpdef void _handle_subscribe_continuous_future_bars(self, MarketDataClient client, SubscribeBars command)
     cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command)
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, SubscribeInstrumentStatus command)
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, SubscribeInstrumentClose command)
@@ -231,6 +233,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_index_prices(self, MarketDataClient client, UnsubscribeIndexPrices command)
     cpdef void _handle_unsubscribe_funding_rates(self, MarketDataClient client, UnsubscribeFundingRates command)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef void _handle_unsubscribe_continuous_future_bars(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _handle_unsubscribe_data(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command)
     cpdef void _handle_unsubscribe_instrument_close(self, MarketDataClient client, UnsubscribeInstrumentClose command)
@@ -324,17 +327,53 @@ cdef class DataEngine(Component):
     cdef object _ensure_request_workflows(self, RequestData request)
     cdef object _inherit_request_workflows(self, RequestData target, RequestData source)
     cdef dict _request_response_params(self, UUID4 request_id, dict fallback_params = *)
+    cdef void _abort_request(self, UUID4 request_id)
+    cdef void _cleanup_request_group(self, UUID4 parent_request_id)
+    cdef bint _cleanup_request_bar_aggregators(self, UUID4 request_id)
+    cdef void _complete_grouped_request_or_abort(self, RequestData request)
+    cdef void _emit_empty_request_response(self, UUID4 parent_request_id)
     cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)
+    cdef void _init_bar_aggregators_for_request(self, tuple bar_types, dict params, UUID4 request_id = *, bint historical = *, bint disable_time_bars_build_with_no_updates = *)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = *)
-    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
+    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *, bint subscribe_source = *)
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _finalize_aggregated_bars_request(self, DataResponse response)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
     cpdef void _unsubscribe_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef bint _should_request_aggregated_bars(self, RequestData request)
+
+# -- INTERNAL - Continuous Futures ---------------------------------------------------------------
+
+    # (1) Subscribe / Unsubscribe (entry points `_handle_{subscribe,unsubscribe}_continuous_future_bars`
+    # are declared with the other subscribe/unsubscribe handlers above.)
+    cdef void _continuous_future_activate_segment(self, BarType target_bar_type, InstrumentId segment_instrument_id, int segment_index, object transitions, dict params, ClientId client_id, Venue venue, UUID4 correlation_id, uint64_t ts_init)
+    cdef void _continuous_future_schedule_next_transition(self, BarType target_key)
+    cpdef void _handle_continuous_future_subscription_transition(self, TimeEvent event)
+    cdef void _continuous_future_deactivate_segment(self, BarType target_bar_type, InstrumentId segment_instrument_id, dict params, ClientId client_id, Venue venue, UUID4 correlation_id, uint64_t ts_init)
+    cdef object _continuous_future_build_subscribe_command(self, tuple source, ClientId client_id, Venue venue, dict parent_params, UUID4 correlation_id, InstrumentId segment_instrument_id, uint64_t ts_init, bint subscribe)
+
+    # (2) Request
+    cpdef void _handle_continuous_future_request(self, RequestData request)
+    cdef void _setup_continuous_future_aggregators(self, RequestData request, tuple bar_types)
+    cpdef void _update_continuous_future_data(self, UUID4 parent_id)
+    cdef RequestData _continuous_future_build_child_request(self, RequestData parent, tuple source, InstrumentId segment_instrument_id, uint64_t start_ns, uint64_t end_ns)
+    cpdef void _handle_continuous_future_response(self, DataResponse response)
+
+    # (3) Shared helpers
+    cdef void _continuous_future_ensure_target_instrument(self, BarType target_bar_type, object transitions)
+    cdef bint _continuous_future_validate_transitions(self, BarType target_bar_type, object transitions, dict params)
+    cdef tuple _continuous_future_next_segment(self, object transitions, uint64_t cursor_ns, uint64_t end_ns)
+    cdef void _continuous_future_apply_adjustment(self, BarAggregator aggregator, object transitions, int segment_index, dict params)
+    cdef object _continuous_future_compute_offset(self, object transitions, int segment_index, dict params)
+    cdef tuple _continuous_future_resolve_source(self, BarType target_bar_type, InstrumentId segment_instrument_id)
+    cdef dict _continuous_future_child_params(self, dict parent_params)
+    cdef void _continuous_future_subscribe_source(self, BarAggregator aggregator, tuple source, InstrumentId segment_instrument_id, bint historical = *)
+    cdef void _continuous_future_unsubscribe_source(self, BarAggregator aggregator, tuple source, InstrumentId segment_instrument_id, bint historical = *)
+    cdef str _continuous_future_source_topic(self, tuple source, InstrumentId segment_instrument_id, bint historical = *)
+    cdef object _continuous_future_source_handler(self, BarAggregator aggregator, str source_type)
 
 # -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
 

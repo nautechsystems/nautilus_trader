@@ -91,7 +91,7 @@ impl EmaCross {
             None, // emulation_trigger
             None, // tags
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 

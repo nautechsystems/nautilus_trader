@@ -1,0 +1,21 @@
+{
+  "channel": "level3",
+  "type": "update",
+  "data": [
+    {
+      "symbol": "BTC/USD",
+      "timestamp": "2024-01-15T12:00:04.000000Z",
+      "checksum": 0,
+      "bids": [],
+      "asks": [
+        {
+          "event": "delete",
+          "order_id": "order-ask-2",
+          "limit_price": 42002.0,
+          "order_qty": 0.0,
+          "timestamp": "2024-01-15T12:00:04.000000Z"
+        }
+      ]
+    }
+  ]
+}

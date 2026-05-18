@@ -189,7 +189,7 @@ impl IchimokuCloud {
             }
             let _ = self
                 .senkou_a
-                .push_back((self.tenkan_sen + self.kijun_sen) / 2.0);
+                .push_back(f64::midpoint(self.tenkan_sen, self.kijun_sen));
 
             if self.senkou_b.len() == self.displacement {
                 self.senkou_span_b = self.senkou_b.pop_front().unwrap_or(0.0);
@@ -223,7 +223,7 @@ impl IchimokuCloud {
             .take(period)
             .copied()
             .fold(f64::INFINITY, f64::min);
-        (high_max + low_min) / 2.0
+        f64::midpoint(high_max, low_min)
     }
 }
 
@@ -311,15 +311,15 @@ mod tests {
         ich.update_raw(10.0, 5.0, 8.0);
         ich.update_raw(12.0, 6.0, 9.0);
         ich.update_raw(14.0, 7.0, 10.0);
-        assert_eq!(ich.tenkan_sen, (14.0 + 5.0) / 2.0); // 9.5
+        assert_eq!(ich.tenkan_sen, f64::midpoint(14.0, 5.0)); // 9.5
 
         // Push a new bar that evicts the (10, 5) pair: highs=[12, 14, 8], lows=[6, 7, 3]
         ich.update_raw(8.0, 3.0, 6.0);
-        assert_eq!(ich.tenkan_sen, (14.0 + 3.0) / 2.0); // 8.5
+        assert_eq!(ich.tenkan_sen, f64::midpoint(14.0, 3.0)); // 8.5
 
         // Push another bar that evicts the (12, 6) pair: highs=[14, 8, 20], lows=[7, 3, 4]
         ich.update_raw(20.0, 4.0, 12.0);
-        assert_eq!(ich.tenkan_sen, (20.0 + 3.0) / 2.0); // 11.5
+        assert_eq!(ich.tenkan_sen, f64::midpoint(20.0, 3.0)); // 11.5
     }
 
     #[rstest]

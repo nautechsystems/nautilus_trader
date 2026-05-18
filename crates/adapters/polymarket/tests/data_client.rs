@@ -31,9 +31,10 @@ use nautilus_common::{
     },
 };
 use nautilus_core::UUID4;
-use nautilus_model::identifiers::{ClientId, InstrumentId};
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
+    common::consts::POLYMARKET_CLIENT_ID,
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
     http::{
@@ -145,7 +146,7 @@ fn create_test_data_client(
         ..PolymarketDataClientConfig::default()
     };
     let client = PolymarketDataClient::new(
-        ClientId::new("POLYMARKET"),
+        *POLYMARKET_CLIENT_ID,
         config,
         gamma,
         clob_public,
@@ -192,7 +193,7 @@ async fn test_request_instrument_publishes_event_and_response() {
         yes_instrument_id(),
         None,
         None,
-        Some(ClientId::new("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,
@@ -267,7 +268,7 @@ async fn test_request_instruments_emits_response() {
     let request = RequestInstruments::new(
         None,
         None,
-        Some(ClientId::new("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         None,
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
@@ -326,7 +327,7 @@ async fn test_request_book_snapshot_returns_book_response() {
     let snapshot_request = RequestBookSnapshot::new(
         instrument_id,
         Some(NonZeroUsize::new(10).unwrap()),
-        Some(ClientId::new("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,
@@ -420,7 +421,7 @@ async fn test_request_trades_returns_trades_response() {
         None,
         None,
         Some(NonZeroUsize::new(50).unwrap()),
-        Some(ClientId::new("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,

@@ -184,7 +184,7 @@ impl DataActor for GridMarketMaker {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        self.cancel_all_orders(instrument_id, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, None)?;
         self.close_all_positions(instrument_id, None, None, None, None, None, None)?;
         self.unsubscribe_quotes(instrument_id, None, None);
         Ok(())
@@ -207,10 +207,8 @@ impl DataActor for GridMarketMaker {
             let cache = self.cache();
             let inst = Some(&instrument_id);
             let sid = Some(&strategy_id);
-            !cache.orders_open(None, inst, sid, None, None).is_empty()
-                || !cache
-                    .orders_inflight(None, inst, sid, None, None)
-                    .is_empty()
+            cache.orders_open_count(None, inst, sid, None, None) > 0
+                || cache.orders_inflight_count(None, inst, sid, None, None) > 0
         };
 
         if !self.should_requote(mid) && has_resting {
@@ -241,7 +239,7 @@ impl DataActor for GridMarketMaker {
             self.pending_self_cancels.extend(ids);
         }
 
-        self.cancel_all_orders(instrument_id, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, None)?;
 
         // Compute worst-case per-side exposure for max_position checks,
         // since cancels are async and pending orders may still fill
@@ -334,7 +332,7 @@ impl DataActor for GridMarketMaker {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
 
         self.last_quoted_mid = Some(mid);

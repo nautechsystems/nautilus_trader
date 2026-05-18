@@ -786,6 +786,31 @@ pub enum HyperliquidFillDirection {
     Buy,
     /// Selling an asset (spot only).
     Sell,
+    /// HIP-4 outcome settlement; venue closes side-token holdings at the
+    /// resolved value (1 quote token for the winning side, 0 for the loser).
+    #[serde(rename = "Settlement")]
+    #[strum(serialize = "Settlement")]
+    Settlement,
+    /// HIP-4 `userOutcome / splitOutcome`: minting paired Yes + No side tokens
+    /// from quote tokens. Venue emits one fill per side at the mid price.
+    #[serde(rename = "Split Outcome")]
+    #[strum(serialize = "Split Outcome")]
+    SplitOutcome,
+    /// HIP-4 `userOutcome / mergeOutcome`: burning paired Yes + No side tokens
+    /// back into quote tokens. Reverse of [`Self::SplitOutcome`].
+    #[serde(rename = "Merge Outcome")]
+    #[strum(serialize = "Merge Outcome")]
+    MergeOutcome,
+    /// HIP-4 `userOutcome / mergeQuestion`: burning one Yes share of every
+    /// outcome in a multi-outcome question for the equivalent quote tokens.
+    #[serde(rename = "Merge Question")]
+    #[strum(serialize = "Merge Question")]
+    MergeQuestion,
+    /// HIP-4 `userOutcome / negateOutcome`: swapping `No` shares of one
+    /// outcome for `Yes` shares of every other outcome in the same question.
+    #[serde(rename = "Negate Outcome")]
+    #[strum(serialize = "Negate Outcome")]
+    NegateOutcome,
 }
 
 /// Represents info request types for the Hyperliquid info endpoint.
@@ -816,6 +841,8 @@ pub enum HyperliquidInfoRequestType {
     MetaAndAssetCtxs,
     /// Get spot metadata with asset contexts.
     SpotMetaAndAssetCtxs,
+    /// Get outcome metadata.
+    OutcomeMeta,
     /// Get L2 order book for a coin.
     L2Book,
     /// Get all mid prices.
@@ -877,6 +904,7 @@ impl HyperliquidInfoRequestType {
             Self::SpotMeta => "spotMeta",
             Self::MetaAndAssetCtxs => "metaAndAssetCtxs",
             Self::SpotMetaAndAssetCtxs => "spotMetaAndAssetCtxs",
+            Self::OutcomeMeta => "outcomeMeta",
             Self::L2Book => "l2Book",
             Self::AllMids => "allMids",
             Self::UserFills => "userFills",
@@ -953,6 +981,8 @@ pub enum HyperliquidProductType {
     Perp,
     /// Spot markets.
     Spot,
+    /// HIP-4 binary outcome side tokens.
+    Outcome,
 }
 
 impl HyperliquidProductType {
@@ -966,10 +996,24 @@ impl HyperliquidProductType {
             Ok(Self::Perp)
         } else if symbol.ends_with("-SPOT") {
             Ok(Self::Spot)
+        } else if is_outcome_wire_symbol(symbol) {
+            Ok(Self::Outcome)
         } else {
             anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
         }
     }
+}
+
+// Outcomes use the `#<encoding>` spot-coin form or the `+<encoding>` token
+// form, where the encoding is `10 * outcome + side` and must parse as `u32`.
+fn is_outcome_wire_symbol(symbol: &str) -> bool {
+    let Some(rest) = symbol
+        .strip_prefix('#')
+        .or_else(|| symbol.strip_prefix('+'))
+    else {
+        return false;
+    };
+    !rest.is_empty() && rest.parse::<u32>().is_ok()
 }
 
 /// Hyperliquid API environment.
@@ -1081,6 +1125,47 @@ mod tests {
             assert_eq!(
                 serde_json::from_str::<HyperliquidTimeInForce>(expected_json).unwrap(),
                 tif
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_info_request_type_outcome_meta_as_str() {
+        assert_eq!(
+            HyperliquidInfoRequestType::OutcomeMeta.as_str(),
+            "outcomeMeta"
+        );
+    }
+
+    #[rstest]
+    fn test_fill_direction_serde() {
+        let cases = [
+            (HyperliquidFillDirection::OpenLong, "\"Open Long\""),
+            (HyperliquidFillDirection::CloseShort, "\"Close Short\""),
+            (HyperliquidFillDirection::LongToShort, "\"Long > Short\""),
+            (
+                HyperliquidFillDirection::AutoDeleveraging,
+                "\"Auto-Deleveraging\"",
+            ),
+            (HyperliquidFillDirection::Buy, "\"Buy\""),
+            (HyperliquidFillDirection::Settlement, "\"Settlement\""),
+            (HyperliquidFillDirection::SplitOutcome, "\"Split Outcome\""),
+            (HyperliquidFillDirection::MergeOutcome, "\"Merge Outcome\""),
+            (
+                HyperliquidFillDirection::MergeQuestion,
+                "\"Merge Question\"",
+            ),
+            (
+                HyperliquidFillDirection::NegateOutcome,
+                "\"Negate Outcome\"",
+            ),
+        ];
+
+        for (variant, expected) in cases {
+            assert_eq!(serde_json::to_string(&variant).unwrap(), expected);
+            assert_eq!(
+                serde_json::from_str::<HyperliquidFillDirection>(expected).unwrap(),
+                variant
             );
         }
     }
@@ -1586,5 +1671,35 @@ mod tests {
             let back_to_cond = HyperliquidConditionalOrderType::from(order_type);
             assert_eq!(cond_type, back_to_cond, "Roundtrip conversion failed");
         }
+    }
+
+    #[rstest]
+    #[case("BTC-USD-PERP", HyperliquidProductType::Perp)]
+    #[case("HYPE-USDC-SPOT", HyperliquidProductType::Spot)]
+    #[case("#10", HyperliquidProductType::Outcome)]
+    #[case("+31", HyperliquidProductType::Outcome)]
+    #[case("#0", HyperliquidProductType::Outcome)]
+    fn test_product_type_from_symbol(
+        #[case] symbol: &str,
+        #[case] expected: HyperliquidProductType,
+    ) {
+        assert_eq!(
+            HyperliquidProductType::from_symbol(symbol).unwrap(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("BTC")]
+    #[case("#")]
+    #[case("+")]
+    #[case("#abc")]
+    #[case("+12.5")]
+    #[case("@1")]
+    #[case("#-1")]
+    #[case("+-1")]
+    fn test_product_type_from_symbol_rejects_invalid(#[case] symbol: &str) {
+        assert!(HyperliquidProductType::from_symbol(symbol).is_err());
     }
 }

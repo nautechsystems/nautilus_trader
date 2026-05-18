@@ -15,7 +15,13 @@
 
 //! Integration tests for dYdX data client.
 
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -24,16 +30,32 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    clients::DataClient,
+    live::runner::replace_data_event_sender,
+    messages::{
+        DataEvent, DataResponse,
+        data::{RequestBars, RequestBookSnapshot, RequestFundingRates, RequestTrades},
+    },
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_dydx::{
-    common::enums::{DydxCandleResolution, DydxNetwork},
+    common::{
+        consts::{DYDX_CLIENT_ID, DYDX_VENUE},
+        enums::{DydxCandleResolution, DydxNetwork},
+    },
+    config::DydxDataClientConfig,
+    data::DydxDataClient,
     http::client::DydxHttpClient,
+    websocket::client::DydxWebSocketClient,
 };
 use nautilus_model::{
-    identifiers::{InstrumentId, Symbol, Venue},
+    data::BarType,
+    identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
 };
-use nautilus_network::http::HttpClient;
+use nautilus_network::{http::HttpClient, retry::RetryConfig, websocket::TransportBackend};
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -59,6 +81,8 @@ struct TestServerState {
     last_candle_params: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_trades_params: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
 }
+
+static DATA_CLIENT_CREATION_LOCK: Mutex<()> = Mutex::new(());
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
@@ -154,6 +178,217 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
+async fn error_response() -> impl IntoResponse {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        axum::response::Json(json!({"errors": [{"msg": "Internal error"}]})),
+    )
+}
+
+async fn start_data_request_error_server() -> SocketAddr {
+    let router = Router::new()
+        .route("/v4/perpetualMarkets", get(handle_get_markets))
+        .route(
+            "/v4/orderbooks/perpetualMarket/{ticker}",
+            get(error_response),
+        )
+        .route("/v4/trades/perpetualMarket/{ticker}", get(error_response))
+        .route("/v4/candles/perpetualMarkets/{ticker}", get(error_response))
+        .route("/v4/historicalFunding/{ticker}", get(error_response))
+        .with_state(TestServerState::default());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+    addr
+}
+
+async fn create_dydx_data_client(
+    addr: SocketAddr,
+) -> (
+    DydxDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    let base_url = format!("http://{addr}");
+    let retry_config = RetryConfig {
+        max_retries: 0,
+        initial_delay_ms: 1,
+        max_delay_ms: 1,
+        jitter_ms: 0,
+        operation_timeout_ms: Some(1_000),
+        ..Default::default()
+    };
+    let http_client = DydxHttpClient::new(
+        Some(base_url.clone()),
+        5,
+        None,
+        DydxNetwork::Mainnet,
+        Some(retry_config),
+    )
+    .unwrap();
+    let instruments = http_client
+        .request_instruments(None, None, None)
+        .await
+        .unwrap();
+    http_client.cache_instruments(instruments);
+
+    let ws_client = DydxWebSocketClient::new_public_with_cache(
+        "ws://127.0.0.1:0".to_string(),
+        http_client.instrument_cache().clone(),
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    let config = DydxDataClientConfig {
+        base_url_http: Some(base_url),
+        base_url_ws: Some("ws://127.0.0.1:0".to_string()),
+        ..Default::default()
+    };
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    let creation_lock = DATA_CLIENT_CREATION_LOCK.lock().unwrap();
+    replace_data_event_sender(sender);
+
+    let client = DydxDataClient::new(*DYDX_CLIENT_ID, config, http_client, ws_client).unwrap();
+    drop(creation_lock);
+
+    (client, receiver)
+}
+
+async fn recv_data_response(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> DataResponse {
+    match tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for data response")
+        .expect("data response channel closed")
+    {
+        DataEvent::Response(response) => response,
+        event => panic!("Expected data response, was {event:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_book_snapshot_sends_empty_book_on_error() {
+    let addr = start_data_request_error_server().await;
+    let (client, mut rx) = create_dydx_data_client(addr).await;
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
+    let request_id = UUID4::new();
+
+    let request = RequestBookSnapshot::new(
+        instrument_id,
+        None,
+        Some(*DYDX_CLIENT_ID),
+        request_id,
+        UnixNanos::default(),
+        None,
+    );
+    client.request_book_snapshot(request).unwrap();
+
+    match recv_data_response(&mut rx).await {
+        DataResponse::Book(response) => {
+            assert_eq!(response.correlation_id, request_id);
+            assert_eq!(response.instrument_id, instrument_id);
+            assert_eq!(response.data.bids(None).count(), 0);
+            assert_eq!(response.data.asks(None).count(), 0);
+        }
+        response => panic!("Expected book response, was {response:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_trades_sends_empty_response_on_error() {
+    let addr = start_data_request_error_server().await;
+    let (client, mut rx) = create_dydx_data_client(addr).await;
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
+    let request_id = UUID4::new();
+
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(*DYDX_CLIENT_ID),
+        request_id,
+        UnixNanos::default(),
+        None,
+    );
+    client.request_trades(request).unwrap();
+
+    match recv_data_response(&mut rx).await {
+        DataResponse::Trades(response) => {
+            assert_eq!(response.correlation_id, request_id);
+            assert_eq!(response.instrument_id, instrument_id);
+            assert!(response.data.is_empty());
+        }
+        response => panic!("Expected trades response, was {response:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_bars_sends_empty_response_on_error() {
+    let addr = start_data_request_error_server().await;
+    let (client, mut rx) = create_dydx_data_client(addr).await;
+    let bar_type = BarType::from("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL");
+    let request_id = UUID4::new();
+
+    let request = RequestBars::new(
+        bar_type,
+        None,
+        None,
+        None,
+        Some(*DYDX_CLIENT_ID),
+        request_id,
+        UnixNanos::default(),
+        None,
+    );
+    client.request_bars(request).unwrap();
+
+    match recv_data_response(&mut rx).await {
+        DataResponse::Bars(response) => {
+            assert_eq!(response.correlation_id, request_id);
+            assert_eq!(response.bar_type, bar_type);
+            assert!(response.data.is_empty());
+        }
+        response => panic!("Expected bars response, was {response:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_funding_rates_sends_empty_response_on_error() {
+    let addr = start_data_request_error_server().await;
+    let (client, mut rx) = create_dydx_data_client(addr).await;
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
+    let request_id = UUID4::new();
+
+    let request = RequestFundingRates::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(*DYDX_CLIENT_ID),
+        request_id,
+        UnixNanos::default(),
+        None,
+    );
+    client.request_funding_rates(request).unwrap();
+
+    match recv_data_response(&mut rx).await {
+        DataResponse::FundingRates(response) => {
+            assert_eq!(response.correlation_id, request_id);
+            assert_eq!(response.instrument_id, instrument_id);
+            assert!(response.data.is_empty());
+        }
+        response => panic!("Expected funding rates response, was {response:?}"),
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_request_instruments_returns_all_active_markets() {
@@ -230,7 +465,7 @@ async fn test_instrument_caching() {
     client.cache_instruments(instruments);
 
     // Retrieve from cache
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(cached.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
@@ -252,11 +487,11 @@ async fn test_cache_single_instrument() {
 
     client.cache_instrument(btc);
 
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     assert!(client.get_instrument(&btc_id).is_some());
 
     // ETH should not be cached
-    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), *DYDX_VENUE);
     assert!(client.get_instrument(&eth_id).is_none());
 }
 

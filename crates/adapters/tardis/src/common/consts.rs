@@ -17,10 +17,19 @@
 
 use std::{num::NonZeroU32, sync::LazyLock};
 
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::ratelimiter::quota::Quota;
+use ustr::Ustr;
 
 /// The Tardis adapter identifier string.
 pub const TARDIS: &str = "TARDIS";
+
+/// Static venue instance.
+pub static TARDIS_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(TARDIS)));
+
+/// Static client ID instance.
+pub static TARDIS_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(TARDIS)));
 
 /// Environment variable name for the Tardis API key.
 pub const TARDIS_API_KEY: &str = "TARDIS_API_KEY";

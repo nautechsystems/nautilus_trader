@@ -34,7 +34,9 @@ won't need to work directly with these lower-level components.
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/).
+You can find live example scripts in the [examples/live/kraken] directory.
+
+[examples/live/kraken]: https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/
 
 ## Kraken documentation
 
@@ -54,7 +56,7 @@ Kraken supports two primary product categories:
 | Product Type             | Supported | Notes                                                     |
 |--------------------------|-----------|-----------------------------------------------------------|
 | Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD‑margined (`PF_`) perpetual swaps. |
+| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
@@ -129,15 +131,15 @@ Kraken uses different Bitcoin symbol conventions across their APIs:
 
 | Market  | Symbol Format | Example            | Notes                                       |
 |---------|---------------|--------------------|---------------------------------------------|
-| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT → BTC at load time.  |
+| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time. |
 | Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
 
 :::note
 Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions for
 supranational currencies), but their WebSocket v2 API requires the `BTC` format.
 The adapter automatically normalizes spot symbols to `BTC` when loading instruments,
-whether XBT appears as the base currency (e.g., `XBT/USD` → `BTC/USD`) or quote
-currency (e.g., `ETH/XBT` → `ETH/BTC`). Futures retain Kraken's native `XBT` format.
+whether XBT appears as the base currency (e.g., `XBT/USD` to `BTC/USD`) or quote
+currency (e.g., `ETH/XBT` to `ETH/BTC`). Futures retain Kraken's native `XBT` format.
 :::
 
 ### Spot markets
@@ -177,11 +179,11 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Subscriptions (real-time)
 
-| Data Type              | Spot | Futures | Notes                                  |
+| Data type              | Spot | Futures | Notes                                  |
 |------------------------|------|---------|----------------------------------------|
 | `QuoteTick`            | ✓    | ✓       | Derived from ticker channel.           |
 | `TradeTick`            | ✓    | ✓       |                                        |
-| `OrderBookDeltas`      | ✓    | ✓       | L2 order book updates.                 |
+| `OrderBookDeltas`      | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.     |
 | `OrderBookDepth10`     | -    | -       | Use `OrderBookDeltas` with depth `10`. |
 | `Bar`                  | ✓    | -       | Spot WS OHLC channel. See bar section. |
 | `MarkPriceUpdate`      | -    | ✓       | From futures ticker feed.              |
@@ -191,18 +193,79 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Requests (historical)
 
-| Data Type              | Spot | Futures | Notes                                  |
+| Data type              | Spot | Futures | Notes                                  |
 |------------------------|------|---------|----------------------------------------|
 | `TradeTick`            | ✓    | ✓       |                                        |
 | `Bar`                  | ✓    | ✓       |                                        |
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
 | `FundingRateUpdate`    | -    | ✓       | Client‑side start/end/limit filtering. |
 
+## L3 order book (market-by-order)
+
+Kraken exposes Spot per-order book data via the WebSocket v2 `level3` channel at
+`wss://ws-l3.kraken.com/v2`. This gives venue order IDs, per-order quantities,
+and true incremental events (`add`, `modify`, `delete`). The adapter hashes each
+venue order ID into the `u64` `BookOrder.order_id` field used by NautilusTrader.
+
+### Prerequisites
+
+L3 subscriptions require Spot API credentials because Kraken's `level3` channel
+is authenticated. Set them in `KrakenDataClientConfig` or via
+`KRAKEN_SPOT_API_KEY` and `KRAKEN_SPOT_API_SECRET`:
+
+```python
+from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
+
+config = KrakenDataClientConfig(
+    api_key="YOUR_KEY",
+    api_secret="YOUR_SECRET",
+)
+```
+
+Then subscribe with `book_type=BookType.L3_MBO`:
+
+```python
+from nautilus_trader.model.enums import BookType
+
+await client.subscribe_book_deltas(
+    instrument_id=instrument_id,
+    book_type=BookType.L3_MBO,
+    depth=1000,  # valid: 10, 100, 1000
+)
+```
+
+Valid depths are `10`, `100`, and `1000`. A `depth` of `0` uses `1000`.
+
+### CRC32 checksum validation
+
+By default, the adapter validates the CRC32 checksum on each L3 snapshot and
+update when Kraken provides one. On mismatch, it emits a `Clear` delta, clears
+local L3 state, refreshes the auth token, and resubscribes so Kraken
+sends a fresh snapshot. To disable validation for benchmarking:
+
+```python
+config = KrakenDataClientConfig(
+    api_key="...",
+    api_secret="...",
+    validate_l3_checksum=False,
+)
+```
+
+### Storage recommendations
+
+`OrderBookDelta` already carries `order_id: u64` in its Arrow schema, so L3 data
+is stored identically to L2 in the `ParquetDataCatalog`. L3 generates significantly
+more events per instrument than L2. Recommended settings:
+
+- Lower chunk size (e.g. `chunk_size=50_000`) for faster parallel reads.
+- Enable `zstd` compression in catalog config.
+- Use per-instrument path partitioning (enabled by default).
+
 ## Orders capability
 
 ### Order types
 
-| Order Type             | Spot | Futures | Notes                                         |
+| Order type             | Spot | Futures | Notes                                         |
 |------------------------|------|---------|-----------------------------------------------|
 | `MARKET`               | ✓    | ✓       | Immediate execution at market price.          |
 | `LIMIT`                | ✓    | ✓       | Execution at specified price or better.       |
@@ -229,12 +292,12 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Execution instructions
 
-| Instruction      | Spot | Futures | Notes                                         |
-|------------------|------|---------|-----------------------------------------------|
-| `post_only`      | ✓    | ✓       | Available for limit orders.                   |
-| `reduce_only`    | -    | ✓       | Futures only. Reduces position, no reversal.  |
-| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`). |
-| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).     |
+| Instruction      | Spot | Futures | Notes                                                                |
+|------------------|------|---------|----------------------------------------------------------------------|
+| `post_only`      | ✓    | ✓       | Available for limit orders.                                          |
+| `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only).       |
+| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`).                        |
+| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                            |
 
 ### Trigger types
 
@@ -254,11 +317,11 @@ time rather than silently coercing them.
 
 ### Batch operations
 
-| Operation          | Spot | Futures | Notes                                        |
-|--------------------|------|---------|----------------------------------------------|
-| Batch Submit       | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10. |
-| Batch Modify       | -    | ✓       | Futures HTTP helper only. Execution uses single modify commands. |
-| Batch Cancel       | ✓    | ✓       | Auto‑chunks into batches of 50.              |
+| Operation    | Spot | Futures | Notes                                                   |
+|--------------|------|---------|---------------------------------------------------------|
+| Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.         |
+| Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command.  |
+| Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                         |
 
 :::note
 **Cancel all orders**:
@@ -271,12 +334,12 @@ time rather than silently coercing them.
 
 ### Position management
 
-| Feature           | Spot | Futures | Notes                                                     |
-|-------------------|------|---------|-----------------------------------------------------------|
-| Query positions   | ✓*   | ✓       | *Spot: opt‑in via `use_spot_position_reports`. See below. |
-| Position mode     | -    | -       | Single position per instrument.                           |
-| Leverage control  | -    | ✓       | Configured per account tier.                              |
-| Margin mode       | -    | ✓       | Cross margin for Futures.                                 |
+| Feature          | Spot | Futures | Notes                                                   |
+|------------------|------|---------|---------------------------------------------------------|
+| Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.      |
+| Position mode    | -    | -       | Single position per instrument.                         |
+| Leverage control | ✓    | ✓       | Spot tiers; per‑order `params={"leverage": N}`.         |
+| Margin mode      | ✓    | ✓       | Spot/Futures cross margin; no isolated spot margin.     |
 
 ### Order querying
 
@@ -295,6 +358,79 @@ time rather than silently coercing them.
 | OCO orders          | -    | -       | *Not supported*.                         |
 | Bracket orders      | -    | -       | *Not supported*.                         |
 | Conditional orders  | ✓    | ✓       | Stop and take‑profit orders.             |
+
+## Order routing (Spot)
+
+The Rust Spot execution client routes `submit_order`, `modify_order`,
+`cancel_order`, and `submit_order_list` through Kraken's authenticated
+WebSocket v2 trade channel by default, with REST as the fallback. The Python
+live `KrakenExecutionClient` currently routes all orders via REST regardless
+of the knobs below; WebSocket trade routing is only active when the Rust
+execution client (`KrakenSpotExecutionClient`) is in use, either via the
+Rust factory or by constructing the pyo3-exposed
+`nautilus_trader.core.nautilus_pyo3.kraken.KrakenExecClientConfig` directly.
+
+### Order shapes routed via REST
+
+Some Spot order shapes always route via REST. They split into two
+categories: shapes Kraken's WS v2 API does not support at all, and shapes
+the WS API supports but this adapter does not yet encode.
+
+**Kraken WS v2 limitation:**
+
+| Shape                     | Reason                                                       |
+|---------------------------|--------------------------------------------------------------|
+| Unsupported trigger types | `triggers.reference` accepts only `last` and `index`.        |
+| `FOK` time in force       | Kraken WS v2 has no `FOK` value (only `GTC`, `IOC`, `GTD`).  |
+| Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.                 |
+
+**Not yet encoded by this adapter (follow-up work, currently REST):**
+
+| Shape                       | Notes                                                                                |
+|-----------------------------|--------------------------------------------------------------------------------------|
+| Trailing stop / stop‑limit  | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
+| Iceberg (`display_qty`)     | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
+| Quote‑quantity orders       | Buy market quote‑qty maps to `cash_order_qty`; routed REST today.                    |
+
+The per-call `params={"use_ws_trade": False}` override forces a single
+command through REST regardless of the configured default. Set it on
+`SubmitOrder`, `ModifyOrder`, `CancelOrder`, or `SubmitOrderList`.
+
+### WebSocket request timeout
+
+When a WebSocket round-trip exceeds `ws_request_timeout_secs` (default `5`)
+the dispatcher synthesises a local rejection event stamped with the
+timeout-fire timestamp:
+
+- Submit / batch_add: `OrderRejected` (one per leg for batches). The
+  dispatcher then sends a best-effort compensating `cancel_order` over the
+  same WebSocket so a delayed venue acceptance is not left as an orphan
+  order.
+- Modify: `OrderModifyRejected`.
+- Cancel: `OrderCancelRejected`.
+
+The timeout does not trigger an automatic REST retry; strategies must
+resubmit if they want to try again. If the venue actually accepted the
+order and the compensating cancel does not land, the live execution
+reconciliation engine (`open_check_interval_secs`) is the recovery path.
+
+:::tip
+Set `ws_request_timeout_secs` comfortably above your observed round-trip
+latency (the default `5` is roughly 25× typical) so the timeout only fires
+under genuine network failure.
+:::
+
+### Rust-side configuration knobs
+
+The Rust `KrakenExecClientConfig` (and its pyo3 wrapper) exposes:
+
+| Option                    | Default | Description                                                      |
+|---------------------------|---------|------------------------------------------------------------------|
+| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.            |
+| `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before a synthesised rejection is emitted. |
+
+These are not exposed on the Python live `KrakenExecClientConfig` because
+the Python live execution client does not yet honour them.
 
 ## Reconciliation
 
@@ -315,6 +451,18 @@ the exchange state at startup or during operation.
 - Trade history: Fetches execution history with pagination.
 - Time-bounded queries: Supports filtering by start/end timestamps.
 - All fill types: Market, limit, and conditional order fills.
+
+**Margin position reports** (when `spot_account_type=Margin`):
+
+- Open positions: Fetched from `POST /0/private/OpenPositions` and aggregated
+  by (pair, side) into `PositionStatusReport` entries.
+- Synthetic FLAT cleanup: If the local cache has an open spot margin position
+  that no longer appears on the venue (Kraken omits closed positions from
+  `OpenPositions`), the adapter emits a synthetic FLAT report on the next
+  position-check tick so the engine reconciles to closed.
+- Margin balances: `POST /0/private/TradeBalance` is called alongside the
+  account-state refresh; used margin populates `MarginBalance.initial`,
+  remaining metrics flow into `AccountState.info` (see Spot margin trading).
 
 ### Futures reconciliation
 
@@ -344,18 +492,21 @@ by parsing `fillTime` fields and comparing against requested start/end
 timestamps.
 :::
 
-### Spot position reports
+### Spot position reports (cash mode)
 
-The Kraken adapter can optionally report wallet balances as position status
-reports for spot instruments. This feature is disabled by default and must be
-explicitly enabled via configuration.
+In cash mode, the Kraken adapter can optionally report wallet balances as
+position status reports for spot instruments. This feature is disabled by
+default and must be explicitly enabled via configuration. Margin-mode accounts
+should leave it disabled and rely on `OpenPositions` instead (see Spot margin
+trading).
 
 **How it works:**
 
 - When enabled, wallet balances are converted to `PositionStatusReport` objects.
 - Positive balances are reported as `LONG` positions.
 - Only instruments matching the configured quote currency are reported (default: `USDT`).
-- This prevents duplicate reports when the same asset is available with multiple quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
+- This prevents duplicate reports when the same asset is available with multiple
+  quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
 
 **Configuration:**
 
@@ -374,6 +525,90 @@ behavior if your strategy is not designed to handle spot positions. For example,
 a strategy that expects to close positions may attempt to sell your wallet
 holdings.
 :::
+
+## Spot margin trading
+
+Kraken Spot supports leveraged trading on selected pairs. Per-pair availability
+and the valid leverage tiers are advertised by Kraken on the instruments
+endpoint as `AssetPairInfo.leverage_buy` and `leverage_sell`; the adapter
+caches these at instrument-load time and validates the requested tier before
+order submission. Margin trading is enabled per-execution-client via
+`spot_account_type`, with per-order `leverage` params.
+
+### Configuration
+
+```python
+from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.model.enums import AccountType
+
+exec_clients = {
+    KRAKEN: KrakenExecClientConfig(
+        spot_account_type=AccountType.MARGIN,
+        default_leverage=3,             # optional config-level default
+        margin_balance_asset="ZGBP",    # optional summary-display asset
+    ),
+}
+```
+
+`margin_balance_asset` controls only the denomination of the account-summary
+metrics returned by Kraken's `TradeBalance` endpoint (equity, free margin,
+used margin, etc.). Per-position figures from `OpenPositions` are always in
+the traded pair's quote currency.
+
+### Per-order leverage
+
+Override the configured default on a single order via `params`:
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=BTC_USD,
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_str("0.01"),
+    price=Price.from_str("50000.00"),
+    params={"leverage": 5},
+)
+```
+
+The adapter validates the requested tier against
+`AssetPairInfo.leverage_buy` / `leverage_sell` for the pair before submitting;
+an invalid tier produces an `OrderDenied` event and never hits the venue.
+
+### Reduce-only
+
+Margin orders can carry `reduce_only=True`; Kraken rejects the order if no
+matching position exists. Cash orders ignore the flag.
+
+### Account state
+
+When `spot_account_type=Margin`, the adapter calls Kraken's `TradeBalance`
+endpoint and surfaces the result in two places:
+
+- `MarginBalance.initial`: used margin (`m`).
+- `AccountState.info` dict: full `TradeBalance` snapshot:
+  - `equity`: net equity
+  - `free_margin`: equity minus used margin
+  - `unrealized_pnl`: open-position P&L
+  - `margin_level`: equity / used margin (%) when positions are open
+  - `trade_balance`: collateral on deposit
+  - `equivalent_balance`: combined-currency wallet equivalent
+  - `cost_basis`, `valuation`, `unexecuted_value`, `used_margin`: raw `TradeBalance` fields
+  - `asset`: resolved denominating asset (e.g. `USD`, `GBP`)
+
+A single INFO log line is emitted on every account state refresh:
+
+```text
+Margin metrics: equity=1234.56 GBP, free_margin=1100.00, unrealized_pnl=12.34
+```
+
+Strategies read the values via `account_state.info["equity"]`, etc.
+
+### Position reconciliation
+
+Open spot margin positions are surfaced via `POST /0/private/OpenPositions`
+on each `position_check_interval_secs` tick. Closed positions on the venue
+that still appear open in the local cache are reconciled to FLAT on the next
+sweep. This path is independent of `use_spot_position_reports` (which is
+wallet-derived, cash-mode-only).
 
 ## Funding rates
 
@@ -439,46 +674,55 @@ The product types for each client must be specified in the configurations.
 
 ### Data client configuration options
 
-| Option                          | Default   | Description                                                             |
-|---------------------------------|-----------|-------------------------------------------------------------------------|
-| `api_key`                       | `None`    | API key; loaded from environment variables (see below) when omitted.    |
-| `api_secret`                    | `None`    | API secret; loaded from environment variables (see below) when omitted. |
-| `environment`                   | `mainnet` | Trading environment (`mainnet` or `demo`); demo only for Futures.       |
-| `product_types`                 | `(SPOT,)` | Product types tuple (e.g., `(KrakenProductType.SPOT,)`).                |
-| `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                 |
-| `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
-| `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
-| `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
-| `update_instruments_interval_mins` | `60`   | Interval (minutes) to reload instruments; `None` to disable.            |
-| `max_retries`                   | `None`    | Maximum retry attempts for REST requests.                               |
-| `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
-| `retry_delay_max_ms`            | `None`    | Maximum delay (milliseconds) between retries.                           |
-| `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                        |
-| `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                                |
-| `max_requests_per_second`       | `None`    | Override rate limit (default 5 req/s); for higher tier accounts.        |
+| Option                             | Default   | Description                                                        |
+|------------------------------------|-----------|--------------------------------------------------------------------|
+| `api_key`                          | `None`    | API key; loaded from environment variables when omitted.           |
+| `api_secret`                       | `None`    | API secret; loaded from environment variables when omitted.        |
+| `environment`                      | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.     |
+| `product_types`                    | `(SPOT,)` | Product types tuple (e.g., `(KrakenProductType.SPOT,)`).           |
+| `base_url_http_spot`               | `None`    | Override for Kraken Spot REST base URL.                            |
+| `base_url_http_futures`            | `None`    | Override for Kraken Futures REST base URL.                         |
+| `base_url_ws_spot`                 | `None`    | Override for Kraken Spot WebSocket URL.                            |
+| `base_url_ws_futures`              | `None`    | Override for Kraken Futures WebSocket URL.                         |
+| `base_url_ws_l3_spot`              | `None`    | Override for Kraken Spot L3 WebSocket URL.                         |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.              |
+| `update_instruments_interval_mins` | `60`      | Instrument reload interval; `None` disables reloads.               |
+| `max_retries`                      | `None`    | Maximum retry attempts for REST requests.                          |
+| `retry_delay_initial_ms`           | `None`    | Initial delay in milliseconds between retries.                     |
+| `retry_delay_max_ms`               | `None`    | Maximum delay in milliseconds between retries.                     |
+| `http_timeout_secs`                | `None`    | HTTP request timeout in seconds.                                   |
+| `ws_heartbeat_secs`                | `30`      | WebSocket heartbeat interval in seconds.                           |
+| `max_requests_per_second`          | `None`    | Override rate limit; default is 5 req/s.                           |
+| `validate_l3_checksum`             | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.          |
 
 ### Execution client configuration options
 
-| Option                          | Default   | Description                                                             |
-|---------------------------------|-----------|-------------------------------------------------------------------------|
-| `api_key`                       | `None`    | API key; loaded from environment variables (see below) when omitted.    |
-| `api_secret`                    | `None`    | API secret; loaded from environment variables (see below) when omitted. |
-| `environment`                   | `mainnet` | Trading environment (`mainnet` or `demo`); demo only for Futures.       |
-| `product_types`                 | `(SPOT,)` | Product types tuple; `SPOT` uses CASH, `FUTURES` uses MARGIN account.   |
-| `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                 |
-| `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
-| `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
-| `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
-| `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.               |
-| `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
-| `retry_delay_max_ms`            | `None`    | Maximum delay (milliseconds) between retries.                           |
-| `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                        |
-| `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                                |
-| `max_requests_per_second`       | `None`    | Override rate limit (default 5 req/s); for higher tier accounts.        |
-| `use_spot_position_reports`     | `False`   | Report wallet balances as positions (see below).                        |
-| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot position reports.                        |
+| Option                          | Default   | Description                                                            |
+|---------------------------------|-----------|------------------------------------------------------------------------|
+| `api_key`                       | `None`    | API key; loaded from environment variables when omitted.               |
+| `api_secret`                    | `None`    | API secret; loaded from environment variables when omitted.            |
+| `environment`                   | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.         |
+| `product_types`                 | `(SPOT,)` | Product types tuple; Spot can use cash or margin; Futures uses margin. |
+| `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                |
+| `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                             |
+| `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                |
+| `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                             |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                  |
+| `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.              |
+| `retry_delay_initial_ms`        | `None`    | Initial delay in milliseconds between retries.                         |
+| `retry_delay_max_ms`            | `None`    | Maximum delay in milliseconds between retries.                         |
+| `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                       |
+| `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                               |
+| `max_requests_per_second`       | `None`    | Override rate limit; default is 5 req/s.                               |
+| `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                   |
+| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.                |
+| `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports.  |
+| `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                 |
+| `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.           |
+
+For spot margin, `default_leverage` applies when an order has no per-order leverage
+param. `margin_balance_asset` only changes the `TradeBalance` summary denomination;
+per-position figures remain in the pair's quote currency.
 
 ### Demo environment setup
 
@@ -530,13 +774,13 @@ config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT,),
         },
     },
     exec_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT,),
         },
     },
@@ -552,13 +796,13 @@ config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
         },
     },
     exec_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
         },
     },
@@ -592,18 +836,17 @@ configuration objects, or set the following environment variables:
 
 | Environment Variable             | Description                              |
 |----------------------------------|------------------------------------------|
-| `KRAKEN_SPOT_API_KEY`            | API key for Kraken Spot (mainnet).       |
-| `KRAKEN_SPOT_API_SECRET`         | API secret for Kraken Spot (mainnet).    |
-| `KRAKEN_FUTURES_API_KEY`         | API key for Kraken Futures (mainnet).    |
-| `KRAKEN_FUTURES_API_SECRET`      | API secret for Kraken Futures (mainnet). |
+| `KRAKEN_SPOT_API_KEY`            | API key for Kraken Spot live trading.    |
+| `KRAKEN_SPOT_API_SECRET`         | API secret for Kraken Spot live trading. |
+| `KRAKEN_FUTURES_API_KEY`         | Kraken Futures live API key.             |
+| `KRAKEN_FUTURES_API_SECRET`      | Kraken Futures live API secret.          |
 | `KRAKEN_FUTURES_DEMO_API_KEY`    | API key for Kraken Futures (demo).       |
 | `KRAKEN_FUTURES_DEMO_API_SECRET` | API secret for Kraken Futures (demo).    |
 
 :::note
 **Demo environment**: Only Kraken Futures offers a demo environment
 (`https://demo-futures.kraken.com`) for testing without real funds. Kraken Spot
-does not have a testnet - the `environment` setting only affects Futures
-connections.
+does not have a demo or testnet environment.
 :::
 
 :::tip

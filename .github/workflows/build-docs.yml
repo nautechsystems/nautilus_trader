@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -21,7 +21,7 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Fire event to nautilus_docs
-        run: |
+        run: |-
           curl -sS -L --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 60 --fail-with-body \
             -X POST \
             -H "Accept: application/vnd.github+json" \

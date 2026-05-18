@@ -28,6 +28,9 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
+#[cfg(feature = "hypersync")]
+use crate::constants::BLOCKCHAIN;
+
 /// Extractor function for `BlockchainDataClientFactory`.
 #[cfg(feature = "hypersync")]
 #[expect(clippy::needless_pass_by_value)] // Must match FactoryExtractor function pointer signature
@@ -72,8 +75,8 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         let registry = get_global_pyo3_registry();
 
-        if let Err(e) = registry
-            .register_factory_extractor("BLOCKCHAIN".to_string(), extract_blockchain_factory)
+        if let Err(e) =
+            registry.register_factory_extractor(BLOCKCHAIN.to_string(), extract_blockchain_factory)
         {
             return Err(to_pyruntime_err(format!(
                 "Failed to register blockchain factory extractor: {e}"

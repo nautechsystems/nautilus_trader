@@ -48,7 +48,7 @@ pub struct VerticalHorizontalFilter {
 
 impl Display for VerticalHorizontalFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({},{})", self.name(), self.period, self.ma_type,)
+        write!(f, "{}({},{})", self.name(), self.period, self.ma_type)
     }
 }
 
@@ -130,10 +130,10 @@ impl VerticalHorizontalFilter {
         }
 
         self.previous_close = close;
-        self._check_initialized();
+        self.check_initialized();
     }
 
-    pub fn _check_initialized(&mut self) {
+    pub fn check_initialized(&mut self) {
         if !self.initialized {
             self.has_inputs = true;
 

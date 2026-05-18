@@ -53,7 +53,7 @@ pub struct DataEngineConfig {
     pub time_bars_build_delay: u64,
     /// A dictionary mapping time bar aggregations to their origin time offsets.
     #[builder(default)]
-    pub time_bars_origins: HashMap<BarAggregation, Duration>,
+    pub time_bars_origin_offset: HashMap<BarAggregation, Duration>,
     /// If data objects timestamp sequencing will be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,
@@ -66,6 +66,12 @@ pub struct DataEngineConfig {
     /// If quotes should be emitted on order book depth updates.
     #[builder(default)]
     pub emit_quotes_from_book_depths: bool,
+    /// If data published through `process_historical` should be suppressed from the cache.
+    ///
+    /// When `true`, historical replays still publish on historical topics but the
+    /// engine does not write the data to the cache.
+    #[builder(default)]
+    pub disable_historical_cache: bool,
     /// The client IDs declared for external stream processing.
     /// The data engine will not attempt to send data commands to these client IDs.
     pub external_clients: Option<Vec<ClientId>>,

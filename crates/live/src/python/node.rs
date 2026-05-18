@@ -370,7 +370,16 @@ impl LiveNode {
                         } else {
                             anyhow::bail!("Invalid `strategy_id` type");
                         };
-                        py_strategy_ref.set_strategy_id(strategy_id_val);
+                        py_strategy_ref.set_strategy_id(strategy_id_val)?;
+                    }
+
+                    if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
+                        && !order_id_tag.is_none()
+                    {
+                        let order_id_tag_val = order_id_tag
+                            .extract::<String>()
+                            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
+                        py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
                     }
 
                     if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
@@ -479,11 +488,14 @@ impl LiveNode {
     ///
     /// The config type determines which built-in strategy is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
+    ///
+    /// Custom native Rust strategies require the native strategy plugin API.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_strategy")]
     fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
         use nautilus_trading::examples::strategies::{
-            DeltaNeutralVol, DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
+            CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
+            DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
             GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
         };
 
@@ -492,6 +504,9 @@ impl LiveNode {
                 .map_err(to_pyruntime_err)
         } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
             self.add_strategy(GridMarketMaker::new(config))
+                .map_err(to_pyruntime_err)
+        } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
+            self.add_strategy(CompositeMarketMaker::new(config))
                 .map_err(to_pyruntime_err)
         } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
             self.add_strategy(DeltaNeutralVol::new(config))
@@ -1153,7 +1168,7 @@ mod tests {
 
     use async_trait::async_trait;
     use nautilus_common::{
-        cache::Cache,
+        cache::CacheView,
         clients::DataClient,
         clock::Clock,
         enums::Environment,
@@ -1213,7 +1228,7 @@ mod tests {
             &self,
             name: &str,
             _config: &dyn ClientConfig,
-            _cache: Rc<RefCell<Cache>>,
+            _cache: CacheView,
             _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn DataClient>> {
             Ok(Box::new(TestHistoricalBarsDataClient::new(

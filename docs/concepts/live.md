@@ -32,6 +32,23 @@ An **in-flight order** is one awaiting venue acknowledgement:
 These orders are monitored by the continuous reconciliation loop to detect stale or lost messages.
 :::
 
+### Submit outcome policy
+
+Live adapters must only emit `OrderRejected` when the venue gives positive evidence that it
+rejected the order. Examples include a venue order response with rejected status, a rejected
+order status report, or a venue error response that explicitly confirms the submitted order was
+rejected.
+
+If the submit call fails and the venue outcome is unknown, the adapter logs the failure and leaves
+the local order in flight. WebSocket updates, open-order polling, in-flight checks, or startup
+reconciliation must resolve the final state. Unknown outcomes include transport errors, request
+timeouts, disconnects, canceled local tasks, missing acknowledgements, server errors, and
+post-submit lookup failures after an order ID was returned.
+
+Use `OrderDenied` for local validation before sending a request to the venue. Do not convert an
+ambiguous submit failure into `OrderRejected`, because that can make the local order terminal and
+block later fills from reaching the strategy.
+
 Two scenarios:
 
 - **Cached state exists**: report data generates missing events to align the state.
@@ -155,11 +172,12 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 
 #### Runtime checks
 
-| Scenario                          | Description                                             | System behavior                                                        |
-|-----------------------------------|---------------------------------------------------------|------------------------------------------------------------------------|
-| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                |
-| **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions. |
-| **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.       |
+| Scenario                          | Description                                             | System behavior                                                            |
+|-----------------------------------|---------------------------------------------------------|----------------------------------------------------------------------------|
+| **Ambiguous submit failure**      | Submit call fails without confirmed venue rejection.    | Logs failure, keeps order in flight, and waits for reconciliation.         |
+| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                    |
+| **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions.     |
+| **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.           |
 
 ### Common reconciliation issues
 

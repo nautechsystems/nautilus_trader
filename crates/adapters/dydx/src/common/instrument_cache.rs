@@ -315,7 +315,7 @@ impl InstrumentCache {
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol, Venue},
+        identifiers::{InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -324,10 +324,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::DydxMarketStatus;
+    use crate::common::{consts::DYDX_VENUE, enums::DydxMarketStatus};
 
     fn create_test_instrument(symbol: &str) -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), *DYDX_VENUE);
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
             instrument_id.symbol,
@@ -532,11 +532,11 @@ mod tests {
         assert_eq!(oracle_map.len(), 2);
 
         // BTC-USD should have default 50000
-        let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
         assert_eq!(oracle_map.get(&btc_id), Some(&dec!(50000)));
 
         // ETH-USD should have updated price 3000
-        let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+        let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), *DYDX_VENUE);
         assert_eq!(oracle_map.get(&eth_id), Some(&dec!(3000)));
     }
 
@@ -575,10 +575,10 @@ mod tests {
         let oracle_map = cache.to_oracle_prices_map();
         assert_eq!(oracle_map.len(), 1);
 
-        let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
         assert_eq!(oracle_map.get(&btc_id), Some(&dec!(50000)));
 
-        let wti_id = InstrumentId::new(Symbol::new("WTI-USD-PERP"), Venue::new("DYDX"));
+        let wti_id = InstrumentId::new(Symbol::new("WTI-USD-PERP"), *DYDX_VENUE);
         assert_eq!(oracle_map.get(&wti_id), None);
     }
 }

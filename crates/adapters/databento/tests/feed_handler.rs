@@ -28,7 +28,7 @@ use common::{
     TEST_DATASET, TestHandlerConfig, create_test_handler, create_test_handler_with_config,
     error_msg, imbalance_msg, instrument_def_msg, mbo_msg, mbo_msg_with_ts, mbp1_msg, mbp10_msg,
     mock_server::MockLsgServer, ohlcv_msg, statistics_msg, status_msg, symbol_mapping_msg,
-    system_msg, trade_msg,
+    symbol_mapping_msg_with_stype, system_msg, trade_msg,
 };
 use databento::{
     dbn::{self},
@@ -36,11 +36,17 @@ use databento::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_databento::live::{DatabentoMessage, HandlerCommand};
-use nautilus_model::{data::Data, instruments::Instrument};
+use nautilus_model::{
+    data::Data,
+    identifiers::Symbol,
+    instruments::Instrument,
+    types::{Price, Quantity},
+};
 use rstest::rstest;
 
 const INSTRUMENT_ID: u32 = 1;
 const RAW_SYMBOL: &str = "ESM4";
+const CONTINUOUS_SYMBOL: &str = "ES.c.0";
 const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn recv_msg(rx: &mut tokio::sync::mpsc::Receiver<DatabentoMessage>) -> DatabentoMessage {
@@ -124,11 +130,17 @@ async fn test_subscribe_trades() {
     server.expect_subscription();
     server.start();
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
-    server.send_record(trade_msg(INSTRUMENT_ID, 100_000_000_000, 50));
+    server.send_record(trade_msg(INSTRUMENT_ID, 1_170_400_000, 50));
     server.disconnect();
 
     let handle = tokio::spawn(async move { handler.run().await });
 
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
     cmd_tx
         .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
         .unwrap();
@@ -138,8 +150,159 @@ async fn test_subscribe_trades() {
     match msg {
         DatabentoMessage::Data(Data::Trade(trade)) => {
             assert_eq!(trade.instrument_id.symbol.as_str(), RAW_SYMBOL);
-            assert!(trade.price.as_f64() > 0.0);
-            assert!(trade.size.as_f64() > 0.0);
+            assert_eq!(trade.price, Price::from("1.17040"));
+            assert_eq!(trade.price.precision, 5);
+            assert_eq!(trade.size, Quantity::from(50));
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_trades_uses_non_raw_symbol_precision_fallback() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg_with_stype(
+        INSTRUMENT_ID,
+        dbn::SType::Continuous,
+        CONTINUOUS_SYMBOL,
+        RAW_SYMBOL,
+    ));
+    server.send_record(trade_msg(INSTRUMENT_ID, 1_170_400_000, 50));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(CONTINUOUS_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols(CONTINUOUS_SYMBOL)
+                .schema(dbn::Schema::Trades)
+                .stype_in(dbn::SType::Continuous)
+                .build(),
+        ))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.instrument_id.symbol.as_str(), RAW_SYMBOL);
+            assert_eq!(trade.price, Price::from("1.17040"));
+            assert_eq!(trade.price.precision, 5);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_definition_precision_takes_precedence_over_symbol_fallback() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(instrument_def_msg(INSTRUMENT_ID, b'F'));
+    server.send_record(trade_msg(INSTRUMENT_ID, 100_000_000_000, 50));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let _instrument = recv_msg(&mut msg_rx).await;
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.price, Price::from("100.00"));
+            assert_eq!(trade.price.precision, 2);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_symbol_mapping_clears_stale_instrument_definition_precision() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(instrument_def_msg(INSTRUMENT_ID, b'F'));
+    server.send_record(symbol_mapping_msg_with_stype(
+        INSTRUMENT_ID,
+        dbn::SType::Continuous,
+        CONTINUOUS_SYMBOL,
+        RAW_SYMBOL,
+    ));
+    server.send_record(trade_msg(INSTRUMENT_ID, 1_170_400_000, 50));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(CONTINUOUS_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols(CONTINUOUS_SYMBOL)
+                .schema(dbn::Schema::Trades)
+                .stype_in(dbn::SType::Continuous)
+                .build(),
+        ))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let _instrument = recv_msg(&mut msg_rx).await;
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.price, Price::from("1.17040"));
+            assert_eq!(trade.price.precision, 5);
         }
         other => panic!("expected Data::Trade, was {other:?}"),
     }
@@ -161,14 +324,20 @@ async fn test_subscribe_quotes_mbp1() {
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
     server.send_record(mbp1_msg(
         INSTRUMENT_ID,
-        100_000_000_000, // bid 100.00
-        101_000_000_000, // ask 101.00
-        b'A',            // Add action
+        1_170_350_000, // bid 1.17035
+        1_170_400_000, // ask 1.17040
+        b'A',          // Add action
     ));
     server.disconnect();
 
     let handle = tokio::spawn(async move { handler.run().await });
 
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
     cmd_tx
         .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbp1)))
         .unwrap();
@@ -178,7 +347,10 @@ async fn test_subscribe_quotes_mbp1() {
     match msg {
         DatabentoMessage::Data(Data::Quote(quote)) => {
             assert_eq!(quote.instrument_id.symbol.as_str(), RAW_SYMBOL);
-            assert!(quote.bid_price.as_f64() < quote.ask_price.as_f64());
+            assert_eq!(quote.bid_price, Price::from("1.17035"));
+            assert_eq!(quote.bid_price.precision, 5);
+            assert_eq!(quote.ask_price, Price::from("1.17040"));
+            assert_eq!(quote.ask_price.precision, 5);
         }
         other => panic!("expected Data::Quote, was {other:?}"),
     }
@@ -580,6 +752,53 @@ async fn test_subscribe_imbalance() {
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_imbalance_uses_symbol_precision_fallback() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(imbalance_msg(INSTRUMENT_ID));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(
+            dbn::Schema::Imbalance,
+        )))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Imbalance(imbalance) => {
+            assert_eq!(imbalance.instrument_id.symbol.as_str(), RAW_SYMBOL);
+            assert_eq!(imbalance.ref_price, Price::from("100.00000"));
+            assert_eq!(imbalance.ref_price.precision, 5);
+            assert_eq!(imbalance.cont_book_clr_price, Price::from("100.50000"));
+            assert_eq!(imbalance.cont_book_clr_price.precision, 5);
+            assert_eq!(imbalance.auct_interest_clr_price, Price::from("100.25000"));
+            assert_eq!(imbalance.auct_interest_clr_price.precision, 5);
+        }
+        other => panic!("expected DatabentoMessage::Imbalance, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_statistics() {
     let server = MockLsgServer::new(TEST_DATASET).await;
     let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
@@ -610,6 +829,50 @@ async fn test_subscribe_statistics() {
     match msg {
         DatabentoMessage::Statistics(stats) => {
             assert_eq!(stats.instrument_id.symbol.as_str(), RAW_SYMBOL);
+        }
+        other => panic!("expected DatabentoMessage::Statistics, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_statistics_uses_symbol_precision_fallback() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(statistics_msg(INSTRUMENT_ID));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(
+            dbn::Schema::Statistics,
+        )))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Statistics(stats) => {
+            let price = stats.price.expect("expected statistics price");
+            assert_eq!(stats.instrument_id.symbol.as_str(), RAW_SYMBOL);
+            assert_eq!(price, Price::from("100.00000"));
+            assert_eq!(price.precision, 5);
         }
         other => panic!("expected DatabentoMessage::Statistics, was {other:?}"),
     }

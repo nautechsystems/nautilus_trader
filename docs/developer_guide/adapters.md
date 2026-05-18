@@ -432,7 +432,7 @@ Follow the pattern established in other adapters: prefixing Python-facing method
 
 When delivering instruments from WebSocket to Python, use `instrument_any_to_pyobject()` which returns PyO3 types
 for caching.
-For the reverse direction (Python→Rust), use `pyobject_to_instrument_any()` in `cache_instrument()` methods.
+For the reverse direction (Python->Rust), use `pyobject_to_instrument_any()` in `cache_instrument()` methods.
 Never call `.into_py_any()` directly on `InstrumentAny` as it doesn't implement the required trait.
 
 ### Type qualification
@@ -665,6 +665,13 @@ instrument references) and returns a Nautilus domain type wrapped in `Result`.
 
 Place parsing helpers (`parse_price_with_precision`, `parse_timestamp`) in the same module as private functions when they're reused across multiple parsers.
 
+### Timestamp conventions
+
+Nautilus uses `UnixNanos` (nanoseconds since epoch). Most venues deliver `ms`. Convert at the
+parser boundary using `nautilus_core::datetime::millis_to_nanos`; document the wire unit on the
+struct field. `ts_event` is the converted venue timestamp; `ts_init` is `clock.get_time_ns()`.
+For records with no venue timestamp (instruments), use `clock.get_time_ns()` for both.
+
 ### Method naming and organization
 
 The raw client mirrors venue endpoints with venue-specific parameter and response types. The domain
@@ -881,8 +888,8 @@ The underlying `WebSocketClient` sends a `RECONNECTED` sentinel message when rec
 
 - Runs in dedicated Tokio task as stateless I/O boundary.
 - Owns `WebSocketClient` exclusively (no `RwLock` needed).
-- Processes commands from `cmd_rx` → serializes to JSON → sends via WebSocket.
-- Receives raw WebSocket messages → deserializes into `{Venue}WsFrame` → converts to `{Venue}WsMessage` → emits via `out_tx`.
+- Processes commands from `cmd_rx` -> serializes to JSON -> sends via WebSocket.
+- Receives raw WebSocket messages -> deserializes into `{Venue}WsFrame` -> converts to `{Venue}WsMessage` -> emits via `out_tx`.
 - Owns pending request state using `AHashMap<K, V>` (single-threaded, no locking).
 - Uses `VecDeque<{Venue}WsMessage>` to buffer multi-message yields from a single frame parse.
 
@@ -909,7 +916,7 @@ flowchart LR
 
     cmd_tx --> cmd_rx
     cmd_rx -->|"serialize"| ws
-    ws -->|"parse → transform"| out_tx
+    ws -->|"parse -> transform"| out_tx
     out_tx --> out_rx
 ```
 
@@ -926,8 +933,8 @@ flowchart LR
 
 Authentication state is managed through events:
 
-- Handler processes `Login` response → **returns** `{Venue}WsMessage::Authenticated` immediately.
-- Client receives event → updates local auth state → proceeds with subscriptions.
+- Handler processes `Login` response -> **returns** `{Venue}WsMessage::Authenticated` immediately.
+- Client receives event -> updates local auth state -> proceeds with subscriptions.
 - `AuthTracker` (from `nautilus_network::websocket::auth`) tracks auth state across threads.
 
 The `AuthTracker` struct from `nautilus_network` provides thread-safe authentication state:
@@ -975,7 +982,7 @@ State transitions follow this lifecycle:
 
 | Trigger           | Method Called        | From State | To State  | Notes |
 |-------------------|----------------------|------------|-----------|-------|
-| User subscribes   | `mark_subscribe()`   | —          | Pending   | Topic added to pending set. |
+| User subscribes   | `mark_subscribe()`   |            | Pending   | Topic added to pending set. |
 | Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed. |
 | Venue rejects     | `mark_failure()`     | Pending    | Pending   | Stays pending for retry on reconnect. |
 | User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack. |
@@ -1019,7 +1026,7 @@ replay without parsing topics back into arguments:
 ```rust
 pub struct MyWebSocketClient {
     subscription_state: Arc<SubscriptionState>,
-    subscription_args: Arc<DashMap<String, SubscriptionArgs>>,  // topic → original args
+    subscription_args: Arc<DashMap<String, SubscriptionArgs>>,  // topic -> original args
     // ...
 }
 
@@ -1299,7 +1306,7 @@ venues without unbounded memory growth.
 
 #### Client-side error propagation
 
-Channel send failures (client → handler) should propagate loudly as `Result<(), Error>`:
+Channel send failures (client -> handler) should propagate loudly as `Result<(), Error>`:
 
 ```rust
 impl MyWebSocketClient {
@@ -1317,7 +1324,7 @@ impl MyWebSocketClient {
 
 #### Handler-side retry logic
 
-WebSocket send failures (handler → network) should be retried by the handler using `RetryManager`:
+WebSocket send failures (handler -> network) should be retried by the handler using `RetryManager`:
 
 ```rust
 pub struct MyWsFeedHandler {
@@ -1383,7 +1390,7 @@ fn should_retry_error(error: &MyWsError) -> bool {
 
 Adapters follow standardized naming conventions for consistency across all venue integrations.
 
-#### Channel naming: `raw` → `msg` → `out`
+#### Channel naming: `raw` -> `msg` -> `out`
 
 WebSocket message channels follow a two-stage transformation pipeline within the handler:
 

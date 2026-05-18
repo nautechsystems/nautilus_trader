@@ -44,10 +44,11 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_kraken::common::consts::KRAKEN_VENUE;
 use nautilus_model::{
     data::{BarType, Data},
     enums::{AccountType, BookType, OmsType},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
 };
@@ -100,7 +101,7 @@ fn main() -> anyhow::Result<()> {
 
     engine.add_venue(
         SimulatedVenueConfig::builder()
-            .venue(Venue::from("KRAKEN"))
+            .venue(*KRAKEN_VENUE)
             .oms_type(OmsType::Netting)
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)

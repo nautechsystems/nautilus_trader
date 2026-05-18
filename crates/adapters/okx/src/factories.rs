@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,10 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::{consts::OKX_VENUE, enums::OKXInstrumentType},
+    common::{
+        consts::{OKX, OKX_VENUE},
+        enums::OKXInstrumentType,
+    },
     config::{OKXDataClientConfig, OKXExecClientConfig},
     data::OKXDataClient,
     execution::OKXExecutionClient,
@@ -79,7 +82,7 @@ impl DataClientFactory for OKXDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let okx_config = config
@@ -98,7 +101,7 @@ impl DataClientFactory for OKXDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "OKX"
+        OKX
     }
 
     fn config_type(&self) -> &'static str {
@@ -137,7 +140,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let okx_config = config
             .as_any()
@@ -186,7 +189,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "OKX"
+        OKX
     }
 
     fn config_type(&self) -> &'static str {
@@ -211,14 +214,14 @@ mod tests {
     #[rstest]
     fn test_okx_execution_client_factory_creation() {
         let factory = OKXExecutionClientFactory::new();
-        assert_eq!(factory.name(), "OKX");
+        assert_eq!(factory.name(), OKX);
         assert_eq!(factory.config_type(), "OKXExecClientConfig");
     }
 
     #[rstest]
     fn test_okx_execution_client_factory_default() {
         let factory = OKXExecutionClientFactory::new();
-        assert_eq!(factory.name(), "OKX");
+        assert_eq!(factory.name(), OKX);
     }
 
     #[rstest]
@@ -251,7 +254,7 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-TEST", &config, cache);
+        let result = factory.create("OKX-TEST", &config, cache.into());
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -273,8 +276,8 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-DERIV", &config, cache);
-        assert!(result.is_ok());
+        let result = factory.create("OKX-DERIV", &config, cache.into());
+        result.unwrap();
     }
 
     #[rstest]
@@ -284,7 +287,7 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-TEST", &wrong_config, cache);
+        let result = factory.create("OKX-TEST", &wrong_config, cache.into());
         assert!(result.is_err());
         assert!(
             result

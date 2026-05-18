@@ -16,7 +16,8 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_blockchain::{
-    config::BlockchainExecutionClientConfig, constants::BLOCKCHAIN_VENUE,
+    config::BlockchainExecutionClientConfig,
+    constants::{BLOCKCHAIN_CLIENT_ID, BLOCKCHAIN_VENUE},
     execution::client::BlockchainExecutionClient,
 };
 use nautilus_common::{
@@ -30,7 +31,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     defi::chain::chains,
     enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{AccountId, TraderId},
     stubs::TestDefault,
 };
 
@@ -82,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core_execution_client = ExecutionClientCore::new(
         trader_id,
-        ClientId::new("BLOCKCHAIN"),
+        *BLOCKCHAIN_CLIENT_ID,
         *BLOCKCHAIN_VENUE,
         OmsType::Netting,
         account,

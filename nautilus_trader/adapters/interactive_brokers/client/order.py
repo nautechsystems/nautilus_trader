@@ -29,6 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import get_venue_order_id
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 
 
@@ -279,26 +280,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order.contract = IBContract(**contract.__dict__)
         order.order_state = order_state
         order.orderRef = order.orderRef.rsplit(":", 1)[0]
+        venue_order_id = get_venue_order_id(order.orderId, order.permId)
+        self._set_order_id_ref(
+            venue_order_id=venue_order_id,
+            account_id=order.account,
+            order_id=order.orderRef,
+        )
 
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             request.result.append(order)
-
-            # Validate and add reverse mapping, if not exists
-            venue_order_id = get_venue_order_id(order.orderId, order.permId)
-            if order_ref := self._order_id_to_order_ref.get(venue_order_id):
-                if not (
-                    order_ref.account_id == order.account and order_ref.order_id == order.orderRef
-                ):
-                    self._log.warning(
-                        f"Discrepancy found in order, expected {order_ref}, "
-                        f"was (account={order.account}, order_id={order.orderRef}",
-                    )
-            else:
-                self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
-                    account_id=order.account,
-                    order_id=order.orderRef,
-                )
             return
 
         # Handle event based response
@@ -342,6 +333,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         venue_order_id = get_venue_order_id(order_id, perm_id)
         order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
 
+        if order_ref is None:
+            order_ref = self._resolve_order_ref_from_cache(venue_order_id)
+
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
 
@@ -355,6 +349,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     remaining=remaining,
                     why_held=why_held,
                 )
+        else:
+            self._log.warning(
+                f"OrderStatus callback for {venue_order_id} has no order reference mapping",
+            )
 
     async def process_exec_details(
         self,
@@ -374,6 +372,14 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         cache["contract"] = IBContract(**contract.__dict__)
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
         cache["req_id"] = req_id
+
+        if cache["order_ref"]:
+            venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+            self._set_order_id_ref(
+                venue_order_id=venue_order_id,
+                account_id=execution.acctNumber,
+                order_id=cache["order_ref"],
+            )
 
         # Check if this is for a get_executions request
         execution_request_name = f"Executions-{execution.acctNumber}"
@@ -458,3 +464,56 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         # End the request if it exists
         if self._requests.get(req_id=req_id):
             self._end_request(req_id)
+
+    def _set_order_id_ref(
+        self,
+        venue_order_id: VenueOrderId,
+        account_id: str,
+        order_id: str,
+    ) -> None:
+        if order_ref := self._order_id_to_order_ref.get(venue_order_id):
+            if not (order_ref.account_id == account_id and order_ref.order_id == order_id):
+                self._log.warning(
+                    f"Discrepancy found in order, expected {order_ref}, "
+                    f"was (account={account_id}, order_id={order_id})",
+                )
+        else:
+            self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
+                account_id=account_id,
+                order_id=order_id,
+            )
+
+    def _resolve_order_ref_from_cache(
+        self,
+        venue_order_id: VenueOrderId,
+    ) -> AccountOrderRef | None:
+        client_order_id: ClientOrderId | None = self._cache.client_order_id(venue_order_id)
+        if client_order_id is None:
+            return None
+
+        account_id = self._resolve_order_status_account_id()
+        if account_id is None:
+            self._log.warning(
+                f"Cannot route orderStatus for {venue_order_id}; account ID is ambiguous",
+            )
+            return None
+
+        order_ref = AccountOrderRef(account_id=account_id, order_id=client_order_id.value)
+        self._order_id_to_order_ref[venue_order_id] = order_ref
+        return order_ref
+
+    def _resolve_order_status_account_id(self) -> str | None:
+        accounts = self.accounts()
+        if len(accounts) == 1:
+            return next(iter(accounts))
+
+        subscribed_account_ids = {
+            name.removeprefix("orderStatus-")
+            for name in self._event_subscriptions
+            if name.startswith("orderStatus-")
+        }
+
+        if len(subscribed_account_ids) == 1:
+            return next(iter(subscribed_account_ids))
+
+        return None

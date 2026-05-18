@@ -40,6 +40,11 @@ repos:
     hooks:
       - id: shellcheck
 
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:
@@ -97,15 +102,7 @@ repos:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args:
-          [
-            "--no-online-audits",
-            "--min-severity",
-            "medium",
-            "--config",
-            ".zizmor.yml",
-            ".github/",
-          ]
+        args: ["--no-online-audits", "--min-severity", "medium", "--config", ".zizmor.yml", ".github/"]
         pass_filenames: false
 
   ##############################################################################
@@ -119,16 +116,15 @@ repos:
         entry: bash .pre-commit-hooks/check_hidden_chars.sh
         language: system
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
-        files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
+        files: "\\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*"
 
       - id: check-non-latin-text
         name: check non-Latin text
-        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to
-          enforce English-only
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
         entry: bash .pre-commit-hooks/check_non_latin_text.sh
         language: system
         types: [text]
-        files: '\.(rs|py|pyx|md|toml|yaml|yml)$'
+        files: "\\.(rs|py|pyx|md|toml|yaml|yml)$"
 
       - id: check-toml-codegen
         name: check toml-codegen
@@ -137,12 +133,12 @@ repos:
         language: system
         files: \.toml$
 
-      - id: check-todo-exclamation
-        name: check todo! markers
-        description: Prevents committing TODO! markers that indicate incomplete work
-        entry: bash .pre-commit-hooks/check_todo_exclamation.sh
+      - id: check-no-build-packages
+        name: check no-build-packages
+        description: Ensures `[tool.uv].no-build-package` matches `uv.lock`
+        entry: bash scripts/check-no-build-packages.sh
         language: system
-        types: [text]
+        files: ^(uv\.lock|python/uv\.lock|pyproject\.toml|python/pyproject\.toml)$
         pass_filenames: false
 
       - id: check-copyright-year
@@ -174,7 +170,7 @@ repos:
         description: Verifies internal markdown links resolve on disk via lychee
         entry: bash .pre-commit-hooks/check_links_offline.sh
         language: system
-        files: '(\.md$|^docs/.*\.py$)'
+        files: "(\\.md$|^docs/.*\\.py$)"
 
   ##############################################################################
   #  Rust formatting and linting
@@ -186,7 +182,7 @@ repos:
         description: Enforces anyhow conventions
         entry: bash .pre-commit-hooks/check_anyhow_usage.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-logging-conventions
@@ -194,7 +190,7 @@ repos:
         description: Enforces logging conventions
         entry: bash .pre-commit-hooks/check_logging_conventions.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-tokio-usage
@@ -202,7 +198,7 @@ repos:
         description: Enforces tokio usage conventions
         entry: bash .pre-commit-hooks/check_tokio_usage.sh
         language: system
-        files: '\.rs$|Cargo\.toml$'
+        files: "\\.rs$|Cargo\\.toml$"
         pass_filenames: false
 
       - id: check-dst-conventions
@@ -210,7 +206,7 @@ repos:
         description: Enforces deterministic simulation testing path bans
         entry: bash .pre-commit-hooks/check_dst_conventions.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-pyo3-conventions
@@ -218,7 +214,7 @@ repos:
         description: Enforces PyO3 naming conventions
         entry: bash .pre-commit-hooks/check_pyo3_conventions.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-testing-conventions
@@ -234,7 +230,7 @@ repos:
         description: Enforces Nautilus type usage conventions
         entry: bash .pre-commit-hooks/check_nautilus_conventions.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-formatting-rs
@@ -242,7 +238,7 @@ repos:
         description: Enforces formatting conventions in Rust code
         entry: bash .pre-commit-hooks/check_formatting_rs.sh
         language: system
-        files: '\.rs$'
+        files: "\\.rs$"
         pass_filenames: false
 
       - id: check-formatting-py
@@ -250,7 +246,7 @@ repos:
         description: Enforces formatting conventions in Python code
         entry: bash .pre-commit-hooks/check_formatting_py.sh
         language: system
-        files: '\.py$'
+        files: "\\.py$"
         pass_filenames: false
 
       - id: check-docs-conventions
@@ -258,7 +254,7 @@ repos:
         description: Enforces documentation conventions
         entry: bash .pre-commit-hooks/check_docs_conventions.sh
         language: system
-        files: '\.(rs|md)$'
+        files: "\\.(rs|md)$"
         pass_filenames: false
 
       - id: check-cargo-conventions
@@ -266,7 +262,7 @@ repos:
         description: Enforces Cargo.toml dependency ordering conventions
         entry: bash .pre-commit-hooks/check_cargo_conventions.sh
         language: system
-        files: 'Cargo\.toml$'
+        files: "Cargo\\.toml$"
         pass_filenames: false
 
       - id: fmt
@@ -275,7 +271,7 @@ repos:
         entry: bash .pre-commit-hooks/cargo_fmt_stable.sh
         language: system
         args: ["--all", "--", "--check"]
-        files: '\.(rs|toml)$'
+        files: "\\.(rs|toml)$"
         types: [file]
         pass_filenames: false
 
@@ -284,7 +280,7 @@ repos:
         description: Run the Clippy linter on changed crates
         entry: bash scripts/clippy-changed.sh
         language: system
-        files: '\.(rs|toml)$'
+        files: "\\.(rs|toml)$"
         types: [file]
         pass_filenames: false
 
@@ -293,7 +289,7 @@ repos:
         description: Check documentation builds on changed crates
         entry: bash scripts/doc-changed.sh
         language: system
-        files: '\.(rs|toml)$'
+        files: "\\.(rs|toml)$"
         types: [file]
         pass_filenames: false
 
@@ -340,17 +336,15 @@ repos:
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
         args:
-          [
-            "--wrap-summaries",
-            "88",
-            "--wrap-descriptions",
-            "88",
-            "--make-summary-multi-line",
-            "--pre-summary-newline",
-            "--blank",
-            "--recursive",
-            "--in-place",
-          ]
+          - "--wrap-summaries"
+          - "88"
+          - "--wrap-descriptions"
+          - "88"
+          - "--make-summary-multi-line"
+          - "--pre-summary-newline"
+          - "--blank"
+          - "--recursive"
+          - "--in-place"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.20.2
@@ -359,18 +353,10 @@ repos:
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         exclude: (^python/|^nautilus_trader/.*\.pyi$|^docs/(getting_started|tutorials)/)
         args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
-        additional_dependencies:
-          [
-            msgspec,
-            types-frozendict,
-            types-pytz,
-            types-redis,
-            types-requests,
-            types-toml,
-          ]
+        additional_dependencies: [msgspec, types-frozendict, types-pytz, types-redis, types-requests, types-toml]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.8 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.12 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$
@@ -394,4 +380,4 @@ repos:
           - .markdownlint.jsonc
           - --fix
         files: "\\.md$"
-        exclude: '^(CLA\.md|CONTRIBUTING\.md|RELEASES\.md)$'
+        exclude: "^(CLA\\.md|CONTRIBUTING\\.md|RELEASES\\.md)$"

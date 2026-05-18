@@ -123,55 +123,55 @@ class OKXHttpClient:
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def set_position_mode(self, position_mode: OKXPositionMode) -> typing.Any: ...
     def request_instruments(
-        self, instrument_type: OKXInstrumentType, instrument_family: str | None = ...
+        self, instrument_type: OKXInstrumentType, instrument_family: str | None = None
     ) -> typing.Any: ...
     def request_instrument(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_account_state(self, account_id: model.AccountId) -> typing.Any: ...
     def request_trades(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_orderbook_snapshot(
-        self, instrument_id: model.InstrumentId, depth: int | None = ...
+        self, instrument_id: model.InstrumentId, depth: int | None = None
     ) -> typing.Any: ...
     def request_funding_rates(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_mark_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_index_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_order_status_reports(
         self,
         account_id: model.AccountId,
-        instrument_type: OKXInstrumentType | None,
-        instrument_id: model.InstrumentId | None,
-        start: datetime.datetime | None,
-        end: datetime.datetime | None,
-        open_only: bool,
-        limit: int | None = ...,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: model.InstrumentId | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        open_only: bool = False,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_algo_order_status_reports(
         self,
         account_id: model.AccountId,
-        instrument_type: OKXInstrumentType | None = ...,
-        instrument_id: model.InstrumentId | None = ...,
-        algo_id: str | None = ...,
-        algo_client_order_id: model.ClientOrderId | None = ...,
-        state: OKXOrderStatus | None = ...,
-        limit: int | None = ...,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: model.InstrumentId | None = None,
+        algo_id: str | None = None,
+        algo_client_order_id: model.ClientOrderId | None = None,
+        state: OKXOrderStatus | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_algo_order_status_report(
         self,
@@ -182,17 +182,17 @@ class OKXHttpClient:
     def request_fill_reports(
         self,
         account_id: model.AccountId,
-        instrument_type: OKXInstrumentType | None = ...,
-        instrument_id: model.InstrumentId | None = ...,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
-        limit: int | None = ...,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: model.InstrumentId | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def request_position_status_reports(
         self,
         account_id: model.AccountId,
-        instrument_type: OKXInstrumentType | None = ...,
-        instrument_id: model.InstrumentId | None = ...,
+        instrument_type: OKXInstrumentType | None = None,
+        instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
     def place_order(
         self,
@@ -204,13 +204,13 @@ class OKXHttpClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         quantity: model.Quantity,
-        time_in_force: model.TimeInForce | None = ...,
-        price: model.Price | None = ...,
-        post_only: bool | None = ...,
-        reduce_only: bool | None = ...,
-        quote_quantity: bool | None = ...,
-        position_side: model.PositionSide | None = ...,
-        attach_algo_ords: typing.Sequence[dict] | None = ...,
+        time_in_force: model.TimeInForce | None = None,
+        price: model.Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
+        position_side: model.PositionSide | None = None,
+        attach_algo_ords: typing.Sequence[dict] | None = None,
     ) -> typing.Any: ...
     def place_algo_order(
         self,
@@ -222,26 +222,26 @@ class OKXHttpClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         quantity: model.Quantity,
-        trigger_price: model.Price | None = ...,
-        trigger_type: model.TriggerType | None = ...,
-        limit_price: model.Price | None = ...,
-        reduce_only: bool | None = ...,
-        close_fraction: str | None = ...,
-        callback_ratio: str | None = ...,
-        callback_spread: str | None = ...,
-        activation_price: model.Price | None = ...,
+        trigger_price: model.Price | None = None,
+        trigger_type: model.TriggerType | None = None,
+        limit_price: model.Price | None = None,
+        reduce_only: bool | None = None,
+        close_fraction: str | None = None,
+        callback_ratio: str | None = None,
+        callback_spread: str | None = None,
+        activation_price: model.Price | None = None,
     ) -> typing.Any: ...
     def cancel_algo_order(self, instrument_id: model.InstrumentId, algo_id: str) -> typing.Any: ...
     def amend_algo_order(
         self,
         instrument_id: model.InstrumentId,
         algo_id: str,
-        new_trigger_price: model.Price | None = ...,
-        new_limit_price: model.Price | None = ...,
-        new_quantity: model.Quantity | None = ...,
-        new_callback_ratio: str | None = ...,
-        new_callback_spread: str | None = ...,
-        new_activation_price: model.Price | None = ...,
+        new_trigger_price: model.Price | None = None,
+        new_limit_price: model.Price | None = None,
+        new_quantity: model.Quantity | None = None,
+        new_callback_ratio: str | None = None,
+        new_callback_spread: str | None = None,
+        new_activation_price: model.Price | None = None,
     ) -> typing.Any: ...
     def cancel_algo_orders(
         self, orders: typing.Sequence[tuple[model.InstrumentId, str]]
@@ -351,32 +351,32 @@ class OKXWebSocketClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         quantity: model.Quantity,
-        time_in_force: model.TimeInForce | None = ...,
-        price: model.Price | None = ...,
-        trigger_price: model.Price | None = ...,
-        post_only: bool | None = ...,
-        reduce_only: bool | None = ...,
-        quote_quantity: bool | None = ...,
-        position_side: model.PositionSide | None = ...,
-        attach_algo_ords: typing.Sequence[dict] | None = ...,
+        time_in_force: model.TimeInForce | None = None,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
+        position_side: model.PositionSide | None = None,
+        attach_algo_ords: typing.Sequence[dict] | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,
         trader_id: model.TraderId,
         strategy_id: model.StrategyId,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def modify_order(
         self,
         trader_id: model.TraderId,
         strategy_id: model.StrategyId,
         instrument_id: model.InstrumentId,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
-        price: model.Price | None = ...,
-        quantity: model.Quantity | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
+        price: model.Price | None = None,
+        quantity: model.Quantity | None = None,
     ) -> typing.Any: ...
     def batch_submit_orders(self, orders: typing.Sequence[typing.Any]) -> typing.Any: ...
     def batch_cancel_orders(self, cancels: typing.Sequence[typing.Any]) -> typing.Any: ...

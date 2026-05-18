@@ -351,7 +351,7 @@ fn create_raw_client(
     let base_url = format!("http://{addr}");
     BinanceRawFuturesHttpClient::new(
         BinanceProductType::UsdM,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         api_key,
         api_secret,
         Some(base_url),
@@ -360,6 +360,22 @@ fn create_raw_client(
         None,
     )
     .unwrap()
+}
+
+#[rstest]
+fn test_raw_client_accepts_demo_environment() {
+    let result = BinanceRawFuturesHttpClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Demo,
+        None,
+        None,
+        Some("http://127.0.0.1:1".to_string()),
+        None,
+        Some(60),
+        None,
+    );
+
+    assert!(result.is_ok());
 }
 
 #[rstest]
@@ -420,7 +436,7 @@ async fn test_account_requires_credentials() {
     let result: Result<serde_json::Value, _> = client
         .get("/fapi/v2/account", None::<&()>, true, false)
         .await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -631,5 +647,5 @@ async fn test_rate_limit_triggers() {
     let result: Result<serde_json::Value, _> = client
         .get("/fapi/v2/account", None::<&()>, true, false)
         .await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }

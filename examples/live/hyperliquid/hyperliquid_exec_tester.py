@@ -42,6 +42,13 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Environment variables required:
 # Mainnet: HYPERLIQUID_PK (and optionally HYPERLIQUID_VAULT)
 # Testnet: HYPERLIQUID_TESTNET_PK (and optionally HYPERLIQUID_TESTNET_VAULT)
+#
+# Agent / API wallets: if your private key is an agent wallet approved under a
+# master account (typical when you create an API wallet on the Hyperliquid UI),
+# also set HYPERLIQUID_ACCOUNT_ADDRESS to the master account address. Otherwise
+# balance, order, and WebSocket queries hit the agent's address (which holds
+# nothing) and orders never reconcile. The same env var applies to mainnet and
+# testnet. See docs: integrations/hyperliquid.md#agent-wallets
 
 
 class HyperliquidProductType(Enum):
@@ -108,7 +115,6 @@ config_node = TradingNodeConfig(
             if testnet
             else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
         ),
     },
     exec_clients={
@@ -117,7 +123,6 @@ config_node = TradingNodeConfig(
             if testnet
             else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
             normalize_prices=True,  # Rounds prices to 5 significant figures (required for HL)
         ),
     },

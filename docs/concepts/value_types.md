@@ -144,15 +144,15 @@ from nautilus_trader.model.objects import Quantity
 
 qty = Quantity(100, precision=0)
 
-# Quantity + int → Decimal
+# Quantity + int -> Decimal
 result1 = qty + 50
 print(type(result1))  # <class 'decimal.Decimal'>
 
-# Quantity + float → float
+# Quantity + float -> float
 result2 = qty + 50.5
 print(type(result2))  # <class 'float'>
 
-# Quantity + Decimal → Decimal
+# Quantity + Decimal -> Decimal
 result3 = qty + Decimal("50")
 print(type(result3))  # <class 'decimal.Decimal'>
 ```

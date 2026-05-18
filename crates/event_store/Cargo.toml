@@ -1,0 +1,71 @@
+[package]
+name = "nautilus-event-store"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Event store and authoritative log of state-affecting messages for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io yet
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_event_store"
+crate-type = ["rlib"]
+
+[features]
+default = []
+defi = ["nautilus-common/defi", "nautilus-model/defi"]
+live = ["nautilus-common/live"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-system = { workspace = true }
+
+anyhow = { workspace = true }
+bincode = { workspace = true }
+blake3 = { workspace = true }
+bytes = { workspace = true }
+indexmap = { workspace = true }
+log = { workspace = true }
+redb = { workspace = true }
+rmp-serde = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
+
+[dev-dependencies]
+nautilus-model = { workspace = true, features = ["stubs"] }
+
+ahash = { workspace = true }
+async-trait = { workspace = true }
+criterion = { workspace = true }
+proptest = { workspace = true }
+redb = { workspace = true }
+rstest = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "hash"
+path = "benches/hash.rs"
+harness = false
+
+[[bench]]
+name = "codec"
+path = "benches/codec.rs"
+harness = false

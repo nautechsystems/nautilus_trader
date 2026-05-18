@@ -95,7 +95,7 @@ pub fn deserialize_chain<'de, D>(deserializer: D) -> Result<Chain, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let hex_string = String::deserialize(deserializer)?;
+    let hex_string: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
     let without_prefix = hex_string.trim_start_matches("0x");
     let chain_id = u32::from_str_radix(without_prefix, 16).map_err(serde::de::Error::custom)?;
 

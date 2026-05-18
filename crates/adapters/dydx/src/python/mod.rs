@@ -38,6 +38,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::DYDX,
     config::{DydxDataClientConfig, DydxExecClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
@@ -111,8 +112,7 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let registry = get_global_pyo3_registry();
 
-    if let Err(e) =
-        registry.register_factory_extractor("DYDX".to_string(), extract_dydx_data_factory)
+    if let Err(e) = registry.register_factory_extractor(DYDX.to_string(), extract_dydx_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register dYdX data factory extractor: {e}"
@@ -120,7 +120,7 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) =
-        registry.register_exec_factory_extractor("DYDX".to_string(), extract_dydx_exec_factory)
+        registry.register_exec_factory_extractor(DYDX.to_string(), extract_dydx_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register dYdX exec factory extractor: {e}"

@@ -245,14 +245,14 @@ impl LiveDataEngineConfig {
         clippy::needless_pass_by_value,
         reason = "PyO3 #[new] requires owned params"
     )]
-    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origins=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None, graceful_shutdown_on_error=None))]
+    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None, graceful_shutdown_on_error=None))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
         time_bars_timestamp_on_close: Option<bool>,
         time_bars_skip_first_non_full_bar: Option<bool>,
         time_bars_interval_type: Option<Py<PyAny>>,
         time_bars_build_delay: Option<u64>,
-        time_bars_origins: Option<HashMap<String, u64>>,
+        time_bars_origin_offset: Option<HashMap<String, u64>>,
         validate_data_sequence: Option<bool>,
         buffer_deltas: Option<bool>,
         emit_quotes_from_book: Option<bool>,
@@ -275,7 +275,7 @@ impl LiveDataEngineConfig {
                 .unwrap_or(default.time_bars_skip_first_non_full_bar),
             time_bars_interval_type,
             time_bars_build_delay: time_bars_build_delay.unwrap_or(default.time_bars_build_delay),
-            time_bars_origins: time_bars_origins.unwrap_or_default(),
+            time_bars_origin_offset: time_bars_origin_offset.unwrap_or_default(),
             validate_data_sequence: validate_data_sequence
                 .unwrap_or(default.validate_data_sequence),
             buffer_deltas: buffer_deltas.unwrap_or(default.buffer_deltas),

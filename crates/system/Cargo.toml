@@ -23,7 +23,6 @@ crate-type = ["rlib"]
 [features]
 default = []
 defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
-streaming = ["nautilus-persistence"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
@@ -32,6 +31,7 @@ python = [
   "pyo3",
   "streaming",
 ]
+streaming = ["nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
@@ -44,19 +44,27 @@ nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
 
+nautilus-persistence = { workspace = true, optional = true }
+
 ahash = { workspace = true }
 anyhow = { workspace = true }
 bon = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+rmp-serde = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
+toml = { workspace = true }

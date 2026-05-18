@@ -1,0 +1,71 @@
+name: attest-sbom-retry
+description: |
+  Attest an SPDX 2.3 SBOM with bounded retry. Wraps actions/attest (the
+  non-deprecated successor to actions/attest-sbom) and absorbs Sigstore
+  Rekor flakes that surface as "InternalError: error creating tlog entry".
+  Three attempts with 30s and 60s backoffs; the third attempt is fatal.
+
+inputs:
+  subject-name:
+    description: OCI image name (e.g. ghcr.io/owner/image)
+    required: true
+  subject-digest:
+    description: Image digest (sha256:...)
+    required: true
+  sbom-path:
+    description: Path to the SPDX 2.3 SBOM JSON file
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # https://github.com/actions/attest
+    # predicate-type must exact-match what the verify step filters on
+    # (`SPDX_PREDICATE_TYPE` in docker.yml). cosign's `spdx` alias maps to
+    # the unversioned URI and would skip these attestations.
+    - name: Attest SBOM (attempt 1/3)
+      id: a1
+      continue-on-error: true
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.subject-name }}
+        subject-digest: ${{ inputs.subject-digest }}
+        predicate-type: https://spdx.dev/Document/v2.3
+        predicate-path: ${{ inputs.sbom-path }}
+        push-to-registry: true
+
+    - name: Backoff before retry 2
+      if: steps.a1.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::attest attempt 1 failed (Rekor flake likely); backing off 30s"
+        sleep 30
+
+    - name: Attest SBOM (attempt 2/3)
+      id: a2
+      if: steps.a1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.subject-name }}
+        subject-digest: ${{ inputs.subject-digest }}
+        predicate-type: https://spdx.dev/Document/v2.3
+        predicate-path: ${{ inputs.sbom-path }}
+        push-to-registry: true
+
+    - name: Backoff before retry 3
+      if: steps.a2.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::attest attempt 2 failed; backing off 60s"
+        sleep 60
+
+    - name: Attest SBOM (attempt 3/3, final)
+      if: steps.a2.outcome == 'failure'
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.subject-name }}
+        subject-digest: ${{ inputs.subject-digest }}
+        predicate-type: https://spdx.dev/Document/v2.3
+        predicate-path: ${{ inputs.sbom-path }}
+        push-to-registry: true

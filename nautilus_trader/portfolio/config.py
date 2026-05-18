@@ -44,6 +44,16 @@ class PortfolioConfig(NautilusConfig, frozen=True):
         When set, account state updates will only be logged if this much time has passed since the last log.
         Useful for HFT deployments to prevent excessive logging when account states change rapidly.
         Default is None (no throttling).
+    snapshot_interval_ms : PositiveInt, optional
+        The interval (milliseconds) between portfolio snapshot emissions per account.
+        When set, a ``PortfolioSnapshot`` is emitted at this cadence while the
+        account holds at least one open position, carrying continuous
+        mark-to-market equity. Default is None (no periodic snapshots).
+
+        Note: only the Rust portfolio runtime emits snapshots today; the Cython
+        portfolio used by the Python ``BacktestEngine`` and live nodes ignores
+        this field. Setting it is safe but currently has no effect in the
+        Python runtime.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -54,4 +64,5 @@ class PortfolioConfig(NautilusConfig, frozen=True):
     bar_updates: bool = True
     convert_to_account_base_currency: bool = True
     min_account_state_logging_interval_ms: PositiveInt | None = None
+    snapshot_interval_ms: PositiveInt | None = None
     debug: bool = False

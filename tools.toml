@@ -2,13 +2,23 @@
 #
 # Rust toolchain: rust-toolchain.toml
 # Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
+# Python CLIs:    tools.toml
 # uv:             pyproject.toml [tool.uv]
 
 [prek]
-version = "0.3.8"
+version = "0.3.13"
+
+[pip-audit]
+version = "2.10.0"
+
+[pypi-attestations]
+version = "0.0.29"
+
+[maturin]
+version = "1.13.3"
 
 [osv-scanner]
-version = "2.3.5"
+version = "2.3.8"
 
 [capnp]
 version = "1.4.0"

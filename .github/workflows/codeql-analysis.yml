@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [master]
-  schedule:
-    - cron: '42 13 * * 4'
+  push:
+    branches: [nightly]
 
 jobs:
   analyze:
@@ -19,10 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['python', 'rust']
+        language: ["python", "rust"]
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -51,14 +51,14 @@ jobs:
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           override: true
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -69,8 +69,8 @@ jobs:
       # https://github.com/github/codeql-action
       - name: Autobuild
         if: matrix.language == 'rust'
-        uses: github/codeql-action/autobuild@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        uses: github/codeql-action/autobuild@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2

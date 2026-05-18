@@ -29,29 +29,25 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key : str, optional
         The Deribit API public key.
         If ``None`` then will source the `DERIBIT_API_KEY` or `DERIBIT_TESTNET_API_KEY`
-        environment variable based on `is_testnet`.
+        environment variable based on `environment`.
     api_secret : str, optional
         The Deribit API secret key.
         If ``None`` then will source the `DERIBIT_API_SECRET` or `DERIBIT_TESTNET_API_SECRET`
-        environment variable based on `is_testnet`.
+        environment variable based on `environment`.
     product_types : tuple[DeribitProductType, ...], optional
         The Deribit product types to load.
         If None, defaults to Future.
     environment : DeribitEnvironment, optional
         The Deribit environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``is_testnet`` if set.
     base_url_http : str, optional
         The base URL for Deribit's HTTP API.
-        If ``None`` then will use default based on `is_testnet`.
+        If ``None`` then will use default based on `environment`.
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
-        If ``None`` then will use default based on `is_testnet`.
+        If ``None`` then will use default based on `environment`.
     proxy_url : str, optional
         The proxy URL for HTTP and WebSocket transports.
-    is_testnet : bool, default False
-        If the client is connecting to the Deribit testnet API.
-        Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, optional
         The timeout (seconds) for HTTP requests.
     max_retries : PositiveInt, default 3
@@ -62,6 +58,9 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     update_instruments_interval_mins : PositiveInt, default 60
         The interval (minutes) between reloading instruments from the venue.
+    auto_load_missing_instruments : bool, default False
+        If ``True``, subscribes for uncached instruments lazy-load via HTTP; otherwise fail fast.
+        See the Deribit integration guide for details.
 
     """
 
@@ -72,12 +71,12 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
+    auto_load_missing_instruments: bool = False
 
 
 class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -89,29 +88,25 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     api_key : str, optional
         The Deribit API public key.
         If ``None`` then will source the `DERIBIT_API_KEY` or `DERIBIT_TESTNET_API_KEY`
-        environment variable based on `is_testnet`.
+        environment variable based on `environment`.
     api_secret : str, optional
         The Deribit API secret key.
         If ``None`` then will source the `DERIBIT_API_SECRET` or `DERIBIT_TESTNET_API_SECRET`
-        environment variable based on `is_testnet`.
+        environment variable based on `environment`.
     product_types : tuple[DeribitProductType, ...], optional
         The Deribit product types to load.
         If None, defaults to Future.
     environment : DeribitEnvironment, optional
         The Deribit environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``is_testnet`` if set.
     base_url_http : str, optional
         The base URL for Deribit's HTTP API.
-        If ``None`` then will use default based on `is_testnet`.
+        If ``None`` then will use default based on `environment`.
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
-        If ``None`` then will use default based on `is_testnet`.
+        If ``None`` then will use default based on `environment`.
     proxy_url : str, optional
         The proxy URL for HTTP and WebSocket transports.
-    is_testnet : bool, default False
-        If the client is connecting to the Deribit testnet API.
-        Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, optional
         The timeout (seconds) for HTTP requests.
     max_retries : PositiveInt, default 3
@@ -130,7 +125,6 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000

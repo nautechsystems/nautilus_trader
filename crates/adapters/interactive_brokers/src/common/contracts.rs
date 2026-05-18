@@ -15,11 +15,15 @@
 
 //! Contract parsing utilities for Interactive Brokers adapter.
 
+use std::str::FromStr;
+
 use ibapi::contracts::{
     Contract, Currency as IBCurrency, Exchange as IBExchange, SecurityType, Symbol,
 };
 use nautilus_core::Params;
 use serde_json::Value;
+
+use crate::common::enums::IbSecurityType;
 
 /// Convert an IB contract into JSON metadata suitable for instrument `info["contract"]`.
 #[must_use]
@@ -59,39 +63,17 @@ pub fn contract_to_params(contract: &Contract) -> Params {
     params
 }
 
-fn security_type_to_code(security_type: &SecurityType) -> &str {
-    match security_type {
-        SecurityType::Stock => "STK",
-        SecurityType::Option => "OPT",
-        SecurityType::Future => "FUT",
-        SecurityType::FuturesOption => "FOP",
-        SecurityType::ForexPair => "CASH",
-        SecurityType::Crypto => "CRYPTO",
-        SecurityType::ContinuousFuture => "CONTFUT",
-        SecurityType::Index => "IND",
-        SecurityType::CFD => "CFD",
-        SecurityType::Commodity => "CMDTY",
-        SecurityType::Bond => "BOND",
-        SecurityType::Warrant => "WAR",
-        SecurityType::News => "NEWS",
-        SecurityType::MutualFund => "FUND",
-        SecurityType::Spread => "BAG",
-        SecurityType::Other(other) => other.as_str(),
-    }
+fn security_type_to_code(security_type: &SecurityType) -> String {
+    IbSecurityType::try_from(security_type).map_or_else(
+        |_| security_type.to_string(),
+        |security_type| security_type.to_string(),
+    )
 }
 
 /// Parse IB contract from JSON dictionary.
 ///
 /// This function parses a JSON object (dictionary) representing an IBContract
 /// and converts it to a rust-ibapi Contract struct.
-///
-/// # Arguments
-///
-/// * `json` - JSON value representing the contract dictionary
-///
-/// # Returns
-///
-/// Returns a Contract if parsing succeeds, or None if parsing fails.
 ///
 /// # Errors
 ///
@@ -124,20 +106,13 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
 
     // Parse security type
     let sec_type_str = get_str("secType");
-    let security_type = match sec_type_str.as_str() {
-        "STK" | "stk" => SecurityType::Stock,
-        "OPT" | "opt" => SecurityType::Option,
-        "FUT" | "fut" => SecurityType::Future,
-        "FOP" | "fop" => SecurityType::FuturesOption,
-        "CASH" | "cash" => SecurityType::ForexPair,
-        "CRYPTO" | "crypto" => SecurityType::Crypto,
-        "IND" | "ind" => SecurityType::Index,
-        "CFD" | "cfd" => SecurityType::CFD,
-        "CMDTY" | "cmdty" => SecurityType::Commodity,
-        "BOND" | "bond" => SecurityType::Bond,
-        "BAG" | "bag" => SecurityType::Spread,
-        "" => SecurityType::Stock, // Default to stock
-        other => SecurityType::Other(other.to_string()),
+    let security_type = if sec_type_str.is_empty() {
+        SecurityType::Stock
+    } else {
+        IbSecurityType::from_str(&sec_type_str).map_or_else(
+            |_| SecurityType::Other(sec_type_str.clone()),
+            IbSecurityType::ibapi_security_type,
+        )
     };
 
     Ok(Contract {
@@ -166,14 +141,6 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
 }
 
 /// Parse multiple IB contracts from JSON array.
-///
-/// # Arguments
-///
-/// * `json_str` - JSON string containing an array of contract dictionaries
-///
-/// # Returns
-///
-/// Returns a vector of parsed contracts.
 ///
 /// # Errors
 ///

@@ -2451,7 +2451,7 @@ mod tests {
     fn test_create_client_rejects_spot_product_type() {
         let result = BinanceFuturesHttpClient::new(
             BinanceProductType::Spot,
-            BinanceEnvironment::Mainnet,
+            BinanceEnvironment::Live,
             get_atomic_clock_realtime(),
             None,
             None,
@@ -2462,13 +2462,13 @@ mod tests {
             false,
         );
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     fn create_test_raw_client() -> BinanceRawFuturesHttpClient {
         BinanceRawFuturesHttpClient::new(
             BinanceProductType::UsdM,
-            BinanceEnvironment::Mainnet,
+            BinanceEnvironment::Live,
             None,
             None,
             None,

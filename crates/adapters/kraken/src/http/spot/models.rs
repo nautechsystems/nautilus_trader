@@ -16,7 +16,10 @@
 //! Data models for Kraken Spot HTTP API responses.
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{MapAccess, SeqAccess, Visitor},
+};
 use ustr::Ustr;
 
 use crate::common::enums::{
@@ -36,6 +39,97 @@ pub struct KrakenResponse<T> {
 /// Response from Kraken Balance endpoint.
 /// Maps currency codes (e.g., "USDT", "ETH") to their balance amounts as strings.
 pub type BalanceResponse = IndexMap<String, String>;
+
+/// Response from `POST /0/private/TradeBalance` (margin accounts only).
+///
+/// Distinct from [`BalanceResponse`]: wallet balances give currency amounts held; this gives
+/// margin accounting metrics (equity, used margin, free margin) denominated in a single asset.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradeBalanceResponse {
+    pub eb: String, // equivalent balance (all currencies combined)
+    pub tb: String, // trade balance (equity currency collateral)
+    pub m: String,  // margin amount of open positions (used margin)
+    pub uv: String, // unexecuted value of partly filled orders/positions
+    pub n: String,  // unrealized net profit/loss of open positions
+    pub c: String,  // cost basis of open positions
+    pub v: String,  // current floating valuation of open positions
+    pub e: String,  // equity = eb + n
+    pub mf: String, // free margin = e - m
+    #[serde(default)]
+    pub ml: Option<String>, // margin level % (absent when no positions are open)
+}
+
+/// A single open spot margin position from `POST /0/private/OpenPositions`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotOpenPosition {
+    pub ordertxid: String,
+    pub pair: String,
+    pub time: f64,
+    #[serde(rename = "type")]
+    pub side: KrakenOrderSide,
+    pub ordertype: KrakenOrderType,
+    pub cost: String,
+    pub fee: String,
+    pub vol: String,
+    pub vol_closed: String,
+    pub margin: String,
+    #[serde(default)]
+    pub posstatus: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>, // present when docalcs=true
+    #[serde(default)]
+    pub net: Option<String>, // present when docalcs=true
+    #[serde(default)]
+    pub terms: Option<String>,
+    #[serde(default)]
+    pub rollovertm: Option<String>,
+    #[serde(default)]
+    pub misc: Option<String>,
+    #[serde(default)]
+    pub oflags: Option<String>,
+}
+
+/// Response from `POST /0/private/OpenPositions`: maps position ID to position data.
+///
+/// Kraken returns `[]` (empty array) when there are no open positions, and a JSON object
+/// (map) when positions exist. The custom deserializer handles both forms.
+#[derive(Debug, Clone, Default)]
+pub struct SpotOpenPositionsResponse(IndexMap<String, SpotOpenPosition>);
+
+impl std::ops::Deref for SpotOpenPositionsResponse {
+    type Target = IndexMap<String, SpotOpenPosition>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SpotOpenPositionsResponse {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = SpotOpenPositionsResponse;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a map of open positions or an empty array")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut out = IndexMap::new();
+                while let Some((k, v)) = map.next_entry::<String, SpotOpenPosition>()? {
+                    out.insert(k, v);
+                }
+                Ok(SpotOpenPositionsResponse(out))
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "OpenPositions: expected empty array or object map, received non-empty array",
+                    ));
+                }
+                Ok(SpotOpenPositionsResponse(IndexMap::new()))
+            }
+        }
+        deserializer.deserialize_any(V)
+    }
+}
 
 // Asset Pairs (Instruments) Models
 
@@ -462,5 +556,28 @@ mod tests {
         assert!(response.error.is_empty());
         let result = response.result.expect("Missing result");
         assert!(!result.data.is_empty());
+    }
+
+    #[rstest]
+    fn test_open_positions_empty_array() {
+        let result: SpotOpenPositionsResponse = serde_json::from_str("[]").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[rstest]
+    fn test_open_positions_empty_object() {
+        let result: SpotOpenPositionsResponse = serde_json::from_str("{}").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[rstest]
+    fn test_open_positions_non_empty_array_errors() {
+        let err =
+            serde_json::from_str::<SpotOpenPositionsResponse>(r#"[{"posid": "123"}]"#).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("OpenPositions: expected empty array or object map"),
+            "unexpected error: {err}"
+        );
     }
 }

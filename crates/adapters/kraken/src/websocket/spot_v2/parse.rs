@@ -33,8 +33,8 @@ use nautilus_model::{
 use super::{
     enums::{KrakenExecType, KrakenLiquidityInd, KrakenWsOrderStatus},
     messages::{
-        KrakenWsBookData, KrakenWsBookLevel, KrakenWsExecutionData, KrakenWsOhlcData,
-        KrakenWsTickerData, KrakenWsTradeData,
+        KrakenSpotWsMessage, KrakenWsBookData, KrakenWsBookLevel, KrakenWsExecutionData,
+        KrakenWsOhlcData, KrakenWsOrderResponse, KrakenWsTickerData, KrakenWsTradeData,
     },
 };
 use crate::common::enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce};
@@ -221,7 +221,7 @@ fn parse_book_level(
     ))
 }
 
-fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
+pub(super) fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
     let nanos = value
         .timestamp_nanos_opt()
         .with_context(|| format!("Failed to convert {field}='{value}' to nanoseconds"))?;
@@ -565,6 +565,34 @@ pub fn parse_ws_fill_report(
     ))
 }
 
+/// Parses a raw WebSocket JSON string and returns [`KrakenSpotWsMessage::OrderResponse`] if the
+/// message is an order-method response envelope, or `Ok(None)` for unrecognised messages.
+///
+/// # Errors
+///
+/// Returns an error if the message appears to be an order response but cannot be deserialized.
+pub fn parse_order_response(text: &str) -> anyhow::Result<Option<KrakenSpotWsMessage>> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).with_context(|| format!("Failed to parse JSON: {text}"))?;
+
+    let method_str = match value.get("method").and_then(|m| m.as_str()) {
+        Some(s) => s.to_owned(),
+        None => return Ok(None),
+    };
+
+    if !matches!(
+        method_str.as_str(),
+        "add_order" | "amend_order" | "cancel_order" | "batch_add"
+    ) {
+        return Ok(None);
+    }
+
+    let response: KrakenWsOrderResponse = serde_json::from_value(value).with_context(|| {
+        format!("Failed to deserialize order response for method '{method_str}'")
+    })?;
+    Ok(Some(KrakenSpotWsMessage::OrderResponse(response)))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{identifiers::Symbol, types::Currency};
@@ -792,5 +820,35 @@ mod tests {
     fn test_interval_to_bar_spec_invalid() {
         let result = interval_to_bar_spec(999);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_response_envelope_returns_order_response_variant() {
+        use crate::websocket::spot_v2::enums::KrakenWsMethod;
+
+        let raw = load_test_json("ws_add_order_response_success.json");
+        let parsed = parse_order_response(&raw).expect("parse ok");
+        match parsed {
+            Some(KrakenSpotWsMessage::OrderResponse(resp)) => {
+                assert_eq!(resp.method, KrakenWsMethod::AddOrder);
+                assert_eq!(resp.req_id, Some(42));
+                assert!(resp.success);
+            }
+            other => panic!("expected OrderResponse, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_response_returns_none_for_non_order_method() {
+        let json = r#"{"method":"subscribe","req_id":1,"success":true}"#;
+        let result = parse_order_response(json).expect("parse ok");
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_order_response_returns_none_for_data_message() {
+        let json = r#"{"channel":"ticker","type":"snapshot","data":[]}"#;
+        let result = parse_order_response(json).expect("parse ok");
+        assert!(result.is_none());
     }
 }

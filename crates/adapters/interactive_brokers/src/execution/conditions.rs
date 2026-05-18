@@ -15,25 +15,23 @@
 
 //! Order conditions implementation for Interactive Brokers conditional orders.
 
+use std::str::FromStr;
+
 use anyhow::Context;
 use ibapi::orders::{
     OrderCondition,
     conditions::{
         ExecutionCondition, MarginCondition, PercentChangeCondition, PriceCondition, TimeCondition,
-        TriggerMethod, VolumeCondition,
+        VolumeCondition,
     },
 };
 use serde_json::Value;
 
+use crate::common::enums::{
+    IbConditionConjunction, IbConditionKind, IbSecurityType, IbTriggerMethod,
+};
+
 /// Create IB order conditions from a list of condition dictionaries.
-///
-/// # Arguments
-///
-/// * `conditions_data` - A JSON array of condition dictionaries
-///
-/// # Returns
-///
-/// A vector of OrderCondition enum variants ready to be encoded into the order.
 ///
 /// # Errors
 ///
@@ -46,20 +44,29 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
     let mut conditions = Vec::new();
 
     for condition_dict in conditions_array {
-        let condition_type_str = condition_dict
+        let condition_type = condition_dict
             .get("type")
             .and_then(|v| v.as_str())
             .context("Missing condition type")?;
+        let condition_kind = match IbConditionKind::from_str(condition_type) {
+            Ok(condition_kind) => condition_kind,
+            Err(_) => {
+                tracing::warn!("Unknown IB condition type: {condition_type}, skipping condition");
+                continue;
+            }
+        };
 
         // Get conjunction (default to "and" = true)
-        let conjunction_str = condition_dict
+        let conjunction = condition_dict
             .get("conjunction")
             .and_then(|v| v.as_str())
-            .unwrap_or("and");
-        let is_conjunction = conjunction_str.to_lowercase() == "and";
+            .map(IbConditionConjunction::from_str)
+            .transpose()?
+            .unwrap_or(IbConditionConjunction::And);
+        let is_conjunction = conjunction.is_conjunction();
 
-        let condition = match condition_type_str {
-            "price" => {
+        let condition = match condition_kind {
+            IbConditionKind::Price => {
                 let con_id = condition_dict
                     .get("conId")
                     .and_then(|v| v.as_i64())
@@ -88,11 +95,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 } else {
                     builder = builder.greater_than(price);
                 }
-                builder = builder.trigger_method(TriggerMethod::from(trigger_method));
+                builder = builder
+                    .trigger_method(IbTriggerMethod::from(trigger_method).ibapi_trigger_method());
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Price(builder.build())
             }
-            "time" => {
+            IbConditionKind::Time => {
                 let time = condition_dict
                     .get("time")
                     .and_then(|v| v.as_str())
@@ -112,7 +120,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Time(builder.build())
             }
-            "margin" => {
+            IbConditionKind::Margin => {
                 let percent = condition_dict
                     .get("percent")
                     .and_then(|v| v.as_i64())
@@ -132,7 +140,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Margin(builder.build())
             }
-            "execution" => {
+            IbConditionKind::Execution => {
                 let symbol = condition_dict
                     .get("symbol")
                     .and_then(|v| v.as_str())
@@ -141,16 +149,18 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                     .get("secType")
                     .and_then(|v| v.as_str())
                     .unwrap_or("STK");
+                let sec_type = IbSecurityType::from_str(sec_type)
+                    .map_or_else(|_| sec_type.to_string(), |sec_type| sec_type.to_string());
                 let exchange = condition_dict
                     .get("exchange")
                     .and_then(|v| v.as_str())
                     .unwrap_or("SMART");
 
-                let mut builder = ExecutionCondition::builder(symbol, sec_type, exchange);
+                let mut builder = ExecutionCondition::builder(symbol, sec_type.as_str(), exchange);
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Execution(builder.build())
             }
-            "volume" => {
+            IbConditionKind::Volume => {
                 let con_id = condition_dict
                     .get("conId")
                     .and_then(|v| v.as_i64())
@@ -178,7 +188,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Volume(builder.build())
             }
-            "percent_change" => {
+            IbConditionKind::PercentChange => {
                 let con_id = condition_dict
                     .get("conId")
                     .and_then(|v| v.as_i64())
@@ -205,10 +215,6 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 }
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::PercentChange(builder.build())
-            }
-            _ => {
-                tracing::warn!("Unknown condition type: {}", condition_type_str);
-                continue;
             }
         };
 

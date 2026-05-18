@@ -17,6 +17,7 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENU
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config import NonNegativeInt
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
@@ -80,6 +81,13 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         a single batched `load_ids_async` call.
     auto_load_debounce_ms : PositiveInt, default 100
         The window (milliseconds) over which concurrent auto-load requests are batched.
+    auto_load_max_retries : NonNegativeInt, default 12
+        The maximum number of retry attempts on transient auto-load failures.
+        Set to 0 to disable retry.
+    auto_load_retry_delay_initial_secs : PositiveFloat, default 5.0
+        The initial delay (seconds) between transient auto-load retries.
+    auto_load_retry_delay_max_secs : PositiveFloat, default 15.0
+        The maximum delay (seconds) between transient auto-load retries.
 
     """
 
@@ -102,6 +110,9 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     drop_quotes_missing_side: bool = True
     auto_load_missing_instruments: bool = True
     auto_load_debounce_ms: PositiveInt = 100
+    auto_load_max_retries: NonNegativeInt = 12
+    auto_load_retry_delay_initial_secs: PositiveFloat = 5.0
+    auto_load_retry_delay_max_secs: PositiveFloat = 15.0
 
 
 class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):

@@ -22,11 +22,22 @@ use nautilus_model::{
     data::BarType,
     identifiers::{ClientId, Venue},
 };
+use serde::{Deserialize, Serialize};
 
 pub mod request;
 pub mod response;
 pub mod subscribe;
 pub mod unsubscribe;
+
+/// Params key used to flag a book subscription as targeting a parent symbol.
+///
+/// When the boolean value is `true`, the subscription fans out across all
+/// instruments that resolve from the parent components (see
+/// [`InstrumentId::parse_parent_components`]). When absent or `false`, the
+/// subscription is routed to the concrete instrument id only.
+///
+/// [`InstrumentId::parse_parent_components`]: nautilus_model::identifiers::InstrumentId::parse_parent_components
+pub const PARAMS_IS_PARENT: &str = "is_parent";
 
 // Re-exports
 pub use request::{
@@ -75,7 +86,7 @@ impl DataCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SubscribeCommand {
     Data(SubscribeCustomData),
     Instrument(SubscribeInstrument),
@@ -234,7 +245,7 @@ impl SubscribeCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum UnsubscribeCommand {
     Data(UnsubscribeCustomData),
     Instrument(UnsubscribeInstrument),
@@ -372,6 +383,10 @@ impl UnsubscribeCommand {
     }
 }
 
+#[allow(
+    clippy::ref_option,
+    reason = "callers pass borrowed Option fields directly"
+)]
 fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>) {
     assert!(
         client_id.is_some() || venue.is_some(),
@@ -379,7 +394,7 @@ fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>)
     );
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RequestCommand {
     Data(RequestCustomData),
     Instrument(RequestInstrument),
@@ -502,6 +517,50 @@ impl DataResponse {
             Self::Bars(resp) => &resp.correlation_id,
         }
     }
+
+    /// Returns a short variant name for compact logging.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Data(_) => "Data",
+            Self::Instrument(_) => "Instrument",
+            Self::Instruments(_) => "Instruments",
+            Self::Book(_) => "Book",
+            Self::Quotes(_) => "Quotes",
+            Self::Trades(_) => "Trades",
+            Self::FundingRates(_) => "FundingRates",
+            Self::ForwardPrices(_) => "ForwardPrices",
+            Self::Bars(_) => "Bars",
+        }
+    }
+
+    /// Returns the number of records carried by the response, where defined.
+    ///
+    /// Returns `None` for singular or opaque variants (`Data`, `Instrument`, `Book`)
+    /// where a record count is not meaningful.
+    #[must_use]
+    pub fn record_count(&self) -> Option<usize> {
+        match self {
+            Self::Data(_) | Self::Instrument(_) | Self::Book(_) => None,
+            Self::Instruments(resp) => Some(resp.data.len()),
+            Self::Quotes(resp) => Some(resp.data.len()),
+            Self::Trades(resp) => Some(resp.data.len()),
+            Self::FundingRates(resp) => Some(resp.data.len()),
+            Self::ForwardPrices(resp) => Some(resp.data.len()),
+            Self::Bars(resp) => Some(resp.data.len()),
+        }
+    }
 }
 
 pub type Payload = Arc<dyn Any + Send + Sync>;
+
+/// Returns `true` when `params` carries the [`PARAMS_IS_PARENT`] flag set to `true`.
+///
+/// Absent or non-boolean values resolve to `false`, keeping the default subscription
+/// path concrete (exact topic).
+#[must_use]
+pub fn is_parent_subscription(params: Option<&Params>) -> bool {
+    params
+        .and_then(|p| p.get_bool(PARAMS_IS_PARENT))
+        .unwrap_or(false)
+}

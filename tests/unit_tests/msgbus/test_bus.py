@@ -380,6 +380,83 @@ def test_publish_with_header_sends_to_handler_after_published(bus):
     assert bus.pub_count == 2
 
 
+def test_late_wildcard_subscription_receives_cached_topic(bus):
+    # Arrange
+    early_subscriber = []
+    late_subscriber = []
+    bus.subscribe(topic="data.*.POLYMARKET.*", handler=early_subscriber.append)
+
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "ONE")
+
+    # Act
+    bus.subscribe(topic="data.instrument.POLYMARKET.*", handler=late_subscriber.append)
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "TWO")
+
+    # Assert
+    assert early_subscriber == ["ONE", "TWO"]
+    assert late_subscriber == ["TWO"]
+
+
+def test_late_non_matching_wildcard_does_not_receive_cached_topic(bus):
+    # Arrange
+    early_subscriber = []
+    late_subscriber = []
+    bus.subscribe(topic="data.*.POLYMARKET.*", handler=early_subscriber.append)
+
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "ONE")
+
+    # Act
+    bus.subscribe(topic="events.order.*", handler=late_subscriber.append)
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "TWO")
+    bus.publish("events.order.S-001", "ORDER")
+
+    # Assert
+    assert early_subscriber == ["ONE", "TWO"]
+    assert late_subscriber == ["ORDER"]
+
+
+def test_late_wildcard_backfills_into_multiple_cached_topics(bus):
+    # Arrange
+    early_subscriber = []
+    late_subscriber = []
+    bus.subscribe(topic="data.*", handler=early_subscriber.append)
+
+    bus.publish("data.A", "A1")
+    bus.publish("data.B", "B1")
+    bus.publish("data.C", "C1")
+
+    # Act
+    bus.subscribe(topic="data.*", handler=late_subscriber.append)
+    bus.publish("data.A", "A2")
+    bus.publish("data.B", "B2")
+    bus.publish("data.C", "C2")
+
+    # Assert
+    assert early_subscriber == ["A1", "B1", "C1", "A2", "B2", "C2"]
+    assert late_subscriber == ["A2", "B2", "C2"]
+
+
+def test_priority_preserved_when_late_subscriber_backfills_into_cached_topic(bus):
+    # Arrange
+    order = []
+
+    def low(msg):
+        order.append(f"low-{msg}")
+
+    def high(msg):
+        order.append(f"high-{msg}")
+
+    bus.subscribe(topic="data.*", handler=low, priority=0)
+    bus.publish("data.X", "1")
+
+    # Act
+    bus.subscribe(topic="data.*", handler=high, priority=10)
+    bus.publish("data.X", "2")
+
+    # Assert
+    assert order == ["low-1", "high-2", "low-2"]
+
+
 def test_publish_with_none_matching_header_then_filters_from_subscriber(bus):
     # Arrange
     subscriber = []

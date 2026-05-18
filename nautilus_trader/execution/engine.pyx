@@ -1123,6 +1123,16 @@ cdef class ExecutionEngine(Component):
             if self.snapshot_orders:
                 self._create_order_state_snapshot(order)
 
+        cdef str deny_reason = self._check_position_id_against_oms(
+            order.instrument_id,
+            order.strategy_id,
+            command.position_id,
+            client,
+        )
+        if deny_reason is not None:
+            self._deny_order(order, deny_reason)
+            return
+
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1147,6 +1157,17 @@ cdef class ExecutionEngine(Component):
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
+        cdef str deny_reason = self._check_position_id_against_oms(
+            command.instrument_id,
+            command.strategy_id,
+            command.position_id,
+            client,
+        )
+        if deny_reason is not None:
+            for order in command.order_list.orders:
+                self._deny_order(order, deny_reason)
+            return
+
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1162,6 +1183,37 @@ cdef class ExecutionEngine(Component):
 
         # Send to execution client
         client.submit_order_list(command)
+
+    cdef str _check_position_id_against_oms(
+        self,
+        InstrumentId instrument_id,
+        StrategyId strategy_id,
+        PositionId position_id,
+        ExecutionClient client,
+    ):
+        if position_id is None:
+            return None
+
+        cdef OmsType oms_type = self._resolve_oms_type(strategy_id, client)
+        if oms_type != OmsType.NETTING:
+            return None
+
+        cdef str expected = f"{instrument_id}-{strategy_id}"
+        if position_id.to_str() == expected:
+            return None
+
+        return (
+            f"`position_id` {position_id!r} is not valid for NETTING OMS; "
+            f"expected {expected!r} (use HEDGING for custom position IDs)"
+        )
+
+    cdef OmsType _resolve_oms_type(self, StrategyId strategy_id, ExecutionClient client):
+        cdef OmsType oms_type = self._oms_overrides.get(strategy_id, OmsType.UNSPECIFIED)
+        if oms_type != OmsType.UNSPECIFIED:
+            return oms_type
+        if client is not None:
+            return client.oms_type
+        return OmsType.NETTING
 
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
@@ -1300,18 +1352,6 @@ cdef class ExecutionEngine(Component):
                 msg=pos_event,
             )
 
-    cdef bint _is_leg_fill(self, OrderFilled fill):
-        cdef str client_order_id_str = fill.client_order_id.value
-        cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
-        if not ("-LEG-" in client_order_id_str or "-LEG-" in venue_order_id_str):
-            return False
-
-        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
-        if instrument is None:
-            return False
-
-        return not instrument.is_spread()
-
     cpdef void _handle_leg_fill_without_order(self, OrderFilled fill):
         """
         Handle leg fills that don't have corresponding orders in the cache.
@@ -1354,16 +1394,9 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
-        # Also send to portfolio endpoint for leg fills (which don't have orders in cache)
-        # Regular fills go through topic subscription below, so we only send directly for leg fills
-        # We do this BEFORE position update so portfolio can see the open quantity for PnL calcs
         if self._is_leg_fill(fill):
-            self._msgbus.send(
-                endpoint="Portfolio.update_order",
-                msg=fill,
-            )
+            self._send_fill_to_portfolio_before_position_update(fill)
 
-        # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
         # Pop position events which are pending publishing to prevent recursion issues
@@ -1383,19 +1416,31 @@ cdef class ExecutionEngine(Component):
                 msg=pos_event,
             )
 
-    cpdef OmsType _determine_oms_type(self, OrderFilled fill):
-        # Check for strategy OMS override
-        cdef ExecutionClient client
-        cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
-        if oms_type == OmsType.UNSPECIFIED:
-            # Use native venue OMS
-            client = self._routing_map.get(fill.instrument_id.venue, self._default_client)
-            if client is None:
-                return OmsType.NETTING
-            else:
-                return client.oms_type
+    cdef bint _is_leg_fill(self, OrderFilled fill):
+        cdef str client_order_id_str = fill.client_order_id.value
+        cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
+        if not ("-LEG-" in client_order_id_str or "-LEG-" in venue_order_id_str):
+            return False
 
-        return oms_type
+        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
+        if instrument is None:
+            return False
+
+        return not instrument.is_spread()
+
+    cdef void _send_fill_to_portfolio_before_position_update(self, OrderFilled fill):
+        # Account balance PnL needs the pre-fill cached position quantity.
+        self._msgbus.send(
+            endpoint="Portfolio.update_order",
+            msg=fill,
+        )
+
+    cpdef OmsType _determine_oms_type(self, OrderFilled fill):
+        cdef ExecutionClient client = self._routing_map.get(
+            fill.instrument_id.venue,
+            self._default_client,
+        )
+        return self._resolve_oms_type(fill.strategy_id, client)
 
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=None):
         # Fetch ID from cache
@@ -1567,10 +1612,18 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
-        self._msgbus.send(
-            endpoint="Portfolio.update_order",
-            msg=event,
-        )
+        cdef bint send_to_portfolio = True
+        cdef Account account = None
+        if isinstance(event, OrderFilled):
+            account = self._cache.account(event.account_id)
+            send_to_portfolio = account is None or not account.is_margin_account
+
+        if send_to_portfolio:
+            self._msgbus.send(
+                endpoint="Portfolio.update_order",
+                msg=event,
+            )
+
         return True
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
@@ -1597,6 +1650,9 @@ cdef class ExecutionEngine(Component):
             ClientOrderId client_order_id
             Order contingent_order
         if not instrument.is_spread():
+            if account.is_margin_account:
+                self._send_fill_to_portfolio_before_position_update(fill)
+
             self._handle_position_update(instrument, fill, oms_type)
             position = self._cache.position(fill.position_id)
 

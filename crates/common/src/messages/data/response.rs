@@ -22,6 +22,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
+use serde::{Deserialize, Serialize};
 
 use super::Payload;
 
@@ -71,7 +72,7 @@ impl CustomDataResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstrumentResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -114,7 +115,7 @@ impl InstrumentResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstrumentsResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -200,7 +201,7 @@ impl BookResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuotesResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -243,7 +244,7 @@ impl QuotesResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TradesResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -286,7 +287,7 @@ impl TradesResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FundingRatesResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -329,7 +330,7 @@ impl FundingRatesResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ForwardPricesResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -360,7 +361,7 @@ impl ForwardPricesResponse {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BarsResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,

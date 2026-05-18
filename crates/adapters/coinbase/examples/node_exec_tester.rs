@@ -28,6 +28,7 @@
 use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_coinbase::{
+    common::consts::COINBASE_CLIENT_ID,
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
 };
@@ -35,10 +36,9 @@ use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::AccountType,
-    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use ustr::Ustr;
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("COINBASE-001");
     let node_name = "COINBASE-EXEC-TESTER-001".to_string();
-    let client_id = ClientId::new("COINBASE");
+    let client_id = *COINBASE_CLIENT_ID;
     // Pick the product whose quote currency matches a funded wallet in the
     // bound portfolio. USD and USDC are separate accounts on Coinbase, and
     // `POST /orders` rejects with "account is not available" if the quote
@@ -64,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = CoinbaseDataClientConfig {
         api_key: None,    // Will use 'COINBASE_API_KEY' env var
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -78,7 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // otherwise Coinbase rejects orders with "account is not available".
         // Look up via GET /api/v3/brokerage/portfolios.
         retail_portfolio_id: None,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

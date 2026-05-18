@@ -140,6 +140,14 @@ impl Clock for LiveClock {
         self.callbacks.register_default_handler(handler);
     }
 
+    fn cancel_default_handler(&mut self) {
+        self.callbacks.cancel_default_handler();
+    }
+
+    fn cancel_callbacks(&mut self) {
+        self.callbacks.clear();
+    }
+
     /// # Panics
     ///
     /// This function panics if:
@@ -257,7 +265,7 @@ impl Clock for LiveClock {
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         self.timers
             .get(&Ustr::from(name))
-            .map(|timer| timer.next_time_ns())
+            .map(LiveTimer::next_time_ns)
     }
 
     fn cancel_timer(&mut self, name: &str) {

@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::consts::HYPERLIQUID_VENUE,
+    common::consts::{HYPERLIQUID, HYPERLIQUID_VENUE},
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
     data::HyperliquidDataClient,
     execution::HyperliquidExecutionClient,
@@ -82,7 +82,7 @@ impl DataClientFactory for HyperliquidDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let hyperliquid_config = config
@@ -101,7 +101,7 @@ impl DataClientFactory for HyperliquidDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "HYPERLIQUID"
+        HYPERLIQUID
     }
 
     fn config_type(&self) -> &'static str {
@@ -174,7 +174,7 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let factory_config = config
             .as_any()
@@ -208,7 +208,7 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "HYPERLIQUID"
+        HYPERLIQUID
     }
 
     fn config_type(&self) -> &'static str {
@@ -234,27 +234,27 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_data_client_factory_creation() {
         let factory = HyperliquidDataClientFactory::new();
-        assert_eq!(factory.name(), "HYPERLIQUID");
+        assert_eq!(factory.name(), HYPERLIQUID);
         assert_eq!(factory.config_type(), "HyperliquidDataClientConfig");
     }
 
     #[rstest]
     fn test_hyperliquid_data_client_factory_default() {
         let factory = HyperliquidDataClientFactory;
-        assert_eq!(factory.name(), "HYPERLIQUID");
+        assert_eq!(factory.name(), HYPERLIQUID);
     }
 
     #[rstest]
     fn test_hyperliquid_execution_client_factory_creation() {
         let factory = HyperliquidExecutionClientFactory::new();
-        assert_eq!(factory.name(), "HYPERLIQUID");
+        assert_eq!(factory.name(), HYPERLIQUID);
         assert_eq!(factory.config_type(), "HyperliquidExecFactoryConfig");
     }
 
     #[rstest]
     fn test_hyperliquid_execution_client_factory_default() {
         let factory = HyperliquidExecutionClientFactory;
-        assert_eq!(factory.name(), "HYPERLIQUID");
+        assert_eq!(factory.name(), HYPERLIQUID);
     }
 
     #[rstest]
@@ -300,7 +300,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache, clock);
+        let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache.into(), clock);
         assert!(result.is_err());
         assert!(
             result
@@ -318,7 +318,7 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache);
+        let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache.into());
         assert!(result.is_err());
         assert!(
             result

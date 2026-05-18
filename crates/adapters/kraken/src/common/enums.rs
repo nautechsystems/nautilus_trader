@@ -19,7 +19,7 @@ use nautilus_model::enums::{MarketStatusAction, OrderSide, OrderStatus, OrderTyp
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
-/// Kraken API environment (mainnet or demo).
+/// Kraken API environment (live or demo).
 #[derive(
     Clone,
     Copy,
@@ -55,7 +55,7 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
 pub enum KrakenEnvironment {
     #[default]
-    Mainnet,
+    Live,
     Demo,
 }
 
@@ -484,6 +484,9 @@ pub enum KrakenFuturesOrderType {
     #[serde(rename = "stop_loss")]
     #[strum(serialize = "stop_loss")]
     StopLoss,
+    /// Catch-all for venue-emitted `"unknown"`.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Event types from Kraken Futures sendorder/editorder responses.
@@ -607,6 +610,9 @@ pub enum KrakenTriggerSignal {
         serialize = "index_price"
     )]
     Index,
+    /// Catch-all for venue-emitted `"unknown"`.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Trigger reference price for Kraken spot conditional orders.
@@ -853,6 +859,9 @@ pub enum KrakenTriggerSide {
     #[serde(rename = "trigger_below")]
     #[strum(serialize = "trigger_below")]
     TriggerBelow,
+    /// Catch-all for venue-emitted `"unknown"`; treated as no directional intent.
+    #[serde(other)]
+    Unknown,
 }
 
 impl From<KrakenOrderSide> for OrderSide {
@@ -907,6 +916,12 @@ impl From<KrakenFuturesOrderType> for OrderType {
             KrakenFuturesOrderType::Stop | KrakenFuturesOrderType::StopLower => Self::StopMarket,
             KrakenFuturesOrderType::TakeProfit => Self::MarketIfTouched,
             KrakenFuturesOrderType::StopLoss => Self::StopMarket,
+            KrakenFuturesOrderType::Unknown => {
+                log::warn!(
+                    "KrakenFuturesOrderType::Unknown received from venue, defaulting to Market"
+                );
+                Self::Market
+            }
         }
     }
 }
@@ -1033,12 +1048,50 @@ mod tests {
     #[case("\"spot_price\"", KrakenTriggerSignal::Index)]
     #[case("\"index\"", KrakenTriggerSignal::Index)]
     #[case("\"index_price\"", KrakenTriggerSignal::Index)]
+    #[case("\"unknown\"", KrakenTriggerSignal::Unknown)]
     fn test_trigger_signal_deserialization(
         #[case] raw: &str,
         #[case] expected: KrakenTriggerSignal,
     ) {
         let parsed: KrakenTriggerSignal = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    #[case("\"trigger_above\"", KrakenTriggerSide::TriggerAbove)]
+    #[case("\"trigger_below\"", KrakenTriggerSide::TriggerBelow)]
+    #[case("\"unknown\"", KrakenTriggerSide::Unknown)]
+    fn test_trigger_side_deserialization(#[case] raw: &str, #[case] expected: KrakenTriggerSide) {
+        let parsed: KrakenTriggerSide = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    #[case("\"lmt\"", KrakenFuturesOrderType::Limit)]
+    #[case("\"limit\"", KrakenFuturesOrderType::Limit)]
+    #[case("\"ioc\"", KrakenFuturesOrderType::Ioc)]
+    #[case("\"post\"", KrakenFuturesOrderType::Post)]
+    #[case("\"mkt\"", KrakenFuturesOrderType::Market)]
+    #[case("\"market\"", KrakenFuturesOrderType::Market)]
+    #[case("\"stp\"", KrakenFuturesOrderType::Stop)]
+    #[case("\"stop\"", KrakenFuturesOrderType::StopLower)]
+    #[case("\"take_profit\"", KrakenFuturesOrderType::TakeProfit)]
+    #[case("\"stop_loss\"", KrakenFuturesOrderType::StopLoss)]
+    #[case("\"unknown\"", KrakenFuturesOrderType::Unknown)]
+    fn test_futures_order_type_deserialization(
+        #[case] raw: &str,
+        #[case] expected: KrakenFuturesOrderType,
+    ) {
+        let parsed: KrakenFuturesOrderType = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    fn test_futures_order_type_unknown_maps_to_market_default() {
+        assert_eq!(
+            OrderType::from(KrakenFuturesOrderType::Unknown),
+            OrderType::Market,
+        );
     }
 
     #[rstest]

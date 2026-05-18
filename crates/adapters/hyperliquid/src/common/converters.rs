@@ -19,12 +19,74 @@
 //! and Hyperliquid-specific order type representations.
 
 use anyhow::Context;
-use nautilus_model::enums::{OrderType, TimeInForce};
+use nautilus_model::{
+    enums::{OrderType, TimeInForce},
+    identifiers::{InstrumentId, Symbol},
+};
 use rust_decimal::Decimal;
 
-use super::enums::{
-    HyperliquidConditionalOrderType, HyperliquidOrderType, HyperliquidTimeInForce, HyperliquidTpSl,
+use super::{
+    consts::HYPERLIQUID_VENUE,
+    enums::{
+        HyperliquidConditionalOrderType, HyperliquidOrderType, HyperliquidTimeInForce,
+        HyperliquidTpSl,
+    },
+    parse::parse_outcome_symbol,
+    types::HyperliquidAssetId,
 };
+
+/// Converts an outcome (HIP-4) asset ID to its spot coin representation.
+///
+/// # Errors
+///
+/// Returns an error if `asset_id` is not a valid outcome asset ID.
+pub fn outcome_asset_id_to_coin(asset_id: HyperliquidAssetId) -> anyhow::Result<String> {
+    let encoding = outcome_encoding(asset_id)?;
+    Ok(format!("#{encoding}"))
+}
+
+/// Converts an outcome (HIP-4) asset ID to its token name representation.
+///
+/// # Errors
+///
+/// Returns an error if `asset_id` is not a valid outcome asset ID.
+pub fn outcome_asset_id_to_token(asset_id: HyperliquidAssetId) -> anyhow::Result<String> {
+    let encoding = outcome_encoding(asset_id)?;
+    Ok(format!("+{encoding}"))
+}
+
+/// Converts an outcome (HIP-4) asset ID to its canonical Nautilus instrument ID.
+///
+/// The instrument ID uses the outcome token name (`+<encoding>`) as the symbol.
+///
+/// # Errors
+///
+/// Returns an error if `asset_id` is not a valid outcome asset ID.
+pub fn outcome_asset_id_to_instrument_id(
+    asset_id: HyperliquidAssetId,
+) -> anyhow::Result<InstrumentId> {
+    let token = outcome_asset_id_to_token(asset_id)?;
+    Ok(InstrumentId::new(Symbol::new(token), *HYPERLIQUID_VENUE))
+}
+
+/// Parses an outcome (HIP-4) asset ID from a Nautilus instrument ID.
+///
+/// Accepts both `#<encoding>.HYPERLIQUID` and `+<encoding>.HYPERLIQUID`.
+///
+/// # Errors
+///
+/// Returns an error if the symbol is not a valid outcome coin or token name.
+pub fn outcome_asset_id_from_instrument_id(
+    instrument_id: InstrumentId,
+) -> anyhow::Result<HyperliquidAssetId> {
+    parse_outcome_symbol(instrument_id.symbol.as_str())
+}
+
+fn outcome_encoding(asset_id: HyperliquidAssetId) -> anyhow::Result<u32> {
+    asset_id
+        .outcome_encoding()
+        .with_context(|| format!("Invalid Hyperliquid outcome asset ID: {asset_id}"))
+}
 
 /// Converts a Nautilus `OrderType` to a Hyperliquid order type configuration.
 ///
@@ -230,6 +292,44 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_outcome_asset_id_to_wire_symbols() {
+        let asset_id = HyperliquidAssetId::outcome(1, 0);
+
+        assert_eq!(outcome_asset_id_to_coin(asset_id).unwrap(), "#10");
+        assert_eq!(outcome_asset_id_to_token(asset_id).unwrap(), "+10");
+    }
+
+    #[rstest]
+    fn test_outcome_asset_id_to_wire_symbols_rejects_non_outcome() {
+        let err = outcome_asset_id_to_coin(HyperliquidAssetId::spot(7)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Invalid Hyperliquid outcome asset ID"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_outcome_asset_id_instrument_id_roundtrip() {
+        let asset_id = HyperliquidAssetId::outcome(3, 1);
+        let instrument_id = outcome_asset_id_to_instrument_id(asset_id).unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from("+31.HYPERLIQUID"));
+        assert_eq!(
+            outcome_asset_id_from_instrument_id(instrument_id).unwrap(),
+            asset_id,
+        );
+    }
+
+    #[rstest]
+    fn test_outcome_asset_id_from_instrument_id_accepts_coin_symbol() {
+        let instrument_id = InstrumentId::from("#10.HYPERLIQUID");
+        let asset_id = outcome_asset_id_from_instrument_id(instrument_id).unwrap();
+
+        assert_eq!(asset_id, HyperliquidAssetId::outcome(1, 0));
+    }
 
     #[rstest]
     fn test_nautilus_to_hyperliquid_limit_order() {

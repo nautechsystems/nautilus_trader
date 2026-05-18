@@ -21,15 +21,17 @@
 //! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
 //! - `COINBASE_API_SECRET`: PEM-encoded EC private key
 
-use nautilus_coinbase::{config::CoinbaseDataClientConfig, factories::CoinbaseDataClientFactory};
+use nautilus_coinbase::{
+    common::consts::COINBASE_CLIENT_ID, config::CoinbaseDataClientConfig,
+    factories::CoinbaseDataClientFactory,
+};
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::bar::BarType,
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -42,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
     let node_name = "COINBASE-TESTER-001".to_string();
-    let client_id = ClientId::new("COINBASE");
+    let client_id = *COINBASE_CLIENT_ID;
 
     let instrument_ids = vec![
         InstrumentId::from("BTC-USD.COINBASE"),
@@ -57,7 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let coinbase_config = CoinbaseDataClientConfig {
         api_key: None,    // Will use 'COINBASE_API_KEY' env var if available
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var if available
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

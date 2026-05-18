@@ -3992,7 +3992,16 @@ cdef class OrderMatchingEngine:
     cpdef void reset(self):
         self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}")
 
-        self._book.clear(0, 0)
+        # Use `reset` (not `clear`) so `book.ts_last` is zeroed. `clear(0, 0)`
+        # routes through `OrderBook.increment` whose ts_last/sequence are
+        # high-water marks: `ts_event.max(self.ts_last)` keeps the stale
+        # timestamp, and the L1 stale-event guard added in #3790 then drops
+        # every subsequent quote/trade tick whose ts_event < that residual.
+        # Repeated runs (sweep / param-search) need the engine to accept the
+        # next run's bars even though they predate the previous run's last ts.
+        # The Rust matching engine reset path (`crates/execution/src/
+        # matching_engine/engine.rs::reset`) already calls `book.reset()`.
+        self._book.reset()
         self._account_ids.clear()
         self._execution_bar_types.clear()
         self._execution_bar_deltas.clear()
@@ -4058,6 +4067,12 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id, self.instrument.id, "instrument.id", "self.instrument.id")
+
+        if (
+            instrument.price_increment != self.instrument.price_increment
+            or instrument.price_precision != self.instrument.price_precision
+        ):
+            self._core.update_price_increment(instrument.price_increment)
 
         self.instrument = instrument
         self._price_prec = instrument.price_precision
@@ -5733,6 +5748,7 @@ cdef class OrderMatchingEngine:
 
         """
         self._clock.set_time(timestamp_ns)
+        self._purge_closed_cached_filled_qty()
 
         cdef Price_t bid
         cdef Price_t ask
@@ -5753,6 +5769,7 @@ cdef class OrderMatchingEngine:
         cdef Order order
         for order in orders:
             if order.is_closed_c():
+                self._core.delete_order(order)
                 self._cached_filled_qty.pop(order.client_order_id, None)
                 continue
 
@@ -5782,6 +5799,19 @@ cdef class OrderMatchingEngine:
         self._has_targets = False
 
         self.check_instrument_expiration(timestamp_ns)
+        self._purge_closed_cached_filled_qty()
+
+    cdef void _purge_closed_cached_filled_qty(self):
+        cdef list[ClientOrderId] client_order_ids = list(self._cached_filled_qty.keys())
+        cdef ClientOrderId client_order_id
+        cdef Order order
+
+        for client_order_id in client_order_ids:
+            order = self.cache.order(client_order_id)
+            if order is None:
+                order = self._core.get_order(client_order_id)
+            if order is None or order.is_closed_c():
+                self._cached_filled_qty.pop(client_order_id, None)
 
     cpdef void check_instrument_expiration(self, uint64_t timestamp_ns):
         """Run instrument expiration at timestamp_ns (option exercise/expiry or futures close)."""
@@ -6084,6 +6114,11 @@ cdef class OrderMatchingEngine:
             The order to fill.
 
         """
+        if order.is_closed_c():
+            self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
+            return
+
         # Convert quote-denominated quantity at fill time for trigger-style market
         # orders that skipped conversion at submission. Idempotent: orders already
         # converted have `is_quote_quantity=False`.
@@ -6485,6 +6520,11 @@ cdef class OrderMatchingEngine:
 
         """
         Condition.is_true(order.has_price_c(), "order has no limit `price`")
+
+        if order.is_closed_c():
+            self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
+            return
 
         # Convert quote-denominated quantity at fill time for orders that entered
         # this path still carrying a quote notional (e.g. trailing-stop-limit with
@@ -7622,6 +7662,7 @@ cdef class OrderMatchingEngine:
 
         cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
         cdef Quantity leaves_qty = None
+        cdef Quantity total_filled_qty = None
         if cached_filled_qty is None:
             # Clamp the first fill to the order quantity to avoid over-filling
             last_qty = Quantity.from_raw_c(min(order.quantity._mem.raw, last_qty._mem.raw), size_prec)
@@ -7629,7 +7670,8 @@ cdef class OrderMatchingEngine:
         else:
             if order.quantity._mem.raw <= cached_filled_qty._mem.raw:
                 self._core.delete_order(order)
-                self._cached_filled_qty.pop(order.client_order_id, None)
+                if order.is_closed_c():
+                    self._cached_filled_qty.pop(order.client_order_id, None)
                 return
 
             leaves_qty = Quantity.from_raw_c(order.quantity._mem.raw - cached_filled_qty._mem.raw, size_prec)
@@ -7661,10 +7703,18 @@ cdef class OrderMatchingEngine:
             liquidity_side=order.liquidity_side,
         )
 
-        if order.is_passive_c() and order.is_closed_c():
+        total_filled_qty = self._cached_filled_qty.get(order.client_order_id)
+        if (
+            order.is_closed_c()
+            or (
+                total_filled_qty is not None
+                and total_filled_qty._mem.raw >= order.quantity._mem.raw
+            )
+        ):
             # Remove order from market
             self._core.delete_order(order)
-            self._cached_filled_qty.pop(order.client_order_id, None)
+            if order.is_closed_c():
+                self._cached_filled_qty.pop(order.client_order_id, None)
 
         if not self._support_contingent_orders:
             return

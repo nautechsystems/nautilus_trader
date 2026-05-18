@@ -13,28 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for [Interactive Brokers](https://www.interactivebrokers.com).
+//! [NautilusTrader](https://nautilustrader.io) adapter for
+//! [Interactive Brokers](https://www.interactivebrokers.com).
 //!
-//! The `nautilus-interactive-brokers` crate provides client bindings for the Interactive Brokers
-//! TWS API using the `rust-ibapi` library, with full integration into NautilusTrader's data and
-//! execution infrastructure.
+//! The `nautilus-interactive-brokers` crate wraps the [`ibapi`](https://crates.io/crates/ibapi)
+//! client and connects it to NautilusTrader's live data, execution, historical data, and
+//! instrument loading infrastructure.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
+//!
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-//! or as part of a Rust only build.
+//! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used with `python`).
+//! - `python`: Enables PyO3 bindings for configs, enums, the historical client, the instrument
+//!   provider, and the Dockerized gateway helper.
+//! - `gateway`: Enables the Dockerized IB Gateway helper via [`bollard`](https://crates.io/crates/bollard).
+//! - `extension-module`: Builds as a Python extension module (used together with `python` and `gateway`).
+//!
+//! # Documentation
+//!
+//! See <https://docs.rs/nautilus-interactive-brokers> for the latest API documentation.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -73,6 +79,7 @@ pub mod config;
 pub mod data;
 pub mod error;
 pub mod execution;
+pub mod factories;
 pub mod gateway;
 pub mod historical;
 pub mod providers;

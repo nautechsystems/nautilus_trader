@@ -1,0 +1,19 @@
+{
+  "topic": "execution.fast",
+  "creationTime": 1716800399338,
+  "data": [
+    {
+      "category": "linear",
+      "symbol": "ICPUSDT",
+      "execId": "3510f361-0add-5c7b-a2e7-9679810944fc",
+      "execPrice": "12.015",
+      "execQty": "3000",
+      "orderId": "443d63fa-b4c3-4297-b7b1-23bca88b04dc",
+      "isMaker": false,
+      "orderLinkId": "test-order-link-001",
+      "side": "Sell",
+      "execTime": "1716800399334",
+      "seq": 34771365464
+    }
+  ]
+}

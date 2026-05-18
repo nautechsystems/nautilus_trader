@@ -1,6 +1,12 @@
 name: install-capnp
 description: Install Cap'n Proto compiler
 
+inputs:
+  cache-enabled:
+    description: Whether to restore/save the Cap'n Proto compiler cache on Linux
+    required: false
+    default: "true"
+
 runs:
   using: "composite"
   steps:
@@ -31,9 +37,9 @@ runs:
         echo "CAPNP_VERSION=$(bash scripts/tool-version.sh capnp)" >> $GITHUB_ENV
 
     - name: Cache Cap'n Proto (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && inputs.cache-enabled == 'true'
       id: cache-capnp
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/.cache/capnp
         key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ env.CAPNP_VERSION }}-${{ runner.arch }}
@@ -46,7 +52,7 @@ runs:
     - name: Install capnp (Windows)
       if: runner.os == 'Windows'
       shell: bash
-      run: |
+      run: |-
         choco install capnproto ripgrep -y || {
           echo "capnproto/ripgrep install via choco failed or unavailable"
           sleep 5

@@ -29,11 +29,14 @@ pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::data::ensure_rust_extractor_registered;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::DERIBIT,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    data_types::{DeribitVolatilityIndex, register_deribit_custom_data},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
 
@@ -102,6 +105,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::DeribitProductType>()?;
     m.add_class::<crate::common::enums::DeribitEnvironment>()?;
     m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
+    m.add_class::<DeribitVolatilityIndex>()?;
     m.add_class::<DeribitDataClientConfig>()?;
     m.add_class::<DeribitExecClientConfig>()?;
     m.add_class::<DeribitDataClientFactory>()?;
@@ -112,15 +116,15 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("DERIBIT".to_string(), extract_deribit_data_factory)
+        registry.register_factory_extractor(DERIBIT.to_string(), extract_deribit_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Deribit data factory extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry
-        .register_exec_factory_extractor("DERIBIT".to_string(), extract_deribit_exec_factory)
+    if let Err(e) =
+        registry.register_exec_factory_extractor(DERIBIT.to_string(), extract_deribit_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Deribit exec factory extractor: {e}"
@@ -144,6 +148,9 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             "Failed to register Deribit exec config extractor: {e}"
         )));
     }
+
+    register_deribit_custom_data();
+    let _result = ensure_rust_extractor_registered::<DeribitVolatilityIndex>();
 
     Ok(())
 }

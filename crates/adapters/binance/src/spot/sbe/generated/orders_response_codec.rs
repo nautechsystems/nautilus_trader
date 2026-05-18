@@ -137,7 +137,7 @@ pub mod encoder {
 
         #[inline]
         pub fn block_length() -> u16 {
-            162
+            163
         }
 
         #[inline]
@@ -573,6 +573,13 @@ pub mod encoder {
             self.get_buf_mut().put_i64_at(offset, value);
         }
 
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&mut self, value: expiry_reason::ExpiryReason) {
+            let offset = self.offset + 162;
+            self.get_buf_mut().put_u8_at(offset, value as u8)
+        }
+
         /// VAR_DATA ENCODER - character encoding: 'UTF-8'
         #[inline]
         pub fn symbol(&mut self, value: &str) {
@@ -743,7 +750,7 @@ pub mod decoder {
             self
         }
 
-        /// group token - Token{signal=BEGIN_GROUP, name='orders', referencedName='null', description='null', packageName='null', id=100, version=0, deprecated=0, encodedLength=162, offset=0, componentTokenCount=177, encoding=Encoding{presence=REQUIRED, primitiveType=null, byteOrder=LITTLE_ENDIAN, minValue=null, maxValue=null, nullValue=null, constValue=null, characterEncoding='null', epoch='null', timeUnit=null, semanticType='null'}}
+        /// group token - Token{signal=BEGIN_GROUP, name='orders', referencedName='null', description='null', packageName='null', id=100, version=0, deprecated=0, encodedLength=163, offset=0, componentTokenCount=190, encoding=Encoding{presence=REQUIRED, primitiveType=null, byteOrder=LITTLE_ENDIAN, minValue=null, maxValue=null, nullValue=null, constValue=null, characterEncoding='null', epoch='null', timeUnit=null, semanticType='null'}}
         #[inline]
         pub fn parent(&mut self) -> SbeResult<P> {
             self.parent.take().ok_or(SbeErr::ParentNotSet)
@@ -1041,6 +1048,16 @@ pub mod decoder {
             } else {
                 Some(value)
             }
+        }
+
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&self) -> expiry_reason::ExpiryReason {
+            if self.acting_version() < 4 {
+                return expiry_reason::ExpiryReason::default();
+            }
+
+            self.get_buf().get_u8_at(self.offset + 162).into()
         }
 
         /// VAR_DATA DECODER - character encoding: 'UTF-8'

@@ -25,7 +25,11 @@ use axum::{
     routing::get,
 };
 use nautilus_binance::{
-    common::enums::BinanceProductType, config::BinanceDataClientConfig,
+    common::{
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::BinanceProductType,
+    },
+    config::BinanceDataClientConfig,
     futures::BinanceFuturesDataClient,
 };
 use nautilus_common::{
@@ -43,10 +47,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::UnixNanos;
-use nautilus_model::{
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
-};
+use nautilus_model::{enums::BookType, identifiers::InstrumentId};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::json;
@@ -74,7 +75,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
 
             if method == Some("SUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
 
                 if let Some(params) = parsed.get("params").and_then(|p| p.as_array()) {
                     for param in params {
@@ -93,7 +94,8 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "m": false
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Text(trade.to_string().into())).await;
+                                let _result =
+                                    socket.send(Message::Text(trade.to_string().into())).await;
                             } else if stream.contains("@bookTicker") {
                                 let quote = json!({
                                     "e": "bookTicker",
@@ -107,7 +109,8 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "A": "0.500"
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Text(quote.to_string().into())).await;
+                                let _result =
+                                    socket.send(Message::Text(quote.to_string().into())).await;
                             } else if stream.contains("@depth") {
                                 let depth_update = json!({
                                     "e": "depthUpdate",
@@ -121,7 +124,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket
+                                let _result = socket
                                     .send(Message::Text(depth_update.to_string().into()))
                                     .await;
                             } else if stream.contains("@markPrice") {
@@ -136,7 +139,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "T": 1700028800000_i64
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket
+                                let _result = socket
                                     .send(Message::Text(mark_price.to_string().into()))
                                     .await;
                             }
@@ -145,7 +148,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                 }
             } else if method == Some("UNSUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
             }
         }
     }
@@ -252,7 +255,7 @@ fn create_test_data_client(
     };
 
     let client =
-        BinanceFuturesDataClient::new(ClientId::from("BINANCE"), config, BinanceProductType::UsdM)
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
             .unwrap();
 
     (client, rx)
@@ -267,8 +270,8 @@ async fn test_client_creation() {
 
     let (client, _rx) = create_test_data_client(base_url_http, base_url_ws);
 
-    assert_eq!(client.client_id(), ClientId::from("BINANCE"));
-    assert_eq!(client.venue(), Some(Venue::from("BINANCE")));
+    assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
+    assert_eq!(client.venue(), Some(*BINANCE_VENUE));
     assert!(!client.is_connected());
 }
 
@@ -340,7 +343,7 @@ async fn test_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -388,7 +391,7 @@ async fn test_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -437,7 +440,7 @@ async fn test_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -487,7 +490,7 @@ async fn test_subscribe_mark_prices() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeMarkPrices::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -536,7 +539,7 @@ async fn test_unsubscribe_trades() {
 
     let sub_cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -558,7 +561,7 @@ async fn test_unsubscribe_trades() {
 
     let unsub_cmd = UnsubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -566,7 +569,7 @@ async fn test_unsubscribe_trades() {
         None,
     );
     let result = client.unsubscribe_trades(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -598,7 +601,7 @@ async fn test_unsubscribe_quotes() {
 
     let sub_cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -620,7 +623,7 @@ async fn test_unsubscribe_quotes() {
 
     let unsub_cmd = UnsubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -628,7 +631,7 @@ async fn test_unsubscribe_quotes() {
         None,
     );
     let result = client.unsubscribe_quotes(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -704,7 +707,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
 
     let trades_cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -713,7 +716,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
     );
     let quotes_cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),

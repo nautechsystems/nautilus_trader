@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -31,7 +31,7 @@ use nautilus_model::{
 
 use crate::{
     config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
-    constants::BLOCKCHAIN_VENUE,
+    constants::{BLOCKCHAIN, BLOCKCHAIN_VENUE},
     data::client::BlockchainDataClient,
     execution::client::BlockchainExecutionClient,
 };
@@ -79,7 +79,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let blockchain_config = config
@@ -97,7 +97,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "BLOCKCHAIN"
+        BLOCKCHAIN
     }
 
     fn config_type(&self) -> &'static str {
@@ -139,7 +139,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let blockchain_execution_config = config
             .as_any()
@@ -170,7 +170,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "BLOCKCHAIN"
+        BLOCKCHAIN
     }
 
     fn config_type(&self) -> &'static str {
@@ -186,7 +186,10 @@ mod tests {
     use nautilus_model::defi::chain::{Blockchain, chains};
     use rstest::rstest;
 
-    use crate::{config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory};
+    use crate::{
+        config::BlockchainDataClientConfig, constants::BLOCKCHAIN,
+        factories::BlockchainDataClientFactory,
+    };
 
     #[rstest]
     fn test_blockchain_data_client_config_creation() {
@@ -203,7 +206,7 @@ mod tests {
     #[rstest]
     fn test_factory_creation() {
         let factory = BlockchainDataClientFactory::new();
-        assert_eq!(factory.name(), "BLOCKCHAIN");
+        assert_eq!(factory.name(), BLOCKCHAIN);
         assert_eq!(factory.config_type(), "BlockchainDataClientConfig");
     }
 }

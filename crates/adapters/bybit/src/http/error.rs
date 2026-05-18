@@ -95,6 +95,27 @@ pub enum BybitHttpError {
     UnexpectedStatus { status: u16, body: String },
 }
 
+/// Error raised while submitting a Bybit order.
+#[derive(Debug, Error)]
+pub enum BybitSubmitOrderError {
+    /// Bybit accepted the request envelope, but did not return an order ID.
+    #[error("No order_id in response")]
+    MissingOrderId,
+    /// Bybit returned an order that is rejected with no fills.
+    #[error("Order rejected: {reason}")]
+    Rejected {
+        /// Venue reject reason.
+        reason: String,
+    },
+    /// Bybit returned an order ID, but the immediate order lookup failed.
+    #[error("Order lookup failed after submission: {source}")]
+    PostSubmitLookup {
+        /// Source lookup error.
+        #[source]
+        source: anyhow::Error,
+    },
+}
+
 impl From<HttpClientError> for BybitHttpError {
     fn from(error: HttpClientError) -> Self {
         Self::NetworkError(error.to_string())
@@ -189,6 +210,27 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Unexpected HTTP status code 502: Server error"
+        );
+    }
+
+    #[rstest]
+    fn test_bybit_submit_order_error_display() {
+        let missing_order_id = BybitSubmitOrderError::MissingOrderId;
+        let rejected = BybitSubmitOrderError::Rejected {
+            reason: "EC_PostOnlyWillTakeLiquidity".to_string(),
+        };
+        let post_submit_lookup = BybitSubmitOrderError::PostSubmitLookup {
+            source: anyhow::anyhow!("No order returned after submission"),
+        };
+
+        assert_eq!(missing_order_id.to_string(), "No order_id in response");
+        assert_eq!(
+            rejected.to_string(),
+            "Order rejected: EC_PostOnlyWillTakeLiquidity"
+        );
+        assert_eq!(
+            post_submit_lookup.to_string(),
+            "Order lookup failed after submission: No order returned after submission"
         );
     }
 }

@@ -126,6 +126,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
     m.add_class::<crate::enums::ContingencyType>()?;
+    m.add_class::<crate::enums::ContinuousFutureAdjustmentType>()?;
     m.add_class::<crate::enums::CurrencyType>()?;
     m.add_class::<crate::enums::GreeksConvention>()?;
     m.add_class::<crate::enums::InstrumentClass>()?;
@@ -235,6 +236,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::events::PositionClosed>()?;
     m.add_class::<crate::events::PositionAdjusted>()?;
     m.add_class::<crate::events::PositionSnapshot>()?;
+    m.add_class::<crate::events::PortfolioSnapshot>()?;
     // Accounts
     m.add_class::<crate::accounts::BettingAccount>()?;
     m.add_class::<crate::accounts::CashAccount>()?;

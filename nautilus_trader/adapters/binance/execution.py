@@ -422,6 +422,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     ),
                 )
         except BinanceError as e:
+            if _is_no_such_order(e):
+                self._log.warning(
+                    f"Cannot generate order status report for {command.client_order_id!r}, "
+                    f"{command.venue_order_id!r}: order not found",
+                )
+
+                if (
+                    command.client_order_id
+                    and command.client_order_id in self._generate_order_status_retries
+                ):
+                    del self._generate_order_status_retries[command.client_order_id]
+                return None
+
             retries += 1
             self._log.error(
                 f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/{self._max_retries}",
@@ -1580,6 +1593,10 @@ def _is_post_only_rejection(error: BinanceError) -> bool:
         msg = _get_error_msg(error)
         return msg == BINANCE_SPOT_POST_ONLY_REJECT_MSG
     return False
+
+
+def _is_no_such_order(error: BinanceError) -> bool:
+    return get_binance_error_code(error) == BinanceErrorCode.NO_SUCH_ORDER
 
 
 def _get_error_msg(error: BinanceError) -> str:

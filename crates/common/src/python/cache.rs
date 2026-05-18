@@ -1120,6 +1120,7 @@ impl PyCache {
         self.0
             .borrow_mut()
             .snapshot_position(&position_obj)
+            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
@@ -1358,19 +1359,16 @@ impl Cache {
     fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let mut py_instruments = Vec::new();
 
-        match venue {
-            Some(venue) => {
-                let instruments = self.instruments(&venue, None);
-                for instrument in instruments {
-                    py_instruments.push(instrument_any_to_pyobject(py, (*instrument).clone())?);
-                }
+        if let Some(venue) = venue {
+            let instruments = self.instruments(&venue, None);
+            for instrument in instruments {
+                py_instruments.push(instrument_any_to_pyobject(py, (*instrument).clone())?);
             }
-            None => {
-                let instrument_ids = self.instrument_ids(None);
-                for instrument_id in instrument_ids {
-                    if let Some(instrument) = self.instrument(instrument_id) {
-                        py_instruments.push(instrument_any_to_pyobject(py, instrument.clone())?);
-                    }
+        } else {
+            let instrument_ids = self.instrument_ids(None);
+            for instrument_id in instrument_ids {
+                if let Some(instrument) = self.instrument(instrument_id) {
+                    py_instruments.push(instrument_any_to_pyobject(py, instrument.clone())?);
                 }
             }
         }
@@ -1404,7 +1402,12 @@ impl Cache {
         .map_err(to_pyvalue_err)
     }
 
-    /// Gets a reference to the order with the `client_order_id` (if found).
+    /// Gets a borrow of the order with the `client_order_id` (if found).
+    ///
+    /// The returned `OrderRef` is tied to the cache borrow's scope and panics at runtime if
+    /// held across a mutation of the same order. Drop the borrow before dispatching events; if
+    /// post-event state is required, perform a fresh lookup. Use `Self.order_owned` when an
+    /// owned snapshot is needed for a boundary handover.
     #[pyo3(name = "order")]
     fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
@@ -1440,7 +1443,7 @@ impl Cache {
         self.is_order_active_local(&client_order_id)
     }
 
-    /// Returns references to all locally active orders matching the optional filter parameters.
+    /// Returns borrows of all locally active orders matching the optional filter parameters.
     ///
     /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state
     /// (a superset of emulated orders).
@@ -1570,10 +1573,11 @@ impl Cache {
     fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.snapshot_position(&position_obj)
+            .map(|_| ())
             .map_err(to_pyvalue_err)
     }
 
-    /// Returns a reference to the position with the `position_id` (if found).
+    /// Returns a borrow of the position with the `position_id` (if found).
     #[pyo3(name = "position")]
     fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
@@ -2019,7 +2023,11 @@ impl Cache {
         self.client_id(&client_order_id).copied()
     }
 
-    /// Returns references to all orders matching the optional filter parameters.
+    /// Returns borrows of all orders matching the optional filter parameters.
+    ///
+    /// Each `Ref` in the returned vector borrows its underlying cell; mutating any of
+    /// those orders while the vector is alive will panic at runtime. Drop the vector
+    /// before issuing writes.
     #[pyo3(name = "orders")]
     fn py_orders(
         &self,
@@ -2042,7 +2050,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all open orders matching the optional filter parameters.
+    /// Returns borrows of all open orders matching the optional filter parameters.
     #[pyo3(name = "orders_open")]
     fn py_orders_open(
         &self,
@@ -2065,7 +2073,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all closed orders matching the optional filter parameters.
+    /// Returns borrows of all closed orders matching the optional filter parameters.
     #[pyo3(name = "orders_closed")]
     fn py_orders_closed(
         &self,
@@ -2088,7 +2096,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all emulated orders matching the optional filter parameters.
+    /// Returns borrows of all emulated orders matching the optional filter parameters.
     #[pyo3(name = "orders_emulated")]
     fn py_orders_emulated(
         &self,
@@ -2111,7 +2119,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all in-flight orders matching the optional filter parameters.
+    /// Returns borrows of all in-flight orders matching the optional filter parameters.
     #[pyo3(name = "orders_inflight")]
     fn py_orders_inflight(
         &self,
@@ -2134,7 +2142,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all orders for the `position_id`.
+    /// Returns borrows of all orders for the `position_id`.
     #[pyo3(name = "orders_for_position")]
     fn py_orders_for_position(
         &self,
@@ -2305,7 +2313,7 @@ impl Cache {
         self.exec_spawn_total_leaves_qty(&exec_spawn_id, active_only)
     }
 
-    /// Returns a reference to the position for the `client_order_id` (if found).
+    /// Returns a borrow of the position for the `client_order_id` (if found).
     #[pyo3(name = "position_for_order")]
     fn py_position_for_order(
         &self,
@@ -2324,7 +2332,11 @@ impl Cache {
         self.position_id(&client_order_id).copied()
     }
 
-    /// Returns a reference to all positions matching the optional filter parameters.
+    /// Returns borrows of all positions matching the optional filter parameters.
+    ///
+    /// Each `PositionRef` in the returned vector borrows its underlying cell; mutating any of
+    /// those positions while the vector is alive will panic at runtime. Drop the vector before
+    /// issuing writes.
     #[pyo3(name = "positions")]
     fn py_positions(
         &self,
@@ -2347,7 +2359,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns a reference to all open positions matching the optional filter parameters.
+    /// Returns borrows of all open positions matching the optional filter parameters.
     #[pyo3(name = "positions_open")]
     fn py_positions_open(
         &self,
@@ -2370,7 +2382,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns a reference to all closed positions matching the optional filter parameters.
+    /// Returns borrows of all closed positions matching the optional filter parameters.
     #[pyo3(name = "positions_closed")]
     fn py_positions_closed(
         &self,
@@ -2432,7 +2444,7 @@ impl Cache {
             .collect()
     }
 
-    /// Returns a reference to the account for the `account_id` (if found).
+    /// Returns a borrow of the account for the `account_id` (if found).
     #[pyo3(name = "account")]
     fn py_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         match self.account(&account_id) {
@@ -2441,7 +2453,7 @@ impl Cache {
         }
     }
 
-    /// Returns a reference to the account for the `venue` (if found).
+    /// Returns a borrow of the account for the `venue` (if found).
     #[pyo3(name = "account_for_venue")]
     fn py_account_for_venue(&self, py: Python, venue: Venue) -> PyResult<Option<Py<PyAny>>> {
         match self.account_for_venue(&venue) {
@@ -2553,7 +2565,7 @@ impl Cache {
     ///
     /// This method is used when order event application fails and we need to ensure
     /// terminal orders are properly cleaned up from own books and all relevant indexes.
-    /// Replicates the index cleanup that update_order performs for closed orders.
+    /// Replicates the index cleanup that `update_order` performs for closed orders.
     #[pyo3(name = "force_remove_from_own_order_book")]
     fn py_force_remove_from_own_order_book(&mut self, client_order_id: ClientOrderId) {
         self.force_remove_from_own_order_book(&client_order_id);
@@ -2562,8 +2574,8 @@ impl Cache {
     /// Audit all own order books against open and inflight order indexes.
     ///
     /// Ensures closed orders are removed from own order books. This includes both
-    /// orders tracked in `orders_open` (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
-    /// and `orders_inflight` (INITIALIZED, SUBMITTED) to prevent false positives
+    /// orders tracked in `orders_open` (`ACCEPTED`, `TRIGGERED`, `PENDING_*`, `PARTIALLY_FILLED`)
+    /// and `orders_inflight` (`INITIALIZED`, `SUBMITTED`) to prevent false positives
     /// during venue latency windows.
     #[pyo3(name = "audit_own_order_books")]
     fn py_audit_own_order_books(&mut self) {

@@ -354,7 +354,7 @@ ATTR_NAME_RE = re.compile(r'\bname\s*=\s*"([^"]+)"')
 RUST_IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_:<>]*)\s*\{")
 RUST_STRUCT_RE = re.compile(r"^\s*(?:pub\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 RUST_FN_RE = re.compile(
-    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:->\s*(.*?))?\s*\{",
+    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^>]+>)?\s*\((.*)\)\s*(?:->\s*(.*?))?\s*\{",
     flags=re.DOTALL,
 )
 IDENTIFIER_INVOKE_RE = re.compile(
@@ -535,6 +535,10 @@ def collect_rust_class_fixups(workspace_root: Path) -> dict[str, ClassMethodFixu
         _collect_identifier_macro_fixups(source, fixups)
         _collect_pymethod_fixups(source, fixups)
         _collect_pyfunction_signature_defaults(source, fixups)
+
+    for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
+        source = rust_file.read_text()
+        _collect_custom_data_macro_fixups(source, fixups)
 
     return fixups
 
@@ -757,6 +761,62 @@ def _collect_identifier_macro_fixups(source: str, fixups: dict[str, ClassMethodF
         fixup = fixups.setdefault(class_name, ClassMethodFixup())
         fixup.getters.update(IDENTIFIER_MACRO_METHOD_FIXUPS.getters)
         fixup.staticmethods.update(IDENTIFIER_MACRO_METHOD_FIXUPS.staticmethods)
+
+
+def _collect_custom_data_macro_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
+    lines = source.splitlines()
+    pending_attrs: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        if stripped.startswith("#["):
+            attribute, i = consume_rust_attribute(lines, i)
+            pending_attrs.append(attribute)
+            continue
+
+        struct_match = RUST_STRUCT_RE.match(line)
+        if struct_match is None:
+            pending_attrs.clear()
+            i += 1
+            continue
+
+        custom_data_attr = next(
+            (attr for attr in pending_attrs if "custom_data(" in attr and "stub_module" in attr),
+            None,
+        )
+
+        if custom_data_attr is not None:
+            class_name = struct_match.group(1)
+            fixup = fixups.setdefault(class_name, ClassMethodFixup())
+            fixup.getters.update(_collect_struct_field_names(lines, i))
+            fixup.classmethods.add("from_json")
+
+        pending_attrs.clear()
+        i += 1
+
+
+def _collect_struct_field_names(lines: list[str], struct_start: int) -> set[str]:
+    fields: set[str] = set()
+    brace_depth = lines[struct_start].count("{") - lines[struct_start].count("}")
+    i = struct_start + 1
+
+    while i < len(lines) and brace_depth > 0:
+        field_match = re.match(r"\s*pub\s+([A-Za-z_][A-Za-z0-9_]*)\s*:", lines[i])
+        if field_match is not None:
+            fields.add(field_match.group(1))
+
+        brace_depth += lines[i].count("{") - lines[i].count("}")
+        i += 1
+
+    return fields
 
 
 def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -> None:
@@ -1328,6 +1388,7 @@ def rewrite_stub_method_block(
             decorators.append("    @staticmethod")
     elif method_name in fixup.classmethods:
         signature_text = replace_self_with_cls(signature_text)
+        signature_text = drop_named_stub_param(signature_text, "_cls")
 
         if not _has_decorator(decorators, "@classmethod"):
             decorators.append("    @classmethod")
@@ -1376,6 +1437,25 @@ def replace_self_with_cls(signature_text: str) -> str:
     Replace self receiver with cls for classmethod signatures.
     """
     return re.sub(r"\bself\b", "cls", signature_text, count=1)
+
+
+def drop_named_stub_param(signature_text: str, name: str) -> str:
+    """
+    Remove a named parameter inserted by pyo3-stub-gen from a stub signature.
+    """
+    escaped = re.escape(name)
+    signature_text = re.sub(
+        rf",\s*{escaped}\s*:\s*[^,\)]+",
+        "",
+        signature_text,
+        count=1,
+    )
+    return re.sub(
+        rf"\n[ \t]*{escaped}\s*:\s*[^,\n]+,?",
+        "",
+        signature_text,
+        count=1,
+    )
 
 
 def fix_stub_header(content: str) -> str:

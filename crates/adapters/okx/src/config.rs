@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     credential::credential_env_vars,
@@ -28,7 +29,8 @@ use crate::common::{
 };
 
 /// Configuration for the OKX data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
@@ -143,7 +145,8 @@ impl OKXDataClientConfig {
 }
 
 /// Configuration for the OKX execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
@@ -257,5 +260,46 @@ impl OKXExecClientConfig {
         self.base_url_ws_business
             .clone()
             .unwrap_or_else(|| get_ws_base_url_business(self.environment).to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: OKXDataClientConfig = toml::from_str(
+            r#"
+environment = "demo"
+instrument_types = ["SPOT", "SWAP"]
+http_timeout_secs = 90
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, OKXEnvironment::Demo);
+        assert_eq!(
+            config.instrument_types,
+            vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap]
+        );
+        assert_eq!(config.http_timeout_secs, 90);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: OKXExecClientConfig = toml::from_str("").unwrap();
+        let expected = OKXExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.instrument_types, expected.instrument_types);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(config.use_fills_channel, expected.use_fills_channel);
+        assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

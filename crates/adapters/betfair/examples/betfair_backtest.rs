@@ -36,11 +36,14 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
-use nautilus_betfair::loader::{BetfairDataItem, BetfairDataLoader};
+use nautilus_betfair::{
+    common::consts::BETFAIR_VENUE,
+    loader::{BetfairDataItem, BetfairDataLoader},
+};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     enums::{AccountType, BookType, OmsType},
-    identifiers::{InstrumentId, Venue},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
@@ -138,7 +141,7 @@ fn main() -> anyhow::Result<()> {
 
     engine.add_venue(
         SimulatedVenueConfig::builder()
-            .venue(Venue::from("BETFAIR"))
+            .venue(*BETFAIR_VENUE)
             .oms_type(OmsType::Netting)
             .account_type(AccountType::Cash)
             .book_type(BookType::L2_MBP)

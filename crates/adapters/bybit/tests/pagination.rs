@@ -24,7 +24,7 @@ use std::{collections::HashMap, net::SocketAddr};
 use axum::{Router, extract::Query, response::Json, routing::get};
 use chrono::{DateTime, Duration, Utc};
 use nautilus_bybit::{
-    common::{enums::BybitProductType, parse::parse_linear_instrument},
+    common::{consts::BYBIT_VENUE, enums::BybitProductType, parse::parse_linear_instrument},
     http::{
         client::BybitHttpClient,
         models::{
@@ -37,7 +37,7 @@ use nautilus_bybit::{
 use nautilus_model::{
     data::{BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -179,7 +179,7 @@ async fn test_bars_chronological_order_single_page() {
     let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
     init_instrument_cache(&client).await;
 
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
     let bar_spec = BarSpecification {
         step: std::num::NonZero::new(1).unwrap(),
         aggregation: BarAggregation::Minute,
@@ -227,7 +227,7 @@ async fn test_bars_chronological_order_multiple_pages() {
     let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
     init_instrument_cache(&client).await;
 
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
     let bar_spec = BarSpecification {
         step: std::num::NonZero::new(1).unwrap(),
         aggregation: BarAggregation::Minute,
@@ -278,7 +278,7 @@ async fn test_bars_limit_returns_most_recent() {
     let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
     init_instrument_cache(&client).await;
 
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
     let bar_spec = BarSpecification {
         step: std::num::NonZero::new(1).unwrap(),
         aggregation: BarAggregation::Minute,

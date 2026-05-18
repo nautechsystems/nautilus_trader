@@ -36,7 +36,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
-    common::enums::OKXTriggerType,
+    common::{consts::OKX, enums::OKXTriggerType},
     config::{OKXDataClientConfig, OKXExecClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
@@ -56,8 +56,8 @@ pub(super) fn extract_optional_trigger_type(
 ) -> PyResult<Option<OKXTriggerType>> {
     extract_optional_string(dict, key)?
         .map(|value| {
-            OKXTriggerType::from_str(&value).map_err(|_| {
-                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
+            OKXTriggerType::from_str(&value).map_err(|e| {
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}: {e}"))
             })
         })
         .transpose()
@@ -143,15 +143,14 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let registry = get_global_pyo3_registry();
 
-    if let Err(e) = registry.register_factory_extractor("OKX".to_string(), extract_okx_data_factory)
-    {
+    if let Err(e) = registry.register_factory_extractor(OKX.to_string(), extract_okx_data_factory) {
         return Err(to_pyruntime_err(format!(
             "Failed to register OKX data factory extractor: {e}"
         )));
     }
 
     if let Err(e) =
-        registry.register_exec_factory_extractor("OKX".to_string(), extract_okx_exec_factory)
+        registry.register_exec_factory_extractor(OKX.to_string(), extract_okx_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register OKX exec factory extractor: {e}"

@@ -22,6 +22,7 @@ use std::{
 use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
+    modules::{ExchangeContext, SimulationModule},
 };
 use nautilus_common::{
     actor::{
@@ -46,7 +47,7 @@ use nautilus_model::{
     events::OrderFilled,
     identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -189,7 +190,7 @@ impl EmaCross {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -267,7 +268,7 @@ impl SnapshotNettingFlip {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -825,39 +826,46 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     engine.run(None, None, None, false).unwrap();
 
     let cache_rc = engine.kernel().cache();
-    let cache = cache_rc.borrow();
-    let positions = cache.positions(None, None, None, None, None);
+    let (expected_total, cache_realized_count, snapshots_realized, snapshots_realized_count) = {
+        let cache = cache_rc.borrow();
+        let positions = cache.positions(None, None, None, None, None);
 
-    let cache_realized: f64 = positions
-        .iter()
-        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-        .sum();
-    let cache_realized_count = positions
-        .iter()
-        .filter(|p| p.realized_pnl.is_some())
-        .count() as f64;
+        let cache_realized: f64 = positions
+            .iter()
+            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+            .sum();
+        let cache_realized_count = positions
+            .iter()
+            .filter(|p| p.realized_pnl.is_some())
+            .count() as f64;
 
-    let snapshot_positions: Vec<Position> = positions
-        .iter()
-        .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
-        .collect();
-    let snapshots_realized: f64 = snapshot_positions
-        .iter()
-        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-        .sum();
-    let snapshots_realized_count = snapshot_positions
-        .iter()
-        .filter(|p| p.realized_pnl.is_some())
-        .count() as f64;
+        let snapshot_positions: Vec<Position> = positions
+            .iter()
+            .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
+            .collect();
+        let snapshots_realized: f64 = snapshot_positions
+            .iter()
+            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+            .sum();
+        let snapshots_realized_count = snapshot_positions
+            .iter()
+            .filter(|p| p.realized_pnl.is_some())
+            .count() as f64;
 
-    assert!(
-        snapshots_realized.abs() > 0.0,
-        "expected non-zero snapshot realized history"
-    );
+        assert!(
+            snapshots_realized.abs() > 0.0,
+            "expected non-zero snapshot realized history"
+        );
 
-    let expected_total = cache_realized + snapshots_realized;
+        (
+            cache_realized + snapshots_realized,
+            cache_realized_count,
+            snapshots_realized,
+            snapshots_realized_count,
+        )
+    };
+
     let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
-    drop(cache);
 
     let bt_result = engine.get_result();
     let expectancy = bt_result
@@ -1084,6 +1092,349 @@ impl DataActor for ShutdownOnTick {
         }
         Ok(())
     }
+}
+
+struct ShutdownBeforeFutureTimer {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_after: usize,
+    tick_count: usize,
+    timer_ts: u64,
+    timer_count: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownBeforeFutureTimer {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_after: usize,
+        timer_ts: u64,
+        timer_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-TIMER-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_after,
+            tick_count: 0,
+            timer_ts,
+            timer_count,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownBeforeFutureTimer);
+
+impl Debug for ShutdownBeforeFutureTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownBeforeFutureTimer))
+            .finish()
+    }
+}
+
+impl DataActor for ShutdownBeforeFutureTimer {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let timer_ts = self.timer_ts;
+        self.clock()
+            .set_time_alert_ns("future_timer", timer_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.tick_count += 1;
+        if self.tick_count == self.shutdown_after {
+            self.shutdown_system(Some("shutdown before future timer".to_string()));
+        }
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        self.timer_count.set(self.timer_count.get() + 1);
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_non_streaming_shutdown_does_not_fire_future_timers(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let timer_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownBeforeFutureTimer::new(
+            instrument_id,
+            2,
+            2_500_000_000,
+            timer_count.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        engine.get_result().iterations,
+        2,
+        "Run must stop on the shutdown tick",
+    );
+    assert_eq!(
+        timer_count.get(),
+        0,
+        "Future timer must not fire after shutdown in a non-streaming run",
+    );
+}
+
+struct ShutdownFromTimer {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_ts: u64,
+    later_ts: u64,
+    shutdown_fired: std::rc::Rc<Cell<u32>>,
+    later_fired: std::rc::Rc<Cell<u32>>,
+    quote_count: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownFromTimer {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_ts: u64,
+        later_ts: u64,
+        shutdown_fired: std::rc::Rc<Cell<u32>>,
+        later_fired: std::rc::Rc<Cell<u32>>,
+        quote_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-FROM-TIMER-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_ts,
+            later_ts,
+            shutdown_fired,
+            later_fired,
+            quote_count,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownFromTimer);
+
+impl Debug for ShutdownFromTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownFromTimer)).finish()
+    }
+}
+
+impl DataActor for ShutdownFromTimer {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let shutdown_ts = self.shutdown_ts;
+        let later_ts = self.later_ts;
+        self.clock()
+            .set_time_alert_ns("shutdown_timer", shutdown_ts.into(), None, None)?;
+        self.clock()
+            .set_time_alert_ns("later_timer", later_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.quote_count.set(self.quote_count.get() + 1);
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name.as_str() == "shutdown_timer" {
+            self.shutdown_fired.set(self.shutdown_fired.get() + 1);
+            self.shutdown_system(Some("shutdown from timer".to_string()));
+        } else if event.name.as_str() == "later_timer" {
+            self.later_fired.set(self.later_fired.get() + 1);
+        }
+        Ok(())
+    }
+}
+
+struct ShutdownAndScheduleNewAlert {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_ts: u64,
+    new_alert_ts: u64,
+    shutdown_fired: std::rc::Rc<Cell<u32>>,
+    new_alert_fired: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownAndScheduleNewAlert {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_ts: u64,
+        new_alert_ts: u64,
+        shutdown_fired: std::rc::Rc<Cell<u32>>,
+        new_alert_fired: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-RESCHEDULE-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_ts,
+            new_alert_ts,
+            shutdown_fired,
+            new_alert_fired,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownAndScheduleNewAlert);
+
+impl Debug for ShutdownAndScheduleNewAlert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownAndScheduleNewAlert))
+            .finish()
+    }
+}
+
+impl DataActor for ShutdownAndScheduleNewAlert {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let shutdown_ts = self.shutdown_ts;
+        self.clock()
+            .set_time_alert_ns("shutdown_timer", shutdown_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name.as_str() == "shutdown_timer" {
+            self.shutdown_fired.set(self.shutdown_fired.get() + 1);
+            let new_alert_ts = self.new_alert_ts;
+            self.clock().set_time_alert_ns(
+                "post_shutdown_alert",
+                new_alert_ts.into(),
+                None,
+                None,
+            )?;
+            self.shutdown_system(Some("shutdown and reschedule".to_string()));
+        } else if event.name.as_str() == "post_shutdown_alert" {
+            self.new_alert_fired.set(self.new_alert_fired.get() + 1);
+        }
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_shutdown_handler_scheduling_new_alert_does_not_fire_it(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Alerts scheduled by a shutdown handler must not fire on later flushes
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let shutdown_fired = std::rc::Rc::new(Cell::new(0));
+    let new_alert_fired = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownAndScheduleNewAlert::new(
+            instrument_id,
+            2_500_000_000,
+            2_600_000_000,
+            shutdown_fired.clone(),
+            new_alert_fired.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        shutdown_fired.get(),
+        1,
+        "Shutdown timer must fire once before requesting shutdown",
+    );
+    assert_eq!(
+        new_alert_fired.get(),
+        0,
+        "Alert scheduled by the shutdown handler must not fire after the stop",
+    );
+}
+
+#[rstest]
+fn test_shutdown_from_timer_during_flush_does_not_fire_later_timers(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // A timer-triggered shutdown must drop later alerts queued for the same flush
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let shutdown_fired = std::rc::Rc::new(Cell::new(0));
+    let later_fired = std::rc::Rc::new(Cell::new(0));
+    let quote_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownFromTimer::new(
+            instrument_id,
+            2_500_000_000,
+            2_800_000_000,
+            shutdown_fired.clone(),
+            later_fired.clone(),
+            quote_count.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        shutdown_fired.get(),
+        1,
+        "Shutdown timer must fire once before requesting shutdown",
+    );
+    assert_eq!(
+        later_fired.get(),
+        0,
+        "Later timer must not fire after a timer-initiated shutdown",
+    );
+    assert_eq!(
+        quote_count.get(),
+        2,
+        "Quote arriving after a timer-initiated shutdown must not be delivered",
+    );
+    assert_eq!(
+        engine.kernel().clock.borrow().timestamp_ns().as_u64(),
+        2_500_000_000,
+        "Engine clock must anchor at the shutdown timer ts, not the skipped data ts",
+    );
 }
 
 #[rstest]
@@ -1503,7 +1854,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1530,7 +1881,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1578,7 +1929,7 @@ impl DualTimerStrategy {
     fn new(instrument_id: InstrumentId, trade_size: Quantity, timer_ts: u64) -> Self {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("DUAL-TIMER-001")),
-            order_id_tag: Some("002".to_string()),
+            order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
         Self {
@@ -1629,7 +1980,7 @@ impl DataActor for DualTimerStrategy {
             None,
             None,
         );
-        self.submit_order(order, None, None)?;
+        self.submit_order(order, None, None, None)?;
         Ok(())
     }
 }
@@ -1911,6 +2262,379 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
     engine.add_data(quotes, None, true, true).unwrap();
     engine.run(None, None, None, false).unwrap();
     assert_eq!(engine.get_result().iterations, 1);
+}
+
+struct CloseOnStop {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    opened: bool,
+}
+
+impl CloseOnStop {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CLOSE-ON-STOP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            opened: false,
+        }
+    }
+}
+
+nautilus_strategy!(CloseOnStop);
+
+impl Debug for CloseOnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CloseOnStop)).finish()
+    }
+}
+
+impl DataActor for CloseOnStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.close_all_positions(self.instrument_id, None, None, None, None, None, None)
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.opened {
+            return Ok(());
+        }
+        self.opened = true;
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_close_all_positions_in_on_stop_is_processed(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Regression test for: closing orders emitted in on_stop() must be dispatched,
+    // matched, and filled before the engine returns. Without the fix, the SubmitOrder
+    // sits in the trading command queue and the position remains open at run end.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open positions after on_stop close_all_positions, found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected one closed position after on_stop close_all_positions",
+    );
+    assert!(
+        closed[0].is_closed(),
+        "position must report is_closed() after run end",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "expected opening and closing orders to both be tracked",
+    );
+}
+
+#[derive(Debug, Default)]
+struct ProcessCallTracker {
+    total_calls: Cell<u32>,
+    last_ts: Cell<Option<UnixNanos>>,
+    duplicate_ts_seen: Cell<bool>,
+}
+
+#[derive(Debug)]
+struct CountingSimulationModule {
+    tracker: std::rc::Rc<ProcessCallTracker>,
+}
+
+impl SimulationModule for CountingSimulationModule {
+    fn pre_process(&self, _data: &Data) {}
+
+    fn process(&self, ts_now: UnixNanos, _ctx: &ExchangeContext) -> Vec<Money> {
+        let prev = self.tracker.last_ts.get();
+        if prev == Some(ts_now) {
+            self.tracker.duplicate_ts_seen.set(true);
+        }
+        self.tracker.last_ts.set(Some(ts_now));
+        self.tracker
+            .total_calls
+            .set(self.tracker.total_calls.get() + 1);
+        Vec::new()
+    }
+
+    fn log_diagnostics(&self) {}
+
+    fn reset(&self) {}
+}
+
+#[rstest]
+fn test_end_does_not_double_run_modules_at_same_timestamp(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Regression guard: end() must not invoke run_venue_modules a second time at the
+    // final timestamp after run_impl already ran them. SimulationModule::process is
+    // documented as once-per-time-step; double-calling can double-apply Money
+    // adjustments (FX rollover and user-defined modules).
+    let tracker = std::rc::Rc::new(ProcessCallTracker::default());
+    let module = CountingSimulationModule {
+        tracker: tracker.clone(),
+    };
+
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .modules(vec![Box::new(module)])
+        .build();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert!(
+        !tracker.duplicate_ts_seen.get(),
+        "SimulationModule::process invoked twice at the same timestamp; \
+         end() must preserve the once-per-time-step contract",
+    );
+    assert!(
+        tracker.total_calls.get() > 0,
+        "expected the module to run at least once during the backtest",
+    );
+}
+
+struct CancelOnStop {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    limit_price: Price,
+    placed: bool,
+}
+
+impl CancelOnStop {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity, limit_price: Price) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CANCEL-ON-STOP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            limit_price,
+            placed: false,
+        }
+    }
+}
+
+nautilus_strategy!(CancelOnStop);
+
+impl Debug for CancelOnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CancelOnStop)).finish()
+    }
+}
+
+impl DataActor for CancelOnStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.cancel_all_orders(self.instrument_id, None, None, None)
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.placed {
+            return Ok(());
+        }
+        self.placed = true;
+        let order = self.core.order_factory().limit(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            self.limit_price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_cancel_all_orders_in_on_stop_is_processed(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Sibling regression to the close_all_positions case: cancel commands emitted in
+    // on_stop must reach the venue and resolve before end() returns.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    // Limit price well below market so the order rests rather than fills immediately.
+    engine
+        .add_strategy(CancelOnStop::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("900.00"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.orders_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open orders after on_stop cancel_all_orders, found {}",
+        open.len(),
+    );
+
+    let closed = cache.orders_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected the limit order to be closed (canceled) after on_stop",
+    );
+    assert!(
+        closed[0].is_canceled(),
+        "expected the closed order to be in CANCELED status",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 1,
+        "expected only the resting limit order to be tracked",
+    );
+}
+
+#[rstest]
+fn test_close_all_positions_in_on_stop_is_processed_streaming(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Streaming-mode counterpart: engine.run(streaming=true) does not call end()
+    // internally; the BacktestNode-style caller invokes end() explicitly. The fix
+    // must hold on this call path too, otherwise streaming consumers see the bug.
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, true).unwrap();
+    engine.end();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open positions after streaming run + end(), found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected one closed position after streaming run + end()",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "expected opening and closing orders in streaming mode",
+    );
 }
 
 #[rstest]

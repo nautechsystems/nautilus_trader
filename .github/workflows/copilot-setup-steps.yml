@@ -15,8 +15,8 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      COPILOT_AGENT_FIREWALL_ALLOW_LIST:
-        "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
+      # yamllint disable-line rule:line-length
+      COPILOT_AGENT_FIREWALL_ALLOW_LIST: "crates.io,index.crates.io,static.crates.io,doc.rust-lang.org,docs.rs,datasets.tardis.dev"
     # yamllint disable rule:line-length
     services:
       redis:
@@ -36,11 +36,12 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-

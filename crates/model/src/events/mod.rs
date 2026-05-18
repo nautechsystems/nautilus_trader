@@ -17,6 +17,7 @@
 
 pub mod account;
 pub mod order;
+pub mod portfolio;
 pub mod position;
 
 use nautilus_core::UnixNanos;
@@ -35,6 +36,7 @@ pub use crate::events::{
         snapshot::OrderSnapshot, submitted::OrderSubmitted, submitted_batch::OrderSubmittedBatch,
         triggered::OrderTriggered, updated::OrderUpdated,
     },
+    portfolio::snapshot::PortfolioSnapshot,
     position::{
         PositionEvent, adjusted::PositionAdjusted, changed::PositionChanged,
         closed::PositionClosed, opened::PositionOpened, snapshot::PositionSnapshot,
@@ -179,6 +181,12 @@ impl HasTsInit for PositionSnapshot {
     }
 }
 
+impl HasTsInit for PortfolioSnapshot {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
 crate::impl_catalog_path_prefix!(AccountState, "account_state");
 crate::impl_catalog_path_prefix!(OrderInitialized, "order_initialized");
 crate::impl_catalog_path_prefix!(OrderDenied, "order_denied");
@@ -202,3 +210,4 @@ crate::impl_catalog_path_prefix!(PositionClosed, "position_closed");
 crate::impl_catalog_path_prefix!(PositionAdjusted, "position_adjusted");
 crate::impl_catalog_path_prefix!(OrderSnapshot, "order_snapshot");
 crate::impl_catalog_path_prefix!(PositionSnapshot, "position_snapshot");
+crate::impl_catalog_path_prefix!(PortfolioSnapshot, "portfolio_snapshot");

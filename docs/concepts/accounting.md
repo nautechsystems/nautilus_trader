@@ -133,7 +133,7 @@ return a `Money` (zero for the currency if nothing matches).
 The names below are the Python / Cython API on `MarginAccount`. Rust strategies
 using the `nautilus-model` crate call `account_margin(&currency)`,
 `account_initial_margin(&currency)`, `account_maintenance_margin(&currency)`,
-`total_initial_margin(currency)`, and `total_maintenance_margin(currency)` — the
+`total_initial_margin(currency)`, and `total_maintenance_margin(currency)`: the
 same split by `Option<InstrumentId>`, with different method names.
 :::
 
@@ -147,7 +147,7 @@ same split by `Option<InstrumentId>`, with different method names.
 - `margins_maint() -> dict[InstrumentId, Money]`
 
 These methods only see the per-instrument store. On a cross-margin venue they
-return empty dicts or `None` — use the account-wide queries below.
+return empty dicts or `None`. Use the account-wide queries below.
 
 ### Account-wide queries (`MarginAccount`)
 
@@ -380,7 +380,7 @@ Pick the scope that matches what the venue reports:
 | Adapter              | Scope                        | Collateral currencies                                    |
 | -------------------- | ---------------------------- | -------------------------------------------------------- |
 | Binance Futures      | Account‑wide                 | USDT‑M: USDT (or BNB/etc. under multi‑assets mode); COIN‑M: one per base coin (BTC, ETH, …) |
-| Bybit                | Account‑wide                 | One per coin (USDT, BTC, USDC, …) — sums position IM + order IM |
+| Bybit                | Account‑wide                 | One per coin (USDT, BTC, USDC, …); sums position IM + order IM |
 | Deribit              | Account‑wide                 | One per currency (BTC, ETH, USDC, …)                     |
 | Hyperliquid          | Account‑wide                 | USDC                                                     |
 | OKX                  | Account‑wide                 | USD (unified account aggregate)                          |
@@ -423,9 +423,9 @@ The per-instrument query API (`margin_init(instrument_id)`,
 
 ## Related guides
 
-- [Backtesting](backtesting.md) — starting balances, `MarginModelConfig`, and
+- [Backtesting](backtesting.md): starting balances, `MarginModelConfig`, and
   backtest-specific account setup.
-- [Portfolio](portfolio.md) — portfolio-level PnL, exposures, and currency
+- [Portfolio](portfolio.md): portfolio-level PnL, exposures, and currency
   conversion.
-- [Positions](positions.md) — position lifecycle, aggregation, and PnL.
-- [Adapters](adapters.md) — requirements and best practices for adapter authors.
+- [Positions](positions.md): position lifecycle, aggregation, and PnL.
+- [Adapters](adapters.md): requirements and best practices for adapter authors.

@@ -99,30 +99,30 @@ class AxHttpClient:
     def cancel_all_requests(self) -> None: ...
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def authenticate(
-        self, api_key: str, api_secret: str, expiration_seconds: int
+        self, api_key: str, api_secret: str, expiration_seconds: int = 86400
     ) -> typing.Any: ...
-    def authenticate_auto(self, expiration_seconds: int) -> typing.Any: ...
+    def authenticate_auto(self, expiration_seconds: int = 86400) -> typing.Any: ...
     def request_instruments(
-        self, maker_fee: decimal.Decimal | None = ..., taker_fee: decimal.Decimal | None = ...
+        self, maker_fee: decimal.Decimal | None = None, taker_fee: decimal.Decimal | None = None
     ) -> typing.Any: ...
     def request_trade_ticks(
         self,
         instrument_id: model.InstrumentId,
-        limit: int | None = ...,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
+        limit: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
     ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
     ) -> typing.Any: ...
     def request_funding_rates(
         self,
         instrument_id: model.InstrumentId,
-        start: datetime.datetime | None = ...,
-        end: datetime.datetime | None = ...,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
     ) -> typing.Any: ...
     def request_account_state(self, account_id: model.AccountId) -> typing.Any: ...
     def request_order_status(
@@ -132,8 +132,8 @@ class AxHttpClient:
         order_side: model.OrderSide,
         order_type: model.OrderType,
         time_in_force: model.TimeInForce,
-        client_order_id: model.ClientOrderId | None = ...,
-        venue_order_id: model.VenueOrderId | None = ...,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
     ) -> typing.Any: ...
     def request_order_status_reports(self, account_id: model.AccountId) -> typing.Any: ...
     def request_fill_reports(self, account_id: model.AccountId) -> typing.Any: ...
@@ -213,12 +213,12 @@ class AxOrdersWebSocketClient:
         order_type: model.OrderType,
         quantity: model.Quantity,
         time_in_force: model.TimeInForce,
-        price: model.Price | None,
-        trigger_price: model.Price | None,
-        post_only: bool,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool = False,
     ) -> typing.Any: ...
     def cancel_order(
-        self, client_order_id: model.ClientOrderId, venue_order_id: model.VenueOrderId | None = ...
+        self, client_order_id: model.ClientOrderId, venue_order_id: model.VenueOrderId | None = None
     ) -> typing.Any: ...
     def get_open_orders(self) -> typing.Any: ...
     def disconnect(self) -> typing.Any: ...

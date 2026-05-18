@@ -884,6 +884,9 @@ pub struct OKXOrderMsg {
     /// Attached TP/SL child order metadata.
     #[serde(default)]
     pub attach_algo_ords: Vec<OKXAttachedAlgoOrd>,
+    /// Event contract market outcome, if applicable.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub outcome: Option<String>,
     /// Fee (cumulative).
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fee: Option<String>,
@@ -1170,6 +1173,24 @@ pub struct WsAttachAlgoOrdParams {
     /// Take-profit trigger price type (last, mark, index).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_trigger_px_type: Option<OKXTriggerType>,
+    /// Callback ratio for attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_ratio: Option<String>,
+    /// Callback spread for attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_spread: Option<String>,
+    /// Activation price for attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_px: Option<String>,
+    /// New callback ratio for amended attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_callback_ratio: Option<String>,
+    /// New callback spread for amended attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_callback_spread: Option<String>,
+    /// New activation price for amended attached trailing stop orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_active_px: Option<String>,
 }
 
 /// Parameters for WebSocket place order operation.
@@ -1236,6 +1257,21 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
+    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_bump: Option<String>,
+    /// Event contract market outcome: yes or no.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    /// Slippage tolerance for market orders, expressed as a decimal fraction
+    /// (e.g., "0.005" for 0.5%). Supported instrument/order-type scope is
+    /// venue-controlled; rejected with `54084`/`54085` if exceeded or out of
+    /// the venue's accepted range. See the OKX v5 docs for the current matrix.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slippage_pct: Option<String>,
 }
 
 /// Parameters for WebSocket cancel order operation (instType not included).
@@ -1296,6 +1332,9 @@ pub struct WsAmendOrderParams {
     /// New order size (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sz: Option<String>,
+    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_bump: Option<String>,
 }
 
 /// Parameters for WebSocket algo order placement.
@@ -2054,6 +2093,43 @@ mod tests {
     }
 
     #[rstest]
+    fn test_ws_post_order_params_serializes_slippage_pct() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Market)
+            .sz("0.01".to_string())
+            .slippage_pct("0.005".to_string())
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["slippagePct"], "0.005");
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_omits_slippage_pct_when_unset() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Market)
+            .sz("0.01".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(!json.contains("slippagePct"));
+    }
+
+    #[rstest]
     fn test_ws_post_order_params_serializes_attached_tp_sl() {
         use super::{WsAttachAlgoOrdParamsBuilder, WsPostOrderParamsBuilder};
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType};
@@ -2242,5 +2318,78 @@ mod tests {
         assert!(json.contains("\"newPxVol\":\"0.60\""));
         assert!(!json.contains("\"newPx\":"));
         assert!(!json.contains("\"newPxUsd\""));
+    }
+
+    #[rstest]
+    fn test_ws_event_contract_markets_channel_serialization() {
+        let json = serde_json::to_string(&OKXWsChannel::EventContractMarkets).unwrap();
+        let channel: OKXWsChannel = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(json, "\"event-contract-markets\"");
+        assert_eq!(channel, OKXWsChannel::EventContractMarkets);
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_event_contract_fields() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("10".to_string())
+            .px("0.42".to_string())
+            .speed_bump("1")
+            .outcome("yes")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(json["speedBump"], "1");
+        assert_eq!(json["outcome"], "yes");
+    }
+
+    #[rstest]
+    fn test_ws_amend_order_params_serializes_speed_bump() {
+        use super::WsAmendOrderParamsBuilder;
+
+        let params = WsAmendOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .cl_ord_id("event-1".to_string())
+            .new_px("0.43".to_string())
+            .speed_bump("1")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(json["speedBump"], "1");
+    }
+
+    #[rstest]
+    fn test_ws_attach_algo_ord_params_serializes_trailing_fields() {
+        use super::WsAttachAlgoOrdParamsBuilder;
+
+        let params = WsAttachAlgoOrdParamsBuilder::default()
+            .attach_algo_cl_ord_id("trail-1")
+            .callback_ratio("0.01")
+            .active_px("64000")
+            .new_callback_ratio("0.02")
+            .new_callback_spread("25")
+            .new_active_px("65000")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(json["callbackRatio"], "0.01");
+        assert_eq!(json["activePx"], "64000");
+        assert_eq!(json["newCallbackRatio"], "0.02");
+        assert_eq!(json["newCallbackSpread"], "25");
+        assert_eq!(json["newActivePx"], "65000");
+        assert!(json.get("callbackSpread").is_none());
     }
 }

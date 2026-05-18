@@ -154,7 +154,7 @@ class BybitDataClient(LiveMarketDataClient):
         ] = {}
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        environment = _resolve_environment(config.environment, config.demo, config.testnet)
+        environment = _resolve_environment(config.environment)
 
         for product_type in self._product_types:
             ws_client = nautilus_pyo3.BybitWebSocketClient.new_public(

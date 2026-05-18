@@ -20,11 +20,14 @@
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
 use nautilus_okx::{
-    common::enums::{OKXEnvironment, OKXInstrumentType},
+    common::{
+        consts::OKX_CLIENT_ID,
+        enums::{OKXEnvironment, OKXInstrumentType},
+    },
     config::OKXDataClientConfig,
     factories::OKXDataClientFactory,
 };
@@ -52,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let client_factory = OKXDataClientFactory::new();
-    let client_id = ClientId::new("OKX");
+    let client_id = *OKX_CLIENT_ID;
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)

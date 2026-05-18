@@ -197,7 +197,7 @@ impl Drop for TimeEventHandler_API {
 }
 
 impl TimeEventHandler_API {
-    /// Creates a null (sentinel) TimeEventHandler_API.
+    /// Creates a null (sentinel) `TimeEventHandler_API`.
     ///
     /// Used to indicate "no event" when returning from pop operations.
     #[must_use]

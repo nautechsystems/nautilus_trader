@@ -18,13 +18,14 @@ class DataEngineConfig:
         time_bars_skip_first_non_full_bar: bool | None = None,
         time_bars_interval_type: typing.Any | None = None,
         time_bars_build_delay: int | None = None,
-        time_bars_origins: typing.Mapping[model.BarAggregation, int] | None = None,
+        time_bars_origin_offset: typing.Mapping[model.BarAggregation, int] | None = None,
         validate_data_sequence: bool | None = None,
         buffer_deltas: bool | None = None,
         emit_quotes_from_book: bool | None = None,
         emit_quotes_from_book_depths: bool | None = None,
         external_clients: typing.Sequence[model.ClientId] | None = None,
         debug: bool | None = None,
+        disable_historical_cache: bool | None = None,
     ) -> None: ...
     @property
     def time_bars_build_with_no_updates(self) -> bool: ...
@@ -44,6 +45,8 @@ class DataEngineConfig:
     def emit_quotes_from_book(self) -> bool: ...
     @property
     def emit_quotes_from_book_depths(self) -> bool: ...
+    @property
+    def disable_historical_cache(self) -> bool: ...
     @property
     def debug(self) -> bool: ...
 

@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::consts::COINBASE_VENUE,
+    common::consts::{COINBASE, COINBASE_VENUE},
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
     data::CoinbaseDataClient,
     execution::CoinbaseExecutionClient,
@@ -79,7 +79,7 @@ impl DataClientFactory for CoinbaseDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let coinbase_config = config
@@ -98,7 +98,7 @@ impl DataClientFactory for CoinbaseDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "COINBASE"
+        COINBASE
     }
 
     fn config_type(&self) -> &'static str {
@@ -145,7 +145,7 @@ impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let coinbase_config = config
             .as_any()
@@ -181,7 +181,7 @@ impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "COINBASE"
+        COINBASE
     }
 
     fn config_type(&self) -> &'static str {
@@ -212,7 +212,7 @@ mod tests {
     #[rstest]
     fn test_coinbase_data_client_factory_creation() {
         let factory = CoinbaseDataClientFactory::new();
-        assert_eq!(factory.name(), "COINBASE");
+        assert_eq!(factory.name(), COINBASE);
         assert_eq!(factory.config_type(), "CoinbaseDataClientConfig");
     }
 
@@ -245,7 +245,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("COINBASE-TEST", &config, cache, clock);
+        let result = factory.create("COINBASE-TEST", &config, cache.into(), clock);
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -267,7 +267,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("COINBASE-TEST", &WrongConfig, cache, clock);
+        let result = factory.create("COINBASE-TEST", &WrongConfig, cache.into(), clock);
         let err = match result {
             Ok(_) => panic!("wrong config type should be rejected"),
             Err(e) => e,
@@ -303,7 +303,7 @@ mod tests {
             TraderId::from("TRADER-001"),
             AccountId::from("COINBASE-001"),
         );
-        assert_eq!(factory.name(), "COINBASE");
+        assert_eq!(factory.name(), COINBASE);
         assert_eq!(factory.config_type(), "CoinbaseExecClientConfig");
     }
 
@@ -319,7 +319,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let client = factory
-            .create("COINBASE-TEST", &config, cache)
+            .create("COINBASE-TEST", &config, cache.into())
             .expect("factory should create exec client with valid config");
 
         assert_eq!(client.client_id(), ClientId::from("COINBASE-TEST"));
@@ -343,7 +343,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let client = factory
-            .create("COINBASE-DERIV", &config, cache)
+            .create("COINBASE-DERIV", &config, cache.into())
             .expect("factory should create margin exec client when configured for derivatives");
 
         assert_eq!(client.client_id(), ClientId::from("COINBASE-DERIV"));
@@ -367,7 +367,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let err = factory
-            .create("COINBASE-TEST", &config, cache)
+            .create("COINBASE-TEST", &config, cache.into())
             .err()
             .expect("unsupported account type must be rejected");
         let msg = err.to_string();
@@ -388,7 +388,7 @@ mod tests {
         let wrong_config = CoinbaseDataClientConfig::default();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("COINBASE-TEST", &wrong_config, cache);
+        let result = factory.create("COINBASE-TEST", &wrong_config, cache.into());
         let err = match result {
             Ok(_) => panic!("wrong config type should be rejected"),
             Err(e) => e,

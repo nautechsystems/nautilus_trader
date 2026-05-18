@@ -77,7 +77,7 @@ log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
@@ -101,7 +101,9 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 criterion = { workspace = true }
 dotenvy = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
+toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-kraken --bench websocket`
 [[bench]]

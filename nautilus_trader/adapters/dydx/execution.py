@@ -141,11 +141,7 @@ class DydxExecutionClient(LiveExecutionClient):
         # Configuration
         self._config = config
         self._subaccount = config.subaccount
-        self._network = (
-            config.environment
-            if config.environment is not None
-            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
-        )
+        self._network = config.environment or DydxNetwork.MAINNET
         self._is_testnet = self._network == DydxNetwork.TESTNET
         self._log.info(f"network={self._network}", LogColor.BLUE)
         self._log.info(f"{config.subaccount=}", LogColor.BLUE)

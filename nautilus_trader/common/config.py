@@ -358,13 +358,8 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     factor: int = 2
 
     def __repr__(self) -> str:
-        redacted_password = "None"
+        redacted_password = "***" if self.password is not None else "None"
 
-        if self.password:
-            if len(self.password) >= 4:
-                redacted_password = f"{self.password[:2]}...{self.password[-2:]}"
-            else:
-                redacted_password = self.password
         return (
             f"{type(self).__name__}("
             f"type={self.type}, "
@@ -594,7 +589,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
         The path to the log file directory.
         If ``None`` then will write to the current working directory.
     log_file_name : str, optional
-        The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
+        The custom log file name (will use a '.log' suffix for plain text or '.jsonl' for JSON).
         This will override automatic naming, and no daily file rotation will occur.
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.

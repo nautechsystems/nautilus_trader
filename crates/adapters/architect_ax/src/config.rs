@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 
@@ -32,7 +33,8 @@ use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
 )]
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct AxDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
     pub api_key: Option<String>,
@@ -137,7 +139,8 @@ impl AxDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
 )]
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct AxExecClientConfig {
     /// The trader ID for the client.
     #[builder(default = TraderId::from("TRADER-001"))]
@@ -316,5 +319,41 @@ mod tests {
 
         let exec = AxExecClientConfig::default();
         assert_eq!(exec.environment, AxEnvironment::Sandbox);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_minimal() {
+        let config: AxDataClientConfig = toml::from_str(
+            r#"
+environment = "PRODUCTION"
+http_timeout_secs = 30
+heartbeat_interval_secs = 10
+update_instruments_interval_mins = 5
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, AxEnvironment::Production);
+        assert_eq!(config.http_timeout_secs, 30);
+        assert_eq!(config.heartbeat_interval_secs, 10);
+        assert_eq!(config.update_instruments_interval_mins, 5);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_empty_uses_defaults() {
+        let config: AxExecClientConfig = toml::from_str("").unwrap();
+        let expected = AxExecClientConfig::default();
+
+        assert_eq!(config.trader_id, expected.trader_id);
+        assert_eq!(config.account_id, expected.account_id);
+        assert_eq!(config.environment, expected.environment);
+        assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
+        assert_eq!(
+            config.heartbeat_interval_secs,
+            expected.heartbeat_interval_secs,
+        );
+        assert_eq!(config.recv_window_ms, expected.recv_window_ms);
+        assert_eq!(config.cancel_on_disconnect, expected.cancel_on_disconnect);
+        assert_eq!(config.transport_backend, expected.transport_backend);
     }
 }

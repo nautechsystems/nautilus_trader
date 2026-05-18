@@ -2,7 +2,10 @@
 set -euo pipefail
 
 version="${1:-}"
-attempts="${2:-3}"
+attempts="${2:-${INSTALL_ATTEMPTS:-5}}"
+curl_retries="${CURL_RETRIES:-5}"
+curl_connect_timeout="${CURL_CONNECT_TIMEOUT:-20}"
+curl_max_time="${CURL_MAX_TIME:-300}"
 
 if [ -z "$version" ]; then
   echo "Usage: $0 <version> [attempts]" >&2
@@ -37,6 +40,18 @@ fi
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+download_file() {
+  local output_path="$1"
+  local url="$2"
+
+  curl -fsSL \
+    --retry "$curl_retries" \
+    --retry-all-errors \
+    --connect-timeout "$curl_connect_timeout" \
+    --max-time "$curl_max_time" \
+    -o "$output_path" "$url"
+}
+
 for attempt in $(seq 1 "$attempts"); do
   archive_path="${work_dir}/${archive_name}"
   checksum_path="${work_dir}/${checksum_name}"
@@ -45,11 +60,9 @@ for attempt in $(seq 1 "$attempts"); do
 
   echo "Installing cargo-nextest ${version} (attempt ${attempt}/${attempts})"
 
-  if ! curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 \
-    -o "$archive_path" "${base_url}/${archive_name}"; then
+  if ! download_file "$archive_path" "${base_url}/${archive_name}"; then
     echo "Failed to download ${archive_name}"
-  elif ! curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 \
-    -o "$checksum_path" "${base_url}/${checksum_name}"; then
+  elif ! download_file "$checksum_path" "${base_url}/${checksum_name}"; then
     echo "Failed to download ${checksum_name}"
   elif ! (
     cd "$work_dir"
@@ -72,7 +85,7 @@ for attempt in $(seq 1 "$attempts"); do
   fi
 
   if [ "$attempt" -lt "$attempts" ]; then
-    sleep 5
+    sleep $((2 ** attempt))
   fi
 done
 

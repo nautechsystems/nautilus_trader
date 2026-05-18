@@ -371,6 +371,17 @@ pub struct DeribitPerpetualMsg {
     pub timestamp: u64,
 }
 
+/// Volatility index data from the `deribit_volatility_index.{index_name}` channel.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitVolatilityIndexMsg {
+    /// Timestamp in milliseconds since Unix epoch.
+    pub timestamp: u64,
+    /// Current volatility index value.
+    pub volatility: f64,
+    /// Index identifier (for example `"btc_usd"`).
+    pub index_name: String,
+}
+
 /// Chart/OHLC bar data from chart.trades.{instrument}.{resolution} channel.
 ///
 /// Sent via the `chart.trades.{instrument_name}.{resolution}` channel.
@@ -632,8 +643,9 @@ pub struct DeribitOrderMsg {
     /// Original order amount in contracts.
     #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
     pub amount: Decimal,
-    /// Amount filled so far.
-    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
+    /// Amount filled so far. Deribit omits this field for untriggered trigger
+    /// orders (e.g. `stop_market`, `stop_limit`); treat the missing case as zero.
+    #[serde(default, deserialize_with = "deserialize_decimal")]
     pub filled_amount: Decimal,
     /// Average fill price.
     #[serde(
@@ -782,6 +794,15 @@ pub struct DeribitPortfolioMsg {
     /// Maintenance margin requirement. Maps to MarginBalance.maintenance.
     #[serde(with = "rust_decimal::serde::float")]
     pub maintenance_margin: Decimal,
+    /// Margin model (e.g., "segregated_sm", "cross_sm", "cross_pm")
+    #[serde(default)]
+    pub margin_model: Option<String>,
+    /// Whether cross-collateral is enabled for this currency
+    #[serde(default)]
+    pub cross_collateral_enabled: Option<bool>,
+    /// Available withdrawal funds (per-currency withdrawable amount)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub available_withdrawal_funds: Option<Decimal>,
 }
 
 /// Raw Deribit WebSocket message variants.
@@ -994,5 +1015,19 @@ mod tests {
             Some("ETH-25DEC25")
         );
         assert_eq!(extract_instrument_from_channel("platform_state"), None);
+    }
+
+    #[rstest]
+    fn test_parse_volatility_index_payload() {
+        let value = serde_json::json!({
+            "timestamp": 1619777946007_u64,
+            "volatility": 129.36_f64,
+            "index_name": "btc_usd",
+        });
+
+        let payload: DeribitVolatilityIndexMsg = serde_json::from_value(value).unwrap();
+        assert_eq!(payload.index_name, "btc_usd");
+        assert_eq!(payload.volatility, 129.36);
+        assert_eq!(payload.timestamp, 1619777946007_u64);
     }
 }

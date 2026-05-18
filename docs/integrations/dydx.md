@@ -1,4 +1,4 @@
-# dYdX v4
+# dYdX
 
 dYdX is one of the largest decentralized cryptocurrency exchanges for crypto derivative products.
 This integration supports live market data ingestion and order execution with dYdX v4, running on
@@ -176,19 +176,20 @@ time-in-force and expiry, so no manual tagging is needed.
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Notes                                                        |
-|---------------|------------|--------------------------------------------------------------|
-| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. |
-| `reduce_only` | ✓          | Passed for all order types. Venue support may vary by order type. |
+| Instruction   | Perpetuals | Notes                                                                                |
+|---------------|------------|--------------------------------------------------------------------------------------|
+| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. A post‑only order priced to cross the spread is **accepted then immediately canceled** by the venue (not rejected with a reason). |
+| `reduce_only` | ✓          | Passed for all order types. dYdX enforces this as a **fill‑time clamp**, not a placement‑time precondition: a reduce‑only order placed against no position will still fill normally. |
 
 ### Time in force options
 
-| Time in force | Perpetuals | Notes                |
-|---------------|------------|----------------------|
-| `GTC`         | ✓          | Good Till Canceled.  |
-| `GTD`         | ✓          | Good Till Date.      |
-| `FOK`         | ✓          | Fill or Kill.        |
-| `IOC`         | ✓          | Immediate or Cancel. |
+| Time in force | Perpetuals | Notes                                                                      |
+|---------------|------------|----------------------------------------------------------------------------|
+| `GTC`         | ✓          | Good Till Canceled.                                                        |
+| `GTD`         | ✓          | Good Till Date. The venue reports expiry as a cancel event; the adapter maps this to `OrderExpired` (not `OrderCanceled`) when the order's `expire_time` has passed. |
+| `IOC`         | ✓          | Immediate or Cancel.                                                       |
+| `FOK`         | -          | *Deprecated by dYdX v4*. The chain rejects FOK orders with `code=48`; the adapter denies pre‑submission with `OrderRejected`. |
+| `DAY`         | -          | *Not supported*. The adapter denies pre‑submission with `OrderRejected`.   |
 
 ### Advanced order features
 
@@ -202,7 +203,7 @@ time-in-force and expiry, so no manual tagging is needed.
 
 | Operation    | Perpetuals | Notes                                                                                                                  |
 |--------------|------------|------------------------------------------------------------------------------------------------------------------------|
-| Batch submit | -          | *Not supported*.                                                                                                       |
+| Batch submit | ✓          | Supported for long‑term `LIMIT` orders. Short‑term orders are submitted individually.                                   |
 | Batch modify | -          | *Not supported*.                                                                                                       |
 | Batch cancel | ✓          | Partitioned: short‑term orders use `MsgBatchCancel` (single gRPC call), long‑term orders use batched `MsgCancelOrder`. |
 
@@ -237,6 +238,25 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 | OCO orders         | -          | *Not supported*.                                 |
 | Bracket orders     | -          | *Not supported*.                                 |
 | Conditional orders | ✓          | Stop, take‑profit market, and take‑profit limit. |
+
+### Equity tier limit
+
+dYdX caps each subaccount at a fixed number of **simultaneous open conditional orders** based on
+the account's equity tier (e.g., 10 conditional orders for the standard tier). Submitting an
+additional conditional order beyond the cap is rejected on‑chain with `code=10001` and a log
+message of the form `Opening order would exceed equity tier limit of N`. Cancel existing
+conditional orders before placing more, or split strategies across subaccounts.
+
+### MIT and LIT round‑tripping
+
+dYdX's protocol uses a single `TAKE_PROFIT` order type with a price (`subticks`) and trigger
+price; whether it behaves as market‑on‑trigger or limit‑on‑trigger is implicit in the price. The
+adapter submits Nautilus `MARKET_IF_TOUCHED` as a take‑profit with the price set to the 5%
+pay‑through worst‑case, and `LIMIT_IF_TOUCHED` as a take‑profit at the user's limit price. Both
+forms are returned by the Indexer as `"type":"TAKE_PROFIT"`. On reconciliation, the adapter
+compares the parsed limit price against the configured pay‑through tolerance to recover the
+original Nautilus order type. If the price is within the pay‑through band of the oracle, the
+order is reconciled as `MARKET_IF_TOUCHED`; otherwise it is reconciled as `LIMIT_IF_TOUCHED`.
 
 ### Liquidation and ADL (deleveraging) handling
 
@@ -516,16 +536,17 @@ No manual conversion is needed when submitting orders through Nautilus.
 
 The v4 adapter supports the following data subscriptions:
 
-| Data type           | Subscription | Historical request | Notes                                     |
-|---------------------|--------------|--------------------|-------------------------------------------|
-| Trade ticks         | ✓            | ✓                  |                                           |
-| Quote ticks         | ✓            | -                  | Synthesized from order book top‑of‑book.  |
-| Order book deltas   | ✓            | ✓                  | L2 depth only. Snapshot via HTTP request. |
-| Bars                | ✓            | ✓                  | See supported resolutions below.          |
-| Mark prices         | ✓            | -                  | Via markets channel.                      |
-| Index prices        | ✓            | -                  | Via markets channel.                      |
-| Funding rates       | ✓            | -                  | Via markets channel.                      |
-| Instrument status   | ✓            | -                  | Via markets channel.                      |
+| Data type            | Subscription | Historical request | Notes                                           |
+|----------------------|--------------|--------------------|-------------------------------------------------|
+| Trade ticks          | ✓            | ✓                  |                                                 |
+| Quote ticks          | ✓            | -                  | Synthesized from order book top‑of‑book.        |
+| Order book deltas    | ✓            | -                  | L2 depth only.                                  |
+| Order book snapshots | -            | ✓                  | One‑time snapshot via HTTP request.             |
+| Bars                 | ✓            | ✓                  | See supported resolutions below.                |
+| Mark prices          | ✓            | -                  | Via markets channel.                            |
+| Index prices         | ✓            | -                  | Via markets channel.                            |
+| Funding rates        | ✓            | ✓                  | Real‑time via markets channel, history via HTTP. |
+| Instrument status    | ✓            | -                  | Via markets channel.                            |
 
 ### Supported bar resolutions
 
@@ -677,23 +698,23 @@ Default mainnet endpoints are used automatically. Override via `base_url_http`,
 
 ## Configuration
 
-Configure the dYdX adapter through the trading node configuration. Both data and execution
-clients support environment variable fallbacks for credentials and network-specific settings.
+Configure the dYdX adapter through the trading node configuration. Execution clients support
+environment variable fallbacks for credentials. Data clients use public endpoints and do not require
+wallet credentials.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                                                        |
-|---------------------------|-----------|----------------------------------------------------------------------------------------------------|
-| `wallet_address`          | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
-| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set.       |
-| `is_testnet`              | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                             |
-| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.        |
-| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.                   |
-| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.                  |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                              |
-| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                              |
-| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
-| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
+| Option                    | Default   | Description                                                                                 |
+|---------------------------|-----------|---------------------------------------------------------------------------------------------|
+| `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.         |
+| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
+| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.  |
+| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.             |
+| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.            |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                       |
+| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                       |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                               |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                               |
 
 ### Execution client configuration options
 
@@ -703,8 +724,7 @@ clients support environment variable fallbacks for credentials and network-speci
 | `subaccount`                   | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
 | `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
 | `authenticator_ids`            | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                     |
-| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set.       |
-| `is_testnet`                   | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                             |
+| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                    |
 | `base_url_http`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
 | `base_url_ws`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
 | `base_url_grpc`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
@@ -766,7 +786,7 @@ node.build()
 ### API credentials
 
 Credentials can be passed directly via the Python config (`wallet_address`, `private_key`) or
-resolved automatically from environment variables based on the `is_testnet` setting.
+resolved automatically from environment variables based on the configured `environment`.
 
 #### Environment variables
 
@@ -780,7 +800,7 @@ resolved automatically from environment variables based on the `is_testnet` sett
 #### Resolution priority
 
 1. Value passed in the Python config (if non-empty)
-2. Environment variable (selected by `is_testnet` flag)
+2. Environment variable selected by `environment`
 
 ### Permissioned key trading
 

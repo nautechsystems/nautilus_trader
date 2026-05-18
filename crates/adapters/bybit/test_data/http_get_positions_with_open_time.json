@@ -1,0 +1,41 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "list": [{
+      "positionIdx": 0,
+      "riskId": 1,
+      "riskLimitValue": "150",
+      "symbol": "LTCUSDT",
+      "side": "Buy",
+      "size": "1",
+      "avgPrice": "70",
+      "positionValue": "70",
+      "tradeMode": 0,
+      "positionStatus": "Normal",
+      "autoAddMargin": 0,
+      "adlRankIndicator": 0,
+      "leverage": "10",
+      "positionBalance": "7",
+      "markPrice": "70.00",
+      "liqPrice": "",
+      "bustPrice": "",
+      "positionMM": "0",
+      "positionIM": "0",
+      "tpslMode": "Full",
+      "takeProfit": "0",
+      "stopLoss": "0",
+      "trailingStop": "0",
+      "unrealisedPnl": "0",
+      "curRealisedPnl": "0",
+      "cumRealisedPnl": "0",
+      "createdTime": "1676538056258",
+      "updatedTime": "1697673600012",
+      "openTime": 1700000000123
+    }],
+    "nextPageCursor": "",
+    "category": "linear"
+  },
+  "retExtInfo": {},
+  "time": 1697673900000
+}

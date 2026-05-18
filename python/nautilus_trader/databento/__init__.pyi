@@ -49,6 +49,8 @@ class DatabentoDataLoader:
     def set_dataset_for_venue(self, dataset: str, venue: model.Venue) -> None: ...
     def get_dataset_for_venue(self, venue: model.Venue) -> str | None: ...
     def get_venue_for_publisher(self, publisher_id: int) -> str | None: ...
+    def set_price_precision(self, symbol: str, price_precision: int) -> None: ...
+    def get_price_precisions(self) -> dict[str, int]: ...
     def schema_for_file(self, filepath: str | os.PathLike | pathlib.Path) -> str | None: ...
     def load_instruments(
         self,
@@ -209,33 +211,34 @@ class DatabentoHistoricalClient:
     ) -> None: ...
     @property
     def api_key(self) -> str: ...
+    def set_price_precision(self, symbol: str, price_precision: int) -> None: ...
     def get_dataset_range(self, dataset: str) -> typing.Any: ...
     def get_range_instruments(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
     def get_range_quotes(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
-        price_precision: int | None = ...,
-        schema: str | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
+        schema: str | None = None,
     ) -> typing.Any: ...
     def get_range_trades(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
-        price_precision: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
     ) -> typing.Any: ...
     def get_range_bars(
         self,
@@ -243,53 +246,53 @@ class DatabentoHistoricalClient:
         instrument_ids: typing.Sequence[model.InstrumentId],
         aggregation: model.BarAggregation,
         start: int,
-        end: int | None,
-        limit: int | None,
-        price_precision: int | None,
-        timestamp_on_close: bool,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
+        timestamp_on_close: bool = True,
     ) -> typing.Any: ...
     def get_order_book_depth10(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        depth: int | None = ...,
+        end: int | None = None,
+        depth: int | None = None,
     ) -> typing.Any: ...
     def get_range_order_book_deltas(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
-        price_precision: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
     ) -> typing.Any: ...
     def get_range_imbalance(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
-        price_precision: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
     ) -> typing.Any: ...
     def get_range_statistics(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
-        price_precision: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
     ) -> typing.Any: ...
     def get_range_status(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int,
-        end: int | None = ...,
-        limit: int | None = ...,
+        end: int | None = None,
+        limit: int | None = None,
     ) -> typing.Any: ...
 
 @typing.final
@@ -340,6 +343,8 @@ class DatabentoLiveClient:
         instrument_ids: typing.Sequence[model.InstrumentId],
         start: int | None = None,
         snapshot: bool | None = None,
+        price_precisions: typing.Sequence[int | None] | None = None,
+        stype_in: str | None = None,
     ) -> None: ...
     def start(self, callback: typing.Any, callback_pyo3: typing.Any) -> typing.Any: ...
     def close(self) -> None: ...
@@ -408,6 +413,13 @@ class DatabentoStatisticType(enum.Enum):
     CLOSE_PRICE = ...
     NET_CHANGE = ...
     VWAP = ...
+    VOLATILITY = ...
+    DELTA = ...
+    UNCROSSING_PRICE = ...
+    UPPER_PRICE_LIMIT = ...
+    LOWER_PRICE_LIMIT = ...
+    BLOCK_VOLUME = ...
+    INDICATIVE_CLOSE_PRICE = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...

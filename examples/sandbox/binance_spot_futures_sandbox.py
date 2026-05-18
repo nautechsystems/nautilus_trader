@@ -19,6 +19,7 @@ import json
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
@@ -144,8 +145,8 @@ async def main():
                 account_type=BinanceAccountType.USDT_FUTURES,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
+                environment=BinanceEnvironment.LIVE,
                 us=False,  # If client is for Binance US
-                testnet=False,  # If client uses the testnet
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
             "BINANCE_SPOT": BinanceDataClientConfig(
@@ -153,8 +154,8 @@ async def main():
                 account_type=BinanceAccountType.SPOT,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
+                environment=BinanceEnvironment.LIVE,
                 us=False,  # If client is for Binance US
-                testnet=False,  # If client uses the testnet
                 instrument_provider=InstrumentProviderConfig(load_all=True),
             ),
         },

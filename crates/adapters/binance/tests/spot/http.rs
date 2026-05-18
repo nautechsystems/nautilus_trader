@@ -644,6 +644,14 @@ fn unauthorized_response() -> impl IntoResponse {
     )
 }
 
+fn no_such_order_response() -> impl IntoResponse {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Body::from(r#"{"code":-2013,"msg":"Order does not exist."}"#),
+    )
+}
+
 fn create_router(state: Arc<TestServerState>) -> Router {
     let ping_state = state.clone();
     let time_state = state.clone();
@@ -987,6 +995,11 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             .get("orderId")
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(12345);
+
+                        if order_id == 99999 {
+                            return no_such_order_response().into_response();
+                        }
+
                         let client_order_id = params
                             .get("origClientOrderId")
                             .cloned()
@@ -1103,7 +1116,7 @@ async fn test_ping_returns_success() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1114,7 +1127,7 @@ async fn test_ping_returns_success() {
     .unwrap();
 
     let result = client.ping().await;
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -1124,7 +1137,7 @@ async fn test_server_time_returns_valid_timestamp() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1145,7 +1158,7 @@ async fn test_depth_returns_order_book() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1175,7 +1188,7 @@ async fn test_trades_returns_recent_trades() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1201,7 +1214,7 @@ async fn test_exchange_info_returns_symbols() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1228,7 +1241,7 @@ async fn test_account_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1243,7 +1256,7 @@ async fn test_account_requires_credentials() {
     };
     let result = client.account(&params).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1253,7 +1266,7 @@ async fn test_account_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1283,7 +1296,7 @@ async fn test_open_orders_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1295,7 +1308,7 @@ async fn test_open_orders_requires_credentials() {
 
     let result = client.open_orders(Some("BTCUSDT")).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1305,7 +1318,7 @@ async fn test_open_orders_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1331,7 +1344,7 @@ async fn test_my_trades_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1345,7 +1358,7 @@ async fn test_my_trades_requires_credentials() {
         .account_trades("BTCUSDT", None, None, None, None)
         .await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1355,7 +1368,7 @@ async fn test_my_trades_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1388,7 +1401,7 @@ async fn test_rate_limit_triggers_after_threshold() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1398,8 +1411,8 @@ async fn test_rate_limit_triggers_after_threshold() {
     )
     .unwrap();
 
-    assert!(client.ping().await.is_ok());
-    assert!(client.ping().await.is_ok());
+    client.ping().await.unwrap();
+    client.ping().await.unwrap();
 
     let result = client.ping().await;
     assert!(result.is_err());
@@ -1412,7 +1425,7 @@ async fn test_domain_client_request_instruments() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         None,
         None,
@@ -1435,7 +1448,7 @@ async fn test_new_order_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1458,7 +1471,7 @@ async fn test_new_order_requires_credentials() {
         )
         .await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1468,7 +1481,7 @@ async fn test_new_order_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1504,7 +1517,7 @@ async fn test_cancel_order_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1516,7 +1529,7 @@ async fn test_cancel_order_requires_credentials() {
 
     let result = client.cancel_order("BTCUSDT", Some(12345), None).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1526,7 +1539,7 @@ async fn test_cancel_order_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1552,7 +1565,7 @@ async fn test_cancel_all_orders_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1564,7 +1577,7 @@ async fn test_cancel_all_orders_requires_credentials() {
 
     let result = client.cancel_open_orders("BTCUSDT").await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1574,7 +1587,7 @@ async fn test_cancel_all_orders_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1597,7 +1610,7 @@ async fn create_domain_client_with_instruments(
     api_secret: Option<String>,
 ) -> BinanceSpotHttpClient {
     let client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         api_key,
         api_secret,
@@ -1801,10 +1814,35 @@ async fn test_domain_request_order_status() {
     let report = client
         .request_order_status_report(account_id, instrument_id, Some(venue_order_id), None)
         .await
+        .unwrap()
         .unwrap();
 
     assert_eq!(report.venue_order_id, venue_order_id);
     assert_eq!(report.instrument_id, instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_request_order_status_returns_none_for_missing_order() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let client = create_domain_client_with_instruments(
+        base_url,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+    )
+    .await;
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let venue_order_id = VenueOrderId::from("99999");
+
+    let report = client
+        .request_order_status_report(account_id, instrument_id, Some(venue_order_id), None)
+        .await
+        .unwrap();
+
+    assert!(report.is_none());
 }
 
 #[rstest]

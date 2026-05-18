@@ -631,16 +631,17 @@ pub fn resolution_to_bar_type(
         "10" => (10, BarAggregation::Minute),
         "15" => (15, BarAggregation::Minute),
         "30" => (30, BarAggregation::Minute),
-        "60" => (60, BarAggregation::Minute),
-        "120" => (120, BarAggregation::Minute),
-        "180" => (180, BarAggregation::Minute),
-        "360" => (360, BarAggregation::Minute),
-        "720" => (720, BarAggregation::Minute),
+        "60" => (1, BarAggregation::Hour),
+        "120" => (2, BarAggregation::Hour),
+        "180" => (3, BarAggregation::Hour),
+        "360" => (6, BarAggregation::Hour),
+        "720" => (12, BarAggregation::Hour),
         "1D" => (1, BarAggregation::Day),
         _ => anyhow::bail!("Unsupported Deribit resolution: {resolution}"),
     };
 
-    let spec = BarSpecification::new(step, aggregation, PriceType::Last);
+    let spec = BarSpecification::new_checked(step, aggregation, PriceType::Last)
+        .context("invalid Deribit bar resolution")?;
     Ok(BarType::new(
         instrument_id,
         spec,
@@ -1674,8 +1675,8 @@ mod tests {
         let bar_type = resolution_to_bar_type(instrument_id, "60").unwrap();
 
         assert_eq!(bar_type.instrument_id(), instrument_id);
-        assert_eq!(bar_type.spec().step.get(), 60);
-        assert_eq!(bar_type.spec().aggregation, BarAggregation::Minute);
+        assert_eq!(bar_type.spec().step.get(), 1);
+        assert_eq!(bar_type.spec().aggregation, BarAggregation::Hour);
     }
 
     #[rstest]
@@ -1957,6 +1958,35 @@ mod tests {
         assert!(report.price.is_none());
         assert!(report.trigger_price.is_some());
         assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_order_stop_market_response_missing_filled_amount() {
+        // Regression for https://github.com/nautechsystems/nautilus_trader/issues/3995
+        // Deribit omits `filled_amount` for untriggered trigger market orders;
+        // the deserializer must treat the missing field as zero rather than
+        // failing with "missing field `filled_amount`".
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_stop_market_no_filled_amount.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        assert_eq!(order_msg.order_id, "USDC-SLMB-19641");
+        assert_eq!(order_msg.order_type, "stop_market");
+        assert_eq!(order_msg.order_state, "untriggered");
+        assert_eq!(order_msg.filled_amount, rust_decimal::Decimal::ZERO);
+        assert_eq!(order_msg.average_price, None);
+
+        let account_id = AccountId::new("DERIBIT-001");
+        let report =
+            parse_user_order_msg(&order_msg, &instrument, account_id, UnixNanos::default())
+                .unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.filled_qty.as_f64(), 0.0);
     }
 
     #[rstest]

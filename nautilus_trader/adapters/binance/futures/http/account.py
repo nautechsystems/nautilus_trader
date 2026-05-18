@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceStatusCode
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
@@ -213,8 +212,12 @@ class BinanceFuturesCancelMultipleOrdersHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
+        # Per-item results are heterogeneous: successes match BinanceOrder,
+        # failures are {"code": int, "msg": str}, and msgspec does not support
+        # untagged unions of dict-like types, so decode as raw dicts and
+        # discriminate by the `code` field at the caller.
         self._delete_resp_decoder = msgspec.json.Decoder(
-            list[BinanceOrder] | dict[str, Any],
+            list[dict[str, Any]] | dict[str, Any],
             strict=False,
         )
 
@@ -239,7 +242,7 @@ class BinanceFuturesCancelMultipleOrdersHttp(BinanceHttpEndpoint):
         origClientOrderIdList: str | None = None
         recvWindow: str | None = None
 
-    async def delete(self, params: DeleteParameters) -> list[BinanceOrder]:
+    async def delete(self, params: DeleteParameters) -> list[dict[str, Any]] | dict[str, Any]:
         method_type = HttpMethod.DELETE
         raw = await self._method(method_type, params)
         return self._delete_resp_decoder.decode(raw)
@@ -1033,15 +1036,17 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         symbol: str,
         client_order_ids: list[str],
         recv_window: str | None = None,
-    ) -> bool:
+    ) -> list[dict[str, Any]]:
         """
         Delete multiple Futures orders.
 
-        Returns whether successful.
+        Returns the per-item response list in the same order as `client_order_ids`. Each
+        item is either a Binance order dict on success or `{"code": int, "msg": str}` on
+        failure. Callers must discriminate by the presence of `code`.
 
         """
         stringified_client_order_ids = str(client_order_ids).replace(" ", "").replace("'", '"')
-        await self._endpoint_futures_cancel_multiple_orders.delete(
+        response = await self._endpoint_futures_cancel_multiple_orders.delete(
             params=self._endpoint_futures_cancel_multiple_orders.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
@@ -1049,7 +1054,11 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
                 recvWindow=recv_window,
             ),
         )
-        return True
+
+        if isinstance(response, list):
+            return response
+
+        return []
 
     async def query_futures_account_info(
         self,

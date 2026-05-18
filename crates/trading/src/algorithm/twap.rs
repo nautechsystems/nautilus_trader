@@ -251,12 +251,6 @@ impl ExecutionAlgorithm for TwapAlgorithm {
         );
         self.submit_order(spawned.into(), None, None)?;
 
-        {
-            let cache_rc = self.core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
-            cache.update_order(&order)?;
-        }
-
         self.core.clock().set_timer(
             primary_id.as_str(),
             Duration::from_secs_f64(interval_secs),
@@ -281,7 +275,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
 
         let primary = {
             let cache = self.core.cache();
-            cache.order(&primary_id).cloned()
+            cache.order(&primary_id).map(|o| o.clone())
         };
 
         let Some(primary) = primary else {
@@ -328,12 +322,6 @@ impl ExecutionAlgorithm for TwapAlgorithm {
             true,
         );
         self.submit_order(spawned.into(), None, None)?;
-
-        {
-            let cache_rc = self.core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
-            cache.update_order(&primary)?;
-        }
 
         Ok(())
     }
@@ -734,7 +722,7 @@ mod tests {
         {
             let cache_rc = algo.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
-            let mut primary = cache.order(&primary_id).cloned().unwrap();
+            let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
 
             let canceled = OrderCanceled::new(
                 primary.trader_id(),
@@ -748,8 +736,9 @@ mod tests {
                 None,
                 None,
             );
-            primary.apply(OrderEventAny::Canceled(canceled)).unwrap();
-            cache.update_order(&primary).unwrap();
+            cache
+                .update_order(&OrderEventAny::Canceled(canceled))
+                .unwrap();
         }
 
         // Timer fires but primary is closed

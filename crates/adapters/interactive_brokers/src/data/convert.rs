@@ -30,10 +30,6 @@ use time::OffsetDateTime;
 
 /// Convert Nautilus BarType to IB HistoricalBarSize.
 ///
-/// # Arguments
-///
-/// * `bar_type` - The Nautilus bar type specification
-///
 /// # Errors
 ///
 /// Returns an error if the bar aggregation/step combination is not supported by IB.
@@ -78,14 +74,6 @@ pub fn bar_type_to_ib_bar_size(bar_type: &BarType) -> anyhow::Result<HistoricalB
 }
 
 /// Convert Nautilus PriceType to IB WhatToShow.
-///
-/// # Arguments
-///
-/// * `price_type` - The Nautilus price type
-///
-/// # Returns
-///
-/// Returns the corresponding IB WhatToShow value.
 #[must_use]
 pub fn price_type_to_ib_what_to_show(price_type: PriceType) -> HistoricalWhatToShow {
     match price_type {
@@ -115,13 +103,6 @@ fn _validate_bar_prices(open: &mut f64, high: &mut f64, low: &mut f64, close: &f
 }
 
 /// Convert IB Bar to Nautilus Bar.
-///
-/// # Arguments
-///
-/// * `ib_bar` - The IB historical bar
-/// * `bar_type` - The Nautilus bar type
-/// * `price_precision` - Price precision for the instrument
-/// * `size_precision` - Size precision for the instrument
 ///
 /// # Errors
 ///
@@ -169,14 +150,6 @@ pub fn ib_bar_to_nautilus_bar(
 }
 
 /// Convert IB timestamp (OffsetDateTime) to UnixNanos.
-///
-/// # Arguments
-///
-/// * `dt` - IB timestamp
-///
-/// # Returns
-///
-/// Returns UnixNanos timestamp.
 #[must_use]
 pub fn ib_timestamp_to_unix_nanos(dt: &OffsetDateTime) -> UnixNanos {
     let timestamp = dt.unix_timestamp_nanos();
@@ -184,14 +157,6 @@ pub fn ib_timestamp_to_unix_nanos(dt: &OffsetDateTime) -> UnixNanos {
 }
 
 /// Convert `DateTime<Utc>` to OffsetDateTime.
-///
-/// # Arguments
-///
-/// * `dt` - Chrono DateTime
-///
-/// # Returns
-///
-/// Returns time OffsetDateTime.
 pub fn chrono_to_ib_datetime(dt: &DateTime<Utc>) -> OffsetDateTime {
     let timestamp = dt.timestamp();
     let nanos = dt.timestamp_subsec_nanos();
@@ -202,18 +167,9 @@ pub fn chrono_to_ib_datetime(dt: &DateTime<Utc>) -> OffsetDateTime {
 
 /// Calculate duration for IB historical data request.
 ///
-/// # Arguments
-///
-/// * `start` - Start time (optional)
-/// * `end` - End time (optional)
-///
 /// # Errors
 ///
 /// Returns an error if duration calculation fails.
-///
-/// # Returns
-///
-/// Returns IB Duration calculated from the time range.
 pub fn calculate_duration(
     start: Option<DateTime<Utc>>,
     end: Option<DateTime<Utc>>,
@@ -255,15 +211,6 @@ pub fn calculate_duration(
 ///
 /// This is used to break down a large time range into multiple requests
 /// to comply with IB's duration limits for specific bar sizes.
-///
-/// # Arguments
-///
-/// * `start` - Start time
-/// * `end` - End time
-///
-/// # Returns
-///
-/// Returns a vector of (end_date, duration) tuples.
 pub fn calculate_duration_segments(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
@@ -393,7 +340,7 @@ mod tests {
         let instrument_id = create_test_instrument_id();
         let bar_type = BarType::new(
             instrument_id,
-            BarSpecification::new(99, BarAggregation::Minute, PriceType::Last),
+            BarSpecification::new(12, BarAggregation::Minute, PriceType::Last),
             AggregationSource::External,
         );
         let result = bar_type_to_ib_bar_size(&bar_type);

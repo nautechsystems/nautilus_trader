@@ -17,7 +17,7 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
 /// Venue identifier string.
@@ -25,6 +25,10 @@ pub const BETFAIR: &str = "BETFAIR";
 
 /// Static venue instance.
 pub static BETFAIR_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(BETFAIR)));
+
+/// Static client ID instance.
+pub static BETFAIR_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(BETFAIR)));
 
 /// Price decimal precision for Betfair markets.
 pub const BETFAIR_PRICE_PRECISION: u8 = 2;

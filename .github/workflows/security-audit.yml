@@ -1,36 +1,149 @@
 name: security-audit
 
-# Supply chain security checks - runs nightly and on-demand for visibility.
+# Supply chain security checks.
 #
-# Separate from main build to avoid blocking PRs with unactionable advisories.
+# Triggers:
+#   - Nightly cron and manual dispatch: every audit job runs unconditionally.
+#   - Pull requests: GitHub path filters create a workflow run only when
+#     audit-relevant paths change. The gate job remains as a second check
+#     before the audit jobs run.
+#   - Pushes to develop / master / test-security: GitHub path filters create a
+#     workflow run only when audit-relevant paths change. The gate job remains as
+#     a second check before the audit jobs run.
 
 permissions:
   contents: read
   actions: read
 
+env:
+  # Fork PRs lack repo/org vars, so audit instead of block.
+  EGRESS_POLICY: >-
+    ${{ github.event.pull_request.head.repo.fork && 'audit'
+    || vars.STEP_SECURITY_EGRESS_POLICY
+    || 'block' }}
+
 on:
+  pull_request:
+    paths: &security_audit_paths
+      - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
+      - Cargo.toml
+      - crates/**/Cargo.toml
+      - uv.lock
+      - pyproject.toml
+      - .pre-commit-config.yaml
+      - python/uv.lock
+      - python/pyproject.toml
+      - deny.toml
+      - osv-scanner.toml
+      - .supply-chain/**
+      - tools.toml
+      - .cargo/config.toml
+      - .cargo/audit.toml
+      - rust-toolchain.toml
+      - scripts/cargo-tool-version.sh
+      - scripts/rust-toolchain.sh
+      - scripts/uv-version.sh
+      - scripts/ci/security-audit-gate.sh
+      - .zizmor.yml
+      - .github/actions/**
+      - .github/workflows/**
   push:
-    branches: [test-security]
+    branches: [develop, master, test-security]
+    paths: *security_audit_paths
   schedule:
-    - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
+    - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-22.04
+    outputs:
+      audit_needed: ${{ steps.filter.outputs.audit_needed }}
+    steps:
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect audit-relevant changes
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.event.after }}
+        run: bash scripts/ci/security-audit-gate.sh
+
+  zizmor:
+    name: zizmor
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get uv version from pyproject.toml
+        id: uv-version
+        run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ steps.uv-version.outputs.uv_version }}
+          enable-cache: true
+
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run --no-project --with zizmor==1.24.1 -- \
+            zizmor --format sarif --min-severity medium --config .zizmor.yml .github/ \
+            > zizmor.sarif
+
+      - name: Upload zizmor SARIF
+        if: >-
+          always() &&
+          hashFiles('zizmor.sarif') != '' &&
+          (github.event_name != 'pull_request' ||
+          !github.event.pull_request.head.repo.fork)
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
   cargo-audit:
     name: cargo-audit
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
-    environment:
-      name: >-
-        ${{
-          (github.ref_name == github.event.repository.default_branch ||
-          github.ref_name == 'master') &&
-          'security-audit' ||
-          'security-audit-test'
-        }}
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -50,19 +163,13 @@ jobs:
 
   cargo-deny:
     name: cargo-deny
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
-    environment:
-      name: >-
-        ${{
-          (github.ref_name == github.event.repository.default_branch ||
-          github.ref_name == 'master') &&
-          'security-audit' ||
-          'security-audit-test'
-        }}
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -82,19 +189,13 @@ jobs:
 
   cargo-vet:
     name: cargo-vet
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
-    environment:
-      name: >-
-        ${{
-          (github.ref_name == github.event.repository.default_branch ||
-          github.ref_name == 'master') &&
-          'security-audit' ||
-          'security-audit-test'
-        }}
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -114,19 +215,13 @@ jobs:
 
   pip-audit:
     name: pip-audit
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
-    environment:
-      name: >-
-        ${{
-          (github.ref_name == github.event.repository.default_branch ||
-          github.ref_name == 'master') &&
-          'security-audit' ||
-          'security-audit-test'
-        }}
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -142,7 +237,7 @@ jobs:
           echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: ${{ env.UV_VERSION }}
 
@@ -152,24 +247,18 @@ jobs:
       - name: Run pip-audit
         run: >
           uv export --no-hashes --frozen |
-          uv run --no-project --with pip-audit --
+          uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
           pip-audit --disable-pip --no-deps -r /dev/stdin
 
   osv-scanner:
     name: osv-scanner
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
-    environment:
-      name: >-
-        ${{
-          (github.ref_name == github.event.repository.default_branch ||
-          github.ref_name == 'master') &&
-          'security-audit' ||
-          'security-audit-test'
-        }}
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -182,7 +271,7 @@ jobs:
       - name: Run osv-scanner
         uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
         with:
-          scan-args: |
+          scan-args: |-
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
             --lockfile=uv.lock

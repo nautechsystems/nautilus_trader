@@ -380,6 +380,52 @@ Adapter crates are out of scope for the initial DST contract. Each adapter has i
 adapter that enters the DST path must be audited for direct clock, RNG, and transport usage
 before its behavior can be covered by the contract.
 
+### Process-global lazy state consumes RNG bytes on first call
+
+The contract holds within a single run-of-the-runtime. A few process-global lazy
+initialisations consume RNG bytes on first call, which matters for harnesses that
+run two seeded executions inside one process and compare traces.
+
+- The `Ustr::from()` interner allocates and seeds its internal map on first use.
+- `ahash::RandomState` seeds itself via `getrandom` (which `madsim` hooks under
+  `cfg(madsim)`) on first instance creation.
+
+Single-runtime tests (one body invocation per seed, fresh process) are unaffected:
+the consumption is part of the seeded execution and reproduces deterministically.
+
+Same-seed equality frameworks that invoke the body twice in one process to diff
+the traces will see drift between runs. Run 1 pays the lazy-init cost and consumes
+RNG bytes; run 2 inherits the warm state and starts at a different offset in the
+RNG sequence.
+
+Workaround: pre-warm process-global state outside the runtime before the
+comparison, for example by calling `Ustr::from("")` and constructing one
+`ahash::RandomState` once at process start. Both runs then start with the warmed
+state and consume the RNG sequence identically.
+
+### Adapter factories no longer expose `Rc<RefCell<Cache>>`
+
+Commit `f0ea66da15` ("Standardize adapter cache access via `CacheView`") replaced
+the mutable `Rc<RefCell<Cache>>` parameter on `DataClientFactory::create` and
+`ExecutionClientFactory::create` with a `CacheView`. `CacheView` exposes
+`borrow()` for read access but does not expose the inner `Rc` handle.
+
+This blocks DST-style harness factories that need to construct an
+`OrderMatchingEngine` inline inside the factory, because
+`OrderMatchingEngine::new` still takes `Rc<RefCell<Cache>>` and there is no
+public accessor to recover that handle from a `CacheView`.
+
+Workarounds:
+
+- Pin the harness consumer to a commit before `f0ea66da15`.
+- Refactor the harness so it builds the `OrderMatchingEngine` outside the
+  factory (where the kernel `Cache` handle is still reachable) and passes the
+  constructed engine into the client.
+
+A longer-term escape hatch would be either an accessor on `CacheView` for the
+inner handle or an alternative `OrderMatchingEngine` constructor that accepts a
+`CacheView`. Neither is in the tree today.
+
 ## Relationship to other testing layers
 
 DST complements existing testing; it does not replace any of it.

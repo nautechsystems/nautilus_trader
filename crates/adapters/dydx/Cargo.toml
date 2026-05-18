@@ -82,7 +82,6 @@ rust_decimal = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -102,6 +101,7 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+toml = { workspace = true }
 
 [[bin]]
 name = "dydx-http-public"

@@ -541,9 +541,11 @@ impl Display for MarketToLimitOrder {
     }
 }
 
-impl From<OrderInitialized> for MarketToLimitOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
+impl TryFrom<OrderInitialized> for MarketToLimitOrder {
+    type Error = OrderError;
+
+    fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
+        Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -702,7 +704,7 @@ mod tests {
             .build();
 
         // Convert the OrderInitialized event into a MarketToLimitOrder
-        let order: MarketToLimitOrder = order_initialized.clone().into();
+        let order: MarketToLimitOrder = order_initialized.clone().try_into().unwrap();
 
         // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);

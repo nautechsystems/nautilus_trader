@@ -37,7 +37,6 @@ def get_cached_kraken_spot_http_client(
     api_key: str | None = None,
     api_secret: str | None = None,
     base_url: str | None = None,
-    demo: bool = False,
     timeout_secs: int | None = None,
     max_retries: int | None = None,
     retry_delay_ms: int | None = None,
@@ -63,8 +62,6 @@ def get_cached_kraken_spot_http_client(
         The Kraken API secret for the client.
     base_url : str, optional
         The base URL for the Kraken Spot API.
-    demo : bool, default False
-        Unused for Spot (Kraken Spot has no demo environment).
     timeout_secs : int, optional
         The timeout in seconds for HTTP requests.
     max_retries : int, optional
@@ -87,7 +84,6 @@ def get_cached_kraken_spot_http_client(
         "api_key": api_key,
         "api_secret": api_secret,
         "base_url": base_url,
-        "demo": demo,
         "proxy_url": proxy_url,
     }
 
@@ -251,9 +247,12 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
         KrakenDataClient
 
         """
-        environment = config.environment or KrakenEnvironment.MAINNET
+        environment = config.environment or KrakenEnvironment.LIVE
         product_types = list(config.product_types or (KrakenProductType.SPOT,))
         is_demo = environment == KrakenEnvironment.DEMO
+
+        if is_demo and KrakenProductType.SPOT in product_types:
+            raise ValueError("Kraken Spot does not support the demo environment")
 
         # Get cached HTTP clients for each requested product type
         http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None = None
@@ -264,7 +263,6 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 api_key=config.api_key,
                 api_secret=config.api_secret,
                 base_url=config.base_url_http_spot,
-                demo=is_demo,
                 timeout_secs=config.http_timeout_secs,
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
@@ -344,9 +342,12 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
         KrakenExecutionClient
 
         """
-        environment = config.environment or KrakenEnvironment.MAINNET
+        environment = config.environment or KrakenEnvironment.LIVE
         product_types = list(config.product_types or (KrakenProductType.SPOT,))
         is_demo = environment == KrakenEnvironment.DEMO
+
+        if is_demo and KrakenProductType.SPOT in product_types:
+            raise ValueError("Kraken Spot does not support the demo environment")
 
         # Get cached HTTP clients for each requested product type
         http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None = None
@@ -357,7 +358,6 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
                 api_key=config.api_key,
                 api_secret=config.api_secret,
                 base_url=config.base_url_http_spot,
-                demo=is_demo,
                 timeout_secs=config.http_timeout_secs,
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,

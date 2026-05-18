@@ -31,7 +31,7 @@ use pyo3::prelude::*;
 use crate::{
     common::{
         bar::BinanceBar,
-        consts::{BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_NAUTILUS_SPOT_BROKER_ID},
+        consts::{BINANCE, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_NAUTILUS_SPOT_BROKER_ID},
         encoder::decode_broker_id,
         enums::{BinanceEnvironment, BinanceMarginType, BinancePositionSide, BinanceProductType},
     },
@@ -152,20 +152,20 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Register BinanceBar for Arrow/JSON serialization and Python extraction
     ensure_custom_data_registered::<BinanceBar>();
-    let _ = ensure_rust_extractor_registered::<BinanceBar>();
+    let _result = ensure_rust_extractor_registered::<BinanceBar>();
 
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("BINANCE".to_string(), extract_binance_data_factory)
+        registry.register_factory_extractor(BINANCE.to_string(), extract_binance_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Binance data factory extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry
-        .register_exec_factory_extractor("BINANCE".to_string(), extract_binance_exec_factory)
+    if let Err(e) =
+        registry.register_exec_factory_extractor(BINANCE.to_string(), extract_binance_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Binance exec factory extractor: {e}"

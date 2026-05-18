@@ -23,7 +23,12 @@ mod common;
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
 use nautilus_architect_ax::{
-    common::enums::AxEnvironment, config::AxExecClientConfig, execution::AxExecutionClient,
+    common::{
+        consts::{AX_CLIENT_ID, AX_VENUE},
+        enums::AxEnvironment,
+    },
+    config::AxExecClientConfig,
+    execution::AxExecutionClient,
 };
 use nautilus_common::{
     cache::Cache,
@@ -44,9 +49,7 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     events::{AccountState, OrderAccepted, OrderEventAny, OrderRejected},
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::{LimitOrder, Order, OrderAny, builder::OrderTestBuilder},
     types::{AccountBalance, Money, Price, Quantity},
 };
@@ -81,14 +84,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("AX-001");
-    let client_id = ClientId::from("AX");
+    let client_id = *AX_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("AX"),
+        *AX_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -146,8 +149,8 @@ async fn test_exec_client_creation() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
-    assert_eq!(client.client_id(), ClientId::from("AX"));
-    assert_eq!(client.venue(), Venue::from("AX"));
+    assert_eq!(client.client_id(), *AX_CLIENT_ID);
+    assert_eq!(client.venue(), *AX_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert_eq!(client.account_id(), AccountId::from("AX-001"));
     assert!(!client.is_connected());
@@ -268,7 +271,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("AX")),
+        Some(*AX_CLIENT_ID),
         AccountId::from("AX-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -330,7 +333,7 @@ fn add_open_order_to_cache(
         UnixNanos::default(),
     );
 
-    let mut order_any: OrderAny = order.into();
+    let order_any: OrderAny = order.into();
 
     let accepted = OrderAccepted::new(
         trader_id,
@@ -345,15 +348,14 @@ fn add_open_order_to_cache(
         false,
     );
 
-    order_any
-        .apply(OrderEventAny::Accepted(accepted))
-        .expect("Failed to apply accepted");
-
     cache
         .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
+        .add_order(order_any, None, None, false)
         .unwrap();
-    cache.borrow_mut().update_order(&order_any).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
 }
 
 #[rstest]
@@ -373,7 +375,7 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
 
     let cmd = CancelAllOrders {
         trader_id: TraderId::from("TESTER-001"),
-        client_id: Some(ClientId::from("AX")),
+        client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
         order_side: OrderSide::NoOrderSide,
@@ -726,7 +728,7 @@ async fn test_modify_order_without_venue_order_id_emits_rejected() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("AX")),
+        Some(*AX_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -789,7 +791,7 @@ async fn test_modify_order_success_updates_caches() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("AX")),
+        Some(*AX_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -863,7 +865,7 @@ async fn test_modify_order_http_error_emits_rejected() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("AX")),
+        Some(*AX_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -928,7 +930,7 @@ async fn test_cancel_all_orders_http_failure_emits_cancel_rejected() {
 
     let cmd = CancelAllOrders {
         trader_id: TraderId::from("TESTER-001"),
-        client_id: Some(ClientId::from("AX")),
+        client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
         order_side: OrderSide::NoOrderSide,
@@ -980,7 +982,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
     let cancels = vec![
         CancelOrder {
             trader_id: TraderId::from("TESTER-001"),
-            client_id: Some(ClientId::from("AX")),
+            client_id: Some(*AX_CLIENT_ID),
             strategy_id: StrategyId::from("S-001"),
             instrument_id,
             client_order_id: ClientOrderId::from("O-BC-1"),
@@ -991,7 +993,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
         },
         CancelOrder {
             trader_id: TraderId::from("TESTER-001"),
-            client_id: Some(ClientId::from("AX")),
+            client_id: Some(*AX_CLIENT_ID),
             strategy_id: StrategyId::from("S-001"),
             instrument_id,
             client_order_id: ClientOrderId::from("O-BC-2"),
@@ -1004,7 +1006,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
 
     let cmd = BatchCancelOrders {
         trader_id: TraderId::from("TESTER-001"),
-        client_id: Some(ClientId::from("AX")),
+        client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
         cancels,
@@ -1055,7 +1057,7 @@ fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::from_order(
         order,
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("AX")),
+        Some(*AX_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -1091,7 +1093,7 @@ async fn test_submit_order_denies_unsupported_order_type() {
 
     cache
         .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("AX")), false)
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
         .unwrap();
 
     client
@@ -1142,7 +1144,7 @@ async fn test_submit_order_denies_gtd_time_in_force() {
 
     cache
         .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("AX")), false)
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
         .unwrap();
 
     client
@@ -1192,7 +1194,7 @@ async fn test_submit_market_order_uses_preview_price() {
 
     cache
         .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("AX")), false)
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
         .unwrap();
 
     client
@@ -1259,7 +1261,7 @@ async fn test_submit_market_order_rejects_on_empty_liquidity() {
 
     cache
         .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("AX")), false)
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
         .unwrap();
 
     client
@@ -1344,7 +1346,7 @@ async fn test_submit_order_skips_closed_order() {
 
     cache
         .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("AX")), false)
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
         .unwrap();
 
     client

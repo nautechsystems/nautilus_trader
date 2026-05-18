@@ -1,0 +1,20 @@
+{
+    "serverTime": "2026-05-18T00:00:00.000Z",
+    "orderEvents": [
+        {
+            "type": "PLACE",
+            "order": {
+                "orderId": "abc",
+                "type": "unknown",
+                "symbol": "PF_XBTUSD",
+                "side": "buy",
+                "quantity": 1.0,
+                "filled": 0.0,
+                "limitPrice": 70000.0,
+                "timestamp": "2026-05-18T00:00:00.000Z",
+                "lastUpdateTimestamp": "2026-05-18T00:00:00.000Z",
+                "reduceOnly": false
+            }
+        }
+    ]
+}

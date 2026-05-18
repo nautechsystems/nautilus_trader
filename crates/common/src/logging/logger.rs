@@ -381,7 +381,7 @@ impl Logger {
             use_tracing: _,
             bypass_logging: _,
             file_config: _,
-            clear_log_file: _,
+            clear_log_file,
         } = config;
 
         // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
@@ -399,7 +399,13 @@ impl Logger {
         let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
         } else {
-            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
+            FileWriter::new(
+                trader_id,
+                instance_id,
+                file_config,
+                fileout_level,
+                clear_log_file,
+            )
         };
 
         let process_event = |event: LogEvent,
@@ -644,7 +650,7 @@ impl LogGuard {
     ///
     /// # Panics
     ///
-    /// Panics if the number of active LogGuards would exceed 255.
+    /// Panics if the number of active `LogGuard`s would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
         LOGGER_TX.get().map(|tx| {

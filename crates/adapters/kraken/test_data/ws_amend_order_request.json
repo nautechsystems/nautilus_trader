@@ -1,0 +1,9 @@
+{
+  "method": "amend_order",
+  "params": {
+    "order_id": "OABCDE-12345-FGHIJ",
+    "order_qty": 0.005,
+    "token": "TESTTOKEN"
+  },
+  "req_id": 43
+}

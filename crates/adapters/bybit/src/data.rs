@@ -424,7 +424,9 @@ fn handle_ws_message(
                 }
             };
 
-            if sub_set.is_some_and(|s| s.contains("funding")) {
+            if sub_set.is_some_and(|s| s.contains("funding"))
+                && matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+            {
                 let cache_entry = funding_cache
                     .entry(msg.data.symbol)
                     .or_insert((None, None, None));
@@ -555,6 +557,7 @@ fn handle_ws_message(
         | BybitWsMessage::OrderResponse(_)
         | BybitWsMessage::AccountOrder(_)
         | BybitWsMessage::AccountExecution(_)
+        | BybitWsMessage::AccountExecutionFast(_)
         | BybitWsMessage::AccountWallet(_)
         | BybitWsMessage::AccountPosition(_) => {}
     }
@@ -937,6 +940,13 @@ impl DataClient for BybitDataClient {
 
         if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
             anyhow::bail!("Funding rates not available for {product_type:?} instruments");
+        }
+
+        let guard = self.instruments.load();
+        if let Some(instrument) = guard.get(&instrument_id)
+            && !matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+        {
+            anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
         }
 
         let mut should_subscribe = false;
@@ -2022,7 +2032,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2101,7 +2111,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2206,7 +2216,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2386,7 +2396,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2423,7 +2433,7 @@ mod tests {
             &mut funding_cache,
             clock,
         );
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
 
         // With product_type=Linear, "BTCUSDT" -> "BTCUSDT-LINEAR" matches
         handle_ws_message(
@@ -2476,7 +2486,7 @@ mod tests {
             &mut funding_cache,
             clock,
         );
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
 
         // With subscription, trade should be emitted
         trade_subs.insert(instrument.id());

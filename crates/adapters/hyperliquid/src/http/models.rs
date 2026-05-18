@@ -254,6 +254,78 @@ pub struct SpotPair {
     pub is_canonical: bool,
 }
 
+/// Complete outcome metadata response from `POST /info` with `{ "type": "outcomeMeta" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeMeta {
+    /// Outcome markets available.
+    pub outcomes: Vec<OutcomeMarket>,
+    /// Multi-outcome `priceBucket` questions that reference outcomes by
+    /// `named_outcomes` / `fallback_outcome`. Empty when the venue exposes
+    /// only standalone binary outcomes.
+    #[serde(default)]
+    pub questions: Vec<OutcomeQuestion>,
+}
+
+impl OutcomeMeta {
+    /// Returns the question that references the given outcome via
+    /// `fallback_outcome` or `named_outcomes`, if any.
+    #[must_use]
+    pub fn parent_question(&self, outcome_index: u32) -> Option<&OutcomeQuestion> {
+        self.questions.iter().find(|q| {
+            q.fallback_outcome == Some(outcome_index) || q.named_outcomes.contains(&outcome_index)
+        })
+    }
+}
+
+/// A single outcome market from the outcome metadata response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeMarket {
+    /// Outcome identifier used with side to derive HIP-4 asset IDs.
+    pub outcome: u32,
+    /// Outcome market name.
+    pub name: String,
+    /// Venue-provided market description.
+    pub description: String,
+    /// Side specifications for the binary outcome.
+    #[serde(default)]
+    pub side_specs: Vec<OutcomeSideSpec>,
+}
+
+/// A single side specification for an outcome market.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeSideSpec {
+    /// Side name (for example, "Yes" or "No").
+    pub name: String,
+}
+
+/// A multi-outcome `priceBucket` question referenced by one or more outcomes.
+///
+/// Questions group a fallback outcome plus a sequence of named outcomes whose
+/// `description` field holds an `index:N` pointer back into `named_outcomes`.
+/// Settlement is signalled when `settled_named_outcomes` becomes non-empty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeQuestion {
+    /// Question identifier.
+    pub question: u32,
+    /// Question name.
+    pub name: String,
+    /// Venue-provided question description (carries `class`, `expiry`, etc).
+    pub description: String,
+    /// Fallback outcome triggered when no named outcome resolves.
+    #[serde(default)]
+    pub fallback_outcome: Option<u32>,
+    /// Named outcome indices in the order their `index:N` descriptions reference.
+    #[serde(default)]
+    pub named_outcomes: Vec<u32>,
+    /// Outcomes that have settled. Non-empty implies the question has resolved.
+    #[serde(default)]
+    pub settled_named_outcomes: Vec<u32>,
+}
+
 /// Optional perpetuals metadata with asset contexts from `{ "type": "metaAndAssetCtxs" }`.
 /// Returns a tuple: `[PerpMeta, Vec<PerpAssetCtx>]`
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -609,6 +681,8 @@ pub const RESPONSE_STATUS_OK: &str = "ok";
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use serde_json::json;
 
     use super::*;
 
@@ -688,6 +762,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_outcome_meta_defaults_missing_side_specs() {
+        let json = r#"{
+            "outcomes": [
+                {
+                    "outcome": 123,
+                    "name": "Recurring",
+                    "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m"
+                }
+            ]
+        }"#;
+
+        let meta: OutcomeMeta = serde_json::from_str(json).unwrap();
+
+        assert_eq!(meta.outcomes.len(), 1);
+        assert_eq!(meta.outcomes[0].outcome, 123);
+        assert!(meta.outcomes[0].side_specs.is_empty());
+    }
+
+    #[rstest]
     fn test_l2_book_deserialization() {
         let json = r#"{"coin": "BTC", "levels": [[{"px": "50000", "sz": "1.5"}], [{"px": "50100", "sz": "2.0"}]], "time": 1234567890}"#;
 
@@ -720,7 +813,7 @@ mod tests {
         assert_eq!(state.balances.len(), 2);
         let usdc = &state.balances[0];
         assert_eq!(usdc.coin.as_str(), "USDC");
-        assert_eq!(usdc.token, 0);
+        assert_eq!(usdc.token, Some(0));
         assert_eq!(usdc.total.to_string(), "14.625485");
         assert_eq!(usdc.hold, rust_decimal::Decimal::ZERO);
         assert_eq!(usdc.free().to_string(), "14.625485");
@@ -728,12 +821,21 @@ mod tests {
 
         let purr = &state.balances[1];
         assert_eq!(purr.coin.as_str(), "PURR");
-        assert_eq!(purr.token, 1);
+        assert_eq!(purr.token, Some(1));
         assert_eq!(purr.free().to_string(), "1900");
         assert_eq!(
             purr.avg_entry_px().unwrap(),
             rust_decimal_macros::dec!(0.61728)
         );
+    }
+
+    #[rstest]
+    fn test_spot_balance_outcome_side_token_lacks_token_field() {
+        // HIP-4 outcome side tokens come back without `token` from the venue
+        let json = r#"{"coin": "+250", "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}"#;
+        let balance: SpotBalance = serde_json::from_str(json).unwrap();
+        assert_eq!(balance.coin.as_str(), "+250");
+        assert_eq!(balance.token, None);
     }
 
     #[rstest]
@@ -790,6 +892,136 @@ mod tests {
         assert!(
             decoded.get("grouping").is_some(),
             "Should have grouping field"
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_split_serialization() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::SplitOutcome(HyperliquidExecSplitOutcomeParams {
+                outcome: 1,
+                amount: dec!(123.0),
+            }),
+        };
+
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "splitOutcome": { "outcome": 1, "amount": "123.0" }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_split_msgpack_roundtrip() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::SplitOutcome(HyperliquidExecSplitOutcomeParams {
+                outcome: 4,
+                amount: dec!(10),
+            }),
+        };
+
+        let bytes = rmp_serde::to_vec_named(&action).unwrap();
+        let decoded: serde_json::Value = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(
+            decoded,
+            json!({
+                "type": "userOutcome",
+                "splitOutcome": { "outcome": 4, "amount": "10" }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_merge_outcome_serialization() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::MergeOutcome(HyperliquidExecMergeOutcomeParams {
+                outcome: 1,
+                amount: Some(dec!(5.0)),
+            }),
+        };
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "mergeOutcome": { "outcome": 1, "amount": "5.0" }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_merge_outcome_null_amount_means_max() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::MergeOutcome(HyperliquidExecMergeOutcomeParams {
+                outcome: 7,
+                amount: None,
+            }),
+        };
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "mergeOutcome": { "outcome": 7, "amount": null }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_merge_question_serialization() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::MergeQuestion(HyperliquidExecMergeQuestionParams {
+                question: 9,
+                amount: Some(dec!(2.0)),
+            }),
+        };
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "mergeQuestion": { "question": 9, "amount": "2.0" }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_merge_question_null_amount_means_max() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::MergeQuestion(HyperliquidExecMergeQuestionParams {
+                question: 9,
+                amount: None,
+            }),
+        };
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "mergeQuestion": { "question": 9, "amount": null }
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_user_outcome_negate_outcome_serialization() {
+        let action = HyperliquidExecAction::UserOutcome {
+            op: HyperliquidExecUserOutcomeOp::NegateOutcome(HyperliquidExecNegateOutcomeParams {
+                question: 9,
+                outcome: 52,
+                amount: dec!(1.5),
+            }),
+        };
+        let value: serde_json::Value = serde_json::to_value(&action).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "userOutcome",
+                "negateOutcome": { "question": 9, "outcome": 52, "amount": "1.5" }
+            })
         );
     }
 }
@@ -961,6 +1193,101 @@ pub struct HyperliquidExecModifyOrderRequest {
     pub order: HyperliquidExecPlaceOrderRequest,
 }
 
+/// Parameters for the HIP-4 `splitOutcome` operation inside a `userOutcome` action.
+///
+/// Debits `amount` quote tokens from the user's spot balance and credits both
+/// the Yes and No side tokens of the referenced outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecSplitOutcomeParams {
+    /// Outcome index (matches `outcomeMeta.outcomes[i].outcome`).
+    pub outcome: u32,
+    /// Quote-token amount to split, serialized as a decimal string (e.g. `"123.0"`).
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub amount: Decimal,
+}
+
+/// Parameters for the HIP-4 `mergeOutcome` operation inside a `userOutcome` action.
+///
+/// Burns `amount` matched Yes + No side tokens of `outcome` for `amount` quote
+/// tokens back. `amount = None` serializes as `null`, which the venue treats as
+/// the maximum mergeable balance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecMergeOutcomeParams {
+    /// Outcome index whose Yes + No pair is being merged.
+    pub outcome: u32,
+    /// Side-token amount to merge, or `None` to merge the maximum available.
+    #[serde(
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub amount: Option<Decimal>,
+}
+
+/// Parameters for the HIP-4 `mergeQuestion` operation inside a `userOutcome` action.
+///
+/// Burns `amount` Yes shares of every outcome associated with `question` for
+/// `amount` quote tokens back. `amount = None` serializes as `null`, meaning
+/// the maximum mergeable balance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecMergeQuestionParams {
+    /// Question identifier whose named outcomes are being merged.
+    pub question: u32,
+    /// Yes-share amount to merge per outcome, or `None` for the max.
+    #[serde(
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub amount: Option<Decimal>,
+}
+
+/// Parameters for the HIP-4 `negateOutcome` operation inside a `userOutcome` action.
+///
+/// Converts `amount` `No` shares of `outcome` (within `question`) into `amount`
+/// `Yes` shares of every other outcome in the same question.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HyperliquidExecNegateOutcomeParams {
+    /// Question identifier the outcome belongs to.
+    pub question: u32,
+    /// Outcome index whose `No` shares are being negated.
+    pub outcome: u32,
+    /// Side-token amount to negate, serialized as a decimal string.
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub amount: Decimal,
+}
+
+/// Operations carried by the [`HyperliquidExecAction::UserOutcome`] action.
+///
+/// Each variant serializes as a single-keyed object (for example,
+/// `{ "splitOutcome": { ... } }`) and is flattened into the outer action
+/// envelope alongside `"type": "userOutcome"` to match the Hyperliquid wire
+/// format.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum HyperliquidExecUserOutcomeOp {
+    /// Split `amount` quote tokens into `amount` Yes plus `amount` No shares.
+    #[serde(rename = "splitOutcome")]
+    SplitOutcome(HyperliquidExecSplitOutcomeParams),
+    /// Merge `amount` Yes + No side-token pairs of `outcome` back into quote
+    /// tokens (reverse of [`Self::SplitOutcome`]).
+    #[serde(rename = "mergeOutcome")]
+    MergeOutcome(HyperliquidExecMergeOutcomeParams),
+    /// Merge `amount` Yes shares of every outcome in `question` into quote
+    /// tokens (multi-outcome reverse of `splitOutcome`).
+    #[serde(rename = "mergeQuestion")]
+    MergeQuestion(HyperliquidExecMergeQuestionParams),
+    /// Swap `amount` `No` shares of one outcome into `Yes` shares of every
+    /// other outcome in the same question.
+    #[serde(rename = "negateOutcome")]
+    NegateOutcome(HyperliquidExecNegateOutcomeParams),
+}
+
 /// TWAP (Time-Weighted Average Price) order specification for exchange endpoint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecTwapRequest {
@@ -1083,6 +1410,18 @@ pub enum HyperliquidExecAction {
             deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
         )]
         amount: Decimal,
+    },
+
+    /// HIP-4 outcome-side token management (`splitOutcome` and related ops).
+    ///
+    /// The active op is carried via [`HyperliquidExecUserOutcomeOp`] and
+    /// flattened into this action envelope, producing wire payloads such as
+    /// `{ "type": "userOutcome", "splitOutcome": { ... } }`.
+    #[serde(rename = "userOutcome")]
+    UserOutcome {
+        /// Operation to perform on the user's outcome balances.
+        #[serde(flatten)]
+        op: HyperliquidExecUserOutcomeOp,
     },
 
     /// Place a TWAP order.
@@ -1423,8 +1762,10 @@ pub struct SpotClearinghouseState {
 pub struct SpotBalance {
     /// Token name (e.g., "USDC", "PURR").
     pub coin: Ustr,
-    /// Token index matching `spotMeta.tokens[*].index`.
-    pub token: u32,
+    /// Token index matching `spotMeta.tokens[*].index`. Omitted by the venue
+    /// for HIP-4 outcome side tokens (`+E` coins).
+    #[serde(default)]
+    pub token: Option<u32>,
     /// Total token balance (on-hold plus available).
     #[serde(
         serialize_with = "crate::common::parse::serialize_decimal_as_str",

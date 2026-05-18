@@ -102,6 +102,66 @@ mod tests {
     }
 
     #[rstest]
+    fn test_determine_stock_venue_uses_primary_exchange_over_fill_exchange() {
+        let provider = create_test_provider();
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("META"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("IBEOS"),
+            primary_exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+
+        let venue = provider.determine_venue(&contract, None);
+
+        assert_eq!(venue.as_str(), "NASDAQ");
+    }
+
+    #[rstest]
+    fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            convert_exchange_to_mic_venue: true,
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("IBEOS"),
+            primary_exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+
+        let venue = provider.determine_venue(&contract, None);
+
+        assert_eq!(venue.as_str(), "XNAS");
+    }
+
+    #[rstest]
+    fn test_determine_stock_smart_venue_reuses_cached_symbol_venue() {
+        let provider = create_test_provider();
+        provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            primary_exchange: Exchange::default(),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+
+        let venue = provider.determine_venue(&contract, None);
+
+        assert_eq!(venue.as_str(), "XNAS");
+    }
+
+    #[rstest]
     fn test_symbology_method() {
         let provider = create_test_provider();
         let method = provider.symbology_method();
@@ -150,13 +210,23 @@ mod tests {
 
     #[rstest]
     fn test_parse_spread_instrument_id_to_legs() {
-        use crate::common::parse::parse_spread_instrument_id_to_legs;
+        use crate::common::parse::{
+            create_spread_instrument_id, parse_spread_instrument_id_to_legs,
+        };
 
-        // Test parsing spread instrument ID
-        let spread_id = InstrumentId::new(
-            NautilusSymbol::from("(1)AAPL_((2))MSFT"),
-            Venue::from("NASDAQ"),
-        );
+        let leg_tuples = [
+            (
+                InstrumentId::new(NautilusSymbol::from("MSFT"), Venue::from("NASDAQ")),
+                -2,
+            ),
+            (
+                InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ")),
+                1,
+            ),
+        ];
+        let spread_id = create_spread_instrument_id(&leg_tuples).unwrap();
+
+        assert_eq!(spread_id.symbol.as_str(), "(1)AAPL_((2))MSFT");
 
         let result = parse_spread_instrument_id_to_legs(&spread_id);
         assert!(result.is_ok());

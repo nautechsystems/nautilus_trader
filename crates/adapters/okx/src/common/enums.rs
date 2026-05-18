@@ -271,6 +271,7 @@ impl From<LiquiditySide> for OKXExecType {
 )]
 pub enum OKXInstrumentType {
     #[default]
+    /// Any product type.
     Any,
     /// Spot products.
     Spot,
@@ -282,6 +283,8 @@ pub enum OKXInstrumentType {
     Futures,
     /// Option products.
     Option,
+    /// Event contract products.
+    Events,
 }
 
 /// Represents an instrument status on OKX.
@@ -305,6 +308,12 @@ pub enum OKXInstrumentStatus {
     Suspend,
     Preopen,
     Test,
+    PostOnly,
+    Rebase,
+    Settling,
+    /// Unknown or future status.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Represents an instrument contract type on OKX.
@@ -1276,6 +1285,8 @@ pub enum OKXOrderCategory {
     MoveOrderStop,
     /// Delivery and exercise (for futures/options settlement).
     Ddh,
+    /// Event contract settlement fill.
+    Delivery,
     /// Unknown or future category (graceful fallback).
     #[serde(other)]
     Other,

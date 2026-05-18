@@ -53,6 +53,18 @@ pub enum KrakenWsMethod {
     Unsubscribe,
     Ping,
     Pong,
+    #[serde(rename = "add_order")]
+    #[strum(serialize = "add_order")]
+    AddOrder,
+    #[serde(rename = "amend_order")]
+    #[strum(serialize = "amend_order")]
+    AmendOrder,
+    #[serde(rename = "cancel_order")]
+    #[strum(serialize = "cancel_order")]
+    CancelOrder,
+    #[serde(rename = "batch_add")]
+    #[strum(serialize = "batch_add")]
+    BatchAdd,
 }
 
 #[derive(
@@ -105,6 +117,9 @@ pub enum KrakenWsChannel {
     #[serde(rename = "balances")]
     #[strum(serialize = "balances")]
     Balances,
+    #[serde(rename = "level3")]
+    #[strum(serialize = "level3")]
+    Level3,
 }
 
 #[derive(
@@ -276,5 +291,32 @@ impl From<KrakenLiquidityInd> for LiquiditySide {
             KrakenLiquidityInd::Maker => Self::Maker,
             KrakenLiquidityInd::Taker => Self::Taker,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(KrakenWsMethod::AddOrder, "\"add_order\"")]
+    #[case(KrakenWsMethod::AmendOrder, "\"amend_order\"")]
+    #[case(KrakenWsMethod::CancelOrder, "\"cancel_order\"")]
+    #[case(KrakenWsMethod::BatchAdd, "\"batch_add\"")]
+    fn test_ws_method_order_variants_serde(#[case] m: KrakenWsMethod, #[case] expected: &str) {
+        let json = serde_json::to_string(&m).unwrap();
+        assert_eq!(json, expected);
+        let back: KrakenWsMethod = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[rstest]
+    fn test_ws_channel_level3_serde() {
+        let json = serde_json::to_string(&KrakenWsChannel::Level3).unwrap();
+        assert_eq!(json, "\"level3\"");
+        let back: KrakenWsChannel = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, KrakenWsChannel::Level3);
     }
 }

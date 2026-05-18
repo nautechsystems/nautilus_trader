@@ -663,14 +663,14 @@ mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
     use nautilus_model::{
-        identifiers::{Symbol, Venue},
+        identifiers::Symbol,
         instruments::CurrencyPair,
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::common::testing::load_test_fixture;
+    use crate::common::{consts::COINBASE_VENUE, testing::load_test_fixture};
 
     fn test_handler() -> FeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -684,8 +684,7 @@ mod tests {
     }
 
     fn btc_usd_instrument() -> InstrumentAny {
-        let instrument_id =
-            InstrumentId::new(Symbol::new("BTC-USD"), Venue::new(Ustr::from("COINBASE")));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
         InstrumentAny::CurrencyPair(CurrencyPair::new(
             instrument_id,
             Symbol::new("BTC-USD"),

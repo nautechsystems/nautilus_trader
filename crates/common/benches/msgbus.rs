@@ -25,6 +25,7 @@ use std::{
     any::Any,
     hint::black_box,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -400,6 +401,7 @@ fn bench_high_volume(c: &mut Criterion) {
     let quote = QuoteTick::default();
 
     let mut group = c.benchmark_group("High volume throughput");
+    group.measurement_time(Duration::from_secs(10));
 
     for msg_count in [100_000u64, 1_000_000] {
         group.throughput(Throughput::Elements(msg_count));
@@ -591,6 +593,50 @@ fn bench_refcell_overhead(c: &mut Criterion) {
     group.finish();
 }
 
+// Subscribe-time backfill: cost of adding a wildcard subscription when
+// N concrete topics are already cached. Each cached topic requires one
+// pattern-vs-wildcard match.
+fn bench_subscribe_with_cached_topics(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Subscribe with cached topics");
+
+    for cached_count in [0u64, 16, 64, 256] {
+        group.throughput(Throughput::Elements(1));
+        group.bench_with_input(
+            BenchmarkId::new("Any-based", cached_count),
+            &cached_count,
+            |b, &count| {
+                b.iter_with_setup(
+                    || {
+                        let mut router = AnyTopicRouter::new();
+                        let seed_handler = shareable_handler(Rc::new(CountingAnyHandler {
+                            id: Ustr::from("seed"),
+                        }));
+                        let seed_pattern: MStr<Pattern> = "data.quotes.BINANCE.*".into();
+                        router.subscribe(seed_pattern, seed_handler);
+                        let quote = QuoteTick::default();
+
+                        for i in 0..count {
+                            let topic: MStr<Topic> =
+                                MStr::from(&format!("data.quotes.BINANCE.SYM{i:04}"));
+                            router.publish(topic, &quote as &dyn Any);
+                        }
+                        router
+                    },
+                    |mut router| {
+                        let handler = shareable_handler(Rc::new(CountingAnyHandler {
+                            id: Ustr::from("late"),
+                        }));
+                        let pattern: MStr<Pattern> = "data.*.BINANCE.*".into();
+                        router.subscribe(black_box(pattern), black_box(handler));
+                    },
+                );
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_noop_dispatch,
@@ -601,5 +647,6 @@ criterion_group!(
     bench_high_volume,
     bench_mixed_topics,
     bench_refcell_overhead,
+    bench_subscribe_with_cached_topics,
 );
 criterion_main!(benches);

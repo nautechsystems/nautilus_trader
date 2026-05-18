@@ -19,16 +19,54 @@ from unittest.mock import patch
 
 import pytest
 
+import nautilus_trader.adapters.deribit.data as deribit_data_module
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
+from nautilus_trader.adapters.deribit.data import DeribitVolatilityIndex
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+
+
+class _FakePyo3DeribitVolatilityIndex:
+    def __init__(
+        self,
+        index_name: str,
+        volatility: float,
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> None:
+        self.index_name = index_name
+        self.volatility = volatility
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+
+class _FakePyo3DataType:
+    def __init__(self, metadata: dict[str, str]):
+        self.metadata = metadata
+
+
+class _FakePyo3CustomData:
+    def __init__(self, data: _FakePyo3DeribitVolatilityIndex, data_type: _FakePyo3DataType):
+        self.data = data
+        self.data_type = data_type
 
 
 class TestDeribitDataClient:
@@ -367,6 +405,109 @@ class TestDeribitDataClient:
             client._ws_client.unsubscribe_index_prices.assert_called_once_with(expected_id, None)
         finally:
             await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_subscribe_custom_data_volatility_index(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.subscribe_volatility_index.reset_mock()
+
+            command = SimpleNamespace(
+                data_type=DataType(
+                    type=DeribitVolatilityIndex,
+                    metadata={"index_name": "btc_usd"},
+                ),
+            )
+
+            await client._subscribe(command)
+
+            client._ws_client.subscribe_volatility_index.assert_called_once_with("btc_usd")
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_custom_data_volatility_index(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.unsubscribe_volatility_index.reset_mock()
+
+            command = SimpleNamespace(
+                data_type=DataType(
+                    type=DeribitVolatilityIndex,
+                    metadata={"index_name": "eth_usd"},
+                ),
+            )
+
+            await client._unsubscribe(command)
+
+            client._ws_client.unsubscribe_volatility_index.assert_called_once_with("eth_usd")
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_handle_msg_custom_data_volatility_index_forwarded(
+        self,
+        data_client_builder,
+        monkeypatch,
+    ) -> None:
+        client = data_client_builder()
+        client._handle_data = MagicMock()
+
+        monkeypatch.setattr(
+            deribit_data_module,
+            "_PYO3DeribitVolatilityIndex",
+            _FakePyo3DeribitVolatilityIndex,
+        )
+        monkeypatch.setattr(
+            deribit_data_module.nautilus_pyo3,
+            "CustomData",
+            _FakePyo3CustomData,
+        )
+
+        dvol = _FakePyo3DeribitVolatilityIndex(
+            index_name="btc_usd",
+            volatility=72.5,
+            ts_event=1_000,
+            ts_init=1_001,
+        )
+        msg = _FakePyo3CustomData(
+            data=dvol,
+            data_type=_FakePyo3DataType({"index_name": "btc_usd"}),
+        )
+
+        client._handle_msg(msg)
+
+        client._handle_data.assert_called_once()
+        forwarded = client._handle_data.call_args.args[0]
+        assert isinstance(forwarded, CustomData)
+        assert isinstance(forwarded.data, Data)
+        assert isinstance(forwarded.data, DeribitVolatilityIndex)
+        assert forwarded.data.index_name == "btc_usd"
+        assert forwarded.data.volatility == 72.5
+        assert forwarded.data_type == DataType(
+            DeribitVolatilityIndex,
+            {"index_name": "btc_usd"},
+        )
 
     @pytest.mark.asyncio
     async def test_subscribe_multiple_product_types(

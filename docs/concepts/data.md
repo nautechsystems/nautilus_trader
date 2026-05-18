@@ -210,8 +210,21 @@ NautilusTrader defines a unique *bar type* (`BarType` class) based on the follow
   - `step`: Defines the interval or frequency of each bar.
   - `aggregation`: Specifies the method used for data aggregation (see the above table).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
-- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus).
-- or externally (by a trading venue or data provider).
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus)
+  or externally (by a trading venue or data provider).
+
+:::note
+`BarSpecification` validates fixed-subunit time aggregations so bars align cleanly with their
+parent clock or calendar unit. `MILLISECOND` steps must divide 1000 and be less than 1000;
+`SECOND` and `MINUTE` steps must divide 60 and be less than 60; `HOUR` steps must divide 24 and
+be less than 24; and `MONTH` steps must divide 12 and be less than 12. Use the next larger
+aggregation when the step equals a parent unit, such as `1-HOUR` instead of `60-MINUTE`.
+`DAY`, `WEEK`, `YEAR`, threshold, information, and `RENKO` bars are not restricted by this
+fixed-subunit rule.
+
+A future version will allow advanced users to override this validation for arbitrary bar periods
+that do not align to clock or calendar boundaries.
+:::
 
 Bar types can also be classified as either *standard* or *composite*:
 
@@ -1430,7 +1443,7 @@ The NautilusTrader data catalog provides market data management:
 
 - **Dual Backend**: Rust performance + Python flexibility.
 - **Multi-Protocol**: Local, S3, GCS, Azure storage.
-- **Streaming**: Feather → Parquet conversion pipeline.
+- **Streaming**: Feather -> Parquet conversion pipeline.
 - **Operations**: Reset file names, consolidate data, period-based organization.
 
 **Key use cases**:

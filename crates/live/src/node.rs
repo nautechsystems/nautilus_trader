@@ -46,11 +46,39 @@
 //! # Reconciliation
 //!
 //! Three sub-checks run on independent intervals: inflight orders, open order
-//! consistency, and position consistency. A single reconciliation timer fires
-//! at the minimum enabled interval. Each tick, the handler checks which
-//! sub-checks are due based on elapsed nanoseconds and runs them in sequence.
-//! The open order and position checks query venues via async HTTP calls,
-//! blocking the select loop for the duration of each query.
+//! consistency, and position consistency. The shared maintenance timer in the
+//! select loop dispatches reconciliation at the minimum enabled interval.
+//! Each dispatch the handler checks which sub-checks are due based on elapsed
+//! nanoseconds and runs them in sequence. The open order and position checks
+//! query venues via async HTTP calls, blocking the select loop for the
+//! duration of each query.
+//!
+//! # Maintenance dispatcher
+//!
+//! Six periodic tasks share a single coarse `maintenance_timer`:
+//!
+//! - reconciliation (inflight, open, position sub-checks)
+//! - purge closed orders
+//! - purge closed positions
+//! - purge account events
+//! - own-books audit
+//! - recent-fills cache prune
+//!
+//! The runner wakes one timer per loop iteration regardless of how many
+//! maintenance tasks are configured. Each task tracks its own
+//! `next_fire: Instant` and the dispatcher fires the bodies whose deadline
+//! has passed, rescheduling `next = now + interval` (equivalent to
+//! `MissedTickBehavior::Delay`). Disabled tasks anchor on a far-future
+//! `next` that never trips.
+//!
+//! The 100ms timer cadence is the effective floor for any maintenance
+//! interval. Configured intervals below 100ms (the config types allow
+//! `inflight_check_interval_ms` and `own_books_audit_interval_secs` smaller)
+//! get rounded up to the next tick. Real workloads do not run venue or cache
+//! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
+//! by at most one body duration per fire; the recon body can await venue
+//! HTTP, so `now` is refreshed after that await before sync tasks evaluate
+//! due-status.
 
 use std::{
     fmt::Debug,
@@ -79,7 +107,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientOrderId, StrategyId, TraderId},
+    identifiers::{ClientOrderId, TraderId},
     orders::Order,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -634,10 +662,10 @@ impl LiveNode {
 
         let AsyncRunnerChannels {
             mut time_evt_rx,
-            mut data_evt_rx,
-            mut data_cmd_rx,
             mut exec_evt_rx,
             mut exec_cmd_rx,
+            mut data_evt_rx,
+            mut data_cmd_rx,
         } = runner.take_channels();
 
         log::info!("Event loop starting");
@@ -761,7 +789,7 @@ impl LiveNode {
         // `reconciliation_startup_delay_secs` is a post-reconciliation grace period:
         // startup reconciliation has already completed above, and this delay offsets
         // the first periodic tick to let the system stabilize before continuous checks
-        // begin. Matches the legacy Python semantics in `LiveExecutionEngine`.
+        // begin.
         let startup_delay = if self.config.exec_engine.reconciliation {
             Duration::from_secs_f64(exec_config.reconciliation_startup_delay_secs)
         } else {
@@ -774,53 +802,54 @@ impl LiveNode {
         let mut ts_last_open = ts_last_inflight;
         let mut ts_last_position = ts_last_inflight;
 
-        // Disabled timers use a far-future interval so they never fire.
-        // All timers start one full interval after the startup delay
-        // so the first tick does not fire immediately.
+        // Per-task `(interval, next_fire)` schedules dispatched by the
+        // shared `maintenance_timer` below. See module docs for rationale.
         let far_future = Duration::from_secs(86400 * 365 * 100);
 
-        let make_timer = |opt_dur: Option<Duration>| {
+        let make_schedule = |opt_dur: Option<Duration>| -> (Duration, dst::time::Instant) {
             let dur = opt_dur.unwrap_or(far_future);
-            let mut timer = dst::time::interval_at(recon_start + dur, dur);
-            timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Delay);
-            timer
+            (dur, recon_start + dur)
         };
 
-        let mut recon_timer = make_timer(if recon_enabled {
+        let (recon_interval, mut recon_next) = make_schedule(if recon_enabled {
             Some(recon_min_interval)
         } else {
             None
         });
 
-        let mut purge_orders_timer = make_timer(
+        let (purge_orders_interval, mut purge_orders_next) = make_schedule(
             exec_config
                 .purge_closed_orders_interval_mins
                 .filter(|&m| m > 0)
                 .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
         );
 
-        let mut purge_positions_timer = make_timer(
+        let (purge_positions_interval, mut purge_positions_next) = make_schedule(
             exec_config
                 .purge_closed_positions_interval_mins
                 .filter(|&m| m > 0)
                 .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
         );
 
-        let mut purge_account_timer = make_timer(
+        let (purge_account_interval, mut purge_account_next) = make_schedule(
             exec_config
                 .purge_account_events_interval_mins
                 .filter(|&m| m > 0)
                 .map(|m| Duration::from_secs(mins_to_secs(m as u64))),
         );
 
-        let mut own_books_timer = make_timer(
+        let (own_books_interval, mut own_books_next) = make_schedule(
             exec_config
                 .own_books_audit_interval_secs
                 .filter(|&s| s > 0.0)
                 .map(Duration::from_secs_f64),
         );
 
-        let mut prune_fills_timer = make_timer(Some(Duration::from_secs(60)));
+        let (prune_fills_interval, mut prune_fills_next) =
+            make_schedule(Some(Duration::from_secs(60)));
+
+        let mut maintenance_timer = dst::time::interval(Duration::from_millis(100));
+        maintenance_timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Skip);
 
         // Stop-check timer is not subject to the reconciliation startup delay,
         // so shutdown signals remain responsive from the moment the node reaches
@@ -868,36 +897,56 @@ impl LiveNode {
                     break;
                 }
 
-                // Housekeeping timers (before event processing to avoid starvation)
-                _ = recon_timer.tick(), if is_running && recon_enabled => {
-                    if let Err(e) = self.run_reconciliation_checks(
-                        inflight_interval_ns,
-                        open_interval_ns,
-                        position_interval_ns,
-                        &mut ts_last_inflight,
-                        &mut ts_last_open,
-                        &mut ts_last_position,
-                    ).await {
-                        log::error!("Reconciliation check error: {e}");
+                // Maintenance dispatcher (before event processing to avoid
+                // starvation). See module docs for design rationale.
+                _ = maintenance_timer.tick(), if is_running => {
+                    let mut now = dst::time::Instant::now();
+
+                    if recon_enabled && now >= recon_next {
+                        if let Err(e) = self.run_reconciliation_checks(
+                            inflight_interval_ns,
+                            open_interval_ns,
+                            position_interval_ns,
+                            &mut ts_last_inflight,
+                            &mut ts_last_open,
+                            &mut ts_last_position,
+                        ).await {
+                            log::error!("Reconciliation check error: {e}");
+                        }
+                        now = dst::time::Instant::now();
+                        recon_next = now + recon_interval;
+                    }
+
+                    if now >= purge_orders_next {
+                        self.exec_manager.purge_closed_orders();
+                        purge_orders_next = now + purge_orders_interval;
+                    }
+
+                    if now >= purge_positions_next {
+                        self.exec_manager.purge_closed_positions();
+                        purge_positions_next = now + purge_positions_interval;
+                    }
+
+                    if now >= purge_account_next {
+                        self.exec_manager.purge_account_events();
+                        purge_account_next = now + purge_account_interval;
+                    }
+
+                    if now >= own_books_next {
+                        self.kernel.cache().borrow_mut().audit_own_order_books();
+                        own_books_next = now + own_books_interval;
+                    }
+
+                    if now >= prune_fills_next {
+                        self.exec_manager.prune_recent_fills_cache(60.0);
+                        prune_fills_next = now + prune_fills_interval;
                     }
                 }
-                _ = purge_orders_timer.tick(), if is_running => {
-                    self.exec_manager.purge_closed_orders();
-                }
-                _ = purge_positions_timer.tick(), if is_running => {
-                    self.exec_manager.purge_closed_positions();
-                }
-                _ = purge_account_timer.tick(), if is_running => {
-                    self.exec_manager.purge_account_events();
-                }
-                _ = own_books_timer.tick(), if is_running => {
-                    self.kernel.cache().borrow_mut().audit_own_order_books();
-                }
-                _ = prune_fills_timer.tick(), if is_running => {
-                    self.exec_manager.prune_recent_fills_cache(60.0);
-                }
 
-                // Event processing branches
+                // Event processing branches. Exec commands and events are
+                // ordered ahead of data events so a strategy action (cancel,
+                // submit, etc.) is not delayed behind a market data backlog
+                // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv() => {
                     AsyncRunner::handle_time_event(handler);
 
@@ -905,20 +954,6 @@ impl LiveNode {
                         log::debug!("Residual time event");
                         residual_events += 1;
                     }
-                }
-                Some(evt) = data_evt_rx.recv() => {
-                    if is_shutting_down {
-                        log::debug!("Residual data event: {evt:?}");
-                        residual_events += 1;
-                    }
-                    AsyncRunner::handle_data_event(evt);
-                }
-                Some(cmd) = data_cmd_rx.recv() => {
-                    if is_shutting_down {
-                        log::debug!("Residual data command: {cmd:?}");
-                        residual_events += 1;
-                    }
-                    AsyncRunner::handle_data_command(cmd);
                 }
                 Some(evt) = exec_evt_rx.recv() => {
                     if is_shutting_down {
@@ -935,6 +970,7 @@ impl LiveNode {
                                 OrderEventAny::Filled(fill) => {
                                     self.exec_manager.record_position_activity(
                                         fill.instrument_id,
+                                        fill.account_id,
                                         fill.ts_event,
                                     );
                                     self.exec_manager.mark_fill_processed(fill.trade_id);
@@ -1028,6 +1064,20 @@ impl LiveNode {
                     }
                     AsyncRunner::handle_exec_command(cmd);
                 }
+                Some(evt) = data_evt_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual data event: {evt:?}");
+                        residual_events += 1;
+                    }
+                    AsyncRunner::handle_data_event(evt);
+                }
+                Some(cmd) = data_cmd_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual data command: {cmd:?}");
+                        residual_events += 1;
+                    }
+                    AsyncRunner::handle_data_command(cmd);
+                }
             }
         }
 
@@ -1068,8 +1118,11 @@ impl LiveNode {
             self.exec_manager
                 .record_local_activity(event.client_order_id());
             if let OrderEventAny::Filled(fill) = event {
-                self.exec_manager
-                    .record_position_activity(fill.instrument_id, fill.ts_event);
+                self.exec_manager.record_position_activity(
+                    fill.instrument_id,
+                    fill.account_id,
+                    fill.ts_event,
+                );
                 self.exec_manager.mark_fill_processed(fill.trade_id);
             }
             self.kernel.exec_engine.borrow_mut().process(event);
@@ -1293,7 +1346,7 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
-    pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
+    pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + Component + Debug + 'static,
     {
@@ -1304,7 +1357,11 @@ impl LiveNode {
         }
 
         // Register external order claims before adding strategy (which moves it)
-        let strategy_id = StrategyId::from(strategy.component_id().inner().as_str());
+        let strategy_id = self
+            .kernel
+            .trader
+            .borrow()
+            .prepare_strategy_for_registration(&mut strategy)?;
         if let Some(claims) = strategy.external_order_claims() {
             for instrument_id in claims {
                 self.exec_manager
@@ -1348,9 +1405,9 @@ impl LiveNode {
     }
 
     // Runs up to three reconciliation sub-checks (inflight, open orders,
-    // positions), each gated by its own interval. A single recon_timer in
-    // the select! loop fires at the minimum enabled interval; this method
-    // then checks which sub-checks are actually due.
+    // positions), each gated by its own interval. The maintenance timer in
+    // the select! loop dispatches this method at the minimum enabled
+    // interval; the method then checks which sub-checks are actually due.
     //
     // The exec_engine borrow is held across the async venue queries because
     // get_all_clients() returns references into the engine's client map.
@@ -1532,12 +1589,6 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             Some(handler) = time_evt_rx.recv() => {
                 AsyncRunner::handle_time_event(handler);
             }
-            Some(evt) = data_evt_rx.recv() => {
-                pending.data_evts.push(evt);
-            }
-            Some(cmd) = data_cmd_rx.recv() => {
-                pending.data_cmds.push(cmd);
-            }
             Some(evt) = exec_evt_rx.recv() => {
                 // Account events are safe to process immediately. Report and
                 // Order events need ExecEngine borrow_mut which may conflict
@@ -1571,6 +1622,12 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
+            }
+            Some(evt) = data_evt_rx.recv() => {
+                pending.data_evts.push(evt);
+            }
+            Some(cmd) = data_cmd_rx.recv() => {
+                pending.data_cmds.push(cmd);
             }
         }
     }

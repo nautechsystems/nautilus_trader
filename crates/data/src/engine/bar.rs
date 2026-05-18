@@ -16,7 +16,20 @@
 use std::fmt::Debug;
 
 use nautilus_common::msgbus::{MStr, Topic, TypedHandler};
-use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+use nautilus_core::UUID4;
+use nautilus_model::data::{Bar, BarType, QuoteTick, TradeTick};
+
+/// Identifies a bar aggregator instance.
+///
+/// Live subscriptions key on `(bar_type.standard(), None)`. Request-scoped
+/// aggregators carrying a `request_id` key on `(bar_type.standard(), Some(id))`
+/// so they can run alongside a live aggregator on the same bar type.
+pub(crate) type BarAggregatorKey = (BarType, Option<UUID4>);
+
+#[inline]
+pub(crate) fn bar_aggregator_key(bar_type: BarType, request_id: Option<UUID4>) -> BarAggregatorKey {
+    (bar_type.standard(), request_id)
+}
 
 /// Typed subscription for bar aggregator handlers.
 ///

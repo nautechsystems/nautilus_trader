@@ -1276,6 +1276,11 @@ cdef class Actor(Component):
         Component._dispose(self)  # Call base cleanup (cancels timers)
         self.on_dispose()
 
+        # Break the actor <- bound method <- clock (Rust `Py<PyAny>`) cycle invisible to Python GC
+        if self._clock is not None:
+            self._clock.cancel_default_handler()
+            self._clock.cancel_callbacks()
+
     cpdef void _degrade(self):
         self.on_degrade()
 

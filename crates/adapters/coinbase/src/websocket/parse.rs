@@ -365,22 +365,20 @@ mod tests {
     use nautilus_model::{
         data::bar::BarSpecification,
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
-        identifiers::{Symbol, Venue},
+        identifiers::Symbol,
         instruments::CurrencyPair,
         types::{Currency, Price},
     };
     use rstest::rstest;
-    use ustr::Ustr;
 
     use super::*;
     use crate::{
-        common::testing::load_test_fixture,
+        common::{consts::COINBASE_VENUE, testing::load_test_fixture},
         websocket::messages::{CoinbaseWsMessage, WsEventType},
     };
 
     fn test_instrument() -> InstrumentAny {
-        let instrument_id =
-            InstrumentId::new(Symbol::new("BTC-USD"), Venue::new(Ustr::from("COINBASE")));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
         let raw_symbol = Symbol::new("BTC-USD");
         let base_currency = Currency::get_or_create_crypto("BTC");
         let quote_currency = Currency::get_or_create_crypto("USD");

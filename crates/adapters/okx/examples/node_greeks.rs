@@ -42,12 +42,17 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::option_chain::OptionGreeks,
     enums::{GreeksConvention, OptionKind},
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TraderId},
     instruments::Instrument,
     stubs::TestDefault,
 };
 use nautilus_okx::{
-    common::enums::OKXInstrumentType, config::OKXDataClientConfig, factories::OKXDataClientFactory,
+    common::{
+        consts::{OKX_CLIENT_ID, OKX_VENUE},
+        enums::OKXInstrumentType,
+    },
+    config::OKXDataClientConfig,
+    factories::OKXDataClientFactory,
 };
 use serde_json::json;
 use ustr::Ustr;
@@ -76,7 +81,7 @@ impl GreeksTester {
 
 impl DataActor for GreeksTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let venue = Venue::new("OKX");
+        let venue = *OKX_VENUE;
         let underlying_filter = Ustr::from("BTC");
 
         let mut options: Vec<(InstrumentId, f64, u64)> = {
@@ -206,7 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
-    let client_id = ClientId::new("OKX");
+    let client_id = *OKX_CLIENT_ID;
 
     let okx_config = OKXDataClientConfig {
         api_key: None,        // Will use 'OKX_API_KEY' env var

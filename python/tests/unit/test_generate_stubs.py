@@ -129,6 +129,132 @@ impl PriceType {
     assert fixups["PriceType"].staticmethods == set()
 
 
+def test_signature_defaults_handle_lifetime_generic_methods(tmp_path):
+    # Arrange
+    rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "python" / "http.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl HyperliquidHttpClient {
+    #[pyo3(name = "load_instrument_definitions", signature = (include_spot=true, include_perps=true, include_perps_hip3=false, include_outcomes=false))]
+    fn py_load_instrument_definitions<'py>(
+        &self,
+        py: Python<'py>,
+        include_spot: bool,
+        include_perps: bool,
+        include_perps_hip3: bool,
+        include_outcomes: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        todo!()
+    }
+}
+""".strip(),
+    )
+    content = """
+class HyperliquidHttpClient:
+    def load_instrument_definitions(
+        self,
+        include_spot: bool,
+        include_perps: bool,
+        include_perps_hip3: bool,
+        include_outcomes: bool,
+    ) -> typing.Any: ...
+""".strip()
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_signature_defaults(content, fixups)
+
+    # Assert
+    assert "include_spot: bool = True" in updated
+    assert "include_perps: bool = True" in updated
+    assert "include_perps_hip3: bool = False" in updated
+    assert "include_outcomes: bool = False" in updated
+
+
+def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path):
+    # Arrange
+    rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")]
+pub struct HyperliquidAllMids {
+    #[custom_data_field(json)]
+    pub mids: HashMap<InstrumentId, Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+
+    # Assert
+    assert fixups["HyperliquidAllMids"].getters == {"mids", "ts_event", "ts_init"}
+    assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
+
+
+def test_collect_rust_class_fixups_detects_cfg_attr_wrapped_custom_data(tmp_path):
+    # Arrange: mirrors the multi-line cfg_attr form used in
+    # crates/adapters/hyperliquid/src/data_types.rs
+    rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+)]
+pub struct HyperliquidAllMids {
+    #[custom_data_field(json)]
+    pub mids: HashMap<InstrumentId, Price>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+
+    # Assert
+    assert fixups["HyperliquidAllMids"].getters == {"mids", "ts_event", "ts_init"}
+    assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
+
+
+def test_collect_rust_class_fixups_ignores_custom_data_without_stub_module(tmp_path):
+    # Arrange: DeribitVolatilityIndex pattern, cfg_attr-wrapped custom_data
+    # with no stub_module must not register stub fixups.
+    rust_file = tmp_path / "crates" / "adapters" / "deribit" / "src" / "data_types.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[cfg_attr(feature = "arrow", custom_data(pyo3))]
+#[cfg_attr(not(feature = "arrow"), custom_data(pyo3, no_arrow))]
+pub struct DeribitVolatilityIndex {
+    pub index_name: String,
+    pub volatility: f64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+""".strip(),
+    )
+
+    # Act
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+
+    # Assert
+    assert "DeribitVolatilityIndex" not in fixups
+
+
 def test_collect_rust_class_fixups_preserves_attrs_across_doc_comments(tmp_path):
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"
@@ -302,6 +428,27 @@ class PriceType(Enum):
     assert "    @classmethod\n    def from_str(cls, data: str) -> PriceType: ..." in updated
     assert "def variants(self)" not in updated
     assert "def from_str(self," not in updated
+
+
+def test_apply_rust_class_fixups_drops_extra_classmethod_cls_param():
+    # Arrange
+    content = """
+@typing.final
+class HyperliquidAllMids:
+    def from_json(self, _cls: type, data: typing.Any) -> typing.Any: ...
+""".strip()
+    fixups = {
+        "HyperliquidAllMids": generate_stubs.ClassMethodFixup(
+            classmethods={"from_json"},
+        ),
+    }
+
+    # Act
+    updated = generate_stubs.apply_rust_class_fixups(content, fixups)
+
+    # Assert
+    assert "    @classmethod\n    def from_json(cls, data: typing.Any)" in updated
+    assert "_cls" not in updated
 
 
 def test_apply_rust_class_fixups_renames_methods():

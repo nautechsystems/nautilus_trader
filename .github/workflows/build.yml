@@ -16,8 +16,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Fork PRs cannot access repo/org variables so allow lists are empty;
-  # fall back to audit mode which logs calls without blocking them.
+  # Fork PRs lack repo/org vars, so audit instead of block.
   EGRESS_POLICY: >-
     ${{ github.event.pull_request.head.repo.fork && 'audit'
     || vars.STEP_SECURITY_EGRESS_POLICY
@@ -31,7 +30,7 @@ jobs:
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -54,22 +53,25 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Self-hosted for internal work; Depot for fork PRs.
+    # Fork PRs stay GitHub-hosted.
     runs-on: >-
       ${{ github.event.pull_request.head.repo.fork
-      && fromJson('["depot-ubuntu-22.04-8"]')
+      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     env:
-      # Self-hosted persists target dir outside the workspace so it survives
-      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
-      # through to Swatinem/rust-cache on the workspace target dir.
+      # Self-hosted keeps Rust artifacts outside the workspace.
       CARGO_TARGET_DIR: >-
         ${{ github.event.pull_request.head.repo.fork
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
+      CARGO_CI_PROFILE: >-
+        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+      # Scopes incremental clippy/doc checks; empty for non-PR/push events.
+      CHANGED_BASE_SHA: >-
+        ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -81,6 +83,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
+          fetch-depth: 0
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
@@ -94,7 +98,12 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
-          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+          rust-cache-enabled: >-
+            ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: github.event.pull_request.head.repo.fork
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Run pre-commit
         run: prek run --all-files
@@ -109,7 +118,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -137,7 +146,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -162,28 +171,38 @@ jobs:
     if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
     strategy:
       fail-fast: false
-      # PRs build on 3.13 only: ruff target-version=py312 guards syntax in pre-commit,
-      # and 3.13 exercises the `python_version < '3.14'` dependency cohort
-      # (defusedxml, nautilus-ibapi, protobuf). Pushes (develop/nightly/master) run
-      # the full matrix before any wheel publishes.
       matrix:
-        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.13"]' || '["3.12", "3.13", "3.14"]') }}
+        python-version:
+          - "3.12"
+          - "3.13"
+          - "3.14"
     defaults:
       run:
         shell: bash
-    # Ubuntu 22.04 (glibc 2.35) wider runtime range than 24.04/glibc 2.39
-    # Pushes to develop route to the self-hosted build pool; PRs and other
-    # branches route to Depot.
+    # Ubuntu 22.04 (glibc 2.35) keeps the wheel runtime range broad.
+    # Fork PRs stay GitHub-hosted.
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
     runs-on: >-
-      ${{ github.event_name == 'push' && github.ref_name == 'develop'
+      ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+      && 'ubuntu-22.04'
+      || github.event_name == 'pull_request'
+      && fromJson('["self-hosted", "Linux", "X64", "build"]')
+      || github.event_name == 'push' && github.ref_name == 'develop'
       && fromJson('["self-hosted", "Linux", "X64", "build"]')
       || fromJson('["depot-ubuntu-22.04-8"]') }}
     needs:
       - plan
       - pre-commit
     env:
-      BUILD_MODE: release
+      BUILD_MODE: >-
+        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        && 'ci-pr' || 'release' }}
+      CARGO_CI_PROFILE: >-
+        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        && 'ci-pr' || 'nextest' }}
+      PARALLEL_BUILD: >-
+        ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        && 'false' || 'true' }}
       # Self-hosted develop pushes keep Rust artifacts outside the workspace so
       # they survive actions/checkout's git clean -ffdx between runs.
       CARGO_TARGET_DIR: >-
@@ -210,11 +229,12 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -242,6 +262,10 @@ jobs:
           rust-cache-key: build-linux-x86
           rust-cache-workspaces: . -> target/build-linux-x86
           rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install Nautilus CLI
         env:
@@ -272,6 +296,7 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
+          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
           df -h .
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
@@ -305,16 +330,15 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
-    # Pause job on develop branch (takes ~1-1.5 hrs)
-    # - test-pre-commit: only run linting jobs
+    # ARM stays off PRs, develop pushes, and pre-commit-only test runs.
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
-          (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
-        || (github.event_name == 'pull_request' &&
-          github.base_ref == 'develop')
+          (github.ref_name == 'develop' ||
+            github.ref_name == 'test-pre-commit'))
+        || github.event_name == 'pull_request'
       )
     needs:
       - plan
@@ -342,11 +366,12 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -421,8 +446,7 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-macos:
-    # macOS builds run on nightly/master pushes only (too slow for develop/PR).
-    # Develop-branch macOS coverage runs via nightly-tests.yml on a daily schedule.
+    # macOS stays off develop pushes and pre-commit-only test runs.
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       github.event_name == 'push' &&
@@ -449,7 +473,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -579,16 +603,15 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
-    # Windows builds run on nightly/master pushes only (too slow for develop/PR).
-    # Develop-branch Windows coverage runs via nightly-tests.yml on a daily schedule.
+    # Windows stays off PRs, develop pushes, and pre-commit-only test runs.
     # yamllint disable-line rule:line-length
     if: >
       needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
-          (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
-        || (github.event_name == 'pull_request' &&
-          github.base_ref == 'develop')
+          (github.ref_name == 'develop' ||
+            github.ref_name == 'test-pre-commit'))
+        || github.event_name == 'pull_request'
       )
     strategy:
       fail-fast: false
@@ -613,7 +636,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -683,12 +706,14 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # Sigstore TUF trust root (for gh attestation verify)
+            tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -696,6 +721,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      - name: Block develop publish after failed security audit
+        if: github.ref_name == 'develop'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/ci/check-security-audit-result.sh
 
       - name: Download built wheels
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -708,7 +739,21 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.whl'
+          subject-path: "dist/nautilus_trader-*.whl"
+
+      - name: Verify wheel attestations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -e
+          for whl in dist/nautilus_trader-*.whl; do
+            gh attestation verify "$whl" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
+          done
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -731,7 +776,7 @@ jobs:
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -805,12 +850,14 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # Sigstore TUF trust root (for gh attestation verify)
+            tuf-repo-cdn.sigstore.dev:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -830,7 +877,21 @@ jobs:
       - name: Attest wheel provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'dist/nautilus_trader-*.whl'
+          subject-path: "dist/nautilus_trader-*.whl"
+
+      - name: Verify wheel attestations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          set -e
+          for whl in dist/nautilus_trader-*.whl; do
+            gh attestation verify "$whl" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
+          done
 
       - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
@@ -842,20 +903,80 @@ jobs:
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
+  publish-cargo-crates:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # Required for crates.io Trusted Publishing
+    needs:
+      - publish-wheels-master
+      - tag-release
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            crates.io:443
+            index.crates.io:443
+            static.crates.io:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          build-type: "release"
+          uv-cache-enabled: "false"
+          prek-cache-enabled: "false"
+          capnp-cache-enabled: "false"
+          rust-cache-enabled: "false"
+          rust-cache-save-if: "false"
+
+      - name: Check Cargo crate publish plan
+        run: bash scripts/ci/publish-cargo-crates.sh --check
+
+      - name: Authenticate to crates.io
+        id: crates-io-auth
+        # https://github.com/rust-lang/crates-io-auth-action
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
+
+      - name: Publish Cargo crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          CARGO_PUBLISH_ATTEMPTS: "5"
+          CARGO_PUBLISH_POLL_SECONDS: "5"
+          CARGO_PUBLISH_RETRY_DELAY_SECONDS: "15"
+          CARGO_PUBLISH_SUCCESS_DELAY_SECONDS: "0"
+          CARGO_PUBLISH_WAIT_TIMEOUT_SECONDS: "120"
+          CARGO_PUBLISH_USER_AGENT: >-
+            nautilus-trader-release
+            (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        run: bash scripts/ci/publish-cargo-crates.sh
+
   publish-wheels-master:
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write # Required for uploading release assets
-      actions: write  # Required for deleting artifacts
-      id-token: write # Required for attestations
-      attestations: write # Required for attestations
+      actions: read # Required for downloading build artifacts
     needs:
       - build-linux-x86
       - build-linux-arm
       - build-macos
       - build-windows
       - tag-release
+      - upload-sdist-release
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     env:
@@ -866,15 +987,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            pypi.org:443
-            files.pythonhosted.org:443
-            upload.pypi.org:443
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -883,86 +1001,120 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get uv version from pyproject.toml
-        shell: bash
-        run: |
-          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-        with:
-          version: ${{ env.UV_VERSION }}
-
-      - name: Download built wheels for PyPI and GitHub release
+      - name: Download built wheels for GitHub release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
 
-      # https://github.com/actions/attest-build-provenance
-      - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: 'dist/nautilus_trader-*.whl'
-
-      - name: Publish wheels to Cloudflare R2
-        uses: ./.github/actions/publish-wheels
-
       - name: Upload wheels to GitHub release
         # https://cli.github.com/manual/gh_release_upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
-        run: |
-          set +e
-          success=false
-          for i in {1..5}; do
-            gh release upload "$TAG_NAME" dist/nautilus_trader-*.whl --clobber --repo "$GITHUB_REPOSITORY"
-            status=$?
-            if [ $status -eq 0 ]; then
-              success=true
-              break
-            else
-              echo "gh upload (wheels) failed (exit=$status), retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
-          set -e
-          if [ "$success" = false ]; then echo "Failed to upload wheels to release after retries"; exit 1; fi
+        run: bash ./scripts/ci/upload-github-release-assets.bash wheels dist/nautilus_trader-*.whl
 
-      - name: Publish to PyPI
-        if: success()
+      - name: Publish wheels to Cloudflare R2
+        uses: ./.github/actions/publish-wheels
+
+  publish-wheels-pypi:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read # Required for downloading build artifacts
+      contents: read
+      id-token: write # Required for PyPI Trusted Publishing and publish attestations
+      attestations: write # Required for GitHub artifact attestations
+    needs:
+      - publish-wheels-master
+      - tag-release
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # Sigstore TUF trust root (for gh attestation verify)
+            tuf-repo-cdn.sigstore.dev:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get release Python tool versions
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+          echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Download built wheel artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          pattern: "nautilus_trader-*.whl"
+          merge-multiple: true
+
+      - name: Generate PyPI publish attestations
+        run: |
+          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
+            python -m pypi_attestations sign dist/nautilus_trader-*.whl
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest wheel provenance
+        id: attest-wheels
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: "dist/nautilus_trader-*.whl"
+
+      - name: Verify wheel attestations
         env:
-          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
         run: |
-          # Use --check-url to skip files that already exist on PyPI
-          set +e
-          success=false
-          for i in {1..5}; do
-            uv publish --check-url https://pypi.org/simple/
-            status=$?
-            if [ $status -eq 0 ]; then
-              success=true
-              break
-            else
-              echo "uv publish failed (exit=$status), retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
           set -e
-          if [ "$success" = false ]; then
-            echo "Failed to publish wheels to PyPI after retries"
-            exit 1
-          fi
+          for whl in dist/nautilus_trader-*.whl; do
+            gh attestation verify "$whl" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
+          done
 
-      - name: Fetch and delete artifacts for current run
+      - name: Publish wheels to PyPI
+        if: success()
+        run: bash ./scripts/ci/publish-pypi-trusted.bash wheels
+
+      - name: Prepare wheel attestation siblings
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+          BUNDLE_PATH: ${{ steps.attest-wheels.outputs.bundle-path }}
+        run: bash ./scripts/ci/prepare-release-attestation-siblings.bash dist/nautilus_trader-*.whl
+
+      - name: Upload wheel attestation siblings
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-wheel-attestation-siblings
+          path: |
+            dist/nautilus_trader-*.whl.sigstore
+            dist/nautilus_trader-*.whl.intoto.jsonl
+          if-no-files-found: error
+          retention-days: 1
 
   tag-release:
     needs:
@@ -974,7 +1126,7 @@ jobs:
       - cargo-vet
     permissions:
       contents: write # Required for pushing tags and upload release assets
-      actions: write  # Required for creating releases
+      actions: write # Required for creating releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
@@ -982,7 +1134,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -993,7 +1145,7 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          persist-credentials: true  # Required for salsify action to push git tags
+          persist-credentials: true # Required for salsify action to push git tags
           fetch-depth: 2
           fetch-tags: true
 
@@ -1016,33 +1168,31 @@ jobs:
           echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> "$GITHUB_ENV"
           sed -n '/^#/,$ {p;/^---/q}; w RELEASE.md' RELEASES.md
 
-      - name: Create GitHub release
+      - name: Create draft GitHub release
         id: create-release
-        # https://github.com/softprops/action-gh-release v2.5.0
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        # https://github.com/softprops/action-gh-release v3.0.0
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.RELEASE_NAME }}
-          draft: false
+          draft: true
           prerelease: false
           body_path: RELEASE.md
 
-  publish-sdist:
-    needs: [tag-release]
+  build-sdist:
+    needs:
+      - tag-release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    environment: release
     permissions:
-      contents: write # Required for uploading release assets
-      id-token: write # Required for attestations
-      attestations: write # Required for attestations
+      contents: read
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1050,7 +1200,6 @@ jobs:
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             pypi.org:443
             files.pythonhosted.org:443
-            upload.pypi.org:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -1063,80 +1212,280 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
+          uv-cache-enabled: "false"
+          prek-cache-enabled: "false"
+          capnp-cache-enabled: "false"
+          rust-cache-enabled: "false"
 
       - name: Build sdist
-        run: |
-          uv build --sdist
+        run: bash ./scripts/ci/build-sdist-release-asset.bash
 
-      # https://github.com/actions/attest-build-provenance
-      - name: Attest sdist provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          subject-path: 'dist/*.tar.gz'
+          name: release-sdist
+          path: dist/nautilus_trader-*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Set release output
-        id: vars
-        run: |
-          if [ ! -d "./dist" ]; then
-            echo "Error: dist directory not found"
-            exit 1
-          fi
+  upload-sdist-release:
+    needs:
+      - build-sdist
+      - tag-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # Required for downloading the sdist artifact
+      contents: write # Required for uploading release assets
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
-          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f -print0 | xargs -0 ls -t 2>/dev/null | head -n 1)
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-          if [ -z "$ASSET_PATH" ]; then
-            echo "Error: No .tar.gz files found in dist directory"
-            exit 1
-          fi
+      - name: Download sdist artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sdist
+          path: release-sdist
 
-          echo "ASSET_PATH=$ASSET_PATH" >> "$GITHUB_ENV"
-          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> "$GITHUB_ENV"
-
-      - name: Upload release asset
-        # https://cli.github.com/manual/gh_release_upload
+      - name: Upload sdist to GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
-          ASSET_PATH: ${{ env.ASSET_PATH }}
-        run: |
-          set +e
-          success=false
-          for i in {1..5}; do
-            gh release upload "$TAG_NAME" "$ASSET_PATH" --clobber --repo "$GITHUB_REPOSITORY"
-            status=$?
-            if [ $status -eq 0 ]; then
-              success=true
-              break
-            else
-              echo "gh upload (sdist) failed (exit=$status), retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
-          set -e
-          if [ "$success" = false ]; then echo "Failed to upload sdist to release after retries"; exit 1; fi
+        run: bash ./scripts/ci/upload-github-release-assets.bash sdist release-sdist/nautilus_trader-*.tar.gz
 
-      - name: Publish to PyPI
-        if: success()
-        env:
-          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+  publish-sdist-pypi:
+    needs:
+      - publish-wheels-pypi
+      - tag-release
+      - upload-sdist-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read # Required for downloading the sdist artifact
+      contents: read
+      id-token: write # Required for PyPI Trusted Publishing and publish attestations
+      attestations: write # Required for GitHub artifact attestations
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # Sigstore TUF trust root (for gh attestation verify)
+            tuf-repo-cdn.sigstore.dev:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get release Python tool versions
+        shell: bash
         run: |
-          # Use --check-url to skip files that already exist on PyPI
-          set +e
-          success=false
-          for i in {1..5}; do
-            uv publish --check-url https://pypi.org/simple/
-            status=$?
-            if [ $status -eq 0 ]; then
-              success=true
-              break
-            else
-              echo "uv publish failed (exit=$status), retry ($i/5)"
-              sleep $((2**i))
-            fi
-          done
-          set -e
-          if [ "$success" = false ]; then
-            echo "Failed to publish sdist to PyPI after retries"
-            exit 1
-          fi
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+          echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Download sdist artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sdist
+          path: dist
+
+      - name: Generate PyPI publish attestation
+        run: |
+          uv run --no-project --no-build --with "pypi-attestations==${PYPI_ATTESTATIONS_VERSION}" -- \
+            python -m pypi_attestations sign dist/nautilus_trader-*.tar.gz
+
+      # https://github.com/actions/attest-build-provenance
+      - name: Attest sdist provenance
+        id: attest-sdist
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: "dist/nautilus_trader-*.tar.gz"
+
+      - name: Verify sdist attestation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          gh attestation verify dist/nautilus_trader-*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --cert-identity "$IDENTITY" \
+            --cert-oidc-issuer "$ISSUER"
+
+      - name: Publish sdist to PyPI
+        if: success()
+        run: bash ./scripts/ci/publish-pypi-trusted.bash sdist
+
+      - name: Prepare sdist attestation sibling
+        shell: bash
+        env:
+          BUNDLE_PATH: ${{ steps.attest-sdist.outputs.bundle-path }}
+        run: bash ./scripts/ci/prepare-release-attestation-siblings.bash dist/nautilus_trader-*.tar.gz
+
+      - name: Upload sdist attestation sibling
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sdist-attestation-sibling
+          path: |
+            dist/nautilus_trader-*.tar.gz.sigstore
+            dist/nautilus_trader-*.tar.gz.intoto.jsonl
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release-integrity:
+    needs:
+      - publish-cargo-crates
+      - publish-wheels-pypi
+      - publish-sdist-pypi
+      - tag-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required for downloading and deleting release artifacts
+      contents: write # Required for uploading release integrity assets
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            # Sigstore TUF trust root (for pypi-attestations verify)
+            tuf-repo-cdn.sigstore.dev:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            crates.io:443
+            index.crates.io:443
+            static.crates.io:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get uv version from pyproject.toml
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Publish release checksums
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/publish-release-checksums.sh
+
+      - name: Verify published registries
+        shell: bash
+        env:
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYPI_PUBLISHER_WORKFLOW: build.yml
+          PYPI_PUBLISHER_ENVIRONMENT: release
+          CARGO_PUBLISH_USER_AGENT: >-
+            nautilus-trader-release-verifier
+            (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        run: bash ./scripts/ci/verify-published-registries.bash release-assets
+
+      - name: Upload crates manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+        run: >-
+          bash ./scripts/ci/upload-github-release-assets.bash
+          crates-manifest
+          release-assets/crates-manifest.json
+
+      - name: Download attestation sibling artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-attestations
+          pattern: "release-*-attestation-*"
+          merge-multiple: true
+
+      - name: Attach attestation siblings to GitHub release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+        run: bash ./scripts/ci/upload-release-attestation-siblings.bash release-attestations
+
+      - name: Delete artifacts for current run
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+
+  publish-github-release:
+    needs:
+      - publish-release-integrity
+      - tag-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: read # Required for verifying the immutable release attestation
+      contents: write # Required for publishing the draft release
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Publish GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+        run: bash ./scripts/ci/publish-github-release.bash
+
+      - name: Verify GitHub release attestation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+        run: bash ./scripts/ci/verify-github-release-attestation.bash

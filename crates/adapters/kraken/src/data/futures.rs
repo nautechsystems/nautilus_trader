@@ -1103,11 +1103,13 @@ impl DataClient for KrakenFuturesDataClient {
 #[cfg(test)]
 mod tests {
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
-    use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
     use super::*;
-    use crate::{common::enums::KrakenProductType, config::KrakenDataClientConfig};
+    use crate::{
+        common::{consts::KRAKEN_CLIENT_ID, enums::KrakenProductType},
+        config::KrakenDataClientConfig,
+    };
 
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -1121,11 +1123,11 @@ mod tests {
             product_type: KrakenProductType::Futures,
             ..Default::default()
         };
-        let client = KrakenFuturesDataClient::new(ClientId::from("KRAKEN"), config);
+        let client = KrakenFuturesDataClient::new(*KRAKEN_CLIENT_ID, config);
         assert!(client.is_ok());
 
         let client = client.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("KRAKEN"));
+        assert_eq!(client.client_id(), *KRAKEN_CLIENT_ID);
         assert_eq!(client.venue(), Some(*KRAKEN_VENUE));
         assert!(!client.is_connected());
         assert!(client.is_disconnected());
@@ -1139,7 +1141,7 @@ mod tests {
             product_type: KrakenProductType::Futures,
             ..Default::default()
         };
-        let mut client = KrakenFuturesDataClient::new(ClientId::from("KRAKEN"), config).unwrap();
+        let mut client = KrakenFuturesDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
 
         assert!(client.start().is_ok());
         assert!(client.stop().is_ok());

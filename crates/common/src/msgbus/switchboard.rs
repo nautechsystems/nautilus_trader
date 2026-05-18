@@ -30,9 +30,8 @@ static DATA_QUEUE_COMMAND_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_PROCESS_ANY_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_PROCESS_DATA_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
-#[cfg(feature = "defi")]
-static DATA_PROCESS_DEFI_DATA_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_RESPONSE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static DATA_RESPONSE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static EXEC_QUEUE_COMMAND_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -42,7 +41,14 @@ static RISK_QUEUE_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static SHUTDOWN_SYSTEM_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_ORDER_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_FILL_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static RECONCILIATION_RAW_POSITION_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+
+#[cfg(feature = "defi")]
+static DATA_PROCESS_DEFI_DATA_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 
 macro_rules! define_switchboard {
     ($(
@@ -58,6 +64,9 @@ macro_rules! define_switchboard {
                 $field: AHashMap<$key_ty, MStr<Topic>>,
             )*
             instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
+            book_deltas_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
+            book_depth10_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
+            book_snapshots_patterns: AHashMap<(InstrumentId, NonZeroUsize), MStr<Pattern>>,
             signal_topics: AHashMap<String, MStr<Topic>>,
             signal_patterns: AHashMap<String, MStr<Pattern>>,
             #[cfg(feature = "defi")]
@@ -72,6 +81,9 @@ macro_rules! define_switchboard {
                         $field: AHashMap::new(),
                     )*
                     instruments_patterns: AHashMap::new(),
+                    book_deltas_patterns: AHashMap::new(),
+                    book_depth10_patterns: AHashMap::new(),
+                    book_snapshots_patterns: AHashMap::new(),
                     signal_topics: AHashMap::new(),
                     signal_patterns: AHashMap::new(),
                     #[cfg(feature = "defi")]
@@ -118,6 +130,12 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn data_engine_response() -> MStr<Endpoint> {
                 *DATA_RESPONSE_ENDPOINT.get_or_init(|| "DataEngine.response".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn data_response_topic() -> MStr<Topic> {
+                *DATA_RESPONSE_TOPIC.get_or_init(|| "data.response".into())
             }
 
             #[inline]
@@ -177,6 +195,12 @@ macro_rules! define_switchboard {
                 *PORTFOLIO_ACCOUNT_ENDPOINT.get_or_init(|| "Portfolio.update_account".into())
             }
 
+            #[inline]
+            #[must_use]
+            pub fn portfolio_update_order() -> MStr<Endpoint> {
+                *PORTFOLIO_ORDER_ENDPOINT.get_or_init(|| "Portfolio.update_order".into())
+            }
+
             /// Pub/sub topic carrying `ShutdownSystem` commands published by
             /// actors, engines, and strategies.
             ///
@@ -187,6 +211,47 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn shutdown_system_topic() -> MStr<Topic> {
                 *SHUTDOWN_SYSTEM_TOPIC.get_or_init(|| "commands.system.shutdown".into())
+            }
+
+            /// Pub/sub topic carrying raw `OrderStatusReport`s that arrived from
+            /// a venue client, published by the execution engine at the top of
+            /// reconciliation before any state mutation.
+            ///
+            /// The event store bus tap captures publications on this topic so
+            /// forensic replay can re-run reconciliation against the same raw
+            /// inputs the live engine saw. Subscribers are not expected in
+            /// production; the capture surface is the sole consumer today.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_order_status_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_ORDER_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.OrderStatusReport".into())
+            }
+
+            /// Pub/sub topic carrying raw `FillReport`s that arrived from a
+            /// venue client, published by the execution engine at the top of
+            /// reconciliation before any state mutation.
+            ///
+            /// See [`Self::reconciliation_raw_order_status_report_topic`] for the
+            /// capture contract.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_fill_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_FILL_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.FillReport".into())
+            }
+
+            /// Pub/sub topic carrying raw `PositionStatusReport`s that arrived
+            /// from a venue client, published by the execution engine at the
+            /// top of reconciliation before any state mutation.
+            ///
+            /// See [`Self::reconciliation_raw_order_status_report_topic`] for the
+            /// capture contract.
+            #[inline]
+            #[must_use]
+            pub fn reconciliation_raw_position_status_report_topic() -> MStr<Topic> {
+                *RECONCILIATION_RAW_POSITION_REPORT_TOPIC
+                    .get_or_init(|| "reconciliation.raw.PositionStatusReport".into())
             }
 
             /// Returns a wildcard pattern for matching all instrument topics for a venue.
@@ -340,11 +405,60 @@ define_switchboard! {
     "events.position.{}", strategy_id;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Topic wrapper functions
-////////////////////////////////////////////////////////////////////////////////
-// These wrapper functions provide convenient access to switchboard topic methods
-// by accessing the thread-local message bus instance.
+impl MessagingSwitchboard {
+    /// Returns the subscription pattern for order book deltas on `instrument_id`.
+    #[must_use]
+    pub fn get_book_deltas_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
+        *self
+            .book_deltas_patterns
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                format!(
+                    "data.book.deltas.{}.{}",
+                    instrument_id.venue,
+                    instrument_id.symbol.topic(),
+                )
+                .into()
+            })
+    }
+
+    /// Returns the subscription pattern for order book depth10 snapshots on `instrument_id`.
+    #[must_use]
+    pub fn get_book_depth10_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
+        *self
+            .book_depth10_patterns
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                format!(
+                    "data.book.depth10.{}.{}",
+                    instrument_id.venue,
+                    instrument_id.symbol.topic(),
+                )
+                .into()
+            })
+    }
+
+    /// Returns the subscription pattern for periodic order book snapshots on `instrument_id`.
+    #[must_use]
+    pub fn get_book_snapshots_pattern(
+        &mut self,
+        instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
+    ) -> MStr<Pattern> {
+        *self
+            .book_snapshots_patterns
+            .entry((instrument_id, interval_ms))
+            .or_insert_with(|| {
+                format!(
+                    "data.book.snapshots.{}.{}.{}",
+                    instrument_id.venue,
+                    instrument_id.symbol.topic(),
+                    interval_ms,
+                )
+                .into()
+            })
+    }
+}
 
 macro_rules! define_wrappers {
     ($($method:ident($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty),* $(,)?) => {
@@ -398,6 +512,36 @@ pub fn get_instruments_pattern(venue: Venue) -> MStr<Pattern> {
         .instruments_pattern(venue)
 }
 
+/// Returns the subscription pattern for order book deltas on `instrument_id`.
+#[must_use]
+pub fn get_book_deltas_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_book_deltas_pattern(instrument_id)
+}
+
+/// Returns the subscription pattern for order book depth10 snapshots on `instrument_id`.
+#[must_use]
+pub fn get_book_depth10_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_book_depth10_pattern(instrument_id)
+}
+
+/// Returns the subscription pattern for periodic order book snapshots on `instrument_id`.
+#[must_use]
+pub fn get_book_snapshots_pattern(
+    instrument_id: InstrumentId,
+    interval_ms: NonZeroUsize,
+) -> MStr<Pattern> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_book_snapshots_pattern(instrument_id, interval_ms)
+}
+
 /// Returns the exact signal publish topic for `name` (`data.Signal<TitleName>`).
 #[must_use]
 pub fn get_signal_topic(name: &str) -> MStr<Topic> {
@@ -437,6 +581,34 @@ mod tests {
     #[fixture]
     fn instrument_id() -> InstrumentId {
         InstrumentId::from("ESZ24.XCME")
+    }
+
+    #[rstest]
+    fn test_data_response_topic() {
+        let expected_topic = "data.response".into();
+        let result = MessagingSwitchboard::data_response_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_order_status_report_topic() {
+        let expected_topic = "reconciliation.raw.OrderStatusReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_fill_report_topic() {
+        let expected_topic = "reconciliation.raw.FillReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_reconciliation_raw_position_status_report_topic() {
+        let expected_topic = "reconciliation.raw.PositionStatusReport".into();
+        let result = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+        assert_eq!(result, expected_topic);
     }
 
     #[rstest]
@@ -555,5 +727,119 @@ mod tests {
         let topic = switchboard.get_instrument_topic(InstrumentId::from("ESZ24.XCME"));
 
         assert!(!is_matching_backtracking(topic, pattern));
+    }
+
+    #[rstest]
+    fn test_composite_book_deltas_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
+        let composite_id = InstrumentId::from("ES.FUT.XCME");
+        let underlying_id = InstrumentId::from("ESZ24.XCME");
+
+        let composite_pattern = switchboard.get_book_deltas_pattern(composite_id);
+        let underlying_topic = switchboard.get_book_deltas_topic(underlying_id);
+
+        assert_eq!(composite_pattern.as_ref(), "data.book.deltas.XCME.ES*");
+        assert_eq!(underlying_topic.as_ref(), "data.book.deltas.XCME.ESZ24");
+        assert!(is_matching_backtracking(
+            underlying_topic,
+            composite_pattern
+        ));
+    }
+
+    #[rstest]
+    fn test_book_deltas_pattern_for_non_composite_is_literal(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+    ) {
+        let pattern = switchboard.get_book_deltas_pattern(instrument_id);
+        assert_eq!(pattern.as_ref(), "data.book.deltas.XCME.ESZ24");
+    }
+
+    type PatternFn = fn(&mut MessagingSwitchboard, InstrumentId) -> MStr<Pattern>;
+
+    #[rstest]
+    #[case::book_depth10(
+        MessagingSwitchboard::get_book_depth10_pattern as PatternFn,
+        "data.book.depth10.XCME.ESZ24",
+    )]
+    fn test_pattern_for_non_composite_is_literal(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+        #[case] helper: PatternFn,
+        #[case] expected: &str,
+    ) {
+        let pattern = helper(&mut switchboard, instrument_id);
+        assert_eq!(pattern.as_ref(), expected);
+    }
+
+    #[rstest]
+    fn test_book_snapshots_pattern_for_non_composite_is_literal(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+    ) {
+        let interval_ms = NonZeroUsize::new(1000).unwrap();
+        let pattern = switchboard.get_book_snapshots_pattern(instrument_id, interval_ms);
+        assert_eq!(pattern.as_ref(), "data.book.snapshots.XCME.ESZ24.1000");
+    }
+
+    #[rstest]
+    #[case::book_deltas(MessagingSwitchboard::get_book_deltas_pattern as PatternFn)]
+    #[case::book_depth10(MessagingSwitchboard::get_book_depth10_pattern as PatternFn)]
+    fn test_pattern_helper_is_idempotent(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+        #[case] helper: PatternFn,
+    ) {
+        let first = helper(&mut switchboard, instrument_id);
+        let second = helper(&mut switchboard, instrument_id);
+        assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn test_book_snapshots_pattern_helper_is_idempotent(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+    ) {
+        let interval_ms = NonZeroUsize::new(1000).unwrap();
+        let first = switchboard.get_book_snapshots_pattern(instrument_id, interval_ms);
+        let second = switchboard.get_book_snapshots_pattern(instrument_id, interval_ms);
+        assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn test_composite_book_depth10_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
+        let composite_id = InstrumentId::from("ES.FUT.XCME");
+        let underlying_id = InstrumentId::from("ESZ24.XCME");
+
+        let composite_pattern = switchboard.get_book_depth10_pattern(composite_id);
+        let underlying_topic = switchboard.get_book_depth10_topic(underlying_id);
+
+        assert_eq!(composite_pattern.as_ref(), "data.book.depth10.XCME.ES*");
+        assert!(is_matching_backtracking(
+            underlying_topic,
+            composite_pattern
+        ));
+    }
+
+    #[rstest]
+    fn test_composite_book_snapshots_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
+        let composite_id = InstrumentId::from("ES.FUT.XCME");
+        let underlying_id = InstrumentId::from("ESZ24.XCME");
+        let interval_ms = NonZeroUsize::new(1000).unwrap();
+
+        let composite_pattern = switchboard.get_book_snapshots_pattern(composite_id, interval_ms);
+        let underlying_topic = switchboard.get_book_snapshots_topic(underlying_id, interval_ms);
+
+        assert_eq!(
+            composite_pattern.as_ref(),
+            "data.book.snapshots.XCME.ES*.1000"
+        );
+        assert_eq!(
+            underlying_topic.as_ref(),
+            "data.book.snapshots.XCME.ESZ24.1000"
+        );
+        assert!(is_matching_backtracking(
+            underlying_topic,
+            composite_pattern
+        ));
     }
 }

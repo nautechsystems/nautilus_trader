@@ -34,3 +34,6 @@ cdef class BinaryOption(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(BinaryOption obj)
+
+    @staticmethod
+    cdef BinaryOption from_pyo3_c(pyo3_instrument)

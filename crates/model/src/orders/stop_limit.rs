@@ -19,7 +19,10 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{CorrectnessError, FAILED},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -535,22 +538,39 @@ impl Order for StopLimitOrder {
     }
 }
 
-impl From<OrderInitialized> for StopLimitOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
+impl TryFrom<OrderInitialized> for StopLimitOrder {
+    type Error = OrderError;
+
+    fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
+        let price = event
+            .price
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "`price` is required for `StopLimitOrder` initialization".to_string(),
+            })?;
+        let trigger_price =
+            event
+                .trigger_price
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: "`trigger_price` is required for `StopLimitOrder` initialization"
+                        .to_string(),
+                })?;
+        let trigger_type =
+            event
+                .trigger_type
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: "`trigger_type` is required for `StopLimitOrder` initialization"
+                        .to_string(),
+                })?;
+        Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
-            event.price.expect("`price` was None for StopLimitOrder"),
-            event
-                .trigger_price
-                .expect("`trigger_price` was None for StopLimitOrder"),
-            event
-                .trigger_type
-                .expect("`trigger_type` was None for StopLimitOrder"),
+            price,
+            trigger_price,
+            trigger_type,
             event.time_in_force,
             event.expire_time,
             event.post_only,
@@ -848,7 +868,7 @@ mod tests {
             .build();
 
         // Convert the OrderInitialized event into a StopLimitOrder
-        let order: StopLimitOrder = order_initialized.clone().into();
+        let order: StopLimitOrder = order_initialized.clone().try_into().unwrap();
 
         // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);

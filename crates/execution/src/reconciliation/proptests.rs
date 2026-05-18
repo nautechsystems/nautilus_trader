@@ -24,14 +24,14 @@
 //!
 //! Property bodies are short by design: the Phase 1 `debug_assert!` tripwires
 //! in `positions.rs` and `orders.rs` catch the low-level invariant violations
-//! (positive fill qty, non-negative simulated value, monotonic filled_qty)
+//! (positive fill qty, non-negative simulated value, monotonic `filled_qty`)
 //! before the property body even runs.
 
 #![cfg(test)]
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
     events::OrderEventAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
@@ -44,7 +44,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use super::*;
+use super::{ids::*, orders::*, positions::*, types::*};
 
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -83,6 +83,13 @@ fn order_side_strategy() -> impl Strategy<Value = OrderSide> {
     prop_oneof![Just(OrderSide::Buy), Just(OrderSide::Sell)]
 }
 
+fn position_side_strategy() -> impl Strategy<Value = PositionSideSpecified> {
+    prop_oneof![
+        Just(PositionSideSpecified::Long),
+        Just(PositionSideSpecified::Short),
+    ]
+}
+
 fn qty_decimal() -> impl Strategy<Value = Decimal> {
     (1i64..=1_000i64).prop_map(Decimal::from)
 }
@@ -103,7 +110,7 @@ fn fill_snapshot_strategy() -> impl Strategy<Value = FillSnapshot> {
         px_decimal(),
         venue_order_id_strategy(),
     )
-        .prop_map(|(ts, side, qty, px, voi)| FillSnapshot::new(ts, side, qty, px, voi))
+        .prop_map(|(ts, side, qty, px, voi)| FillSnapshot::new(voi, side, qty, px, ts))
 }
 
 fn fill_sequence_strategy(min: usize, max: usize) -> impl Strategy<Value = Vec<FillSnapshot>> {
@@ -174,7 +181,7 @@ proptest! {
             .map(|(i, (qty, px, voi))| {
                 expected_qty += *qty;
                 expected_value += *qty * *px;
-                FillSnapshot::new((i as u64) + 1, OrderSide::Buy, *qty, *px, *voi)
+                FillSnapshot::new(*voi, OrderSide::Buy, *qty, *px, (i as u64) + 1)
             })
             .collect();
 
@@ -194,7 +201,7 @@ proptest! {
             .iter()
             .enumerate()
             .map(|(i, (qty, px, voi))| {
-                FillSnapshot::new((i as u64) + 1, OrderSide::Buy, *qty, *px, *voi)
+                FillSnapshot::new(*voi, OrderSide::Buy, *qty, *px, (i as u64) + 1)
             })
             .collect();
 
@@ -224,7 +231,7 @@ proptest! {
         let fills: Vec<FillSnapshot> = qtys
             .iter()
             .enumerate()
-            .map(|(i, q)| FillSnapshot::new((i as u64) + 1, OrderSide::Buy, *q, dec!(100), voi))
+            .map(|(i, q)| FillSnapshot::new(voi, OrderSide::Buy, *q, dec!(100), (i as u64) + 1))
             .collect();
         let crossings = detect_zero_crossings(&fills);
         prop_assert!(crossings.is_empty());
@@ -301,8 +308,8 @@ proptest! {
             // simulated average-price matches target_px within tolerance
             let voi = VenueOrderId::new("V-0001");
             let fills = vec![
-                FillSnapshot::new(1, OrderSide::Buy, current_qty, current_px, voi),
-                FillSnapshot::new(2, OrderSide::Buy, extra_qty, px, voi),
+                FillSnapshot::new(voi, OrderSide::Buy, current_qty, current_px, 1),
+                FillSnapshot::new(voi, OrderSide::Buy, extra_qty, px, 2),
             ];
             let (sim_qty, sim_value) = simulate_position(&fills);
             prop_assert_eq!(sim_qty, target_qty);
@@ -341,25 +348,23 @@ proptest! {
 
     #[rstest]
     fn prop_adjust_fills_empty_is_no_adjustment(
-        side in order_side_strategy(),
+        side in position_side_strategy(),
         qty in qty_decimal(),
         px in px_decimal(),
     ) {
-        let inst = instrument();
         let venue = VenuePositionSnapshot { side, qty, avg_px: px };
-        let result = adjust_fills_for_partial_window(&[], &venue, &inst, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&[], &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
     #[rstest]
     fn prop_adjust_fills_flat_venue_is_no_adjustment(fills in fill_sequence_strategy(0, 10)) {
-        let inst = instrument();
         let venue = VenuePositionSnapshot {
-            side: OrderSide::Buy,
+            side: PositionSideSpecified::Long,
             qty: Decimal::ZERO,
             avg_px: Decimal::ZERO,
         };
-        let result = adjust_fills_for_partial_window(&fills, &venue, &inst, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
@@ -375,20 +380,19 @@ proptest! {
             .iter()
             .enumerate()
             .map(|(i, (qty, px, voi))| {
-                FillSnapshot::new((i as u64) + 1, OrderSide::Buy, *qty, *px, *voi)
+                FillSnapshot::new(*voi, OrderSide::Buy, *qty, *px, (i as u64) + 1)
             })
             .collect();
         let (sim_qty, sim_value) = simulate_position(&snapshots);
         prop_assume!(sim_qty > Decimal::ZERO);
         let sim_avg = sim_value / sim_qty;
 
-        let inst = instrument();
         let venue = VenuePositionSnapshot {
-            side: OrderSide::Buy,
+            side: PositionSideSpecified::Long,
             qty: sim_qty,
             avg_px: sim_avg,
         };
-        let result = adjust_fills_for_partial_window(&snapshots, &venue, &inst, dec!(0.0001));
+        let result = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
 
@@ -410,11 +414,11 @@ proptest! {
             .enumerate()
             .map(|(i, (q, p, voi))| {
                 FillSnapshot::new(
-                    (i as u64) + 1,
+                    *voi,
                     OrderSide::Buy,
                     Decimal::from(*q),
                     Decimal::new(*p, 2),
-                    *voi,
+                    (i as u64) + 1,
                 )
             })
             .collect();
@@ -428,14 +432,13 @@ proptest! {
         let target_value = sim_value + extra_qty * opening_px;
         let target_avg = target_value / target_qty;
 
-        let inst = instrument();
         let venue = VenuePositionSnapshot {
-            side: OrderSide::Buy,
+            side: PositionSideSpecified::Long,
             qty: target_qty,
             avg_px: target_avg,
         };
 
-        let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, &inst, dec!(0.0001));
+        let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
         let is_synth_opening =
             matches!(adjustment, FillAdjustmentResult::AddSyntheticOpening { .. });
         prop_assert!(is_synth_opening);
@@ -476,13 +479,13 @@ proptest! {
         // at recon_px; should land on (-flipped_qty, flipped_qty * target_px).
         let voi = VenueOrderId::new("V-0001");
         let fills = vec![
-            FillSnapshot::new(1, OrderSide::Buy, current_qty, current_px, voi),
+            FillSnapshot::new(voi, OrderSide::Buy, current_qty, current_px, 1),
             FillSnapshot::new(
-                2,
+                voi,
                 OrderSide::Sell,
                 current_qty + Decimal::from(flipped_qty),
                 target_px,
-                voi,
+                2,
             ),
         ];
         let (sim_qty, sim_value) = simulate_position(&fills);
@@ -513,8 +516,8 @@ proptest! {
     ) {
         let voi = VenueOrderId::new("V-0001");
         let fills = vec![
-            FillSnapshot::new(1, OrderSide::Buy, qty, buy_px, voi),
-            FillSnapshot::new(2, OrderSide::Sell, qty, sell_px, voi),
+            FillSnapshot::new(voi, OrderSide::Buy, qty, buy_px, 1),
+            FillSnapshot::new(voi, OrderSide::Sell, qty, sell_px, 2),
         ];
         let crossings = detect_zero_crossings(&fills);
         prop_assert_eq!(crossings.len(), 1);
@@ -536,7 +539,7 @@ proptest! {
             .map(|(i, (q, mark, voi))| {
                 // mark=0 => zero-cost fill; otherwise px = 100
                 let px = if *mark == 0 { Decimal::ZERO } else { dec!(100) };
-                FillSnapshot::new((i as u64) + 1, OrderSide::Buy, *q, px, *voi)
+                FillSnapshot::new(*voi, OrderSide::Buy, *q, px, (i as u64) + 1)
             })
             .collect();
         let (qty, value) = simulate_position(&snapshots);
@@ -985,5 +988,138 @@ proptest! {
         let a = create_synthetic_trade_id(&base);
         let b = create_synthetic_trade_id(&other);
         prop_assert_ne!(a, b);
+    }
+}
+
+fn build_limit_order(instrument: &InstrumentAny, qty: u64, price_units: u64) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(qty))
+        .price(Price::from_decimal_dp(Decimal::new(price_units as i64, 5), 5).unwrap())
+        .build()
+}
+
+proptest! {
+    // Patch invariant: a single call to generate_reconciliation_order_events
+    // must converge the local projection to the venue snapshot for any open
+    // order whose venue snapshot reflects a confirmed (non-pending) state,
+    // and a second call against the same snapshot must produce no events.
+    #[rstest]
+    fn prop_continuous_reconciliation_converges_in_one_pass(
+        local_qty in 1u64..=2_000u64,
+        venue_qty in 1u64..=2_000u64,
+        local_px in 1u64..=100_000u64,
+        venue_px in 1u64..=100_000u64,
+        venue_filled in 0u64..=2_000u64,
+    ) {
+        let inst = instrument();
+        prop_assume!(venue_filled <= venue_qty);
+        prop_assume!(venue_filled <= local_qty);
+
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_limit_order(&inst, local_qty, local_px);
+        submit_accept(&mut order, account_id, voi);
+
+        let venue_status = if venue_filled == 0 {
+            OrderStatus::Accepted
+        } else if venue_filled < venue_qty {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Filled
+        };
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(venue_qty),
+            Quantity::from(venue_filled),
+            venue_status,
+        );
+        report.order_type = OrderType::Limit;
+        report.price = Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+        report.avg_px = Some(dec!(1.00000));
+
+        let pass1 = generate_reconciliation_order_events(
+            &order,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        let mut after = order.clone();
+        for ev in &pass1 {
+            after.apply(ev.clone()).expect("event must apply");
+        }
+
+        // All confirmed venue states must converge qty/price/filled in one pass.
+        // Closed snapshots additionally require the local order to be closed.
+        let expected_price =
+            Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+        prop_assert_eq!(after.quantity(), Quantity::from(venue_qty));
+        prop_assert_eq!(after.filled_qty(), Quantity::from(venue_filled));
+        prop_assert_eq!(after.price(), expected_price);
+        if matches!(venue_status, OrderStatus::Filled) {
+            prop_assert!(after.is_closed());
+        } else {
+            prop_assert_eq!(after.status(), venue_status);
+        }
+
+        let pass2 = generate_reconciliation_order_events(
+            &after,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        prop_assert!(
+            pass2.is_empty(),
+            "second pass over an unchanged snapshot must be a no-op, found {:?}",
+            pass2,
+        );
+    }
+
+    #[rstest]
+    fn prop_continuous_reconciliation_skips_pending_venue_states(
+        local_qty in 1u64..=2_000u64,
+        venue_qty in 1u64..=2_000u64,
+        local_px in 1u64..=100_000u64,
+        venue_px in 1u64..=100_000u64,
+        pending_kind in 0u8..2u8,
+    ) {
+        let inst = instrument();
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_limit_order(&inst, local_qty, local_px);
+        submit_accept(&mut order, account_id, voi);
+
+        let pending = if pending_kind == 0 {
+            OrderStatus::PendingUpdate
+        } else {
+            OrderStatus::PendingCancel
+        };
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(venue_qty),
+            Quantity::from(0),
+            pending,
+        );
+        report.order_type = OrderType::Limit;
+        report.price = Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+
+        let events = generate_reconciliation_order_events(
+            &order,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        prop_assert!(
+            events.is_empty(),
+            "pending venue states must not drive local mutations, found {:?}",
+            events,
+        );
     }
 }

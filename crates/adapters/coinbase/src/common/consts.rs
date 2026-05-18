@@ -15,12 +15,18 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+/// Venue identifier string.
 pub const COINBASE: &str = "COINBASE";
 
+/// Static venue instance.
 pub static COINBASE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(COINBASE)));
+
+/// Static client ID instance.
+pub static COINBASE_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(COINBASE)));
 
 pub const REST_URL: &str = "https://api.coinbase.com";
 pub const REST_API_PATH: &str = "/api/v3/brokerage";

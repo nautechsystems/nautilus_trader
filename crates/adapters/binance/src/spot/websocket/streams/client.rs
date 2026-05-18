@@ -208,8 +208,8 @@ impl BinanceSpotWebSocketClient {
 
         for slot in slots {
             slot.cancellation_token.cancel();
-            let _ = slot.cmd_tx.send(BinanceSpotWsStreamsCommand::Disconnect);
-            let _ = slot.task_handle.await;
+            let _result = slot.cmd_tx.send(BinanceSpotWsStreamsCommand::Disconnect);
+            let _result = slot.task_handle.await;
         }
 
         *self.out_tx.lock().expect("out_tx lock poisoned") = None;

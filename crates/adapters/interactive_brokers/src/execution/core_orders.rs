@@ -26,6 +26,7 @@ impl InteractiveBrokersExecutionClient {
         clock: &'static AtomicTime,
         account_id: AccountId,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        order_submit_lock: &Arc<AsyncMutex<()>>,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
@@ -104,12 +105,15 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!("{}", reason);
         }
 
-        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
         let contract =
             Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
+        let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
 
-        let order_any = OrderAny::from(cmd.order_init.clone());
+        let order_any = OrderAny::try_from(cmd.order_init.clone())
+            .context("Failed to construct order from `OrderInitialized`")?;
         let order_ref = cmd.order_init.client_order_id.to_string();
+        let _submit_guard = order_submit_lock.lock().await;
+        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
         let mut ib_order = nautilus_order_to_ib_order(
             &order_any,
             &contract,
@@ -196,35 +200,85 @@ impl InteractiveBrokersExecutionClient {
         cmd: &ModifyOrder,
         client: &Arc<Client>,
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-        _venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         _exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
         _clock: &'static AtomicTime,
         _account_id: AccountId,
-        original_order: &Arc<OrderAny>,
+        original_order: Option<&Arc<OrderAny>>,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
-        let ib_order_id = {
-            let map = order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
-            map.get(&cmd.client_order_id)
-                .copied()
-                .context("Order ID not found in mapping")?
-        };
+        let target_ib_order_id = Self::target_ib_order_id_for_modify(cmd, order_id_map)?;
 
-        let contract =
-            Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
+        if let Some(original_order) = original_order {
+            let ib_order_id = target_ib_order_id.context("Order ID not found in mapping")?;
+            let contract =
+                Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
+            let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
 
-        let order_ref = original_order.client_order_id().to_string();
-        let mut ib_order = nautilus_order_to_ib_order(
-            original_order,
-            &contract,
+            let order_ref = original_order.client_order_id().to_string();
+            let mut ib_order = nautilus_order_to_ib_order(
+                original_order,
+                &contract,
+                instrument_provider,
+                ib_order_id,
+                &order_ref,
+            )
+            .context("Failed to transform order to IB order")?;
+
+            Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
+
+            client
+                .submit_order(ib_order_id, &contract, &ib_order)
+                .await
+                .context("Failed to submit modified order")?;
+
+            tracing::info!(
+                "Modified order {} (IB order ID: {})",
+                cmd.client_order_id,
+                ib_order_id
+            );
+
+            return Ok(());
+        }
+
+        Self::handle_modify_open_order_async(
+            cmd,
+            client,
+            target_ib_order_id,
+            order_id_map,
+            venue_order_id_map,
+            instrument_id_map,
             instrument_provider,
-            ib_order_id,
-            &order_ref,
+            request_timeout_secs,
         )
-        .context("Failed to transform order to IB order")?;
+        .await
+    }
 
+    fn target_ib_order_id_for_modify(
+        cmd: &ModifyOrder,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+    ) -> anyhow::Result<Option<i32>> {
+        if let Some(venue_order_id) = &cmd.venue_order_id {
+            let order_id = venue_order_id
+                .as_str()
+                .parse()
+                .context("Failed to parse venue_order_id as IB order id")?;
+            return Ok(Some(order_id));
+        }
+
+        let map = order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+        Ok(map.get(&cmd.client_order_id).copied())
+    }
+
+    fn apply_modify_fields_to_ib_order(
+        cmd: &ModifyOrder,
+        ib_order: &mut ibapi::orders::Order,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+    ) {
         if let Some(quantity) = cmd.quantity {
             ib_order.total_quantity = quantity.as_f64();
         }
@@ -238,19 +292,89 @@ impl InteractiveBrokersExecutionClient {
         if let Some(trigger_price) = cmd.trigger_price {
             ib_order.aux_price = Some(trigger_price.as_f64() / price_magnifier);
         }
+    }
 
-        client
-            .submit_order(ib_order_id, &contract, &ib_order)
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_modify_open_order_async(
+        cmd: &ModifyOrder,
+        client: &Arc<Client>,
+        target_ib_order_id: Option<i32>,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        request_timeout_secs: u64,
+    ) -> anyhow::Result<()> {
+        let timeout_dur = Duration::from_secs(request_timeout_secs);
+        let mut subscription = tokio::time::timeout(timeout_dur, client.all_open_orders())
             .await
-            .context("Failed to submit modified order")?;
+            .context("Timeout requesting open orders for modify")??;
 
-        tracing::info!(
-            "Modified order {} (IB order ID: {})",
+        let client_order_id = cmd.client_order_id.to_string();
+
+        while let Some(order_result) = subscription.next().await {
+            match order_result {
+                Ok(Orders::OrderData(data)) => {
+                    let matches_order_id =
+                        target_ib_order_id.is_some_and(|order_id| data.order_id == order_id);
+                    let matches_order_ref = data.order.order_ref == client_order_id;
+
+                    if !matches_order_id && !matches_order_ref {
+                        continue;
+                    }
+
+                    let ib_order_id = data.order_id;
+                    let contract = data.contract;
+                    let contract =
+                        Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
+                    let mut ib_order = data.order;
+
+                    Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
+
+                    {
+                        let mut map = order_id_map
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+                        map.insert(cmd.client_order_id, ib_order_id);
+                    }
+                    {
+                        let mut map = venue_order_id_map
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+                        map.insert(ib_order_id, cmd.client_order_id);
+                    }
+                    {
+                        let mut map = instrument_id_map
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
+                        map.insert(ib_order_id, cmd.instrument_id);
+                    }
+
+                    client
+                        .submit_order(ib_order_id, &contract, &ib_order)
+                        .await
+                        .context("Failed to submit modified open order")?;
+
+                    tracing::info!(
+                        "Modified open order {} (IB order ID: {}) after cache miss",
+                        cmd.client_order_id,
+                        ib_order_id
+                    );
+
+                    return Ok(());
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("Error receiving open order data for modify: {e}");
+                }
+            }
+        }
+
+        anyhow::bail!(
+            "Order not found for modify in IB open orders: client_order_id={}, venue_order_id={:?}",
             cmd.client_order_id,
-            ib_order_id
-        );
-
-        Ok(())
+            cmd.venue_order_id,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -270,6 +394,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         strategy_id: StrategyId,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        order_submit_lock: &Arc<AsyncMutex<()>>,
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         let is_bracket_order = num_orders == 3;
@@ -279,6 +404,9 @@ impl InteractiveBrokersExecutionClient {
             first_order.instrument_id(),
             instrument_provider,
         )?;
+        let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
+
+        let _submit_guard = order_submit_lock.lock().await;
 
         if is_bracket_order {
             let parent_order = &orders[0];
@@ -454,6 +582,8 @@ impl InteractiveBrokersExecutionClient {
                     order.instrument_id(),
                     instrument_provider,
                 )?;
+                let order_contract =
+                    Self::contract_with_order_exchange_param(order_contract, cmd.params.as_ref())?;
 
                 let order_ref = order.client_order_id().to_string();
                 let mut ib_order = nautilus_order_to_ib_order(
@@ -471,7 +601,8 @@ impl InteractiveBrokersExecutionClient {
                 ib_order.account = ib_account.clone();
                 ib_order.clearing_account = ib_account;
                 ib_order.oca_group = oca_group_name.clone();
-                ib_order.oca_type = OcaType::from(1);
+                ib_order.oca_type =
+                    crate::common::enums::IbOcaType::CancelWithBlock.ibapi_oca_type();
                 ib_order.transmit = is_last;
 
                 client

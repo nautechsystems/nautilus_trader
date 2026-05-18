@@ -18,7 +18,7 @@
 //! These tests focus on observable behavior through the public API.
 //! Internal state tests are in the in-module tests in manager.rs.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use async_trait::async_trait;
 use indexmap::IndexSet;
@@ -34,6 +34,13 @@ use nautilus_common::{
             SubmitOrderList, TradingCommand,
         },
     },
+    msgbus::{
+        self, MessagingSwitchboard,
+        stubs::{
+            TypedMessageSavingHandler, get_any_saving_handler, get_typed_message_saving_handler,
+        },
+        switchboard,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
@@ -43,7 +50,7 @@ use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
@@ -51,8 +58,8 @@ use nautilus_model::{
         account::state::AccountState,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         Instrument, InstrumentAny,
@@ -149,7 +156,30 @@ impl TestContext {
     }
 
     fn get_order(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
-        self.cache.borrow().order(client_order_id).cloned()
+        self.cache
+            .borrow()
+            .order(client_order_id)
+            .map(|o| o.clone())
+    }
+
+    fn add_margin_account(&self, account_id: AccountId) {
+        let account_state = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000000 USDT"),
+                Money::from("0 USDT"),
+                Money::from("1000000 USDT"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USDT()),
+        );
+        let account = AccountAny::Margin(MarginAccount::new(account_state, true));
+        self.cache.borrow_mut().add_account(account).unwrap();
     }
 }
 
@@ -464,6 +494,239 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
     let client_order_id = ClientOrderId::from("V-EXT-001");
     let order = ctx.get_order(&client_order_id);
     assert!(order.is_some());
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_publishes_external_order_initialized() {
+    let ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let strategy_id = StrategyId::from("EXT-PUBLISH-DIRECT");
+
+    ctx.add_instrument(test_instrument());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_external_order_claims(strategy_id, &HashSet::from([instrument_id]))
+        .unwrap();
+
+    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+
+    let report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-EXT-PUBLISH-DIRECT"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .reconcile_order_status_report(&report);
+
+    msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+    let messages = event_messages.get_messages();
+    assert_eq!(messages.len(), 2);
+
+    match &messages[0] {
+        OrderEventAny::Initialized(initialized) => {
+            assert_eq!(
+                initialized.client_order_id,
+                ClientOrderId::from("V-EXT-PUBLISH-DIRECT")
+            );
+            assert_eq!(initialized.strategy_id, strategy_id);
+            assert!(initialized.reconciliation);
+        }
+        event => panic!("Expected OrderInitialized event, was {event:?}"),
+    }
+
+    assert!(matches!(messages[1], OrderEventAny::Accepted(_)));
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_publishes_external_order_initialized() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let strategy_id = StrategyId::from("EXT-PUBLISH-MASS");
+
+    ctx.add_instrument(test_instrument());
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id);
+
+    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-EXT-PUBLISH-MASS"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    mass_status.add_order_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+    let messages = event_messages.get_messages();
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
+    assert_eq!(messages.len(), 2);
+
+    match &messages[0] {
+        OrderEventAny::Initialized(initialized) => {
+            assert_eq!(
+                initialized.client_order_id,
+                ClientOrderId::from("V-EXT-PUBLISH-MASS")
+            );
+            assert_eq!(initialized.strategy_id, strategy_id);
+            assert!(initialized.reconciliation);
+        }
+        event => panic!("Expected OrderInitialized event, was {event:?}"),
+    }
+
+    assert!(matches!(messages[1], OrderEventAny::Accepted(_)));
+}
+
+#[rstest]
+fn test_order_fill_replay_propagates_position_id_to_oto_contingent_order() {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+    let primary_id = ClientOrderId::from("O-OTO-PRIMARY");
+    let contingent_id = ClientOrderId::from("O-OTO-CONTINGENT");
+    let position_id = PositionId::from("P-OTO-001");
+
+    ctx.add_instrument(instrument.clone());
+
+    let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(primary_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![contingent_id])
+        .build();
+    apply_submitted_and_accepted(&mut primary_order, VenueOrderId::from("V-OTO-PRIMARY"));
+
+    let mut contingent_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(contingent_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3100.00"))
+        .build();
+    apply_submitted_and_accepted(
+        &mut contingent_order,
+        VenueOrderId::from("V-OTO-CONTINGENT"),
+    );
+
+    let strategy_id = primary_order.strategy_id();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Hedging);
+    ctx.add_order(primary_order.clone());
+    ctx.add_order(contingent_order);
+
+    let fill = TestOrderEventStubs::filled(
+        &primary_order,
+        &instrument,
+        Some(TradeId::from("T-OTO-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(2_000_000)),
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let cache = ctx.cache.borrow();
+    let primary_after = cache.order(&primary_id).unwrap();
+    let contingent_after = cache.order(&contingent_id).unwrap();
+
+    assert_eq!(primary_after.position_id(), Some(position_id));
+    assert_eq!(contingent_after.position_id(), Some(position_id));
+    assert_eq!(cache.position_id(&contingent_id), Some(&position_id));
+}
+
+#[rstest]
+fn test_order_fill_replay_propagates_position_id_to_exec_spawn_primary_order() {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+    let primary_id = ClientOrderId::from("O-SPAWN-PRIMARY");
+    let spawned_id = ClientOrderId::from("O-SPAWN-CHILD");
+    let position_id = PositionId::from("P-SPAWN-001");
+
+    ctx.add_instrument(instrument.clone());
+
+    let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(primary_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut primary_order, VenueOrderId::from("V-SPAWN-PRIMARY"));
+
+    let mut spawned_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(spawned_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .exec_algorithm_id(ExecAlgorithmId::from("ALG-SPAWN"))
+        .exec_spawn_id(primary_id)
+        .build();
+    apply_submitted_and_accepted(&mut spawned_order, VenueOrderId::from("V-SPAWN-CHILD"));
+
+    let strategy_id = spawned_order.strategy_id();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Hedging);
+    ctx.add_order(primary_order);
+    ctx.add_order(spawned_order.clone());
+
+    let fill = TestOrderEventStubs::filled(
+        &spawned_order,
+        &instrument,
+        Some(TradeId::from("T-SPAWN-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(2_000_000)),
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let cache = ctx.cache.borrow();
+    let primary_after = cache.order(&primary_id).unwrap();
+    let spawned_after = cache.order(&spawned_id).unwrap();
+
+    assert_eq!(primary_after.position_id(), Some(position_id));
+    assert_eq!(spawned_after.position_id(), Some(position_id));
+    assert_eq!(cache.position_id(&primary_id), Some(&position_id));
 }
 
 #[tokio::test]
@@ -1999,9 +2262,18 @@ fn create_accepted_order(
     venue_order_id: VenueOrderId,
 ) -> OrderAny {
     let mut order = create_submitted_order(client_order_id, instrument_id, side, quantity, price);
-    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
-    order.apply(accepted).unwrap();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
     order
+}
+
+fn apply_submitted_and_accepted(order: &mut OrderAny, venue_order_id: VenueOrderId) {
+    if order.status() == OrderStatus::Initialized {
+        let submitted = TestOrderEventStubs::submitted(order, test_account_id());
+        order.apply(submitted).unwrap();
+    }
+
+    let accepted = TestOrderEventStubs::accepted(order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
 }
 
 fn create_pending_update_order(
@@ -3267,6 +3539,17 @@ fn create_test_position(
     qty: &str,
     price: &str,
 ) -> Position {
+    create_test_position_for_account(instrument, position_id, side, qty, price, test_account_id())
+}
+
+fn create_test_position_for_account(
+    instrument: &InstrumentAny,
+    position_id: PositionId,
+    side: OrderSide,
+    qty: &str,
+    price: &str,
+    account_id: AccountId,
+) -> Position {
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
         .side(side)
@@ -3283,7 +3566,7 @@ fn create_test_position(
         None,
         None,
         None,
-        Some(test_account_id()),
+        Some(account_id),
     );
 
     let order_filled: OrderFilled = fill.into();
@@ -6703,15 +6986,16 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     let mut ctx = TestContext::with_config(config);
     ctx.add_instrument(test_instrument());
 
-    let order = create_submitted_order(
+    let order = create_limit_order(
         "O-001",
         test_instrument_id(),
         OrderSide::Buy,
         "10.0",
         "100.0",
     );
-    ctx.add_order(order.clone());
-    ctx.cache.borrow_mut().update_order(&order).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    ctx.add_order(order);
+    ctx.cache.borrow_mut().update_order(&submitted).unwrap();
 
     // Venue returns no reports, order was never placed
     let mock_client = MockExecutionClient::new(vec![]);
@@ -7197,5 +7481,503 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     assert!(
         events.is_empty(),
         "Expected no events: non-flat venue report should protect retry counter"
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_retries_independent_per_account() {
+    // Two accounts on the same instrument must track their reconciliation
+    // retry counters independently. With instrument-only keying, account A's
+    // increment would suppress account B's first attempt entirely.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    // Instrument deliberately omitted from cache: forces the failed-retry
+    // path so each iteration that reaches it bumps the per-key counter.
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-RETRY-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-RETRY-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        1,
+        "account A retry not incremented",
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        1,
+        "account B retry not incremented (would be 0 if dedup collapsed by instrument)",
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_activity_throttle_independent_per_account() {
+    // Recent activity recorded for one account on an instrument must not
+    // throttle reconciliation for another account on the same instrument.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 60_000_000_000, // 60s
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    ctx.add_instrument(instrument.clone());
+
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ACT-B"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_b,
+    );
+    ctx.add_position(&pos_b);
+
+    // Simulate recent activity on account A only: B must remain unthrottled.
+    let ts_now = ctx.clock.borrow().get_time_ns();
+    ctx.manager
+        .record_position_activity(instrument_id, account_a, ts_now);
+
+    // No venue report for B: treated as flat, so a discrepancy.
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let mut accounts_with_filled: HashSet<AccountId> = HashSet::new();
+
+    for event in &events {
+        if let OrderEventAny::Filled(fill) = event {
+            accounts_with_filled.insert(fill.account_id);
+        }
+    }
+
+    assert!(
+        accounts_with_filled.contains(&account_b),
+        "B's reconciliation must not be throttled by activity recorded for A",
+    );
+}
+
+#[tokio::test]
+async fn test_check_positions_consistency_processes_only_discrepant_account() {
+    // With cache and venue agreeing on account A and disagreeing on account B,
+    // only B should be reconciled. A must remain untouched.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    ctx.add_instrument(instrument.clone());
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-E2E-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-E2E-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    // Venue agrees with A; B has no report, so B is discrepant against flat.
+    let report_a = PositionStatusReport::new(
+        account_a,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report_a]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let mut accounts_with_filled: HashSet<AccountId> = HashSet::new();
+
+    for event in &events {
+        if let OrderEventAny::Filled(fill) = event {
+            accounts_with_filled.insert(fill.account_id);
+        }
+    }
+
+    assert!(
+        accounts_with_filled.contains(&account_b),
+        "expected reconciliation events for the discrepant account B",
+    );
+    assert!(
+        !accounts_with_filled.contains(&account_a),
+        "account A is not discrepant and must not be reconciled",
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_stale_retries_pruned_per_account() {
+    // Mixed staleness across accounts on the same instrument: only the closed
+    // account's retry counter should be pruned. The active account's counter
+    // must be retained.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 5,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    // Instrument deliberately omitted from cache: forces the failed-retry path.
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-STALE-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-STALE-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    // Cycle 1: both keys reach the failed-retry path, so counters land at 1 each.
+    ctx.manager.check_positions_consistency(&clients).await;
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        1,
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        1,
+    );
+
+    // Close account B's position so it disappears from open_positions.
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("3.0"))
+        .build();
+    let close_fill = TestOrderEventStubs::filled(
+        &close_order,
+        &instrument,
+        Some(TradeId::new("T-CLOSE-B")),
+        Some(PositionId::from("P-STALE-B")),
+        Some(Price::from("3100.00")),
+        Some(Quantity::from("3.0")),
+        None,
+        None,
+        None,
+        Some(account_b),
+    );
+    let close_filled: OrderFilled = close_fill.into();
+    let mut pos_b = pos_b;
+    pos_b.apply(&close_filled);
+    ctx.cache.borrow_mut().update_position(&pos_b).unwrap();
+
+    // Cycle 2: A still active and discrepant, so its counter increments;
+    // B's position is closed and venue reports nothing, so its counter is pruned.
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        2,
+        "account A's counter must be retained while it remains active",
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        0,
+        "account B's counter must be pruned once its position is closed",
+    );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_publishes_raw_reports_for_capture() {
+    // Live mass-status reconciliation bypasses the per-report engine entry
+    // points, so the raw venue inputs must be published from this path or the
+    // event store has no record of them for forensic replay.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let position_topic = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+
+    let (order_handler, order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    let (fill_handler, fill_saver) = get_any_saving_handler::<FillReport>(None);
+    let (position_handler, position_saver) = get_any_saving_handler::<PositionStatusReport>(None);
+
+    let order_pattern: msgbus::MStr<msgbus::Pattern> = order_topic.into();
+    let fill_pattern: msgbus::MStr<msgbus::Pattern> = fill_topic.into();
+    let position_pattern: msgbus::MStr<msgbus::Pattern> = position_topic.into();
+    msgbus::subscribe_any(order_pattern, order_handler.clone(), None);
+    msgbus::subscribe_any(fill_pattern, fill_handler.clone(), None);
+    msgbus::subscribe_any(position_pattern, position_handler.clone(), None);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-RAW-CAPTURE"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    mass_status.add_order_reports(vec![order_report.clone()]);
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-RAW-CAPTURE"),
+        TradeId::from("T-RAW-CAPTURE"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None,
+        Some(dec!(3000.0)),
+    );
+    mass_status.add_position_reports(vec![position_report.clone()]);
+
+    let _ = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(order_pattern, &order_handler);
+    msgbus::unsubscribe_any(fill_pattern, &fill_handler);
+    msgbus::unsubscribe_any(position_pattern, &position_handler);
+
+    let orders = order_saver.get_messages();
+    assert_eq!(
+        orders.len(),
+        1,
+        "raw OrderStatusReport must be published once"
+    );
+    assert_eq!(orders[0], order_report);
+
+    let fills = fill_saver.get_messages();
+    assert_eq!(fills.len(), 1, "raw FillReport must be published once");
+    assert_eq!(fills[0], fill_report);
+
+    let positions = position_saver.get_messages();
+    assert_eq!(
+        positions.len(),
+        1,
+        "raw PositionStatusReport must be published once",
+    );
+    assert_eq!(positions[0], position_report);
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
+    // The raw publish must happen BEFORE adjust_mass_status_fills, which can
+    // synthesise replacement order/fill reports via
+    // process_mass_status_for_reconciliation. Forensic replay must see only
+    // the venue-supplied raw inputs; synthetic reports are an internal
+    // reconstruction step and must never appear on `reconciliation.raw.*`.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let order_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let order_pattern: msgbus::MStr<msgbus::Pattern> = order_topic.into();
+    let fill_pattern: msgbus::MStr<msgbus::Pattern> = fill_topic.into();
+    let (order_handler, order_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    let (fill_handler, fill_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(order_pattern, order_handler.clone(), None);
+    msgbus::subscribe_any(fill_pattern, fill_handler.clone(), None);
+
+    // Build a mass status that triggers AddSyntheticOpening: simulated qty
+    // (0.4 from the single fill) does not match the venue position (Long 1.0),
+    // so the adjustment step inserts a synthetic Buy 0.6 opening fill under a
+    // new `S-...` venue_order_id.
+    let venue_order_id = VenueOrderId::from("V-SYN-RAW");
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_status_report(
+        None,
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.0"),
+        Quantity::from("0.4"),
+    );
+    mass_status.add_order_reports(vec![order_report.clone()]);
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-SYN-RAW"),
+        OrderSide::Buy,
+        Quantity::from("0.4"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![fill_report.clone()]);
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None, // netting mode triggers adjust_mass_status_fills
+        Some(dec!(3000.0)),
+    );
+    mass_status.add_position_reports(vec![position_report]);
+
+    let _ = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(order_pattern, &order_handler);
+    msgbus::unsubscribe_any(fill_pattern, &fill_handler);
+
+    let orders = order_saver.get_messages();
+    assert_eq!(
+        orders.len(),
+        1,
+        "only the raw venue OrderStatusReport must be captured; \
+         synthetic reports from adjust_mass_status_fills must not reach \
+         the raw topic",
+    );
+    assert_eq!(orders[0], order_report);
+    assert_eq!(
+        orders[0].venue_order_id, venue_order_id,
+        "captured venue_order_id must match the original raw input, not a synthetic `S-` id",
+    );
+
+    let fills = fill_saver.get_messages();
+    assert_eq!(
+        fills.len(),
+        1,
+        "only the raw venue FillReport must be captured; the synthetic \
+         opening fill inserted by adjustment must not appear on the raw topic",
+    );
+    assert_eq!(fills[0], fill_report);
+    assert_eq!(
+        fills[0].trade_id,
+        TradeId::from("T-SYN-RAW"),
+        "captured trade_id must match the original raw input, not a synthetic `S-` id",
     );
 }

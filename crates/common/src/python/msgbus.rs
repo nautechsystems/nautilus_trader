@@ -690,7 +690,7 @@ impl PyMessageBus {
         py: Python<'_>,
         topic: &str,
         handler: Py<PyAny>,
-        priority: u8,
+        priority: u32,
     ) -> PyResult<()> {
         let handler = make_handler(py, handler)?;
         let pattern = MStr::<Pattern>::pattern(topic);

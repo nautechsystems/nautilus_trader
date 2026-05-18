@@ -35,10 +35,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use nautilus_architect_ax::common::consts::AX_VENUE;
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     enums::AssetClass,
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::{InstrumentAny, PerpetualContract},
     types::{Currency, Price, Quantity},
 };
@@ -587,7 +588,7 @@ pub async fn wait_for_connection(state: &TestServerState) {
 pub fn create_test_instrument(symbol: &str) -> InstrumentAny {
     let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
     let instrument = PerpetualContract::new(
-        InstrumentId::new(Symbol::new(symbol), Venue::new("AX")),
+        InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
         Symbol::new(symbol),
         underlying,
         AssetClass::Cryptocurrency,

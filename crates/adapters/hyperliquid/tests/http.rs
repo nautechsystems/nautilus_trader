@@ -39,8 +39,8 @@ use nautilus_hyperliquid::{
     common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
     http::{
         models::{
-            Cloid, HyperliquidFills, HyperliquidL2Book, PerpMeta, PerpMetaAndCtxs, SpotMeta,
-            SpotMetaAndCtxs,
+            Cloid, HyperliquidFills, HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs,
+            SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
@@ -157,6 +157,20 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             {"universe": [], "tokens": []},
             []
         ]))
+        .into_response(),
+        "outcomeMeta" => Json(json!({
+            "outcomes": [
+                {
+                    "outcome": 123,
+                    "name": "Recurring",
+                    "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
+                    "sideSpecs": [
+                        {"name": "Yes"},
+                        {"name": "No"}
+                    ]
+                }
+            ]
+        }))
         .into_response(),
         "l2Book" => {
             let book = load_json("http_l2_book_btc.json");
@@ -388,6 +402,23 @@ async fn test_spot_meta_and_ctxs_returns_metadata_with_contexts() {
 
 #[rstest]
 #[tokio::test]
+async fn test_outcome_meta_returns_outcome_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let meta = client.get_outcome_meta().await.unwrap();
+
+    assert_eq!(meta.outcomes.len(), 1);
+    assert_eq!(meta.outcomes[0].outcome, 123);
+    assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body.get("type").unwrap(), "outcomeMeta");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_info_user_fills_returns_empty_for_new_user() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -447,7 +478,7 @@ async fn test_info_spot_clearinghouse_state_returns_balances() {
         .unwrap();
 
     let balances = result.get("balances").and_then(|v| v.as_array()).unwrap();
-    assert_eq!(balances.len(), 3);
+    assert_eq!(balances.len(), 4);
     assert_eq!(balances[0].get("coin").unwrap().as_str().unwrap(), "USDC");
 
     let last_request = state.last_request_body.lock().await;
@@ -504,7 +535,7 @@ async fn test_request_spot_balances_emits_one_per_non_zero_token() {
         .await
         .unwrap();
 
-    assert_eq!(balances.len(), 3);
+    assert_eq!(balances.len(), 4);
 
     let usdc = balances
         .iter()
@@ -883,6 +914,147 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter()
 
 #[rstest]
 #[tokio::test]
+async fn test_request_spot_position_status_reports_resolves_outcome_side_token() {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{BinaryOption, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::from("USDC");
+
+    let outcome = BinaryOption::new(
+        InstrumentId::from("+10.HYPERLIQUID"),
+        Symbol::new("#10"),
+        AssetClass::Alternative,
+        usdc,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        4,
+        2,
+        Price::from("0.0001"),
+        Quantity::from("0.01"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
+
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    let outcome_report = reports
+        .iter()
+        .find(|r| r.instrument_id == InstrumentId::from("+10.HYPERLIQUID"))
+        .expect("outcome side token must surface as a position report");
+    assert_eq!(outcome_report.position_side, PositionSideSpecified::Long);
+    assert_eq!(outcome_report.quantity.as_f64(), 25.0);
+    // entryNtl=12.5 / total=25 = 0.5
+    assert_eq!(
+        outcome_report.avg_px_open.unwrap(),
+        rust_decimal_macros::dec!(0.5),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filter() {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{BinaryOption, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::from("USDC");
+
+    let outcome = BinaryOption::new(
+        InstrumentId::from("+10.HYPERLIQUID"),
+        Symbol::new("#10"),
+        AssetClass::Alternative,
+        usdc,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        4,
+        2,
+        Price::from("0.0001"),
+        Quantity::from("0.01"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
+
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("+10.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("+10.HYPERLIQUID")
+    );
+
+    // Request count guards against fetching perp first then spot
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState",
+        "outcome-filtered query must not reach clearinghouseState"
+    );
+    assert_eq!(
+        *state.request_count.lock().await,
+        1,
+        "outcome filter must issue exactly one info request"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_rate_limit_triggers_429_response() {
     let state = TestServerState::default();
     state.rate_limit_after.store(2, Ordering::Relaxed);
@@ -1067,6 +1239,12 @@ impl TestHttpClient {
 
     async fn get_spot_meta_and_ctxs(&self) -> Result<SpotMetaAndCtxs, String> {
         let request = InfoRequest::spot_meta_and_asset_ctxs();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_outcome_meta(&self) -> Result<OutcomeMeta, String> {
+        let request = InfoRequest::outcome_meta();
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }

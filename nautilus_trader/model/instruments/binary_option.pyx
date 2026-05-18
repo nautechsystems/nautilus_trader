@@ -269,3 +269,45 @@ cdef class BinaryOption(Instrument):
 
         """
         return BinaryOption.to_dict_c(obj)
+
+    @staticmethod
+    cdef BinaryOption from_pyo3_c(pyo3_instrument):
+        Condition.not_none(pyo3_instrument, "pyo3_instrument")
+        return BinaryOption(
+            instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
+            asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
+            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            price_precision=pyo3_instrument.price_precision,
+            size_precision=pyo3_instrument.size_precision,
+            price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
+            size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
+            activation_ns=pyo3_instrument.activation_ns,
+            expiration_ns=pyo3_instrument.expiration_ns,
+            max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw, pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
+            min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw, pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
+            maker_fee=Decimal(pyo3_instrument.maker_fee),
+            taker_fee=Decimal(pyo3_instrument.taker_fee),
+            ts_event=pyo3_instrument.ts_event,
+            ts_init=pyo3_instrument.ts_init,
+            outcome=pyo3_instrument.outcome,
+            description=pyo3_instrument.description,
+            info=pyo3_instrument.info,
+        )
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument) -> BinaryOption:
+        """
+        Return legacy Cython binary option instrument converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_pyo3.BinaryOption
+            The pyo3 Rust binary option instrument to convert from.
+
+        Returns
+        -------
+        BinaryOption
+
+        """
+        return BinaryOption.from_pyo3_c(pyo3_instrument)

@@ -15,14 +15,17 @@
 
 //! Python conversion utilities for Interactive Brokers types.
 
-use ibapi::contracts::{ComboLegOpenClose, Contract, ContractDetails, SecurityType};
+use ibapi::contracts::{Contract, ContractDetails, SecurityType};
 use nautilus_core::python::{to_pytype_err, to_pyvalue_err};
 use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict, PyList},
 };
 
-use crate::common::contracts::parse_contract_from_json;
+use crate::common::{
+    contracts::parse_contract_from_json,
+    enums::{IbComboLegOpenClose, IbSecurityType},
+};
 
 /// Convert a Python object to a JSON value.
 pub fn py_to_json_value(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
@@ -57,15 +60,6 @@ pub fn py_to_json_value(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 
 /// Convert a Python object (IBContract or dict) to a Rust Contract.
 ///
-/// # Arguments
-///
-/// * `obj` - The Python object to convert. Can be an `IBContract` instance (which has a `.json()` method)
-///           or a dictionary.
-///
-/// # Returns
-///
-/// Returns the parsed Rust `Contract`.
-///
 /// # Errors
 ///
 /// Returns a PyValueError if conversion fails.
@@ -95,34 +89,15 @@ pub fn py_list_to_json_values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<serde_json
     Ok(values)
 }
 
-fn security_type_to_ib_str(security_type: &SecurityType) -> &str {
-    match security_type {
-        SecurityType::Stock => "STK",
-        SecurityType::Option => "OPT",
-        SecurityType::Future => "FUT",
-        SecurityType::ContinuousFuture => "CONTFUT",
-        SecurityType::FuturesOption => "FOP",
-        SecurityType::ForexPair => "CASH",
-        SecurityType::Crypto => "CRYPTO",
-        SecurityType::Index => "IND",
-        SecurityType::CFD => "CFD",
-        SecurityType::Commodity => "CMDTY",
-        SecurityType::Bond => "BOND",
-        SecurityType::Spread => "BAG",
-        SecurityType::Warrant => "WAR",
-        SecurityType::News => "NEWS",
-        SecurityType::MutualFund => "FUND",
-        SecurityType::Other(_) => "",
-    }
+fn security_type_to_ib_str(security_type: &SecurityType) -> String {
+    IbSecurityType::try_from(security_type).map_or_else(
+        |_| security_type.to_string(),
+        |security_type| security_type.to_string(),
+    )
 }
 
-fn combo_leg_open_close_to_i32(open_close: ComboLegOpenClose) -> i32 {
-    match open_close {
-        ComboLegOpenClose::Same => 0,
-        ComboLegOpenClose::Open => 1,
-        ComboLegOpenClose::Close => 2,
-        ComboLegOpenClose::Unknown => 3,
-    }
+fn combo_leg_open_close_to_i32(open_close: ibapi::contracts::ComboLegOpenClose) -> i32 {
+    IbComboLegOpenClose::from(open_close).as_i32()
 }
 
 pub fn contract_to_pydict<'py>(

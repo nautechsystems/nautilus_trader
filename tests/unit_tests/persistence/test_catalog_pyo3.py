@@ -15,6 +15,9 @@
 
 import os
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import BarAggregation
 from nautilus_trader.core.nautilus_pyo3 import BarSpecification
@@ -1647,3 +1650,60 @@ def test_convert_stream_to_data_all_data_types(catalog: LegacyParquetDataCatalog
             subdirectory="backtest",
         )
         # Should complete without error for each type
+
+
+def test_convert_stream_to_data_writes_arrow_batches_without_deserializing(
+    catalog: LegacyParquetDataCatalog,
+) -> None:
+    # Arrange
+    pyo3_catalog = ParquetDataCatalog(catalog.path)
+    feather_dir = os.path.join(
+        catalog.path,
+        "backtest",
+        "test_instance_arrow_only",
+        "quotes",
+        "AUDUSD.SIM",
+    )
+    os.makedirs(feather_dir, exist_ok=True)
+
+    schema = pa.schema(
+        [
+            pa.field("ts_init", pa.uint64(), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("payload", pa.string(), nullable=False),
+        ],
+        metadata={b"instrument_id": b"AUD/USD.SIM"},
+    )
+    batch = pa.record_batch(
+        [
+            pa.array([300, 100, 200], type=pa.uint64()),
+            pa.array([30, 10, 20], type=pa.uint64()),
+            pa.array(["c", "a", "b"], type=pa.string()),
+        ],
+        schema=schema,
+    )
+
+    feather_path = os.path.join(feather_dir, "AUDUSD.SIM_0.feather")
+    with (
+        open(feather_path, "wb") as feather_file,
+        pa.ipc.new_stream(feather_file, schema) as writer,
+    ):
+        writer.write_batch(batch)
+
+    # Act
+    pyo3_catalog.convert_stream_to_data(
+        "test_instance_arrow_only",
+        "quotes",
+        subdirectory="backtest",
+    )
+
+    # Assert
+    files = pyo3_catalog.query_files("quotes", ["AUD/USD.SIM"])
+    assert len(files) == 1
+
+    parquet_path = files[0] if os.path.isabs(files[0]) else os.path.join(catalog.path, files[0])
+    parquet_table = pq.read_table(parquet_path)
+    assert parquet_table.schema.metadata[b"instrument_id"] == b"AUD/USD.SIM"
+    assert parquet_table["ts_init"].to_pylist() == [100, 200, 300]
+    assert parquet_table["ts_event"].to_pylist() == [10, 20, 30]
+    assert parquet_table["payload"].to_pylist() == ["a", "b", "c"]

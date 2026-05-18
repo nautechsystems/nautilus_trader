@@ -108,7 +108,6 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=is_testnet,
         ),
     },
     exec_clients={
@@ -118,7 +117,6 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=is_testnet,
         ),
     },
     timeout_connection=20.0,
@@ -133,10 +131,11 @@ node = TradingNode(config=config_node)
 
 # Configure your execution tester
 # Note: dYdX v4 does NOT support:
-#   - Batch submit/modify
+#   - Batch modify
 #   - OCO, iceberg, or bracket orders (emulated only)
 #   - Trailing stop orders
 #   - Order modification
+# Batch submit is supported for long-term LIMIT orders only.
 config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],

@@ -41,12 +41,15 @@ use nautilus_common::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, TraderId, Venue},
+    identifiers::{AccountId, ClientId, TraderId},
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
-    common::{enums::SignatureType, models::PolymarketLabel},
+    common::{
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+        enums::SignatureType,
+        models::PolymarketLabel,
+    },
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     filters::SearchFilter,
@@ -79,7 +82,7 @@ nautilus_actor!(NewMarketMonitor);
 
 impl DataActor for NewMarketMonitor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let venue = Venue::from("POLYMARKET");
+        let venue = *POLYMARKET_VENUE;
         let client_id = Some(self.config.client_id);
 
         // Log instruments already in cache from the initial provider load
@@ -130,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("POLYMARKET-001");
-    let client_id = ClientId::new("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     // SearchFilter pre-populates BTC markets as the initial instrument set
     let search_filter = SearchFilter::from_query("BTC");
@@ -138,7 +141,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = PolymarketDataClientConfig {
         subscribe_new_markets: true,
         filters: vec![Arc::new(search_filter)],
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -146,7 +148,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

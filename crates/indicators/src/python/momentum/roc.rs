@@ -30,7 +30,7 @@ impl RateOfChange {
     }
 
     fn __repr__(&self) -> String {
-        format!("RateOfChange({},{})", self.period, self.use_log,)
+        format!("RateOfChange({},{})", self.period, self.use_log)
     }
 
     #[getter]

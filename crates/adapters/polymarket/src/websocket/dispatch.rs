@@ -28,7 +28,7 @@ use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, collections::AtomicMap, ti
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{AccountId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -70,6 +70,7 @@ pub(crate) struct WsDispatchState {
 pub(crate) struct WsDispatchContext<'a> {
     pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
+    pub pending_submits: &'a Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
     pub pending_fills: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
     pub pending_order_reports: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
     pub emitter: &'a ExecutionEventEmitter,
@@ -113,7 +114,35 @@ fn dispatch_order_update(
     let ts_init = ctx.clock.get_time_ns();
     let mut report =
         build_ws_order_status_report(order, &instrument, ctx.account_id, ts_event, ts_init);
-    let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
+    let local_client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
+    let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
+    report.client_order_id = local_client_order_id;
+
+    if local_client_order_id.is_some()
+        && !is_accepted
+        && report.order_status != OrderStatus::Rejected
+    {
+        ctx.fill_tracker.register(
+            venue_order_id,
+            report.quantity,
+            report.order_side,
+            report.instrument_id,
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        is_accepted = true;
+    }
+
+    let buffered_fills = if is_accepted {
+        drain_pending_fills_for_known_order(
+            venue_order_id,
+            local_client_order_id,
+            ctx.fill_tracker,
+            ctx.pending_fills,
+        )
+    } else {
+        Vec::new()
+    };
 
     // Order updates can race ahead of trade messages, so cap filled_qty
     // to what the fill tracker has recorded to prevent duplicate inferred fills
@@ -141,10 +170,14 @@ fn dispatch_order_update(
     emit_or_buffer_order_report(
         report,
         venue_order_id,
-        is_accepted,
+        is_accepted || local_client_order_id.is_some(),
         ctx.emitter,
         ctx.pending_order_reports,
     );
+
+    for fill in buffered_fills {
+        ctx.emitter.send_fill_report(fill);
+    }
 
     // MATCHED convergence: check for dust residual
     if order.status == PolymarketOrderStatus::Matched {
@@ -269,6 +302,7 @@ fn dispatch_maker_fills(
             ts_init,
         );
         let maker_venue_order_id = report.venue_order_id;
+        report.client_order_id = local_client_order_id(&maker_venue_order_id, ctx.pending_submits);
         report.last_qty = ctx
             .fill_tracker
             .snap_fill_qty(&maker_venue_order_id, report.last_qty);
@@ -323,6 +357,7 @@ fn dispatch_taker_fill(
         ts_event,
         ts_init,
     );
+    report.client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
@@ -474,6 +509,47 @@ fn build_ws_taker_fill_report(
     }
 }
 
+fn local_client_order_id(
+    venue_order_id: &VenueOrderId,
+    pending_submits: &Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
+) -> Option<ClientOrderId> {
+    pending_submits
+        .lock()
+        .expect(MUTEX_POISONED)
+        .get(venue_order_id)
+        .copied()
+}
+
+fn drain_pending_fills_for_known_order(
+    venue_order_id: VenueOrderId,
+    client_order_id: Option<ClientOrderId>,
+    fill_tracker: &OrderFillTrackerMap,
+    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
+) -> Vec<FillReport> {
+    let Some(buffered) = pending
+        .lock()
+        .expect(MUTEX_POISONED)
+        .remove(&venue_order_id)
+    else {
+        return Vec::new();
+    };
+
+    buffered
+        .into_iter()
+        .map(|mut fill| {
+            fill.client_order_id = client_order_id;
+            fill.last_qty = fill_tracker.snap_fill_qty(&venue_order_id, fill.last_qty);
+            fill_tracker.record_fill(
+                &venue_order_id,
+                fill.last_qty.as_f64(),
+                fill.last_px.as_f64(),
+                fill.ts_event,
+            );
+            fill
+        })
+        .collect()
+}
+
 fn emit_or_buffer_order_report(
     report: OrderStatusReport,
     venue_order_id: VenueOrderId,
@@ -622,6 +698,7 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let emitter = test_emitter();
@@ -629,6 +706,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -649,6 +727,60 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispatch_order_message_uses_pending_submit_client_order_id() {
+        let order: PolymarketUserOrder = load("ws_user_order_placement.json");
+        let instrument = test_instrument();
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument);
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = Mutex::new(FifoCacheMap::default());
+        let pending_fills = Mutex::new(FifoCacheMap::default());
+        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        let client_order_id = ClientOrderId::from("O-UNKNOWN-SUBMIT");
+        pending_submits
+            .lock()
+            .unwrap()
+            .insert(venue_order_id, client_order_id);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            pending_fills: &pending_fills,
+            pending_order_reports: &pending_order_reports,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        let _ = dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
+
+        let event = receiver.try_recv().expect("expected order report");
+        match event {
+            ExecutionEvent::Report(report) => match report {
+                ExecutionReport::Order(order_report) => {
+                    assert_eq!(order_report.client_order_id, Some(client_order_id));
+                }
+                other => panic!("Expected order report, was {other:?}"),
+            },
+            other => panic!("Expected report event, was {other:?}"),
+        }
+
+        let guard = pending_order_reports.lock().unwrap();
+        assert!(guard.get(&venue_order_id).is_none());
+    }
+
+    #[rstest]
     fn test_dispatch_trade_dedup() {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
@@ -657,6 +789,7 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let emitter = test_emitter();
@@ -664,6 +797,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -694,6 +828,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispatch_trade_uses_pending_submit_client_order_id() {
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = test_instrument();
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument);
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = Mutex::new(FifoCacheMap::default());
+        let pending_fills = Mutex::new(FifoCacheMap::default());
+        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let emitter = test_emitter();
+
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let client_order_id = ClientOrderId::from("O-UNKNOWN-FILL");
+        pending_submits
+            .lock()
+            .unwrap()
+            .insert(venue_order_id, client_order_id);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            pending_fills: &pending_fills,
+            pending_order_reports: &pending_order_reports,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let guard = pending_fills.lock().unwrap();
+        let fills = guard
+            .get(&venue_order_id)
+            .expect("expected buffered fill report");
+        assert_eq!(fills[0].client_order_id, Some(client_order_id));
+    }
+
+    #[rstest]
     fn test_dispatch_order_matched_caps_filled_qty_when_no_trades_tracked() {
         let order: PolymarketUserOrder = load("ws_user_order_matched.json");
         let instrument = test_instrument();
@@ -714,6 +892,7 @@ mod tests {
             instrument.price_precision(),
         );
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -723,6 +902,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -769,6 +949,7 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 50.0, 0.5, UnixNanos::from(1_000u64));
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -778,6 +959,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -822,6 +1004,7 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 99.995, 0.5, UnixNanos::from(1_000u64));
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -836,6 +1019,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -890,6 +1074,7 @@ mod tests {
             instrument.price_precision(),
         );
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -899,6 +1084,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -966,6 +1152,7 @@ mod tests {
             instrument.price_precision(),
         );
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -975,6 +1162,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -1011,6 +1199,7 @@ mod tests {
         let fill_tracker = OrderFillTrackerMap::new();
         let venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let emitter = test_emitter();
@@ -1018,6 +1207,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -1081,6 +1271,7 @@ mod tests {
             instrument.price_precision(),
         );
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -1090,6 +1281,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
@@ -1272,6 +1464,7 @@ mod tests {
             instrument.price_precision(),
         );
 
+        let pending_submits = Mutex::new(FifoCacheMap::default());
         let pending_fills = Mutex::new(FifoCacheMap::default());
         let pending_order_reports = Mutex::new(FifoCacheMap::default());
         let mut emitter = test_emitter();
@@ -1281,6 +1474,7 @@ mod tests {
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,

@@ -50,7 +50,7 @@ const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveDataEngineConfig {
     /// If time bar aggregators will build and emit bars with no new market updates.
     #[builder(default = true)]
@@ -72,7 +72,7 @@ pub struct LiveDataEngineConfig {
     ///
     /// Keys are `BarAggregation` variant names, values are offset durations in nanoseconds.
     #[builder(default)]
-    pub time_bars_origins: HashMap<String, u64>,
+    pub time_bars_origin_offset: HashMap<String, u64>,
     /// If data timestamp sequencing should be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,
@@ -111,8 +111,8 @@ impl Default for LiveDataEngineConfig {
 
 impl From<LiveDataEngineConfig> for DataEngineConfig {
     fn from(config: LiveDataEngineConfig) -> Self {
-        let time_bars_origins = config
-            .time_bars_origins
+        let time_bars_origin_offset = config
+            .time_bars_origin_offset
             .into_iter()
             .map(|(agg, nanos)| {
                 let agg = BarAggregation::from_str(&agg)
@@ -127,11 +127,12 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
             time_bars_skip_first_non_full_bar: config.time_bars_skip_first_non_full_bar,
             time_bars_interval_type: config.time_bars_interval_type,
             time_bars_build_delay: config.time_bars_build_delay,
-            time_bars_origins,
+            time_bars_origin_offset,
             validate_data_sequence: config.validate_data_sequence,
             buffer_deltas: config.buffer_deltas,
             emit_quotes_from_book: config.emit_quotes_from_book,
             emit_quotes_from_book_depths: config.emit_quotes_from_book_depths,
+            disable_historical_cache: false,
             external_clients: config.external_clients,
             debug: config.debug,
         }
@@ -148,7 +149,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveRiskEngineConfig {
     /// If all pre-trade risk checks should be bypassed.
     #[builder(default)]
@@ -265,7 +266,7 @@ fn parse_rate_limit(input: &str) -> anyhow::Result<RateLimit> {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveExecEngineConfig {
     /// If the cache should be loaded on initialization.
     #[builder(default = true)]
@@ -429,7 +430,7 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct RoutingConfig {
     /// If the client should be registered as the default routing client.
     #[builder(default)]
@@ -448,7 +449,7 @@ pub struct RoutingConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct InstrumentProviderConfig {
     /// Whether to load all instruments on startup.
     #[builder(default)]
@@ -481,7 +482,7 @@ impl Default for InstrumentProviderConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveDataClientConfig {
     /// If `DataClient` will emit bar updates when a new bar opens.
     #[builder(default)]
@@ -504,7 +505,7 @@ pub struct LiveDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveExecClientConfig {
     /// The client's instrument provider configuration.
     #[builder(default)]
@@ -523,7 +524,8 @@ pub struct LiveExecClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiveNodeConfig {
     /// The trading environment.
     #[builder(default = Environment::Live)]
@@ -623,18 +625,6 @@ impl LiveNodeConfig {
             );
         }
 
-        if self.logging.file_config.is_some() {
-            anyhow::bail!(
-                "LoggerConfig.file_config is not supported by the Rust live runtime yet (use py_init_logging)"
-            );
-        }
-
-        if self.logging.clear_log_file {
-            anyhow::bail!(
-                "LoggerConfig.clear_log_file is not supported by the Rust live runtime yet"
-            );
-        }
-
         self.data_engine.validate_runtime_support()?;
         self.risk_engine.validate_runtime_support()?;
         self.exec_engine.validate_runtime_support()?;
@@ -645,10 +635,10 @@ impl LiveNodeConfig {
 
 impl LiveDataEngineConfig {
     fn validate_runtime_support(&self) -> anyhow::Result<()> {
-        for agg_str in self.time_bars_origins.keys() {
+        for agg_str in self.time_bars_origin_offset.keys() {
             BarAggregation::from_str(agg_str).map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid LiveDataEngineConfig.time_bars_origins key {agg_str:?}: {e}"
+                    "invalid LiveDataEngineConfig.time_bars_origin_offset key {agg_str:?}: {e}"
                 )
             })?;
         }
@@ -994,7 +984,7 @@ mod tests {
             BarIntervalType::RightOpen,
         );
         assert_eq!(converted.time_bars_build_delay, 1_500);
-        assert!(converted.time_bars_origins.is_empty());
+        assert!(converted.time_bars_origin_offset.is_empty());
         assert!(converted.validate_data_sequence);
         assert!(converted.buffer_deltas);
         assert!(!converted.emit_quotes_from_book);
@@ -1007,9 +997,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_data_engine_config_converts_time_bars_origins() {
+    fn test_live_data_engine_config_converts_time_bars_origin_offset() {
         let config = LiveDataEngineConfig {
-            time_bars_origins: HashMap::from([("Minute".to_string(), 5_000_000_000)]),
+            time_bars_origin_offset: HashMap::from([("Minute".to_string(), 5_000_000_000)]),
             emit_quotes_from_book: true,
             emit_quotes_from_book_depths: true,
             ..Default::default()
@@ -1017,9 +1007,9 @@ mod tests {
 
         let converted: DataEngineConfig = config.into();
 
-        assert_eq!(converted.time_bars_origins.len(), 1);
+        assert_eq!(converted.time_bars_origin_offset.len(), 1);
         assert_eq!(
-            converted.time_bars_origins[&BarAggregation::Minute],
+            converted.time_bars_origin_offset[&BarAggregation::Minute],
             Duration::from_nanos(5_000_000_000),
         );
         assert!(converted.emit_quotes_from_book);
@@ -1224,7 +1214,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_file_config() {
+    fn test_validate_runtime_support_accepts_file_config() {
         use nautilus_common::logging::writer::FileWriterConfig;
 
         let config = LiveNodeConfig {
@@ -1235,12 +1225,11 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("file_config"));
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_clear_log_file() {
+    fn test_validate_runtime_support_accepts_clear_log_file() {
         let config = LiveNodeConfig {
             logging: LoggerConfig {
                 clear_log_file: true,
@@ -1249,22 +1238,21 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("clear_log_file"));
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_invalid_time_bars_origins_key() {
+    fn test_validate_runtime_support_rejects_invalid_time_bars_origin_offset_key() {
         let config = LiveNodeConfig {
             data_engine: LiveDataEngineConfig {
-                time_bars_origins: HashMap::from([("INVALID".to_string(), 1_000)]),
+                time_bars_origin_offset: HashMap::from([("INVALID".to_string(), 1_000)]),
                 ..Default::default()
             },
             ..Default::default()
         };
 
         let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("time_bars_origins"));
+        assert!(error.contains("time_bars_origin_offset"));
     }
 
     #[rstest]
@@ -1311,7 +1299,7 @@ mod tests {
         assert!(!config.time_bars_skip_first_non_full_bar);
         assert_eq!(config.time_bars_interval_type, BarIntervalType::LeftOpen);
         assert_eq!(config.time_bars_build_delay, 0);
-        assert!(config.time_bars_origins.is_empty());
+        assert!(config.time_bars_origin_offset.is_empty());
         assert!(!config.validate_data_sequence);
         assert!(!config.buffer_deltas);
         assert!(!config.emit_quotes_from_book);
@@ -1378,5 +1366,46 @@ mod tests {
                 .to_string()
                 .contains("unknown field `instrument_provider`")
         );
+    }
+
+    #[rstest]
+    fn test_live_node_config_toml_minimal() {
+        let config: LiveNodeConfig = toml::from_str(
+            r#"
+environment = "Live"
+trader_id = "TRADER-042"
+
+[data_engine]
+debug = true
+
+[risk_engine]
+bypass = false
+
+[exec_engine]
+reconciliation = false
+
+[data_clients.hyperliquid]
+handle_revised_bars = true
+
+[exec_clients.hyperliquid]
+routing = { default = true, venues = ["HYPERLIQUID"] }
+instrument_provider = { load_all = true }
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.environment, Environment::Live);
+        assert_eq!(config.trader_id, TraderId::from("TRADER-042"));
+        assert!(config.data_engine.debug);
+        assert!(!config.risk_engine.bypass);
+        assert!(!config.exec_engine.reconciliation);
+        assert!(config.data_clients["hyperliquid"].handle_revised_bars);
+        let exec_client = &config.exec_clients["hyperliquid"];
+        assert!(exec_client.routing.default);
+        assert_eq!(
+            exec_client.routing.venues,
+            Some(vec!["HYPERLIQUID".to_string()]),
+        );
+        assert!(exec_client.instrument_provider.load_all);
     }
 }

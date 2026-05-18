@@ -26,19 +26,24 @@ pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::enums::{BarAggregation, OrderSide};
+use nautilus_model::{
+    enums::{BarAggregation, OrderSide},
+    identifiers::{InstrumentId, PositionId},
+};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::BYBIT_NAUTILUS_BROKER_ID,
+        consts::{BYBIT, BYBIT_NAUTILUS_BROKER_ID},
         enums::{BybitOrderSide, BybitPositionIdx, BybitPositionMode},
-        parse::{bar_spec_to_bybit_interval, extract_raw_symbol},
+        parse::{
+            bar_spec_to_bybit_interval, extract_raw_symbol, make_hedge_venue_position_id,
+            resolve_position_idx,
+        },
         symbol::BybitSymbol,
     },
     config::{BybitDataClientConfig, BybitExecClientConfig},
-    execution::resolve_position_idx,
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 
@@ -113,6 +118,18 @@ fn py_bybit_resolve_position_idx(
         is_reduce_only,
         manual_override,
     ))
+}
+
+/// Constructs a venue position ID only for hedge-mode Bybit position indexes.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
+#[pyo3(name = "bybit_make_hedge_venue_position_id")]
+#[pyo3(signature = (instrument_id, position_idx=None))]
+fn py_bybit_make_hedge_venue_position_id(
+    instrument_id: InstrumentId,
+    position_idx: Option<BybitPositionIdx>,
+) -> Option<PositionId> {
+    position_idx.and_then(|idx| make_hedge_venue_position_id(instrument_id, idx as i32))
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -215,11 +232,12 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_bybit_bar_spec_to_interval, m)?)?;
     m.add_function(wrap_pyfunction!(py_bybit_product_type_from_symbol, m)?)?;
     m.add_function(wrap_pyfunction!(py_bybit_resolve_position_idx, m)?)?;
+    m.add_function(wrap_pyfunction!(py_bybit_make_hedge_venue_position_id, m)?)?;
 
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("BYBIT".to_string(), extract_bybit_data_factory)
+        registry.register_factory_extractor(BYBIT.to_string(), extract_bybit_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Bybit data factory extractor: {e}"
@@ -227,7 +245,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry
-        .register_exec_factory_extractor("BYBIT".to_string(), extract_bybit_exec_factory)
+        .register_exec_factory_extractor(BYBIT.to_string(), extract_bybit_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Bybit exec factory extractor: {e}"

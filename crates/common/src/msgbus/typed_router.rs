@@ -46,13 +46,13 @@ pub struct TypedSubscription<T: 'static> {
     /// The pattern for matching topics.
     pub pattern: MStr<Pattern>,
     /// Higher priority handlers receive messages first.
-    pub priority: u8,
+    pub priority: u32,
 }
 
 impl<T: 'static> TypedSubscription<T> {
     /// Creates a new typed subscription.
     #[must_use]
-    pub fn new(pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: Option<u8>) -> Self {
+    pub fn new(pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: Option<u32>) -> Self {
         Self {
             handler_id: handler.id(),
             pattern,
@@ -169,7 +169,7 @@ impl<T: 'static> TopicRouter<T> {
     ///
     /// Assigning priority is an advanced feature. Higher priority handlers
     /// receive messages before lower priority handlers.
-    pub fn subscribe(&mut self, pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: u8) {
+    pub fn subscribe(&mut self, pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: u32) {
         let sub = TypedSubscription::new(pattern, handler, Some(priority));
 
         // Check for duplicate
@@ -250,7 +250,7 @@ impl<T: 'static> TopicRouter<T> {
     #[must_use]
     pub fn subscriber_count(&self, topic: MStr<Topic>) -> usize {
         self.get_matching_indices(topic)
-            .map_or_else(|| self.find_matches(topic).len(), |indices| indices.len())
+            .map_or_else(|| self.find_matches(topic).len(), <[usize]>::len)
     }
 
     /// Returns the count of subscribers with an exact topic match,
@@ -310,7 +310,7 @@ impl<T: 'static> TopicRouter<T> {
 
     /// Gets cached matching indices for a topic, if available.
     fn get_matching_indices(&self, topic: MStr<Topic>) -> Option<&[usize]> {
-        self.topic_cache.get(&topic).map(|v| v.as_slice())
+        self.topic_cache.get(&topic).map(SmallVec::as_slice)
     }
 
     /// Gets or computes matching subscription indices for a topic.
@@ -532,6 +532,33 @@ mod tests {
         // Publish again - both handlers should receive
         router.publish(topic, &2);
         assert_eq!(*received.borrow(), 12); // 1 + 1 + 10
+    }
+
+    #[rstest]
+    fn test_topic_router_late_distinct_wildcard_receives_cached_topic() {
+        let mut router = TopicRouter::<String>::new();
+        let topic: MStr<Topic> = "data.instrument.POLYMARKET.TEST-SYMBOL".into();
+
+        let early = Rc::new(RefCell::new(Vec::new()));
+        let early_clone = early.clone();
+        let early_handler = TypedHandler::from_with_id("early", move |msg: &String| {
+            early_clone.borrow_mut().push(msg.clone());
+        });
+        router.subscribe("data.*.POLYMARKET.*".into(), early_handler, 0);
+
+        router.publish(topic, &"ONE".to_string());
+
+        let late = Rc::new(RefCell::new(Vec::new()));
+        let late_clone = late.clone();
+        let late_handler = TypedHandler::from_with_id("late", move |msg: &String| {
+            late_clone.borrow_mut().push(msg.clone());
+        });
+        router.subscribe("data.instrument.POLYMARKET.*".into(), late_handler, 0);
+
+        router.publish(topic, &"TWO".to_string());
+
+        assert_eq!(*early.borrow(), vec!["ONE", "TWO"]);
+        assert_eq!(*late.borrow(), vec!["TWO"]);
     }
 
     #[rstest]

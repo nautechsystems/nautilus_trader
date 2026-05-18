@@ -129,11 +129,14 @@ impl Controller {
     /// # Errors
     ///
     /// Returns an error if strategy registration or startup fails.
-    pub fn create_strategy<T>(&self, strategy: T, start: bool) -> anyhow::Result<StrategyId>
+    pub fn create_strategy<T>(&self, mut strategy: T, start: bool) -> anyhow::Result<StrategyId>
     where
         T: Strategy + Component + Debug + 'static,
     {
-        let strategy_id = StrategyId::from(strategy.component_id().inner().as_str());
+        let strategy_id = self
+            .trader
+            .borrow()
+            .prepare_strategy_for_registration(&mut strategy)?;
         self.trader.borrow_mut().add_strategy(strategy)?;
 
         self.start_created_strategy(&strategy_id, start)?;

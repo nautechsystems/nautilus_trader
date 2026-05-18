@@ -30,7 +30,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::USDC_DECIMALS,
+        consts::{DUST_SNAP_THRESHOLD, USDC_DECIMALS},
         enums::{
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
             PolymarketOrderStatus,
@@ -133,10 +133,11 @@ pub fn parse_order_status_report(
         order.original_size.to_string().parse().unwrap_or(0.0),
         size_precision,
     );
-    let filled_qty = Quantity::new(
+    let raw_filled_qty = Quantity::new(
         order.size_matched.to_string().parse().unwrap_or(0.0),
         size_precision,
     );
+    let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
     let price = Price::new(
         order.price.to_string().parse().unwrap_or(0.0),
         price_precision,
@@ -418,6 +419,50 @@ pub fn compute_commission(
     rounded.to_string().parse().unwrap_or(0.0)
 }
 
+/// Sums `last_qty` across fills as a decimal.
+pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> Decimal {
+    fills.iter().map(|f| f.last_qty.as_decimal()).sum()
+}
+
+/// Quantity-weighted average price across fills, or `None` when total filled
+/// is zero (avoids divide-by-zero on empty/all-zero fill lists).
+pub(crate) fn weighted_average_price(
+    fills: &[FillReport],
+    total_filled: Decimal,
+) -> Option<Decimal> {
+    if total_filled.is_zero() {
+        return None;
+    }
+    let weighted: Decimal = fills
+        .iter()
+        .map(|f| f.last_qty.as_decimal() * f.last_px.as_decimal())
+        .sum();
+    Some(weighted / total_filled)
+}
+
+/// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
+/// difference is within `DUST_SNAP_THRESHOLD`. Polymarket reports `size_matched`
+/// directly from venue truncation: CLOB cent-tick rounding (underfill) or V2
+/// market-BUY USDC-scale truncation (overfill). Without this snap an order at
+/// `MATCHED` can show non-zero leaves to the engine.
+///
+/// See `docs/integrations/polymarket.md` (Fill quantity normalization).
+pub(crate) fn snap_filled_qty_to_quantity(
+    quantity: Quantity,
+    filled_qty: Quantity,
+    order_status: OrderStatus,
+) -> Quantity {
+    if order_status != OrderStatus::Filled {
+        return filled_qty;
+    }
+    let diff = quantity.as_f64() - filled_qty.as_f64();
+    if diff != 0.0 && diff.abs() < DUST_SNAP_THRESHOLD {
+        quantity
+    } else {
+        filled_qty
+    }
+}
+
 /// pUSD scale factor: the Polymarket API returns balances in micro-pUSD (10^6 units).
 const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 
@@ -518,7 +563,8 @@ pub fn calculate_market_price(
         }
     }
 
-    // Insufficient liquidity: return what we have (FOK will reject at venue)
+    // Insufficient liquidity: return what we have. FOK may reject at the venue;
+    // FAK can fill the immediately available size and cancel the remainder.
     Ok(MarketPriceResult {
         crossing_price: last_price,
         expected_base_qty: total_base_qty,
@@ -551,6 +597,92 @@ mod tests {
     use crate::common::enums::{
         PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType, PolymarketOutcome,
     };
+
+    // Symmetric dust band: at terminal Filled, snap filled_qty to quantity
+    // when within 0.01 shares. Other statuses (Accepted, Canceled, etc.)
+    // pass through unchanged so partial fills remain visible.
+    #[rstest]
+    // CLOB cent-tick underfill at MATCHED: snap UP to quantity.
+    #[case::filled_underfill_dust(100.000000, 99.995000, OrderStatus::Filled, 100.000000)]
+    // V2 BUY USDC-scale overfill at MATCHED: snap DOWN to quantity.
+    #[case::filled_overfill_dust(714.285710, 714.285714, OrderStatus::Filled, 714.285710)]
+    // Underfill at exactly the band: NOT dust, leave alone.
+    #[case::filled_underfill_at_band(100.000000, 99.990000, OrderStatus::Filled, 99.990000)]
+    // Underfill above the band: real partial leaves, leave alone.
+    #[case::filled_underfill_above_band(100.000000, 99.000000, OrderStatus::Filled, 99.000000)]
+    // Exact match at MATCHED: identity.
+    #[case::filled_exact(100.000000, 100.000000, OrderStatus::Filled, 100.000000)]
+    // Same dust gap at non-Filled status: leave alone (live partial fill).
+    #[case::accepted_underfill_dust(100.000000, 99.995000, OrderStatus::Accepted, 99.995000)]
+    // Same dust gap at Canceled: leave alone (legitimate partial fill before cancel).
+    #[case::canceled_underfill_dust(100.000000, 99.995000, OrderStatus::Canceled, 99.995000)]
+    fn test_snap_filled_qty_to_quantity(
+        #[case] quantity: f64,
+        #[case] filled: f64,
+        #[case] status: OrderStatus,
+        #[case] expected: f64,
+    ) {
+        let snapped = snap_filled_qty_to_quantity(
+            Quantity::new(quantity, 6),
+            Quantity::new(filled, 6),
+            status,
+        );
+        assert_eq!(snapped, Quantity::new(expected, 6));
+    }
+
+    fn make_test_fill(qty: f64, px: f64) -> FillReport {
+        FillReport::new(
+            AccountId::from("POLY-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            VenueOrderId::from("0xabc"),
+            TradeId::from("trade-1"),
+            OrderSide::Buy,
+            Quantity::new(qty, 4),
+            Price::new(px, 4),
+            Money::new(0.0, Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_sum_filled_quantity_empty() {
+        assert_eq!(sum_filled_quantity(&[]), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_sum_filled_quantity_multiple() {
+        let fills = vec![
+            make_test_fill(2.5, 0.50),
+            make_test_fill(1.0, 0.60),
+            make_test_fill(3.0, 0.55),
+        ];
+        assert_eq!(sum_filled_quantity(&fills), dec!(6.5));
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_zero_total_returns_none() {
+        assert!(weighted_average_price(&[], Decimal::ZERO).is_none());
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_single_fill() {
+        let fills = vec![make_test_fill(10.0, 0.5)];
+        let total = sum_filled_quantity(&fills);
+        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.5)));
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_weighted_by_quantity() {
+        // 2 @ 0.40 + 8 @ 0.60 -> (0.8 + 4.8) / 10 = 0.56
+        let fills = vec![make_test_fill(2.0, 0.40), make_test_fill(8.0, 0.60)];
+        let total = sum_filled_quantity(&fills);
+        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.56)));
+    }
 
     #[rstest]
     #[case(dec!(20_000_000), 20.0)] // 20 pUSD
@@ -1077,6 +1209,58 @@ mod tests {
         assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
+    }
+
+    // Verifies parse_order_status_report wires `snap_filled_qty_to_quantity`
+    // correctly. Helper-level cases live above; this guards the integration.
+    #[rstest]
+    // CLOB cent-tick underfill at MATCHED: snap UP to original_size.
+    #[case::matched_underfill_dust(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.995000), 100.000000)]
+    // V2 BUY USDC-scale overfill at MATCHED: snap DOWN to original_size.
+    #[case::matched_overfill_dust(PolymarketOrderStatus::Matched, dec!(714.285710), dec!(714.285714), 714.285710)]
+    // Same dust gap at LIVE: not snapped (legitimate partial fill in flight).
+    #[case::live_underfill_dust(PolymarketOrderStatus::Live, dec!(100.000000), dec!(99.995000), 99.995000)]
+    // Real partial leaves (above band) at MATCHED stay visible to the engine.
+    #[case::matched_real_partial(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.000000), 99.000000)]
+    fn test_parse_order_status_report_snaps_dust_filled_qty(
+        #[case] status: PolymarketOrderStatus,
+        #[case] original_size: Decimal,
+        #[case] size_matched: Decimal,
+        #[case] expected_filled: f64,
+    ) {
+        let order = PolymarketOpenOrder {
+            associate_trades: None,
+            id: "0xid".to_string(),
+            status,
+            market: Ustr::from("0xm"),
+            original_size,
+            outcome: PolymarketOutcome::yes(),
+            maker_address: "0xmaker".to_string(),
+            owner: "owner".to_string(),
+            price: dec!(0.5),
+            side: PolymarketOrderSide::Buy,
+            size_matched,
+            asset_id: Ustr::from("token"),
+            expiration: None,
+            order_type: PolymarketOrderType::GTC,
+            created_at: 1_703_875_200,
+        };
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            3,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(report.filled_qty, Quantity::new(expected_filled, 6));
+        assert_eq!(
+            report.quantity,
+            Quantity::new(original_size.try_into().unwrap_or(0.0), 6)
+        );
     }
 
     #[rstest]

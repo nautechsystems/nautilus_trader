@@ -19,10 +19,6 @@ DYdX v4 DataTester example using the Rust-backed adapter.
 This script demonstrates how to use the DataTester actor to validate
 market data functionality for the dYdX v4 adapter.
 
-Prerequisites:
-  - Environment variables:
-      DYDX_WALLET_ADDRESS (or DYDX_TESTNET_WALLET_ADDRESS for testnet)
-
 Usage:
   python dydx_data_tester.py
 

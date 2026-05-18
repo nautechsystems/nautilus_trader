@@ -615,7 +615,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
+            response = await retry_manager.run(
                 "cancel_multiple_orders",
                 batch_client_order_ids,
                 self._futures_http_account.cancel_multiple_orders,
@@ -623,15 +623,51 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 client_order_ids=batch_client_order_ids,
             )
 
-            if retry_manager.result:
-                self._log.debug(f"Successfully cancelled batch: {batch_client_order_ids}")
-                return batch, []
-            else:
+            if not retry_manager.result:
                 self._log.error(
                     f"Failed to cancel batch: {batch_client_order_ids}, reason: {retry_manager.message}",
                 )
                 self._generate_cancel_rejected_events(batch, retry_manager.message)
                 return [], batch
+
+            # Binance returns the per-item response array in the same order as
+            # the request, where successes are order dicts and failures are
+            # {"code", "msg"} dicts.
+            if not isinstance(response, list) or len(response) != len(batch):
+                reason = (
+                    f"Unexpected batch cancel response shape "
+                    f"(expected list of {len(batch)} items, was {response!r})"
+                )
+                self._log.error(reason)
+                self._generate_cancel_rejected_events(batch, reason)
+                return [], batch
+
+            successes: list[CancelOrder] = []
+            failures: list[CancelOrder] = []
+
+            for cancel, item in zip(batch, response, strict=True):
+                if isinstance(item, dict) and "code" in item:
+                    reason = f"batch-cancel-error: code={item.get('code')}, msg={item.get('msg')}"
+                    self._log.warning(
+                        f"{cancel.client_order_id!r} cancel rejected: {reason}",
+                    )
+                    self.generate_order_cancel_rejected(
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                        cancel.client_order_id,
+                        cancel.venue_order_id,
+                        reason,
+                        self._clock.timestamp_ns(),
+                    )
+                    failures.append(cancel)
+                else:
+                    successes.append(cancel)
+
+            self._log.debug(
+                f"Batch cancel: {len(successes)} successful, {len(failures)} rejected "
+                f"out of {len(batch)}",
+            )
+            return successes, failures
 
         except BinanceError as e:
             error_code = BinanceErrorCode(int(e.message["code"]))

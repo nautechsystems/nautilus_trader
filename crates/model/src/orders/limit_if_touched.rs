@@ -575,26 +575,39 @@ impl Display for LimitIfTouchedOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitIfTouchedOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
+impl TryFrom<OrderInitialized> for LimitIfTouchedOrder {
+    type Error = OrderError;
+
+    fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
+        let price = event
+            .price
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "`price` is required for `LimitIfTouchedOrder` initialization".to_string(),
+            })?;
+        let trigger_price =
+            event
+                .trigger_price
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: "`trigger_price` is required for `LimitIfTouchedOrder` initialization"
+                        .to_string(),
+                })?;
+        let trigger_type =
+            event
+                .trigger_type
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: "`trigger_type` is required for `LimitIfTouchedOrder` initialization"
+                        .to_string(),
+                })?;
+        Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
-            event
-                .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
-            event
-                .trigger_price // TODO: Improve this error, model order domain errors
-                .expect(
-                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
-                ),
-            event
-                .trigger_type
-                .expect("Error initializing order: `trigger_type` was `None`"),
+            price,
+            trigger_price,
+            trigger_type,
             event.time_in_force,
             event.expire_time,
             event.post_only,
@@ -774,7 +787,7 @@ mod tests {
             .build();
 
         // Convert the OrderInitialized event into a LimitIfTouchedOrder
-        let order: LimitIfTouchedOrder = order_initialized.clone().into();
+        let order: LimitIfTouchedOrder = order_initialized.clone().try_into().unwrap();
 
         // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);

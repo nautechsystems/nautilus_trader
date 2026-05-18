@@ -96,6 +96,7 @@ axum = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
+toml = { workspace = true }
 
 [[bin]]
 name = "coinbase-http-public"

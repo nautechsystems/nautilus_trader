@@ -190,6 +190,18 @@ class LogGuard: ...
 
 @typing.final
 class LoggerConfig:
+    def __init__(
+        self,
+        stdout_level: LogLevel | None = None,
+        fileout_level: LogLevel | None = None,
+        component_levels: typing.Mapping[str, str] | None = None,
+        is_colored: bool | None = None,
+        print_config: bool | None = None,
+        bypass_logging: bool | None = None,
+        log_components_only: bool | None = None,
+        file_config: FileWriterConfig | None = None,
+        clear_log_file: bool | None = None,
+    ) -> None: ...
     @staticmethod
     def from_spec(spec: str) -> LoggerConfig: ...
 
@@ -574,6 +586,8 @@ class Clock:
     def timer_names(self) -> list[str]: ...
     def timer_count(self) -> int: ...
     def register_default_handler(self, callback: typing.Any) -> None: ...
+    def cancel_default_handler(self) -> None: ...
+    def cancel_callbacks(self) -> None: ...
     def set_time_alert(
         self,
         name: str,
@@ -673,7 +687,7 @@ class DataActor:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
-    def subscribe_signal(self, name: str = "") -> None: ...
+    def subscribe_signal(self, name: str = "", priority: int | None = None) -> None: ...
     def subscribe_instruments(
         self,
         venue: model.Venue,

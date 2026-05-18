@@ -62,6 +62,7 @@ rstest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
+smallvec = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
@@ -70,4 +71,10 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
+
+[[bench]]
+name = "matching_core"
+path = "benches/matching_core.rs"
+harness = false

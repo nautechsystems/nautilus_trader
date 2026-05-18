@@ -35,7 +35,8 @@ use axum::{
 };
 use nautilus_bybit::{
     common::enums::{
-        BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
+        BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
+        BybitTimeInForce,
     },
     websocket::{
         client::BybitWebSocketClient,
@@ -651,7 +652,7 @@ async fn test_private_client_authentication() {
     // Check if auth was attempted (connection was made)
     assert!(*state.connection_count.lock().await > 0);
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -682,7 +683,7 @@ async fn test_authentication_failure() {
     // Verify the server doesn't mark it as authenticated
     assert!(!state.authenticated.load(Ordering::Relaxed));
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -911,7 +912,7 @@ async fn test_wait_until_active_timeout() {
     );
 
     // Connect will fail, but we won't await it
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // wait_until_active should timeout
     let result = client.wait_until_active(0.5).await;
@@ -1028,7 +1029,7 @@ async fn test_reauth_after_disconnect() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for initial connection
     wait_until_async(
@@ -1043,7 +1044,7 @@ async fn test_reauth_after_disconnect() {
     // Short delay for disconnect trigger to be observed by server
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1062,7 +1063,7 @@ async fn test_login_failure_emits_error() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection attempt
     wait_until_async(
@@ -1074,7 +1075,7 @@ async fn test_login_failure_emits_error() {
     // Verify auth failed
     assert!(!state.authenticated.load(Ordering::Relaxed));
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1383,7 +1384,7 @@ async fn test_private_orders_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1393,9 +1394,9 @@ async fn test_private_orders_subscription() {
     .await;
 
     // Subscribe to orders (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_orders().await;
+    let _result = client.subscribe_orders().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1414,7 +1415,7 @@ async fn test_private_executions_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1424,9 +1425,9 @@ async fn test_private_executions_subscription() {
     .await;
 
     // Subscribe to executions (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_executions().await;
+    let _result = client.subscribe_executions().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1445,7 +1446,7 @@ async fn test_private_wallet_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1455,9 +1456,9 @@ async fn test_private_wallet_subscription() {
     .await;
 
     // Subscribe to wallet (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_wallet().await;
+    let _result = client.subscribe_wallet().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1503,7 +1504,7 @@ async fn test_rapid_consecutive_reconnections() {
 
         state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-        let _ = client.subscribe(vec![format!("publicTrade.ETH{i}")]).await;
+        let _result = client.subscribe(vec![format!("publicTrade.ETH{i}")]).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
         state.disconnect_trigger.store(false, Ordering::Relaxed);
@@ -1559,7 +1560,7 @@ async fn test_reconnection_race_condition() {
     .await;
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
-    let _ = client
+    let _result = client
         .subscribe(vec!["orderbook.50.ETHUSDT".to_string()])
         .await;
 
@@ -1597,7 +1598,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     wait_until_async(
         || async { *state.connection_count.lock().await > 0 },
@@ -1605,7 +1606,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     )
     .await;
 
-    let _ = client.subscribe_orders().await;
+    let _result = client.subscribe_orders().await;
 
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
@@ -1614,7 +1615,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         "Connection should be maintained during delayed auth"
     );
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1667,7 +1668,7 @@ async fn test_multiple_partial_subscription_failures() {
         "publicTrade.SOLUSDT".to_string(),
         "orderbook.50.ETHUSDT".to_string(),
     ];
-    let _ = client.subscribe(mixed_topics).await;
+    let _result = client.subscribe(mixed_topics).await;
 
     wait_until_async(
         || async { !state.subscription_events.lock().await.is_empty() },
@@ -1711,7 +1712,7 @@ async fn test_is_active_false_during_reconnection() {
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    let _ = client
+    let _result = client
         .subscribe(vec!["publicTrade.BTCUSDT".to_string()])
         .await;
 
@@ -1968,6 +1969,8 @@ mod conditional_order_tests {
                 None,  // take_profit
                 None,  // stop_loss
                 None,  // position_idx
+                None,  // bbo_side_type
+                None,  // bbo_level
             )
             .unwrap()
     }
@@ -2027,6 +2030,8 @@ mod conditional_order_tests {
                 order_iv: None,
                 mmp: None,
                 position_idx: None,
+                bbo_side_type: None,
+                bbo_level: None,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -2059,6 +2064,8 @@ mod conditional_order_tests {
                 order_iv: None,
                 mmp: None,
                 position_idx: None,
+                bbo_side_type: None,
+                bbo_level: None,
             }
         }
     }
@@ -2343,6 +2350,8 @@ async fn test_batch_place_orders_with_cache_keys() {
         order_iv: None,
         mmp: None,
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
@@ -2745,12 +2754,18 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
         order_iv: Some("0.80".to_string()),
         mmp: Some(true),
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async { !state.captured_messages.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let messages = state.captured_messages.lock().await;
     assert_eq!(messages.len(), 1);
@@ -2763,6 +2778,87 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
     assert_eq!(request["mmp"], true);
     assert_eq!(request["symbol"], "BTC-30JUN25-100000-C");
     assert_eq!(request["orderLinkId"], "option-test-1");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_place_order_with_bbo_serializes_bbo_and_omits_price() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let orders = vec![BybitWsPlaceOrderParams {
+        category: BybitProductType::Linear,
+        symbol: Ustr::from("BTCUSDT"),
+        side: BybitOrderSide::Buy,
+        order_type: BybitOrderType::Limit,
+        qty: "0.001".to_string(),
+        is_leverage: None,
+        market_unit: None,
+        price: None,
+        time_in_force: Some(BybitTimeInForce::Gtc),
+        order_link_id: Some("linear-bbo-1".to_string()),
+        reduce_only: None,
+        close_on_trigger: None,
+        trigger_price: None,
+        trigger_by: None,
+        trigger_direction: None,
+        tpsl_mode: None,
+        take_profit: None,
+        stop_loss: None,
+        tp_trigger_by: None,
+        sl_trigger_by: None,
+        sl_trigger_price: None,
+        tp_trigger_price: None,
+        sl_order_type: None,
+        tp_order_type: None,
+        sl_limit_price: None,
+        tp_limit_price: None,
+        order_iv: None,
+        mmp: None,
+        position_idx: None,
+        bbo_side_type: Some(BybitBboSideType::Counterparty),
+        bbo_level: Some("5".to_string()),
+    }];
+
+    let result = client.batch_place_orders(orders).await;
+    result.unwrap();
+
+    wait_until_async(
+        || async { !state.captured_messages.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.captured_messages.lock().await;
+    assert_eq!(messages.len(), 1);
+
+    let msg = &messages[0];
+    let args = msg.get("args").unwrap().as_array().unwrap();
+    let request = &args[0]["request"][0];
+
+    assert_eq!(request["bboSideType"], "Counterparty");
+    assert_eq!(request["bboLevel"], "5");
+    assert!(request.get("price").is_none());
 
     client.close().await.unwrap();
 }
@@ -2821,10 +2917,12 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
         order_iv: None,
         mmp: None,
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -2878,7 +2976,7 @@ async fn test_batch_amend_order_with_order_iv() {
     }];
 
     let result = client.batch_amend_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 

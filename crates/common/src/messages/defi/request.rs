@@ -15,9 +15,10 @@
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, InstrumentId};
+use serde::{Deserialize, Serialize};
 
 /// Represents a request for a pool snapshot from a specific AMM pool.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestPoolSnapshot {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,

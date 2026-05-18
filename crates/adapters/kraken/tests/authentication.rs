@@ -70,7 +70,7 @@ async fn test_http_client_get_websockets_token() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test_api_key".to_string(),
         "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(), // Base64 encoded "test_api_secret_base64"
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,

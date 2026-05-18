@@ -15,14 +15,24 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use nautilus_model::{enums::OrderType, identifiers::Venue};
+use nautilus_model::{
+    enums::OrderType,
+    identifiers::{ClientId, Venue},
+};
 use ustr::Ustr;
 
 use super::enums::HyperliquidEnvironment;
 
+/// Venue identifier string.
 pub const HYPERLIQUID: &str = "HYPERLIQUID";
+
+/// Static venue instance.
 pub static HYPERLIQUID_VENUE: LazyLock<Venue> =
     LazyLock::new(|| Venue::new(Ustr::from(HYPERLIQUID)));
+
+/// Static client ID instance.
+pub static HYPERLIQUID_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(HYPERLIQUID)));
 
 pub const HYPERLIQUID_WS_URL: &str = "wss://api.hyperliquid.xyz/ws";
 pub const HYPERLIQUID_INFO_URL: &str = "https://api.hyperliquid.xyz/info";

@@ -1,5 +1,7 @@
 {
   "databento_mbo_xnas_itch.csv": "sha256:5481466e7776659f7f093b1ca8b05c7e88b8d586036692089cca5decc7965099",
+  "histdata_EURUSD.SIM_2020-01_instrument.parquet": "sha256:2088959dc15eecfebb7d4c45054d6a74d1000078daa1153388fe19c3b1468bac",
+  "histdata_EURUSD.SIM_2020-01_quotes.parquet": "sha256:9c610a233b8408562ea9024df0bd3192608f16ed00fce6f5d761a321a3d897c2",
   "itch_AAPL.XNAS_2019-01-30_deltas.parquet": "sha256:a31aa366ab939e36c9fd484c5d2d5d0760fa84d47bd66e89c135655e9d2a360c",
   "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet": "sha256:ba4024e394f6425049827607bc479afe93c4015f8331b9c2942929abce43a9f1"
 }

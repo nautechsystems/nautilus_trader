@@ -78,9 +78,12 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    common::enums::{
-        HyperliquidBarInterval::{self, *},
-        HyperliquidOrderStatus, HyperliquidTpSl,
+    common::{
+        enums::{
+            HyperliquidBarInterval::{self, *},
+            HyperliquidOrderStatus, HyperliquidTpSl,
+        },
+        types::HyperliquidAssetId,
     },
     http::models::{
         ClearinghouseState, Cloid, HyperliquidExchangeResponse,
@@ -244,6 +247,47 @@ pub fn normalize_order(
 pub fn millis_to_nanos(millis: u64) -> anyhow::Result<UnixNanos> {
     let value = nautilus_core::datetime::millis_to_nanos(millis as f64)?;
     Ok(UnixNanos::from(value))
+}
+
+/// Parses an outcome (HIP-4) spot coin or token symbol into an asset ID.
+///
+/// Hyperliquid represents outcome spot coins as `#<encoding>` and outcome
+/// token names as `+<encoding>`, where `encoding = 10 * outcome + side`.
+///
+/// # Errors
+///
+/// Returns an error if the symbol is not an outcome symbol, the encoding is
+/// not numeric, overflows the asset id range, or carries an invalid side digit.
+pub fn parse_outcome_symbol(symbol: &str) -> anyhow::Result<HyperliquidAssetId> {
+    let encoding = parse_outcome_symbol_encoding(symbol)?;
+    HyperliquidAssetId::from_outcome_encoding(encoding).with_context(|| {
+        format!(
+            "Invalid Hyperliquid outcome symbol '{symbol}': encoding must fit u32 and end with side digit 0 or 1"
+        )
+    })
+}
+
+fn parse_outcome_symbol_encoding(symbol: &str) -> anyhow::Result<u32> {
+    let encoding = symbol
+        .strip_prefix('#')
+        .or_else(|| symbol.strip_prefix('+'))
+        .with_context(|| {
+            format!(
+                "Invalid Hyperliquid outcome symbol '{symbol}': expected #<encoding> or +<encoding>"
+            )
+        })?;
+
+    if encoding.is_empty() {
+        anyhow::bail!("Invalid Hyperliquid outcome symbol '{symbol}': encoding must not be empty");
+    }
+
+    if !encoding.bytes().all(|b| b.is_ascii_digit()) {
+        anyhow::bail!("Invalid Hyperliquid outcome symbol '{symbol}': encoding must be numeric");
+    }
+
+    encoding
+        .parse::<u32>()
+        .with_context(|| format!("Invalid Hyperliquid outcome symbol '{symbol}'"))
 }
 
 /// Converts a Nautilus `TimeInForce` to Hyperliquid TIF.
@@ -963,6 +1007,40 @@ mod tests {
             deserialize_with = "deserialize_optional_decimal_from_str"
         )]
         optional_value: Option<Decimal>,
+    }
+
+    #[rstest]
+    #[case("#10", 100_000_010, 1, 0)]
+    #[case("+10", 100_000_010, 1, 0)]
+    #[case("#31", 100_000_031, 3, 1)]
+    #[case("+31", 100_000_031, 3, 1)]
+    fn test_parse_outcome_symbol(
+        #[case] symbol: &str,
+        #[case] raw_asset_id: u32,
+        #[case] outcome: u32,
+        #[case] side: u8,
+    ) {
+        let asset_id = parse_outcome_symbol(symbol).unwrap();
+        assert_eq!(asset_id.to_raw(), raw_asset_id);
+        assert_eq!(asset_id.outcome_index(), Some(outcome));
+        assert_eq!(asset_id.outcome_side(), Some(side));
+    }
+
+    #[rstest]
+    #[case("10", "expected #<encoding> or +<encoding>")]
+    #[case("#", "encoding must not be empty")]
+    #[case("#1a", "encoding must be numeric")]
+    #[case("#12", "side digit 0 or 1")]
+    #[case("#4294967295", "fit u32")]
+    fn test_parse_outcome_symbol_rejects_invalid_values(
+        #[case] symbol: &str,
+        #[case] expected_error: &str,
+    ) {
+        let err = parse_outcome_symbol(symbol).unwrap_err();
+        assert!(
+            err.to_string().contains(expected_error),
+            "expected error to contain '{expected_error}', received '{err}'",
+        );
     }
 
     #[rstest]

@@ -47,6 +47,7 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import ContinuousFutureAdjustmentType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.greeks import GreeksCalculator
@@ -214,6 +215,124 @@ class TestBarBuilder:
 
         # Assert
         assert builder.count == 5
+
+    def test_bar_builder_applies_offset_to_bar_updates(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+        builder.set_adjustment(Decimal("10.0"), ContinuousFutureAdjustmentType.BACKWARD_SPREAD)
+
+        input_bar = Bar(
+            bar_type=bar_type,
+            open=Price.from_str("100.00000"),
+            high=Price.from_str("101.00000"),
+            low=Price.from_str("99.00000"),
+            close=Price.from_str("100.50000"),
+            volume=Quantity.from_str("2.0"),
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
+        )
+
+        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_init)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("110.00000")
+        assert built_bar.high == Price.from_str("111.00000")
+        assert built_bar.low == Price.from_str("109.00000")
+        assert built_bar.close == Price.from_str("110.50000")
+        assert built_bar.volume == Quantity.from_str("2.0")
+
+    def test_bar_builder_applies_multiplicative_adjustment_to_bar_updates(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+        builder.set_adjustment(Decimal("1.10"), ContinuousFutureAdjustmentType.BACKWARD_RATIO)
+
+        input_bar = Bar(
+            bar_type=bar_type,
+            open=Price.from_str("100.00000"),
+            high=Price.from_str("101.00000"),
+            low=Price.from_str("99.00000"),
+            close=Price.from_str("100.50000"),
+            volume=Quantity.from_str("2.0"),
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
+        )
+
+        builder.update_bar(input_bar, input_bar.volume, input_bar.ts_init)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("110.00000")
+        assert built_bar.high == Price.from_str("111.10000")
+        assert built_bar.low == Price.from_str("108.90000")
+        assert built_bar.close == Price.from_str("110.55000")
+        assert built_bar.volume == Quantity.from_str("2.0")
+
+    def test_bar_builder_mid_bar_adjustment_change_applies_to_subsequent_updates(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+
+        builder.set_adjustment(Decimal(0), ContinuousFutureAdjustmentType.BACKWARD_SPREAD)
+        builder.update(Price.from_str("100.00000"), Quantity.from_str("1"), 1)
+        builder.update(Price.from_str("101.00000"), Quantity.from_str("2"), 2)
+
+        # Change mid-bar: subsequent prices are adjusted, the already-aggregated OHLC is not rewritten
+        builder.set_adjustment(Decimal(10), ContinuousFutureAdjustmentType.BACKWARD_SPREAD)
+        builder.update(Price.from_str("95.00000"), Quantity.from_str("3"), 3)
+        builder.update(Price.from_str("96.00000"), Quantity.from_str("4"), 4)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("100.00000")
+        assert built_bar.high == Price.from_str("106.00000")
+        assert built_bar.low == Price.from_str("100.00000")
+        assert built_bar.close == Price.from_str("106.00000")
+        assert built_bar.volume == Quantity.from_str("10")
+
+    def test_bar_builder_mid_bar_ratio_adjustment_change_applies_to_subsequent_updates(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+
+        builder.set_adjustment(Decimal(1), ContinuousFutureAdjustmentType.BACKWARD_RATIO)
+        builder.update(Price.from_str("100.00000"), Quantity.from_str("1"), 1)
+        builder.update(Price.from_str("101.00000"), Quantity.from_str("2"), 2)
+
+        # Change mid-bar to 1.10x: subsequent prices multiplied, previous OHLC stays
+        builder.set_adjustment(Decimal("1.10"), ContinuousFutureAdjustmentType.BACKWARD_RATIO)
+        builder.update(Price.from_str("95.00000"), Quantity.from_str("3"), 3)
+        builder.update(Price.from_str("96.00000"), Quantity.from_str("4"), 4)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("100.00000")
+        assert built_bar.high == Price.from_str("105.60000")
+        assert built_bar.low == Price.from_str("100.00000")
+        assert built_bar.close == Price.from_str("105.60000")
+        assert built_bar.volume == Quantity.from_str("10")
+
+    def test_bar_builder_spread_zero_adjustment_is_noop(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+        builder.set_adjustment(Decimal(0), ContinuousFutureAdjustmentType.BACKWARD_SPREAD)
+
+        builder.update(Price.from_str("100.00000"), Quantity.from_str("1"), 1)
+        builder.update(Price.from_str("101.00000"), Quantity.from_str("2"), 2)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("100.00000")
+        assert built_bar.high == Price.from_str("101.00000")
+        assert built_bar.low == Price.from_str("100.00000")
+        assert built_bar.close == Price.from_str("101.00000")
+
+    def test_bar_builder_ratio_one_adjustment_is_noop(self):
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
+        builder.set_adjustment(Decimal(1), ContinuousFutureAdjustmentType.BACKWARD_RATIO)
+
+        builder.update(Price.from_str("100.00000"), Quantity.from_str("1"), 1)
+        builder.update(Price.from_str("101.00000"), Quantity.from_str("2"), 2)
+        built_bar = builder.build_now()
+
+        assert built_bar.open == Price.from_str("100.00000")
+        assert built_bar.high == Price.from_str("101.00000")
+        assert built_bar.low == Price.from_str("100.00000")
+        assert built_bar.close == Price.from_str("101.00000")
 
     def test_multiple_bar_updates_correctly_increments_count(self):
         # Arrange

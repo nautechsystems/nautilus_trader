@@ -16,7 +16,7 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use nautilus_common::messages::data::{SubscribeCommand, UnsubscribeCommand};
-use nautilus_model::identifiers::OptionSeriesId;
+use nautilus_model::identifiers::{InstrumentId, OptionSeriesId};
 
 /// Deferred subscribe/unsubscribe command.
 ///
@@ -26,6 +26,7 @@ use nautilus_model::identifiers::OptionSeriesId;
 pub(crate) enum DeferredCommand {
     Subscribe(SubscribeCommand),
     Unsubscribe(UnsubscribeCommand),
+    ExpireInstrument(InstrumentId),
     ExpireSeries(OptionSeriesId),
 }
 

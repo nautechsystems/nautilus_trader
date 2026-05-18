@@ -125,7 +125,7 @@ class TestBinanceFactories:
                 BinanceAccountType.USDT_FUTURES,
                 BinanceEnvironment.TESTNET,
                 False,
-                "https://testnet.binancefuture.com",
+                "https://demo-fapi.binance.com",
             ),
             # Demo
             (
@@ -151,6 +151,12 @@ class TestBinanceFactories:
                 BinanceEnvironment.DEMO,
                 False,
                 "https://demo-fapi.binance.com",
+            ),
+            (
+                BinanceAccountType.COIN_FUTURES,
+                BinanceEnvironment.DEMO,
+                False,
+                "https://demo-dapi.binance.com",
             ),
         ],
     )
@@ -273,7 +279,13 @@ class TestBinanceFactories:
                 BinanceAccountType.USDT_FUTURES,
                 BinanceEnvironment.DEMO,
                 False,
-                "wss://stream.binancefuture.com",
+                "wss://demo-fstream.binance.com",
+            ),
+            (
+                BinanceAccountType.COIN_FUTURES,
+                BinanceEnvironment.DEMO,
+                False,
+                "wss://demo-dstream.binance.com",
             ),
         ],
     )

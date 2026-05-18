@@ -31,8 +31,13 @@ use std::{
 };
 
 use nautilus_betfair::{
-    common::credential::BetfairCredential,
-    stream::{client::BetfairStreamClient, config::BetfairStreamConfig, error::BetfairStreamError},
+    common::{credential::BetfairCredential, enums::MarketDataFilterField},
+    stream::{
+        client::BetfairStreamClient,
+        config::BetfairStreamConfig,
+        error::BetfairStreamError,
+        messages::{MarketDataFilter, OrderFilter, StreamMarketFilter},
+    },
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_network::socket::TcpMessageHandler;
@@ -123,6 +128,77 @@ async fn test_connect_sends_auth() {
     client.close().await;
 }
 
+/// `marketSubscription` payload must include `marketFilter.marketIds` and the
+/// requested `marketDataFilter.fields` so the venue knows what to stream back.
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_markets_includes_market_filter_and_fields() {
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"test-mf"}"#,
+        )
+        .await;
+
+        read_line(&mut reader).await; // auth (from connect)
+        read_line(&mut reader).await // market subscription
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(|_| {});
+    let client =
+        BetfairStreamClient::connect(&cred, "tok".to_string(), handler, plain_config(port))
+            .await
+            .unwrap();
+
+    let market_filter = StreamMarketFilter {
+        market_ids: Some(vec!["1.123456".to_string(), "1.789012".to_string()]),
+        ..Default::default()
+    };
+    let data_filter = MarketDataFilter {
+        fields: Some(vec![
+            MarketDataFilterField::ExAllOffers,
+            MarketDataFilterField::ExTraded,
+        ]),
+        ladder_levels: None,
+    };
+
+    client
+        .subscribe_markets(market_filter, data_filter, None, None)
+        .await
+        .unwrap();
+
+    let msg = server.await.unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json["op"], "marketSubscription");
+
+    let market_ids = json["marketFilter"]["marketIds"]
+        .as_array()
+        .expect("marketIds must be present");
+    let ids: Vec<&str> = market_ids.iter().filter_map(|v| v.as_str()).collect();
+    assert!(
+        ids.contains(&"1.123456") && ids.contains(&"1.789012"),
+        "expected both market ids in payload, was: {ids:?}"
+    );
+
+    let fields = json["marketDataFilter"]["fields"]
+        .as_array()
+        .expect("fields must be present");
+    let field_strings: Vec<&str> = fields.iter().filter_map(|v| v.as_str()).collect();
+    assert!(
+        field_strings.contains(&"EX_ALL_OFFERS") && field_strings.contains(&"EX_TRADED"),
+        "expected requested fields in payload, was: {field_strings:?}"
+    );
+
+    client.close().await;
+}
+
 /// After subscribing, the subscription message arrives at the server.
 #[rstest]
 #[tokio::test]
@@ -161,6 +237,337 @@ async fn test_subscribe_markets_sends_subscription() {
     assert_eq!(json["op"], "marketSubscription");
 
     client.close().await;
+}
+
+/// `orderSubscription` payload must include the supplied `OrderFilter` so the
+/// venue partitions matched orders by strategy ref / account id as requested.
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_orders_includes_order_filter_payload() {
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"test-of"}"#,
+        )
+        .await;
+
+        read_line(&mut reader).await; // auth (from connect)
+        read_line(&mut reader).await // order subscription
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(|_| {});
+    let client =
+        BetfairStreamClient::connect(&cred, "tok".to_string(), handler, plain_config(port))
+            .await
+            .unwrap();
+
+    let order_filter = OrderFilter {
+        include_overall_position: false,
+        customer_strategy_refs: Some(vec!["strategy-A".to_string(), "strategy-B".to_string()]),
+        partition_matched_by_strategy_ref: true,
+        account_ids: Some(vec![123_456]),
+    };
+
+    client
+        .subscribe_orders(Some(order_filter), None)
+        .await
+        .unwrap();
+
+    let msg = server.await.unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json["op"], "orderSubscription");
+    assert_eq!(json["orderFilter"]["includeOverallPosition"], false);
+    assert_eq!(json["orderFilter"]["partitionMatchedByStrategyRef"], true);
+
+    let strategy_refs = json["orderFilter"]["customerStrategyRefs"]
+        .as_array()
+        .expect("customerStrategyRefs must be present");
+    let refs: Vec<&str> = strategy_refs.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(refs, vec!["strategy-A", "strategy-B"]);
+
+    let account_ids = json["orderFilter"]["accountIds"]
+        .as_array()
+        .expect("accountIds must be present");
+    let ids: Vec<u64> = account_ids.iter().filter_map(|v| v.as_u64()).collect();
+    assert_eq!(ids, vec![123_456]);
+
+    client.close().await;
+}
+
+/// After auth, a Status message from the server is informational and must
+/// not tear down the connection. The client should stay active and continue
+/// processing further messages.
+#[rstest]
+#[tokio::test]
+async fn test_stream_status_message_keeps_client_active() {
+    let (port, listener) = bind().await;
+
+    // The handler fires per inbound frame (connection + status + MCM), so
+    // counting frames cannot distinguish "MCM after status was processed"
+    // from "only the connection frame was processed". Instead, set a flag
+    // when we observe the unique post-status marker `clk-after-status`.
+    let recovery_seen = Arc::new(AtomicBool::new(false));
+    let recovery_seen_handler = Arc::clone(&recovery_seen);
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"test-st"}"#,
+        )
+        .await;
+        read_line(&mut reader).await; // auth
+
+        // Informational status (not connection-closed) should not affect lifecycle.
+        write_line(
+            &mut write_half,
+            r#"{"op":"status","id":1,"statusCode":"SUCCESS","connectionClosed":false}"#,
+        )
+        .await;
+
+        // Subsequent valid MCM proves the client is still listening on the same socket.
+        write_line(
+            &mut write_half,
+            r#"{"op":"mcm","pt":1000,"clk":"clk-after-status","mc":[{"id":"1.234"}]}"#,
+        )
+        .await;
+
+        // Drain reads until the test closes the client (EOF unblocks the loop)
+        // so we don't hold the socket open with an arbitrary sleep.
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+
+    let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+        if data
+            .windows(b"clk-after-status".len())
+            .any(|w| w == b"clk-after-status")
+        {
+            recovery_seen_handler.store(true, Ordering::Relaxed);
+        }
+    });
+    let cred = test_credential();
+    let client =
+        BetfairStreamClient::connect(&cred, "tok".to_string(), handler, plain_config(port))
+            .await
+            .unwrap();
+
+    wait_until_async(
+        || {
+            let r = Arc::clone(&recovery_seen);
+            async move { r.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(
+        recovery_seen.load(Ordering::Relaxed),
+        "MCM after a non-closing status frame must reach the handler"
+    );
+    assert!(
+        client.is_active(),
+        "client must remain active after a non-closing status message",
+    );
+
+    client.close().await;
+    server.await.unwrap();
+}
+
+/// Calling `subscribe_orders` twice must reset the cached order `clk` so that
+/// a subsequent reconnection does not replay a stale token. The
+/// `OrderSubscription` struct is built with `clk: None` by construction, so
+/// the immediate on-wire payload always lacks `clk`; the *load-bearing*
+/// behaviour is that the post-reconnection resubscribe also omits the prior
+/// OCM's `clk`. Force a reconnect after the second subscribe to exercise
+/// that path.
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_orders_resubscribe_resets_clk_for_reconnect() {
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        // First connection: deliver an OCM whose clk would normally be
+        // replayed on reconnect.
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"resub-first"}"#,
+        )
+        .await;
+        read_line(&mut reader).await; // auth
+        read_line(&mut reader).await; // first orderSubscription
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"ocm","id":1,"pt":1000,"clk":"first-clk","oc":[]}"#,
+        )
+        .await;
+
+        // Wait for the client to ingest the OCM and cache the clk.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // The test will issue a second subscribe_orders; that call resets
+        // the cached clk to None.
+        read_line(&mut reader).await; // second orderSubscription
+
+        // Drop to force a reconnect.
+        drop(write_half);
+        drop(reader);
+
+        // Second connection: capture the resubscribe payload. The
+        // post-reconnection auth + sub arrive as separate lines on the
+        // order channel.
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"resub-second"}"#,
+        )
+        .await;
+        read_line(&mut reader).await; // auth replay
+        read_line(&mut reader).await // resubscribed orderSubscription
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(|_| {});
+    let config = BetfairStreamConfig {
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+    let client = BetfairStreamClient::connect(&cred, "tok".to_string(), handler, config)
+        .await
+        .unwrap();
+
+    client.subscribe_orders(None, None).await.unwrap();
+
+    // Brief pause for the OCM to round-trip before the second subscribe.
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    // The second subscribe_orders is the call under test: it must clear the
+    // cached order clk so the reconnect-driven resubscribe below carries no clk.
+    client.subscribe_orders(None, None).await.unwrap();
+
+    let resub = server.await.unwrap();
+    let resub_json: serde_json::Value = serde_json::from_str(&resub).unwrap();
+
+    assert_eq!(resub_json["op"], "orderSubscription");
+
+    let clk = resub_json.get("clk");
+    assert!(
+        clk.is_none() || clk.unwrap().is_null(),
+        "resubscribe-on-reconnect after the second subscribe_orders must not replay stale clk, was: {resub_json}",
+    );
+
+    let initial_clk = resub_json.get("initialClk");
+    assert!(
+        initial_clk.is_none() || initial_clk.unwrap().is_null(),
+        "resubscribe-on-reconnect must not replay stale initialClk, was: {resub_json}",
+    );
+
+    client.close().await;
+}
+
+/// Malformed lines must not bring the connection down. The handler observes
+/// raw bytes and the lower transport keeps reading; subsequent valid messages
+/// continue to flow.
+#[rstest]
+#[tokio::test]
+async fn test_stream_invalid_json_does_not_drop_connection() {
+    let (port, listener) = bind().await;
+
+    // The handler fires for every framed line. Counting alone cannot prove
+    // the recovery MCM was received: the connection frame plus the malformed
+    // line could already satisfy `>= 2`. Watch for the unique recovery
+    // marker instead.
+    let recovery_seen = Arc::new(AtomicBool::new(false));
+    let recovery_seen_handler = Arc::clone(&recovery_seen);
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"test-bad"}"#,
+        )
+        .await;
+        read_line(&mut reader).await; // auth
+
+        write_line(&mut write_half, "this is not json").await;
+        write_line(
+            &mut write_half,
+            r#"{"op":"mcm","pt":2000,"clk":"clk-recovery","mc":[{"id":"1.555"}]}"#,
+        )
+        .await;
+
+        // Hold the socket open until the test closes the client so the
+        // recovery MCM has time to round-trip without a fixed sleep.
+        loop {
+            let mut buf = String::new();
+            match reader.read_line(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+
+    let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+        if data
+            .windows(b"clk-recovery".len())
+            .any(|w| w == b"clk-recovery")
+        {
+            recovery_seen_handler.store(true, Ordering::Relaxed);
+        }
+    });
+    let cred = test_credential();
+    let client =
+        BetfairStreamClient::connect(&cred, "tok".to_string(), handler, plain_config(port))
+            .await
+            .unwrap();
+
+    wait_until_async(
+        || {
+            let r = Arc::clone(&recovery_seen);
+            async move { r.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(
+        recovery_seen.load(Ordering::Relaxed),
+        "recovery MCM after a malformed line must reach the handler"
+    );
+    assert!(
+        client.is_active(),
+        "client must remain active after a malformed message",
+    );
+
+    client.close().await;
+    server.await.unwrap();
 }
 
 /// After subscribing to orders, the order subscription arrives at the server.
@@ -697,6 +1104,73 @@ async fn test_reconnect_uses_updated_auth_token() {
     );
 
     client.close().await;
+}
+
+/// `MAX_CONNECTION_LIMIT_EXCEEDED` from the race stream is unrecoverable
+/// (TPD entitlement / quota issue). The race client must signal `race_fatal_tx`
+/// so the data client can permanently disable race subscriptions instead of
+/// reconnecting in a tight loop.
+#[rstest]
+#[tokio::test]
+async fn test_race_stream_max_connection_limit_signals_fatal() {
+    use nautilus_betfair::stream::client::BetfairRaceStreamClient;
+
+    let (port, listener) = bind().await;
+
+    let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"race-fatal"}"#,
+        )
+        .await;
+
+        // Drain the auth (and any race subscription that may piggyback).
+        read_line(&mut reader).await;
+
+        // Push a fatal status: the venue uses this when the app key is over
+        // its concurrent connection limit.
+        write_line(
+            &mut write_half,
+            r#"{"op":"status","id":1,"statusCode":"FAILURE","errorCode":"MAX_CONNECTION_LIMIT_EXCEEDED","errorMessage":"max concurrent","connectionClosed":true}"#,
+        )
+        .await;
+
+        // Keep the socket open until the client closes; do not arbitrary-sleep.
+        loop {
+            let mut buf = String::new();
+            match reader.read_line(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(|_| {});
+    let config = BetfairStreamConfig {
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+
+    let client =
+        BetfairRaceStreamClient::connect(&cred, "tok".to_string(), handler, config, race_fatal_tx)
+            .await
+            .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(3), race_fatal_rx.recv())
+        .await
+        .expect("fatal_tx should fire within timeout")
+        .expect("fatal channel must not be closed before signal");
+
+    client.close().await;
+    server.await.unwrap();
 }
 
 /// After calling `update_auth` on the race stream client, reconnection uses the

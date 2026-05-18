@@ -64,7 +64,7 @@ pub struct OptionChainManager {
     quote_handlers: Vec<TypedHandler<QuoteTick>>,
     greeks_handlers: Vec<TypedHandler<OptionGreeks>>,
     timer_name: Option<Ustr>,
-    msgbus_priority: u8,
+    msgbus_priority: u32,
     /// Whether the first ATM price has been received and the active set bootstrapped.
     bootstrapped: bool,
     /// Shared deferred command queue — the `DataEngine` drains this on each data tick.
@@ -88,7 +88,7 @@ impl OptionChainManager {
         cache: &Rc<RefCell<Cache>>,
         cmd: &SubscribeOptionChain,
         clock: &Rc<RefCell<dyn Clock>>,
-        msgbus_priority: u8,
+        msgbus_priority: u32,
         client: Option<&mut DataClientAdapter>,
         initial_atm_price: Option<Price>,
         deferred_cmd_queue: DeferredCommandQueue,
@@ -189,7 +189,7 @@ impl OptionChainManager {
         manager_rc: &Rc<RefCell<Self>>,
         instrument_ids: &[InstrumentId],
         series_id: OptionSeriesId,
-        priority: u8,
+        priority: u32,
     ) -> (Vec<TypedHandler<QuoteTick>>, TypedHandler<QuoteTick>) {
         let quote_handler = TypedHandler::new(OptionChainQuoteHandler::new(manager_rc, series_id));
         // Always store prototype as first element for bootstrap cloning
@@ -212,7 +212,7 @@ impl OptionChainManager {
         manager_rc: &Rc<RefCell<Self>>,
         instrument_ids: &[InstrumentId],
         series_id: OptionSeriesId,
-        priority: u8,
+        priority: u32,
     ) -> Vec<TypedHandler<OptionGreeks>> {
         let greeks_handler =
             TypedHandler::new(OptionChainGreeksHandler::new(manager_rc, series_id));
@@ -366,6 +366,18 @@ impl OptionChainManager {
     /// Also updates the ATM tracker from the forward price if `ForwardPrice` source is active,
     /// and triggers deferred bootstrap on the first arrival.
     pub fn handle_greeks(&mut self, greeks: &OptionGreeks) {
+        if self.aggregator.is_expired(greeks.ts_event) {
+            log::warn!(
+                "Dropping greeks for {}, series {} expired",
+                greeks.instrument_id,
+                self.aggregator.series_id(),
+            );
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .push_back(DeferredCommand::ExpireInstrument(greeks.instrument_id));
+            return;
+        }
+
         // Update ATM tracker from forward price (ForwardPrice source only)
         self.aggregator
             .atm_tracker_mut()
@@ -425,6 +437,18 @@ impl OptionChainManager {
     /// This handles both option instrument quotes (aggregator) and ATM source quotes
     /// (the aggregator's ATM tracker handles filtering internally).
     pub fn handle_quote(&mut self, quote: &QuoteTick) {
+        if self.aggregator.is_expired(quote.ts_event) {
+            log::warn!(
+                "Dropping quote for {}, series {} expired",
+                quote.instrument_id,
+                self.aggregator.series_id(),
+            );
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .push_back(DeferredCommand::ExpireInstrument(quote.instrument_id));
+            return;
+        }
+
         self.aggregator.update_quote(quote);
         self.maybe_bootstrap();
 

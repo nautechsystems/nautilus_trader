@@ -336,7 +336,8 @@ impl BarSpecification {
     ///
     /// # Errors
     ///
-    /// Returns an error if `step` is not positive (> 0).
+    /// Returns an error if `step` is not positive (> 0), or if `step` is not
+    /// valid for a fixed-subunit time aggregation.
     ///
     /// # Notes
     ///
@@ -348,6 +349,8 @@ impl BarSpecification {
     ) -> anyhow::Result<Self> {
         let step = NonZeroUsize::new(step)
             .ok_or(anyhow::anyhow!("Invalid step: {step} (must be non-zero)"))?;
+        Self::validate_step(step.get(), aggregation)?;
+
         Ok(Self {
             step,
             aggregation,
@@ -355,11 +358,51 @@ impl BarSpecification {
         })
     }
 
+    fn validate_step(step: usize, aggregation: BarAggregation) -> anyhow::Result<()> {
+        match aggregation {
+            BarAggregation::Millisecond => {
+                Self::validate_periodic_step(step, aggregation, 1000, false)
+            }
+            BarAggregation::Second | BarAggregation::Minute => {
+                Self::validate_periodic_step(step, aggregation, 60, false)
+            }
+            BarAggregation::Hour => Self::validate_periodic_step(step, aggregation, 24, false),
+            BarAggregation::Month => Self::validate_periodic_step(step, aggregation, 12, false),
+            _ => Ok(()),
+        }
+    }
+
+    fn validate_periodic_step(
+        step: usize,
+        aggregation: BarAggregation,
+        subunits: usize,
+        allow_equal: bool,
+    ) -> anyhow::Result<()> {
+        if !subunits.is_multiple_of(step) {
+            anyhow::bail!(
+                "Invalid step in bar_type.spec.step: {step} for aggregation={}. \
+                 step must evenly divide {subunits} (so it is periodic).",
+                aggregation as u8
+            );
+        }
+
+        if !allow_equal && subunits == step {
+            anyhow::bail!(
+                "Invalid step in bar_type.spec.step: {step} for aggregation={}. \
+                 step must not be {subunits}. Use higher aggregation unit instead.",
+                aggregation as u8
+            );
+        }
+
+        Ok(())
+    }
+
     /// Creates a new [`BarSpecification`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if `step` is not positive (> 0).
+    /// Panics if `step` is not positive (> 0), or if `step` is not valid for
+    /// a fixed-subunit time aggregation.
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
@@ -550,6 +593,18 @@ impl BarType {
         }
     }
 
+    /// Returns whether the bar aggregation source is `EXTERNAL`.
+    #[must_use]
+    pub fn is_externally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::External
+    }
+
+    /// Returns whether the bar aggregation source is `INTERNAL`.
+    #[must_use]
+    pub fn is_internally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::Internal
+    }
+
     /// Returns the standard bar type component.
     #[must_use]
     pub fn standard(&self) -> Self {
@@ -683,6 +738,13 @@ impl FromStr for BarType {
                 token: rev_pieces[4].to_string(),
                 position: 4,
             })?;
+        let spec = BarSpecification::new_checked(step, aggregation, price_type).map_err(|_| {
+            BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[1].to_string(),
+                position: 1,
+            }
+        })?;
 
         if let Some(composite_str) = composite_str {
             let composite_pieces: Vec<&str> = composite_str.rsplitn(3, '-').collect();
@@ -717,10 +779,16 @@ impl FromStr for BarType {
                     token: rev_composite_pieces[2].to_string(),
                     position: 7,
                 })?;
+            BarSpecification::new_checked(composite_step, composite_aggregation, price_type)
+                .map_err(|_| BarTypeParseError {
+                    input: s.to_string(),
+                    token: rev_composite_pieces[0].to_string(),
+                    position: 5,
+                })?;
 
             Ok(Self::new_composite(
                 instrument_id,
-                BarSpecification::new(step, aggregation, price_type),
+                spec,
                 aggregation_source,
                 composite_step,
                 composite_aggregation,
@@ -729,7 +797,7 @@ impl FromStr for BarType {
         } else {
             Ok(Self::Standard {
                 instrument_id,
-                spec: BarSpecification::new(step, aggregation, price_type),
+                spec,
                 aggregation_source,
             })
         }
@@ -790,8 +858,8 @@ impl<'de> Deserialize<'de> for BarType {
     where
         D: Deserializer<'de>,
     {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        Self::from_str(&s).map_err(serde::de::Error::custom)
+        let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::from_str(s.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -973,12 +1041,106 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "Invalid step in bar_type.spec.step: 7")]
+    fn test_bar_specification_new_with_invalid_periodic_step_panics() {
+        let _ = BarSpecification::new(7, BarAggregation::Minute, PriceType::Last);
+    }
+
+    #[rstest]
+    #[case(
+        BarAggregation::Millisecond,
+        12,
+        "Invalid step in bar_type.spec.step: 12 for aggregation=10. step must evenly divide 1000"
+    )]
+    #[case(
+        BarAggregation::Millisecond,
+        1000,
+        "Invalid step in bar_type.spec.step: 1000 for aggregation=10. step must not be 1000"
+    )]
+    #[case(
+        BarAggregation::Second,
+        50,
+        "Invalid step in bar_type.spec.step: 50 for aggregation=11. step must evenly divide 60"
+    )]
+    #[case(
+        BarAggregation::Second,
+        60,
+        "Invalid step in bar_type.spec.step: 60 for aggregation=11. step must not be 60"
+    )]
+    #[case(
+        BarAggregation::Minute,
+        40,
+        "Invalid step in bar_type.spec.step: 40 for aggregation=12. step must evenly divide 60"
+    )]
+    #[case(
+        BarAggregation::Minute,
+        60,
+        "Invalid step in bar_type.spec.step: 60 for aggregation=12. step must not be 60"
+    )]
+    #[case(
+        BarAggregation::Hour,
+        5,
+        "Invalid step in bar_type.spec.step: 5 for aggregation=13. step must evenly divide 24"
+    )]
+    #[case(
+        BarAggregation::Hour,
+        13,
+        "Invalid step in bar_type.spec.step: 13 for aggregation=13. step must evenly divide 24"
+    )]
+    #[case(
+        BarAggregation::Hour,
+        24,
+        "Invalid step in bar_type.spec.step: 24 for aggregation=13. step must not be 24"
+    )]
+    #[case(
+        BarAggregation::Month,
+        5,
+        "Invalid step in bar_type.spec.step: 5 for aggregation=16. step must evenly divide 12"
+    )]
+    #[case(
+        BarAggregation::Month,
+        12,
+        "Invalid step in bar_type.spec.step: 12 for aggregation=16. step must not be 12"
+    )]
+    fn test_bar_specification_new_checked_invalid_periodic_step(
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+        #[case] expected: &str,
+    ) {
+        let result = BarSpecification::new_checked(step, aggregation, PriceType::Last);
+
+        assert!(result.unwrap_err().to_string().starts_with(expected));
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Day)]
+    #[case(BarAggregation::Week)]
+    #[case(BarAggregation::Year)]
+    #[case(BarAggregation::Tick)]
+    #[case(BarAggregation::TickImbalance)]
+    #[case(BarAggregation::TickRuns)]
+    #[case(BarAggregation::Volume)]
+    #[case(BarAggregation::VolumeImbalance)]
+    #[case(BarAggregation::VolumeRuns)]
+    #[case(BarAggregation::Value)]
+    #[case(BarAggregation::ValueImbalance)]
+    #[case(BarAggregation::ValueRuns)]
+    #[case(BarAggregation::Renko)]
+    fn test_bar_specification_new_checked_allows_non_periodic_steps(
+        #[case] aggregation: BarAggregation,
+    ) {
+        let result = BarSpecification::new_checked(7, aggregation, PriceType::Last);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
     #[case(BarAggregation::Millisecond, 1, TimeDelta::milliseconds(1))]
     #[case(BarAggregation::Millisecond, 10, TimeDelta::milliseconds(10))]
     #[case(BarAggregation::Second, 1, TimeDelta::seconds(1))]
     #[case(BarAggregation::Second, 15, TimeDelta::seconds(15))]
     #[case(BarAggregation::Minute, 1, TimeDelta::minutes(1))]
-    #[case(BarAggregation::Minute, 60, TimeDelta::minutes(60))]
+    #[case(BarAggregation::Minute, 30, TimeDelta::minutes(30))]
     #[case(BarAggregation::Hour, 1, TimeDelta::hours(1))]
     #[case(BarAggregation::Hour, 4, TimeDelta::hours(4))]
     #[case(BarAggregation::Day, 1, TimeDelta::days(1))]
@@ -1012,7 +1174,7 @@ mod tests {
     #[case(BarAggregation::Second, 1, UnixNanos::from(1_000_000_000))]
     #[case(BarAggregation::Second, 10, UnixNanos::from(10_000_000_000))]
     #[case(BarAggregation::Minute, 1, UnixNanos::from(60_000_000_000))]
-    #[case(BarAggregation::Minute, 60, UnixNanos::from(3_600_000_000_000))]
+    #[case(BarAggregation::Minute, 30, UnixNanos::from(1_800_000_000_000))]
     #[case(BarAggregation::Hour, 1, UnixNanos::from(3_600_000_000_000))]
     #[case(BarAggregation::Hour, 4, UnixNanos::from(14_400_000_000_000))]
     #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
@@ -1056,12 +1218,6 @@ mod tests {
     )]
     #[case::second(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
-    BarAggregation::Millisecond,
-    1000,
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap()
-    )]
-    #[case::second(
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
     BarAggregation::Second,
     1,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap()
@@ -1071,12 +1227,6 @@ mod tests {
     BarAggregation::Second,
     5,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 55).unwrap()
-    )]
-    #[case::second(
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
-    BarAggregation::Second,
-    60,
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 0).unwrap()
     )]
     #[case::minute(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
@@ -1089,12 +1239,6 @@ mod tests {
     BarAggregation::Minute,
     5,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 30, 0).unwrap()
-    )]
-    #[case::minute(
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
-    BarAggregation::Minute,
-    60,
-    Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap()
     )]
     #[case::hour(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
@@ -1152,6 +1296,42 @@ mod tests {
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
+    }
+
+    #[rstest]
+    #[case("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL", true, false)]
+    #[case("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-INTERNAL", false, true)]
+    #[case(
+        "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        false,
+        true
+    )]
+    #[case(
+        "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-EXTERNAL@1-MINUTE-INTERNAL",
+        true,
+        false
+    )]
+    fn test_bar_type_aggregation_source_predicates(
+        #[case] input: &str,
+        #[case] expected_external: bool,
+        #[case] expected_internal: bool,
+    ) {
+        let bar_type = BarType::from(input);
+        assert_eq!(bar_type.is_externally_aggregated(), expected_external);
+        assert_eq!(bar_type.is_internally_aggregated(), expected_internal);
+    }
+
+    #[rstest]
+    fn test_bar_type_composite_aggregation_source_predicates_track_inner() {
+        let bar_type =
+            BarType::from("BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+
+        assert!(bar_type.is_internally_aggregated());
+        assert!(!bar_type.is_externally_aggregated());
+
+        let composite = bar_type.composite();
+        assert!(composite.is_externally_aggregated());
+        assert!(!composite.is_internally_aggregated());
     }
 
     #[rstest]
@@ -1245,6 +1425,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bar_type_parse_invalid_spec_step() {
+        let input = "BTCUSDT-PERP.BINANCE-60-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Error parsing `BarType` from '{input}', invalid token: '60' at position 1")
+        );
+    }
+
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_2() {
         let input = "BTCUSDT-PERP.BINANCE-1-INVALID-LAST-INTERNAL";
         let result = BarType::from_str(input);
@@ -1295,6 +1486,18 @@ mod tests {
             format!(
                 "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 5"
             )
+        );
+    }
+
+    #[rstest]
+    fn test_bar_type_parse_invalid_composite_spec_step() {
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@60-MINUTE-EXTERNAL";
+        let result = BarType::from_str(input);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Error parsing `BarType` from '{input}', invalid token: '60' at position 5")
         );
     }
 

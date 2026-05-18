@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules
+from nautilus_trader.adapters.polymarket.common.gamma_markets import iter_markets
 from nautilus_trader.adapters.polymarket.common.gamma_markets import (
     normalize_gamma_market_to_clob_format,
 )
@@ -261,3 +262,40 @@ async def test_fetch_fee_schedules_omits_markets_without_schedule() -> None:
 
     # Assert
     assert result == {"0xaaa": {"rate": 0.03}}
+
+
+_REQUEST_MARKETS_PAGE = (
+    "nautilus_trader.adapters.polymarket.common.gamma_markets._request_markets_page"
+)
+
+
+@pytest.mark.asyncio
+async def test_iter_markets_paginates_at_100_per_page() -> None:
+    """
+    Gamma `/markets` silently caps responses at 100 items per page; the loop must
+    paginate at 100 (not 500) and stop only when a page is short or empty.
+    """
+    # Arrange: page 1 = 100 markets, page 2 = 100 markets, page 3 = 37 markets
+    mock_client = AsyncMock()
+    page_1 = [{"conditionId": f"0xa{i:063x}"} for i in range(100)]
+    page_2 = [{"conditionId": f"0xb{i:063x}"} for i in range(100)]
+    page_3 = [{"conditionId": f"0xc{i:063x}"} for i in range(37)]
+    pages = [page_1, page_2, page_3]
+
+    captured_offsets: list[int] = []
+    captured_limits: list[int] = []
+
+    async def fake_page(**kwargs):
+        captured_offsets.append(kwargs["offset"])
+        captured_limits.append(kwargs["limit"])
+        return pages.pop(0) if pages else []
+
+    with patch(_REQUEST_MARKETS_PAGE, new=AsyncMock(side_effect=fake_page)) as mock_page:
+        # Act
+        yielded = [m async for m in iter_markets(mock_client)]
+
+    # Assert
+    assert len(yielded) == 237
+    assert mock_page.await_count == 3
+    assert captured_limits == [100, 100, 100]
+    assert captured_offsets == [0, 100, 200]

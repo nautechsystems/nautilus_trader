@@ -18,14 +18,45 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import nautilus_trader.adapters.hyperliquid.data as hyperliquid_data_module
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from tests.integration_tests.adapters.hyperliquid.conftest import _create_ws_mock
+
+
+class _FakePyo3HyperliquidAllMids:
+    def __init__(self, mids: dict[str, str] | None = None, ts_event: int = 0, ts_init: int = 0):
+        self.mids = mids or {}
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+
+class _FakePyo3DataType:
+    def __init__(self, metadata: dict[str, str]):
+        self.metadata = metadata
+
+
+class _FakePyo3CustomData:
+    def __init__(self, data: _FakePyo3HyperliquidAllMids, data_type: _FakePyo3DataType):
+        self.data = data
+        self.data_type = data_type
 
 
 @pytest.fixture
@@ -53,10 +84,7 @@ def data_client_builder(
             MagicMock(name="py_instrument"),
         ]
 
-        config = HyperliquidDataClientConfig(
-            testnet=False,
-            **(config_kwargs or {}),
-        )
+        config = HyperliquidDataClientConfig(**(config_kwargs or {}))
 
         client = HyperliquidDataClient(
             loop=event_loop,
@@ -448,3 +476,82 @@ async def test_unsubscribe_funding_rates(data_client_builder, monkeypatch):
         ws_client.unsubscribe_funding_rates.assert_awaited_once_with(expected_id)
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_custom_data_all_mids(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.subscribe_all_mids.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(type=HyperliquidAllMids),
+        )
+
+        await client._subscribe(command)
+
+        ws_client.subscribe_all_mids.assert_awaited_once_with()
+        ws_client.subscribe_all_mids_with_dex.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_custom_data_all_mids_with_dex(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.subscribe_all_mids_with_dex.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(
+                type=HyperliquidAllMids,
+                metadata={"dex": "hyperliquid"},
+            ),
+        )
+
+        await client._subscribe(command)
+
+        ws_client.subscribe_all_mids_with_dex.assert_awaited_once_with("hyperliquid")
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_msg_custom_data_all_mids_forwarded(data_client_builder, monkeypatch):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    monkeypatch.setattr(
+        hyperliquid_data_module,
+        "_PYO3HyperliquidAllMids",
+        _FakePyo3HyperliquidAllMids,
+    )
+    monkeypatch.setattr(
+        hyperliquid_data_module.nautilus_pyo3,
+        "CustomData",
+        _FakePyo3CustomData,
+    )
+
+    client._handle_data = MagicMock()
+
+    all_mids = _FakePyo3HyperliquidAllMids(
+        mids={"BTC-USD-PERP.HYPERLIQUID": "80868.5"},
+        ts_event=1_000,
+        ts_init=1_001,
+    )
+    msg = _FakePyo3CustomData(
+        data_type=_FakePyo3DataType({"dex": "hyperliquid"}),
+        data=all_mids,
+    )
+
+    client._handle_msg(msg)
+
+    client._handle_data.assert_called_once()
+    forwarded = client._handle_data.call_args.args[0]
+    assert isinstance(forwarded, CustomData)
+    assert isinstance(forwarded.data, Data)
+    assert isinstance(forwarded.data, HyperliquidAllMids)
+    assert forwarded.data.mids["BTC-USD-PERP.HYPERLIQUID"] == "80868.5"
+    assert forwarded.data_type == DataType(HyperliquidAllMids, {"dex": "hyperliquid"})

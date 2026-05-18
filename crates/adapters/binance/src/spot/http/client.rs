@@ -29,7 +29,7 @@
 //!
 //! All requests include:
 //! - `Accept: application/sbe`
-//! - `X-MBX-SBE: 3:3` (schema ID:version)
+//! - `X-MBX-SBE: 3:4` (schema ID:version)
 
 use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
@@ -73,8 +73,8 @@ use super::{
 use crate::{
     common::{
         consts::{
-            BINANCE_API_KEY_HEADER, BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_SPOT_RATE_LIMITS,
-            BinanceRateLimitQuota,
+            BINANCE_API_KEY_HEADER, BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_NO_SUCH_ORDER_CODE,
+            BINANCE_SPOT_RATE_LIMITS, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
         encoder::{decode_broker_id, encode_broker_id},
@@ -104,7 +104,7 @@ use crate::{
 };
 
 /// SBE schema header value for Spot API.
-pub const SBE_SCHEMA_HEADER: &str = "3:3";
+pub const SBE_SCHEMA_HEADER: &str = "3:4";
 
 use crate::common::consts::BINANCE_SPOT_API_PATH as SPOT_API_PATH;
 
@@ -1604,15 +1604,15 @@ impl BinanceSpotHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if neither identifier is provided, the request fails,
-    /// instrument is not cached, or parsing fails.
+    /// Returns an error if neither identifier is provided, the request fails for any
+    /// reason other than a missing order, instrument is not cached, or parsing fails.
     pub async fn request_order_status_report(
         &self,
         account_id: AccountId,
         instrument_id: InstrumentId,
         venue_order_id: Option<VenueOrderId>,
         client_order_id: Option<ClientOrderId>,
-    ) -> anyhow::Result<OrderStatusReport> {
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
         anyhow::ensure!(
             venue_order_id.is_some() || client_order_id.is_some(),
             "Either venue_order_id or client_order_id must be provided"
@@ -1630,11 +1630,18 @@ impl BinanceSpotHttpClient {
         let client_id_str =
             client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_SPOT_BROKER_ID));
 
-        let order = self
+        let order = match self
             .inner
             .query_order(symbol.as_str(), order_id, client_id_str.as_deref())
             .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        {
+            Ok(order) => order,
+            Err(e) if Self::is_no_such_order_error(&e) => {
+                log::debug!("Binance Spot order not found: instrument_id={instrument_id}");
+                return Ok(None);
+            }
+            Err(e) => anyhow::bail!(e),
+        };
 
         parse_order_status_report_sbe(
             &order,
@@ -1642,6 +1649,14 @@ impl BinanceSpotHttpClient {
             &instrument,
             BINANCE_NAUTILUS_SPOT_BROKER_ID,
             ts_init,
+        )
+        .map(Some)
+    }
+
+    const fn is_no_such_order_error(error: &BinanceSpotHttpError) -> bool {
+        matches!(
+            error,
+            BinanceSpotHttpError::BinanceError { code, .. } if *code == BINANCE_NO_SUCH_ORDER_CODE
         )
     }
 
@@ -2028,14 +2043,14 @@ mod tests {
     #[rstest]
     fn test_schema_constants() {
         assert_eq!(BinanceRawSpotHttpClient::schema_id(), 3);
-        assert_eq!(BinanceRawSpotHttpClient::schema_version(), 3);
+        assert_eq!(BinanceRawSpotHttpClient::schema_version(), 4);
         assert_eq!(BinanceSpotHttpClient::schema_id(), 3);
-        assert_eq!(BinanceSpotHttpClient::schema_version(), 3);
+        assert_eq!(BinanceSpotHttpClient::schema_version(), 4);
     }
 
     #[rstest]
     fn test_sbe_schema_header() {
-        assert_eq!(SBE_SCHEMA_HEADER, "3:3");
+        assert_eq!(SBE_SCHEMA_HEADER, "3:4");
     }
 
     #[rstest]
@@ -2043,7 +2058,7 @@ mod tests {
         let headers = BinanceRawSpotHttpClient::default_headers(&None);
 
         assert_eq!(headers.get("Accept"), Some(&"application/sbe".to_string()));
-        assert_eq!(headers.get("X-MBX-SBE"), Some(&"3:3".to_string()));
+        assert_eq!(headers.get("X-MBX-SBE"), Some(&"3:4".to_string()));
     }
 
     #[rstest]

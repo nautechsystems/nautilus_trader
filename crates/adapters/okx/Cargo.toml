@@ -100,6 +100,7 @@ axum = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-okx --bench websocket`
 [[bench]]

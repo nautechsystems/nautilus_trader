@@ -23,16 +23,16 @@
 //! Run with: `cargo run --example bitmex-data-tester --package nautilus-bitmex --features examples`
 
 use nautilus_bitmex::{
-    common::enums::BitmexEnvironment, config::BitmexDataClientConfig,
+    common::{consts::BITMEX_CLIENT_ID, enums::BitmexEnvironment},
+    config::BitmexDataClientConfig,
     factories::BitmexDataClientFactory,
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -48,12 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bitmex_config = BitmexDataClientConfig {
         environment: BitmexEnvironment::Testnet,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let client_factory = BitmexDataClientFactory::new();
-    let client_id = ClientId::new("BITMEX");
+    let client_id = *BITMEX_CLIENT_ID;
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_delay_post_stop_secs(2)
