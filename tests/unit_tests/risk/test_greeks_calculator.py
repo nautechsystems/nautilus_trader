@@ -21,6 +21,8 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
@@ -30,6 +32,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
@@ -157,6 +160,63 @@ class TestGreeksCalculator:
         assert abs(greeks.theta - (-0.087698151199)) < 1e-3, (
             f"Theta mismatch: {greeks.theta} vs -0.087698151199"
         )
+
+    def test_instrument_greeks_beta_weights_vega_to_vol_index(self):
+        underlying_price = Price.from_str("155.00")
+        option_price = Price.from_str("8.50")
+        vol_index_id = InstrumentId(Symbol("VIX"), Venue("XCBF"))
+
+        self.cache.add_quote_tick(
+            QuoteTick(
+                instrument_id=self.underlying_id,
+                bid_price=underlying_price,
+                ask_price=underlying_price,
+                bid_size=Quantity.from_int(100),
+                ask_size=Quantity.from_int(100),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+            ),
+        )
+        self.cache.add_quote_tick(
+            QuoteTick(
+                instrument_id=self.option_id,
+                bid_price=option_price,
+                ask_price=option_price,
+                bid_size=Quantity.from_int(100),
+                ask_size=Quantity.from_int(100),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+            ),
+        )
+        self.cache.add_trade_tick(
+            TradeTick(
+                instrument_id=vol_index_id,
+                price=Price.from_str("25.00"),
+                size=Quantity.from_int(1),
+                aggressor_side=AggressorSide.NO_AGGRESSOR,
+                trade_id=TradeId("1"),
+                ts_event=self.clock.timestamp_ns(),
+                ts_init=self.clock.timestamp_ns(),
+            ),
+        )
+
+        greeks = self.greeks_calculator.instrument_greeks(
+            instrument_id=self.option_id,
+            cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
+        )
+        vol_weighted_greeks = self.greeks_calculator.instrument_greeks(
+            instrument_id=self.option_id,
+            cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
+            vol_index_instrument_id=vol_index_id,
+            vol_beta_weights={self.underlying_id: 0.75},
+        )
+
+        expected_vega = greeks.vega * 0.75 * greeks.vol / 25.00
+        assert round(vol_weighted_greeks.delta, 12) == round(greeks.delta, 12)
+        assert round(vol_weighted_greeks.gamma, 12) == round(greeks.gamma, 12)
+        assert round(vol_weighted_greeks.vega, 12) == round(expected_vega, 12)
 
     def test_instrument_greeks_with_caching(self):
         # Test greeks calculation with caching
