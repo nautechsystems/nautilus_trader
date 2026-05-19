@@ -22,7 +22,8 @@ name = "nautilus_interactive_brokers"
 crate-type = ["rlib"]
 
 [features]
-default = []
+default = ["execution"]
+execution = ["dep:nautilus-execution", "dep:nautilus-network"]
 examples = ["nautilus-live/node", "nautilus-trading/examples"]
 extension-module = [
   "gateway",
@@ -36,6 +37,7 @@ extension-module = [
   "python",
 ]
 python = [
+  "execution",
   "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
@@ -51,8 +53,8 @@ gateway = ["bollard"]
 
 [package.metadata.cargo-machete]
 ignored = [
-  "nautilus-execution", # Referenced only via [features] (extension-module, python)
-  "nautilus-network", # Referenced only via [features] (extension-module, python)
+  "nautilus-execution", # Activated by the `execution` feature for downstream feature chaining
+  "nautilus-network", # Activated by the `execution` feature for downstream feature chaining
 ]
 
 [package.metadata.docs.rs]
@@ -62,16 +64,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+
+nautilus-execution = { workspace = true, optional = true }
+nautilus-network = { workspace = true, optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-bollard = { workspace = true, optional = true }
 bon = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
@@ -88,6 +90,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
 
+bollard = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 

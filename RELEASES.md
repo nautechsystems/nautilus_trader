@@ -30,6 +30,7 @@ None
 - Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
+- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
 - Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Removed dead Hyperliquid WebSocket codec module
