@@ -37,8 +37,9 @@ use nautilus_common::{
             SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
             SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
             SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrumentStatus,
-            UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -1239,6 +1240,22 @@ impl DataClient for OKXDataClient {
                     .context("instrument status subscription")
             },
             "instrument status subscription",
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let ws = self.public_ws()?.clone();
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_instrument(instrument_id)
+                    .await
+                    .context("instrument unsubscribe")?;
+                Ok(())
+            },
+            "unsubscribe_instrument",
         );
         Ok(())
     }

@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
 - Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
+- Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
 - Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Removed dead Hyperliquid WebSocket codec module
