@@ -502,22 +502,23 @@ Subscribe to liquidation updates for either:
 - all symbols (`!forceOrder@arr`) by omitting `instrument_id`.
 
 ```python
-from nautilus_trader.adapters.binance import BinanceFuturesLiquidation
-from nautilus_trader.model import DataType, ClientId
+from nautilus_trader.core import nautilus_pyo3 as pyo3
+
+client_id = pyo3.ClientId.from_str("BINANCE")
 
 # Instrument-specific
 self.subscribe_data(
-    data_type=DataType(
-        BinanceFuturesLiquidation,
-        metadata={"instrument_id": self.instrument.id},
+    data_type=pyo3.DataType(
+        "BinanceFuturesLiquidation",
+        {"instrument_id": "BTCUSDT-PERP.BINANCE"},
     ),
-    client_id=ClientId("BINANCE"),
+    client_id=client_id,
 )
 
 # All-market (no instrument_id metadata)
 self.subscribe_data(
-    data_type=DataType(BinanceFuturesLiquidation),
-    client_id=ClientId("BINANCE"),
+    data_type=pyo3.DataType("BinanceFuturesLiquidation"),
+    client_id=client_id,
 )
 ```
 
