@@ -49,6 +49,12 @@ python = [
 ]
 gateway = ["bollard"]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-execution", # Referenced only via [features] (extension-module, python)
+  "nautilus-network", # Referenced only via [features] (extension-module, python)
+]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
@@ -64,7 +70,6 @@ nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 bollard = { workspace = true, optional = true }
 bon = { workspace = true }
@@ -72,7 +77,6 @@ chrono = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
 ibapi = { workspace = true }
-indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

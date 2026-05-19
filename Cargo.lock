@@ -6098,7 +6098,6 @@ version = "0.58.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
- "async-stream",
  "async-trait",
  "bollard",
  "bon",
@@ -6106,7 +6105,6 @@ dependencies = [
  "dashmap",
  "futures-util",
  "ibapi",
- "indexmap 2.14.0",
  "log",
  "nautilus-common",
  "nautilus-core",

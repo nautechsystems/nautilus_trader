@@ -294,6 +294,14 @@ repos:
         types: [file]
         pass_filenames: false
 
+      - id: cargo-machete
+        name: cargo machete
+        description: Detect declared-but-unused workspace dependencies
+        entry: bash .pre-commit-hooks/cargo_machete.sh
+        language: system
+        files: "(Cargo\\.toml|\\.rs)$"
+        pass_filenames: false
+
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################

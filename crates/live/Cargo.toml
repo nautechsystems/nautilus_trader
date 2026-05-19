@@ -62,6 +62,11 @@ simulation = [
   "nautilus-execution/simulation",
 ]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-persistence",
+] # Optional dep activated only via the streaming feature
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

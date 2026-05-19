@@ -85,6 +85,7 @@ env/
 *.sh
 !.docker/entrypoint.sh
 !.pre-commit-hooks/cargo_fmt_stable.sh
+!.pre-commit-hooks/cargo_machete.sh
 !.pre-commit-hooks/cargo_vet.sh
 !.pre-commit-hooks/check_anyhow_usage.sh
 !.pre-commit-hooks/check_cargo_conventions.sh

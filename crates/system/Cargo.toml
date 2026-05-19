@@ -34,6 +34,11 @@ python = [
 streaming = ["nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-persistence",
+] # Optional dep activated only via the streaming feature
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

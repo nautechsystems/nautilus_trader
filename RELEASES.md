@@ -13,9 +13,12 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
+- Added `cargo machete` pre-commit hook to detect unused workspace dependencies
+- Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
 - Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Removed dead Hyperliquid WebSocket codec module
+- Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
 
 ### Documentation Updates
 

@@ -33,12 +33,12 @@ python = [
   "pyo3-stub-gen",
 ]
 
+[package.metadata.cargo-machete]
+ignored = ["arrow"] # Used by `custom_data` macro expansion
+
 [package.metadata.docs.rs]
 features = ["high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
-
-[package.metadata.cargo-machete]
-ignored = ["arrow"] # Used by `custom_data` macro expansion
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
