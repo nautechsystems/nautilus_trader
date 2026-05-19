@@ -21,11 +21,11 @@ use std::hash::{BuildHasher, Hasher};
 ///
 /// Kraken WS v2 uses alphanumeric venue IDs (e.g. `O6ZQNQ-BXL4E-5WGINO`).
 /// Uses fixed-seed `ahash` for cross-process determinism (replay/backtest safe).
-pub struct BookOrderIdHasher(ahash::RandomState);
+pub(crate) struct BookOrderIdHasher(ahash::RandomState);
 
 impl BookOrderIdHasher {
     /// Creates a new hasher with deterministic fixed seeds.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(ahash::RandomState::with_seeds(
             0x4B52_414B_454E_5F4C,
             0x3330_5F4F_5244_4552,
@@ -35,7 +35,7 @@ impl BookOrderIdHasher {
     }
 
     /// Maps `venue_id` to a stable `u64` via fixed-seed hash.
-    pub fn hash(&self, venue_id: &str) -> u64 {
+    pub(crate) fn hash(&self, venue_id: &str) -> u64 {
         let mut h = self.0.build_hasher();
         h.write(venue_id.as_bytes());
         h.finish()

@@ -106,7 +106,7 @@ pub(crate) struct AxOrdersWsFeedHandler {
 impl AxOrdersWsFeedHandler {
     /// Creates a new [`AxOrdersWsFeedHandler`] instance.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
@@ -146,7 +146,7 @@ impl AxOrdersWsFeedHandler {
     /// Returns the next message from the handler.
     ///
     /// This method blocks until a message is available or the handler is stopped.
-    pub async fn next(&mut self) -> Option<AxOrdersWsMessage> {
+    pub(crate) async fn next(&mut self) -> Option<AxOrdersWsMessage> {
         loop {
             if self.needs_reauthentication && self.message_queue.is_empty() {
                 self.needs_reauthentication = false;

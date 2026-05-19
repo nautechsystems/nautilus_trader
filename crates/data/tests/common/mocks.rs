@@ -52,7 +52,7 @@ use nautilus_common::{
 use nautilus_model::identifiers::{ClientId, Venue};
 
 /// A mock implementation of [`DataClient`] for testing, with optional generic recorder.
-pub struct MockDataClient {
+pub(crate) struct MockDataClient {
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
@@ -63,7 +63,7 @@ pub struct MockDataClient {
 impl MockDataClient {
     /// Creates a new [`MockDataClient`] instance with the given cache, client ID, and venue.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         client_id: ClientId,
@@ -80,7 +80,7 @@ impl MockDataClient {
 
     /// Creates a new [`MockDataClient`] that records all `DataCommands` into the given recorder.
     #[must_use]
-    pub fn new_with_recorder(
+    pub(crate) fn new_with_recorder(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         client_id: ClientId,
@@ -633,7 +633,7 @@ impl DataClient for MockDataClient {
 }
 
 /// A mock data client that fails on connect for testing error propagation.
-pub struct FailingMockDataClient {
+pub(crate) struct FailingMockDataClient {
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub error_message: String,
@@ -642,7 +642,7 @@ pub struct FailingMockDataClient {
 impl FailingMockDataClient {
     /// Creates a new [`FailingMockDataClient`] that will fail with the given error message.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         client_id: ClientId,
         venue: Option<Venue>,
         error_message: impl Into<String>,

@@ -33,7 +33,7 @@ use nautilus_model::{
     types::Quantity,
 };
 
-pub fn test_emitter() -> (
+pub(crate) fn test_emitter() -> (
     ExecutionEventEmitter,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) {
@@ -50,7 +50,7 @@ pub fn test_emitter() -> (
     (emitter, rx)
 }
 
-pub fn drain_events(
+pub(crate) fn drain_events(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) -> Vec<ExecutionEvent> {
     let mut events = Vec::new();
@@ -60,11 +60,15 @@ pub fn drain_events(
     events
 }
 
-pub fn account_id() -> AccountId {
+pub(crate) fn account_id() -> AccountId {
     AccountId::from("KRAKEN-001")
 }
 
-pub fn make_identity(instrument_id: &str, side: OrderSide, order_type: OrderType) -> OrderIdentity {
+pub(crate) fn make_identity(
+    instrument_id: &str,
+    side: OrderSide,
+    order_type: OrderType,
+) -> OrderIdentity {
     OrderIdentity {
         strategy_id: StrategyId::from("EXEC_TESTER-001"),
         instrument_id: InstrumentId::from(instrument_id),
@@ -74,18 +78,18 @@ pub fn make_identity(instrument_id: &str, side: OrderSide, order_type: OrderType
     }
 }
 
-pub fn empty_string_map() -> Arc<AtomicMap<String, ClientOrderId>> {
+pub(crate) fn empty_string_map() -> Arc<AtomicMap<String, ClientOrderId>> {
     Arc::new(AtomicMap::new())
 }
 
-pub fn empty_instrument_id_map() -> Arc<AtomicMap<String, InstrumentId>> {
+pub(crate) fn empty_instrument_id_map() -> Arc<AtomicMap<String, InstrumentId>> {
     Arc::new(AtomicMap::new())
 }
 
-pub fn empty_quantity_map() -> Arc<AtomicMap<String, Quantity>> {
+pub(crate) fn empty_quantity_map() -> Arc<AtomicMap<String, Quantity>> {
     Arc::new(AtomicMap::new())
 }
 
-pub fn empty_f64_map() -> Arc<AtomicMap<String, f64>> {
+pub(crate) fn empty_f64_map() -> Arc<AtomicMap<String, f64>> {
     Arc::new(AtomicMap::new())
 }

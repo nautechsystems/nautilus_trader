@@ -26,7 +26,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-pub enum MockEvent {
+pub(crate) enum MockEvent {
     Authenticate,
     AuthenticateReject(String),
     ExpectSubscription,
@@ -144,14 +144,14 @@ impl MockGateway {
     }
 }
 
-pub struct MockLsgServer {
+pub(crate) struct MockLsgServer {
     tx: tokio::sync::mpsc::UnboundedSender<MockEvent>,
     port: u16,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl MockLsgServer {
-    pub async fn new(dataset: &str) -> Self {
+    pub(crate) async fn new(dataset: &str) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let mut gateway = MockGateway::new(dataset.to_string()).await;
         let port = gateway.port();
@@ -175,29 +175,29 @@ impl MockLsgServer {
         Self { tx, port, task }
     }
 
-    pub fn addr(&self) -> String {
+    pub(crate) fn addr(&self) -> String {
         format!("127.0.0.1:{}", self.port)
     }
 
-    pub fn authenticate(&self) {
+    pub(crate) fn authenticate(&self) {
         self.tx.send(MockEvent::Authenticate).unwrap();
     }
 
-    pub fn authenticate_reject(&self, error: &str) {
+    pub(crate) fn authenticate_reject(&self, error: &str) {
         self.tx
             .send(MockEvent::AuthenticateReject(error.to_string()))
             .unwrap();
     }
 
-    pub fn expect_subscription(&self) {
+    pub(crate) fn expect_subscription(&self) {
         self.tx.send(MockEvent::ExpectSubscription).unwrap();
     }
 
-    pub fn start(&self) {
+    pub(crate) fn start(&self) {
         self.tx.send(MockEvent::Start).unwrap();
     }
 
-    pub fn send_record<R>(&self, record: R)
+    pub(crate) fn send_record<R>(&self, record: R)
     where
         R: HasRType + AsRef<[u8]> + Clone + Send + 'static,
     {
@@ -206,11 +206,11 @@ impl MockLsgServer {
             .unwrap();
     }
 
-    pub fn disconnect(&self) {
+    pub(crate) fn disconnect(&self) {
         self.tx.send(MockEvent::Disconnect).unwrap();
     }
 
-    pub async fn stop(self) {
+    pub(crate) async fn stop(self) {
         self.tx.send(MockEvent::Exit).unwrap();
         self.task.await.unwrap();
     }

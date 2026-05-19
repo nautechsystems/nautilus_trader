@@ -48,7 +48,7 @@ use serde_json::json;
 use ustr::Ustr;
 
 #[derive(Clone)]
-pub struct TestServerState {
+pub(crate) struct TestServerState {
     pub connection_count: Arc<tokio::sync::Mutex<usize>>,
     pub subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
@@ -97,7 +97,7 @@ impl Default for TestServerState {
 }
 
 impl TestServerState {
-    pub async fn reset(&self) {
+    pub(crate) async fn reset(&self) {
         *self.connection_count.lock().await = 0;
         self.subscriptions.lock().await.clear();
         self.subscription_events.lock().await.clear();
@@ -111,15 +111,15 @@ impl TestServerState {
         self.cancel_all_count.store(0, Ordering::Relaxed);
     }
 
-    pub async fn set_subscription_failures(&self, topics: Vec<String>) {
+    pub(crate) async fn set_subscription_failures(&self, topics: Vec<String>) {
         *self.fail_next_subscriptions.lock().await = topics;
     }
 
-    pub async fn subscription_events(&self) -> Vec<(String, bool)> {
+    pub(crate) async fn subscription_events(&self) -> Vec<(String, bool)> {
         self.subscription_events.lock().await.clone()
     }
 
-    pub async fn get_messages(&self) -> Vec<serde_json::Value> {
+    pub(crate) async fn get_messages(&self) -> Vec<serde_json::Value> {
         self.messages_received.lock().await.clone()
     }
 }
@@ -421,7 +421,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
     *count = count.saturating_sub(1);
 }
 
-pub fn load_test_data(filename: &str) -> serde_json::Value {
+pub(crate) fn load_test_data(filename: &str) -> serde_json::Value {
     let path = format!("{}/test_data/{filename}", env!("CARGO_MANIFEST_DIR"));
     let content = std::fs::read_to_string(&path).unwrap_or_else(|_| match filename {
         "ws_md_book_l1.json" => r#"{"t":"1","s":"EURUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
@@ -557,7 +557,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .with_state(state)
 }
 
-pub async fn start_test_server()
+pub(crate) async fn start_test_server()
 -> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -577,7 +577,7 @@ pub async fn start_test_server()
     Ok((addr, state))
 }
 
-pub async fn wait_for_connection(state: &TestServerState) {
+pub(crate) async fn wait_for_connection(state: &TestServerState) {
     wait_until_async(
         || async { *state.connection_count.lock().await > 0 },
         Duration::from_secs(5),
@@ -585,7 +585,7 @@ pub async fn wait_for_connection(state: &TestServerState) {
     .await;
 }
 
-pub fn create_test_instrument(symbol: &str) -> InstrumentAny {
+pub(crate) fn create_test_instrument(symbol: &str) -> InstrumentAny {
     let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
     let instrument = PerpetualContract::new(
         InstrumentId::new(Symbol::new(symbol), *AX_VENUE),

@@ -1312,7 +1312,7 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
 }
 
 #[expect(clippy::needless_pass_by_value)]
-pub fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn expand_custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {
     let options = match parse_options(&attr) {
         Ok(o) => o,
         Err(e) => return e.to_compile_error(),

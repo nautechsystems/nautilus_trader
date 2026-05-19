@@ -34,31 +34,31 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-pub const TRADER_ID: &str = "BENCH-001";
-pub const ACCOUNT_ID: &str = "HYPERLIQUID-001";
+pub(crate) const TRADER_ID: &str = "BENCH-001";
+pub(crate) const ACCOUNT_ID: &str = "HYPERLIQUID-001";
 
 #[must_use]
-pub fn clock() -> &'static AtomicTime {
+pub(crate) fn clock() -> &'static AtomicTime {
     get_atomic_clock_realtime()
 }
 
 #[must_use]
-pub fn trader_id() -> TraderId {
+pub(crate) fn trader_id() -> TraderId {
     TraderId::from(TRADER_ID)
 }
 
 #[must_use]
-pub fn account_id() -> AccountId {
+pub(crate) fn account_id() -> AccountId {
     AccountId::from(ACCOUNT_ID)
 }
 
 #[must_use]
-pub fn btc_perp() -> InstrumentAny {
+pub(crate) fn btc_perp() -> InstrumentAny {
     perp_instrument("BTC", 2, 4)
 }
 
 #[must_use]
-pub fn eth_perp() -> InstrumentAny {
+pub(crate) fn eth_perp() -> InstrumentAny {
     perp_instrument("ETH", 2, 4)
 }
 
@@ -98,7 +98,7 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
 }
 
 #[must_use]
-pub fn instrument_cache() -> AHashMap<Ustr, InstrumentAny> {
+pub(crate) fn instrument_cache() -> AHashMap<Ustr, InstrumentAny> {
     let mut cache = AHashMap::new();
     let btc = btc_perp();
     let eth = eth_perp();
@@ -112,7 +112,7 @@ pub fn instrument_cache() -> AHashMap<Ustr, InstrumentAny> {
 /// receiver alive (drop closes the channel and turns `send_order_event` into a
 /// warn-logging no-op which skews the measurement).
 #[must_use]
-pub fn bench_emitter() -> (
+pub(crate) fn bench_emitter() -> (
     ExecutionEventEmitter,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) {
@@ -130,16 +130,16 @@ pub fn bench_emitter() -> (
 
 /// Convenience cache (used by future dispatch benches that need it).
 #[must_use]
-pub fn empty_cache() -> Cache {
+pub(crate) fn empty_cache() -> Cache {
     Cache::default()
 }
 
-pub mod fixtures {
+pub(crate) mod fixtures {
     //! Inline WS frame strings shaped exactly like the venue wire format. Each
     //! fixture exercises one [`HyperliquidWsMessage`] variant end-to-end and is
     //! kept small enough to be obvious at a glance.
 
-    pub const TRADE: &str = r#"{
+    pub(crate) const TRADE: &str = r#"{
         "channel": "trades",
         "data": [{
             "coin": "BTC",
@@ -153,7 +153,7 @@ pub mod fixtures {
         }]
     }"#;
 
-    pub const BOOK_L2: &str = r#"{
+    pub(crate) const BOOK_L2: &str = r#"{
         "channel": "l2Book",
         "data": {
             "coin": "BTC",
@@ -187,7 +187,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const BBO: &str = r#"{
+    pub(crate) const BBO: &str = r#"{
         "channel": "bbo",
         "data": {
             "coin": "BTC",
@@ -199,7 +199,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const CANDLE: &str = r#"{
+    pub(crate) const CANDLE: &str = r#"{
         "channel": "candle",
         "data": {
             "t": 1733833200000,
@@ -215,7 +215,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const ALL_MIDS: &str = r#"{
+    pub(crate) const ALL_MIDS: &str = r#"{
         "channel": "allMids",
         "data": {
             "mids": {
@@ -226,7 +226,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const ACTIVE_ASSET_CTX_PERP: &str = r#"{
+    pub(crate) const ACTIVE_ASSET_CTX_PERP: &str = r#"{
         "channel": "activeAssetCtx",
         "data": {
             "coin": "BTC",
@@ -245,7 +245,7 @@ pub mod fixtures {
         }
     }"#;
 
-    pub const ORDER_UPDATE: &str = r#"{
+    pub(crate) const ORDER_UPDATE: &str = r#"{
         "channel": "orderUpdates",
         "data": [{
             "order": {
@@ -263,7 +263,7 @@ pub mod fixtures {
         }]
     }"#;
 
-    pub const USER_FILL: &str = r#"{
+    pub(crate) const USER_FILL: &str = r#"{
         "channel": "user",
         "data": {
             "fills": [{

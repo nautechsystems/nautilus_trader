@@ -23,15 +23,15 @@ use crate::{
     opt::{BlockchainCommand, BlockchainOpt},
 };
 
-pub mod analyze;
-pub mod sync;
+pub(crate) mod analyze;
+pub(crate) mod sync;
 
 /// Runs blockchain commands based on the provided options.
 ///
 /// # Errors
 ///
 /// Returns an error if execution of the specified blockchain command fails.
-pub async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
+pub(crate) async fn run_blockchain_command(opt: BlockchainOpt) -> anyhow::Result<()> {
     match opt.command {
         BlockchainCommand::SyncBlocks {
             chain,

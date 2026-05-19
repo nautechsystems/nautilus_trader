@@ -322,7 +322,7 @@ impl<T, F> ThrottlerProcess<T, F>
 where
     T: Debug,
 {
-    pub fn new(actor_id: Ustr) -> Self {
+    pub(crate) fn new(actor_id: Ustr) -> Self {
         let endpoint = MStr::endpoint(format!("{actor_id}_process")).expect(FAILED);
         Self {
             actor_id,
@@ -332,7 +332,7 @@ where
         }
     }
 
-    pub fn get_timer_callback(&self) -> TimeEventCallback {
+    pub(crate) fn get_timer_callback(&self) -> TimeEventCallback {
         let endpoint = self.endpoint;
         TimeEventCallback::from(move |event: TimeEvent| {
             msgbus::send_any(endpoint, &(event));
@@ -420,7 +420,7 @@ mod tests {
     #[allow(unsafe_code)]
     impl TestThrottler {
         #[expect(clippy::mut_from_ref)]
-        pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
+        pub(crate) fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
             unsafe { &mut *self.throttler.get() }
         }
     }

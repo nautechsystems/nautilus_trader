@@ -41,7 +41,7 @@ const FNV_PRIME: u64 = 0x0100_0000_01b3;
 ///
 /// Format: `S-{hex_timestamp}-{hash_suffix}`
 #[must_use]
-pub fn create_synthetic_venue_order_id(
+pub(super) fn create_synthetic_venue_order_id(
     fill: &FillSnapshot,
     instrument_id: InstrumentId,
 ) -> VenueOrderId {
@@ -54,7 +54,7 @@ pub fn create_synthetic_venue_order_id(
 ///
 /// Format: `S-{hex_timestamp}-{hash_suffix}`
 #[must_use]
-pub fn create_synthetic_trade_id(fill: &FillSnapshot) -> TradeId {
+pub(super) fn create_synthetic_trade_id(fill: &FillSnapshot) -> TradeId {
     let hash_suffix = synthetic_fill_id_suffix("trade", fill, None);
     let trade_id_value = format!("S-{:x}-{hash_suffix:08x}", fill.ts_event);
     TradeId::new(&trade_id_value)

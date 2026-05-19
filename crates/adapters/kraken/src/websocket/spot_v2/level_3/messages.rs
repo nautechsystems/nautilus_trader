@@ -131,7 +131,7 @@ pub struct KrakenL3UpdateData {
 
 /// Typed output from the L3 WebSocket handler.
 #[derive(Debug, Clone)]
-pub enum KrakenL3WsMessage {
+pub(crate) enum KrakenL3WsMessage {
     /// Full order book snapshot.
     Snapshot(KrakenL3Snapshot),
     /// Incremental order book update.

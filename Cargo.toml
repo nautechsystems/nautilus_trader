@@ -697,3 +697,4 @@ similar_names = "allow" # Domain terms like trade/trader and side/size are inten
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(madsim)'] }
+unreachable_pub = "deny"

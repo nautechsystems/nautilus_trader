@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
 - Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
+- Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Removed dead Hyperliquid WebSocket codec module

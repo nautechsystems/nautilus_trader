@@ -581,7 +581,7 @@ impl QuoteStreamIterator {
     /// # Errors
     ///
     /// Returns an error if the file cannot be opened or read.
-    pub fn new<P: AsRef<Path>>(
+    pub(crate) fn new<P: AsRef<Path>>(
         filepath: P,
         chunk_size: usize,
         price_precision: Option<u8>,
@@ -775,7 +775,7 @@ impl TradeStreamIterator {
     /// # Errors
     ///
     /// Returns an error if the file cannot be opened or read.
-    pub fn new<P: AsRef<Path>>(
+    pub(crate) fn new<P: AsRef<Path>>(
         filepath: P,
         chunk_size: usize,
         price_precision: Option<u8>,
@@ -959,7 +959,7 @@ impl Depth10StreamIterator {
     /// # Errors
     ///
     /// Returns an error if the file cannot be opened or read, or if `levels` is not 5 or 25.
-    pub fn new<P: AsRef<Path>>(
+    pub(crate) fn new<P: AsRef<Path>>(
         filepath: P,
         chunk_size: usize,
         levels: u8,

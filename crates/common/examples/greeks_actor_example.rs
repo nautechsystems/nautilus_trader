@@ -43,7 +43,7 @@ struct GreeksActor {
 
 impl GreeksActor {
     /// Creates a new [`GreeksActor`] instance.
-    pub fn new(
+    pub(crate) fn new(
         config: DataActorConfig,
         cache: Rc<RefCell<Cache>>, // TODO: Change to standard registration pattern
         clock: Rc<RefCell<LiveClock>>, // TODO: Change to standard registration pattern
@@ -60,7 +60,7 @@ impl GreeksActor {
     }
 
     /// Calculates greeks for a specific instrument.
-    pub fn calculate_instrument_greeks(
+    pub(crate) fn calculate_instrument_greeks(
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<GreeksData> {
@@ -102,7 +102,7 @@ impl GreeksActor {
     }
 
     /// Calculates portfolio greeks.
-    pub fn calculate_portfolio_greeks(&self) -> anyhow::Result<PortfolioGreeks> {
+    pub(crate) fn calculate_portfolio_greeks(&self) -> anyhow::Result<PortfolioGreeks> {
         // Example parameters
         let underlyings = None;
         let venue = None;
@@ -147,7 +147,7 @@ impl GreeksActor {
     }
 
     /// Subscribes to greeks data for a specific underlying.
-    pub fn subscribe_to_greeks(&self, underlying: &str) {
+    pub(crate) fn subscribe_to_greeks(&self, underlying: &str) {
         self.greeks_calculator
             .subscribe_greeks::<fn(&GreeksData)>(underlying, None);
     }

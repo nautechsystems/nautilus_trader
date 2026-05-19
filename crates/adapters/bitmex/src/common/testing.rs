@@ -22,7 +22,7 @@
 /// Panics if the test file cannot be read (should only happen if test data is missing).
 #[cfg(test)]
 #[must_use]
-pub fn load_test_json(file_name: &str) -> String {
+pub(crate) fn load_test_json(file_name: &str) -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_data")
         .join(file_name);

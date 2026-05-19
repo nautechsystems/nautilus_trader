@@ -106,7 +106,7 @@ impl SocketClientInner {
     /// # Errors
     ///
     /// Returns an error if connection fails or configuration is invalid.
-    pub async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
+    pub(crate) async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
         const CONNECTION_TIMEOUT_SECS: u64 = 10;
 
         install_cryptographic_provider();
@@ -333,7 +333,7 @@ impl SocketClientInner {
     /// # Errors
     ///
     /// Returns an error if the connection cannot be established.
-    pub async fn tls_connect_with_server(
+    pub(crate) async fn tls_connect_with_server(
         url: &str,
         mode: Mode,
         connector: Option<Connector>,
@@ -493,7 +493,7 @@ impl SocketClientInner {
     /// client detecting it.
     #[inline]
     #[must_use]
-    pub fn is_alive(&self) -> bool {
+    pub(crate) fn is_alive(&self) -> bool {
         !self.read_task.is_finished() && !self.write_task.is_finished()
     }
 

@@ -652,7 +652,7 @@ pub(crate) struct OwnBookLadder {
 impl OwnBookLadder {
     /// Creates a new [`OwnBookLadder`] instance.
     #[must_use]
-    pub fn new(side: OrderSideSpecified) -> Self {
+    pub(crate) fn new(side: OrderSideSpecified) -> Self {
         Self {
             side,
             levels: BTreeMap::new(),
@@ -663,25 +663,25 @@ impl OwnBookLadder {
     /// Returns the number of price levels in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
     #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
 
     /// Removes all orders and price levels from the ladder.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.levels.clear();
         self.cache.clear();
     }
 
     /// Adds an order to the ladder at its price level.
-    pub fn add(&mut self, order: OwnBookOrder) {
+    pub(crate) fn add(&mut self, order: OwnBookOrder) {
         let book_price = order.to_book_price();
         self.cache.insert(order.client_order_id, book_price);
 
@@ -698,7 +698,7 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
+    pub(crate) fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let client_order_id = order.client_order_id;
 
         let Some(price) = self.cache.get(&order.client_order_id).copied() else {
@@ -740,7 +740,7 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
+    pub(crate) fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         self.remove(&order.client_order_id)
     }
 
@@ -749,7 +749,7 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn remove(&mut self, client_order_id: &ClientOrderId) -> Result<(), OwnBookError> {
+    pub(crate) fn remove(&mut self, client_order_id: &ClientOrderId) -> Result<(), OwnBookError> {
         let Some(price) = self.cache.get(client_order_id).copied() else {
             return Err(OwnBookError::OrderNotFoundInCache {
                 client_order_id: *client_order_id,
@@ -776,21 +776,21 @@ impl OwnBookLadder {
     /// Returns the total size of all orders in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn sizes(&self) -> f64 {
+    pub(crate) fn sizes(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn exposures(&self) -> f64 {
+    pub(crate) fn exposures(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn top(&self) -> Option<&OwnBookLevel> {
+    pub(crate) fn top(&self) -> Option<&OwnBookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),
             None => Option::None,

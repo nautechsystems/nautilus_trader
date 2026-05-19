@@ -115,7 +115,7 @@ pub(crate) struct OrderSubmitter {
 }
 
 impl OrderSubmitter {
-    pub fn new(
+    pub(crate) fn new(
         http_client: PolymarketClobHttpClient,
         order_builder: Arc<PolymarketOrderBuilder>,
         retry_config: RetryConfig,
@@ -141,7 +141,7 @@ impl OrderSubmitter {
     /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
     /// rejected by the venue. SELL ignores the context.
-    pub async fn submit_market_order(
+    pub(crate) async fn submit_market_order(
         &self,
         request: MarketOrderSubmitRequest,
     ) -> anyhow::Result<MarketOrderSubmitResult> {
@@ -250,7 +250,10 @@ impl OrderSubmitter {
     }
 
     /// Cancels a single order with retry on transient failures.
-    pub async fn cancel_order(&self, venue_order_id: &str) -> anyhow::Result<CancelResponse> {
+    pub(crate) async fn cancel_order(
+        &self,
+        venue_order_id: &str,
+    ) -> anyhow::Result<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_id = venue_order_id.to_string();
         self.retry_manager
@@ -269,7 +272,10 @@ impl OrderSubmitter {
     }
 
     /// Cancels multiple orders with retry on transient failures.
-    pub async fn cancel_orders(&self, venue_order_ids: &[&str]) -> anyhow::Result<CancelResponse> {
+    pub(crate) async fn cancel_orders(
+        &self,
+        venue_order_ids: &[&str],
+    ) -> anyhow::Result<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
 
@@ -294,7 +300,10 @@ impl OrderSubmitter {
     /// Fetches a single order by its venue order ID from the CLOB REST API.
     ///
     /// Returns `Ok(None)` if the API returns an empty or `null` body (order not found / settled).
-    pub async fn get_order(&self, order_id: &str) -> anyhow::Result<Option<PolymarketOpenOrder>> {
+    pub(crate) async fn get_order(
+        &self,
+        order_id: &str,
+    ) -> anyhow::Result<Option<PolymarketOpenOrder>> {
         let http_client = self.http_client.clone();
         let oid = order_id.to_string();
 

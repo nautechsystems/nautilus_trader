@@ -34,7 +34,7 @@ use nautilus_persistence_macros::custom_data;
 /// Serializes NaN as JSON `null` and deserializes `null` back to NaN,
 /// avoiding `serde_json` errors on non-finite floats.
 mod nan_as_null {
-    pub fn serialize<S: serde::Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+    pub(super) fn serialize<S: serde::Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
         if v.is_nan() {
             s.serialize_none()
         } else {
@@ -42,7 +42,7 @@ mod nan_as_null {
         }
     }
 
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
         use serde::Deserialize;
         Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::NAN))
     }

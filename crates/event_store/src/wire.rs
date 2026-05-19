@@ -20,7 +20,7 @@
 //! raw `u64` and reconstructs the strong type on read.
 
 /// Serializes [`nautilus_core::UnixNanos`] as a raw `u64` so bincode can round-trip it.
-pub mod nanos_as_u64 {
+pub(crate) mod nanos_as_u64 {
     use nautilus_core::UnixNanos;
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -30,7 +30,10 @@ pub mod nanos_as_u64 {
     ///
     /// Propagates any error from the underlying serializer.
     #[allow(clippy::trivially_copy_pass_by_ref)] // serde contract requires &T
-    pub fn serialize<S: Serializer>(value: &UnixNanos, serializer: S) -> Result<S::Ok, S::Error> {
+    pub(crate) fn serialize<S: Serializer>(
+        value: &UnixNanos,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         serializer.serialize_u64(value.as_u64())
     }
 
@@ -39,14 +42,16 @@ pub mod nanos_as_u64 {
     /// # Errors
     ///
     /// Propagates any error from the underlying deserializer.
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<UnixNanos, D::Error> {
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<UnixNanos, D::Error> {
         let raw = u64::deserialize(deserializer)?;
         Ok(UnixNanos::from(raw))
     }
 }
 
 /// Serializes `Option<UnixNanos>` as `Option<u64>`.
-pub mod opt_nanos_as_u64 {
+pub(crate) mod opt_nanos_as_u64 {
     use nautilus_core::UnixNanos;
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -56,7 +61,7 @@ pub mod opt_nanos_as_u64 {
     ///
     /// Propagates any error from the underlying serializer.
     #[allow(clippy::ref_option)] // serde contract requires &Option<T>
-    pub fn serialize<S: Serializer>(
+    pub(crate) fn serialize<S: Serializer>(
         value: &Option<UnixNanos>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -71,7 +76,7 @@ pub mod opt_nanos_as_u64 {
     /// # Errors
     ///
     /// Propagates any error from the underlying deserializer.
-    pub fn deserialize<'de, D: Deserializer<'de>>(
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<UnixNanos>, D::Error> {
         let raw: Option<u64> = Option::deserialize(deserializer)?;

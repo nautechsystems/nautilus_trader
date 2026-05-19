@@ -21,11 +21,11 @@ use crate::websocket::spot_v2::client::KrakenSpotWebSocketClient;
 
 /// Maximum number of attempts when retrying a Kraken L3 resync after a
 /// transient `refresh_auth_token` or `send_command` failure.
-pub const L3_RESYNC_MAX_ATTEMPTS: u32 = 5;
+pub(crate) const L3_RESYNC_MAX_ATTEMPTS: u32 = 5;
 /// Initial backoff (milliseconds) between L3 resync attempts; doubles each retry up to the cap.
-pub const L3_RESYNC_INITIAL_BACKOFF_MS: u64 = 500;
+pub(crate) const L3_RESYNC_INITIAL_BACKOFF_MS: u64 = 500;
 /// Upper bound for the exponential backoff between L3 resync attempts.
-pub const L3_RESYNC_MAX_BACKOFF_MS: u64 = 8_000;
+pub(crate) const L3_RESYNC_MAX_BACKOFF_MS: u64 = 8_000;
 
 /// Retries `resync_book_l3` with exponential backoff so a transient REST/auth
 /// or send failure does not leave the local book stuck in `awaiting_snapshot`.
@@ -33,7 +33,7 @@ pub const L3_RESYNC_MAX_BACKOFF_MS: u64 = 8_000;
 /// On final failure logs an error and returns; callers surface no panic because
 /// the L3 handler stream remains alive and a fresh subscribe (after reconnect
 /// or manual re-subscribe) re-arms the runtime.
-pub async fn retry_l3_resync(client: &KrakenSpotWebSocketClient, symbol: Ustr, depth: u32) {
+pub(crate) async fn retry_l3_resync(client: &KrakenSpotWebSocketClient, symbol: Ustr, depth: u32) {
     let mut delay_ms = L3_RESYNC_INITIAL_BACKOFF_MS;
 
     for attempt in 1..=L3_RESYNC_MAX_ATTEMPTS {

@@ -313,7 +313,7 @@ impl DataActor for TestDataActor {
 
 // Custom functionality as required
 impl TestDataActor {
-    pub fn new(config: DataActorConfig) -> Self {
+    pub(crate) fn new(config: DataActorConfig) -> Self {
         Self {
             core: DataActorCore::new(config),
             received_time_events: Vec::new(),
@@ -345,7 +345,7 @@ impl TestDataActor {
     }
 
     #[allow(dead_code)]
-    pub fn custom_function(&self) {}
+    pub(crate) fn custom_function(&self) {}
 }
 
 #[fixture]

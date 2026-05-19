@@ -472,7 +472,7 @@ mod tests {
     use super::*;
     use crate::{instruments::stubs::*, types::Money};
 
-    pub fn default_price_increment(precision: u8) -> Price {
+    pub(super) fn default_price_increment(precision: u8) -> Price {
         let step = 10f64.powi(-i32::from(precision));
         Price::new(step, precision)
     }

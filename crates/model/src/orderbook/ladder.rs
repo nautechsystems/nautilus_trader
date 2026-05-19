@@ -125,7 +125,7 @@ pub(crate) struct BookLadder {
 impl BookLadder {
     /// Creates a new [`Ladder`] instance.
     #[must_use]
-    pub fn new(side: OrderSideSpecified, book_type: BookType) -> Self {
+    pub(crate) fn new(side: OrderSideSpecified, book_type: BookType) -> Self {
         Self {
             side,
             book_type,
@@ -137,21 +137,21 @@ impl BookLadder {
 
     /// Returns the number of price levels in the ladder.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
     #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
 
     /// Removes all orders and price levels from the ladder.
     ///
     /// Also resets the batch state to ensure clean handling of subsequent batches.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.levels.clear();
         self.cache.clear();
         self.batch_state = L1BatchState::None;
@@ -164,7 +164,7 @@ impl BookLadder {
     ///   accumulation even if `F_LAST` is never sent.
     /// - `F_TOB` or no batch flags (single replacement): Clears existing levels first,
     ///   allowing price to degrade.
-    pub fn add(&mut self, order: BookOrder, flags: u8) {
+    pub(crate) fn add(&mut self, order: BookOrder, flags: u8) {
         if self.book_type == BookType::L1_MBP && !self.handle_l1_add(&order, flags) {
             return;
         }
@@ -258,7 +258,7 @@ impl BookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
-    pub fn update(&mut self, order: BookOrder, flags: u8) {
+    pub(crate) fn update(&mut self, order: BookOrder, flags: u8) {
         let price = self.cache.get(&order.order_id).copied();
         if let Some(price) = price
             && let Some(level) = self.levels.get_mut(&price)
@@ -326,12 +326,12 @@ impl BookLadder {
     }
 
     /// Deletes an order from the ladder.
-    pub fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: UnixNanos) {
+    pub(crate) fn delete(&mut self, order: BookOrder, sequence: u64, ts_event: UnixNanos) {
         self.remove_order(order.order_id, sequence, ts_event);
     }
 
     /// Removes an order by its ID from the ladder.
-    pub fn remove_order(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
+    pub(crate) fn remove_order(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         if let Some(price) = self.cache.get(&order_id).copied()
             && let Some(level) = self.levels.get_mut(&price)
         {
@@ -368,7 +368,7 @@ impl BookLadder {
     }
 
     /// Removes an entire price level from the ladder and returns it.
-    pub fn remove_level(&mut self, price: BookPrice) -> Option<BookLevel> {
+    pub(crate) fn remove_level(&mut self, price: BookPrice) -> Option<BookLevel> {
         if let Some(level) = self.levels.remove(&price) {
             // Remove all orders in this level from the cache
             for order_id in level.orders.keys() {
@@ -430,20 +430,20 @@ impl BookLadder {
     /// Returns the total size of all orders in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn sizes(&self) -> f64 {
+    pub(crate) fn sizes(&self) -> f64 {
         self.levels.values().map(BookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
     #[allow(dead_code)]
-    pub fn exposures(&self) -> f64 {
+    pub(crate) fn exposures(&self) -> f64 {
         self.levels.values().map(BookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
-    pub fn top(&self) -> Option<&BookLevel> {
+    pub(crate) fn top(&self) -> Option<&BookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),
             None => Option::None,
@@ -453,7 +453,7 @@ impl BookLadder {
     /// Simulates fills for an order against this ladder's liquidity.
     /// Returns a list of (price, size) tuples representing the simulated fills.
     #[must_use]
-    pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
+    pub(crate) fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSideSpecified::Buy;
         let mut fills = Vec::new();
         let mut cumulative_denominator = Quantity::zero(order.size.precision);
@@ -500,7 +500,7 @@ impl Display for BookLadder {
 #[cfg(test)]
 impl BookLadder {
     /// Adds multiple orders to the ladder.
-    pub fn add_bulk(&mut self, orders: &[BookOrder]) {
+    pub(crate) fn add_bulk(&mut self, orders: &[BookOrder]) {
         for order in orders {
             self.add(*order, 0);
         }

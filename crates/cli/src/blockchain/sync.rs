@@ -27,7 +27,7 @@ use nautilus_model::defi::chain::Chain;
 
 use crate::opt::DatabaseConfig;
 
-pub async fn run_sync_dex(
+pub(crate) async fn run_sync_dex(
     chain: String,
     dex: String,
     rpc_url: Option<String>,
@@ -107,7 +107,7 @@ pub async fn run_sync_dex(
     Ok(())
 }
 
-pub async fn run_sync_blocks(
+pub(crate) async fn run_sync_blocks(
     chain: String,
     from_block: Option<u64>,
     to_block: Option<u64>,

@@ -45,7 +45,7 @@ fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNa
 
 /// Cached state for an open L3 order, used to detect price changes on modify events.
 #[derive(Debug, Clone)]
-pub struct CachedL3Order {
+pub(crate) struct CachedL3Order {
     /// Last known limit price.
     pub price: f64,
     /// Original JSON decimal string for `price`, used verbatim in checksum computation.
@@ -67,7 +67,7 @@ pub struct CachedL3Order {
 /// # Errors
 ///
 /// Returns an error if any price, quantity, or timestamp value cannot be parsed.
-pub fn parse_l3_snapshot(
+pub(crate) fn parse_l3_snapshot(
     snap: &KrakenL3Snapshot,
     instrument: &InstrumentAny,
     hasher: &BookOrderIdHasher,
@@ -159,7 +159,7 @@ pub fn parse_l3_snapshot(
 /// # Errors
 ///
 /// Returns an error if any price, quantity, or timestamp value cannot be parsed.
-pub fn parse_l3_update(
+pub(crate) fn parse_l3_update(
     update: &KrakenL3UpdateData,
     instrument: &InstrumentAny,
     hasher: &BookOrderIdHasher,

@@ -20,7 +20,7 @@ use crate::common::{enums::TardisExchange, parse::deserialize_uppercase};
 
 /// Represents a Tardis format order book update record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisBookUpdateRecord {
+pub(super) struct TardisBookUpdateRecord {
     /// The exchange ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.
@@ -42,7 +42,7 @@ pub struct TardisBookUpdateRecord {
 
 /// Represents a Tardis format order book 5 level snapshot record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisOrderBookSnapshot5Record {
+pub(super) struct TardisOrderBookSnapshot5Record {
     /// The exchange ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.
@@ -116,7 +116,7 @@ pub struct TardisOrderBookSnapshot5Record {
 
 /// Represents a Tardis format order book 25 level snapshot record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisOrderBookSnapshot25Record {
+pub(super) struct TardisOrderBookSnapshot25Record {
     /// The exchange ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.
@@ -331,7 +331,7 @@ pub struct TardisOrderBookSnapshot25Record {
 
 /// Represents a Tardis format quote record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisQuoteRecord {
+pub(super) struct TardisQuoteRecord {
     /// The exchande ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.
@@ -353,7 +353,7 @@ pub struct TardisQuoteRecord {
 
 /// Represents a Tardis format trade record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisTradeRecord {
+pub(super) struct TardisTradeRecord {
     /// The exchande ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.
@@ -377,7 +377,7 @@ pub struct TardisTradeRecord {
 
 /// Represents a Tardis format derivative ticker record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TardisDerivativeTickerRecord {
+pub(super) struct TardisDerivativeTickerRecord {
     /// The exchange ID.
     pub exchange: TardisExchange,
     /// The instrument symbol as provided by the exchange.

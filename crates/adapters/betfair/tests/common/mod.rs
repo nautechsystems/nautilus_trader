@@ -53,16 +53,16 @@ use tokio::{
     net::TcpListener,
 };
 
-pub fn data_path() -> PathBuf {
+pub(crate) fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
 }
 
-pub fn load_fixture(path: &str) -> String {
+pub(crate) fn load_fixture(path: &str) -> String {
     std::fs::read_to_string(data_path().join(path))
         .unwrap_or_else(|_| panic!("failed to read {path}"))
 }
 
-pub fn test_credential() -> BetfairCredential {
+pub(crate) fn test_credential() -> BetfairCredential {
     BetfairCredential::new(
         "testuser".to_string(),
         "testpass".to_string(),
@@ -70,7 +70,7 @@ pub fn test_credential() -> BetfairCredential {
     )
 }
 
-pub fn plain_stream_config(port: u16) -> BetfairStreamConfig {
+pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
     BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
@@ -83,7 +83,7 @@ pub fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 }
 
 #[derive(Clone, Default)]
-pub struct MockState {
+pub(crate) struct MockState {
     pub login_count: Arc<AtomicUsize>,
     pub keep_alive_count: Arc<AtomicUsize>,
     pub betting_request_count: Arc<AtomicUsize>,
@@ -280,7 +280,7 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
     axum::Json(response)
 }
 
-pub async fn start_mock_http() -> (SocketAddr, MockState) {
+pub(crate) async fn start_mock_http() -> (SocketAddr, MockState) {
     let state = MockState::default();
 
     let router = Router::new()
@@ -322,13 +322,13 @@ pub async fn start_mock_http() -> (SocketAddr, MockState) {
     (addr, state)
 }
 
-pub async fn start_mock_stream() -> (u16, TcpListener) {
+pub(crate) async fn start_mock_stream() -> (u16, TcpListener) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     (port, listener)
 }
 
-pub async fn accept_and_auth(
+pub(crate) async fn accept_and_auth(
     listener: &TcpListener,
 ) -> (
     BufReader<tokio::net::tcp::OwnedReadHalf>,
@@ -349,7 +349,7 @@ pub async fn accept_and_auth(
     (reader, write_half)
 }
 
-pub fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {
+pub(crate) fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {
     BetfairHttpClient::new(
         test_credential(),
         Some(10),

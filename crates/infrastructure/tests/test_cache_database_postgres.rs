@@ -56,7 +56,7 @@ mod serial_tests {
     use serde::Serialize;
     use ustr::Ustr;
 
-    pub fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
+    pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
         let a_serialized = serde_json::to_string(&a).unwrap();
         let b_serialized = serde_json::to_string(&b).unwrap();
 
