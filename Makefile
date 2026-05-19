@@ -883,14 +883,15 @@ sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
-build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (fast incremental builds)
+build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
+	@$(MAKE) --no-print-directory py-stubs-v2
 	$(info $(M) Building v2 extension in debug mode...)
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=../target-v2 uv run --no-sync maturin develop
 
 .PHONY: py-stubs-v2
-py-stubs-v2:  #-- Regenerate v2 Python type stubs from Rust bindings
+py-stubs-v2: sync-v2  #-- Regenerate v2 Python type stubs from Rust bindings
 	$(info $(M) Generating v2 Python type stubs...)
-	$Q CARGO_TARGET_DIR=target-v2 python python/generate_stubs.py
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(CURDIR)/target-v2 uv run --no-sync python generate_stubs.py
 
 .PHONY: update-v2
 update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
