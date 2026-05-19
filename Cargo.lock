@@ -6432,6 +6432,7 @@ dependencies = [
  "base64",
  "bon",
  "chrono",
+ "criterion",
  "dashmap",
  "derive_builder",
  "dotenvy",

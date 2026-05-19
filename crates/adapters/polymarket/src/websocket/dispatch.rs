@@ -21,7 +21,7 @@
 //! Trade fills are deduped via a FIFO cache. Maker and taker fills are
 //! handled separately to account for multi-leg maker order matching.
 
-use std::sync::Mutex;
+use std::{str::FromStr, sync::Mutex};
 
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
@@ -181,10 +181,11 @@ fn dispatch_order_update(
 
     // MATCHED convergence: check for dust residual
     if order.status == PolymarketOrderStatus::Matched {
-        let price = Price::new(
-            order.price.parse::<f64>().unwrap_or(0.0),
-            instrument.price_precision(),
-        );
+        let price_precision = instrument.price_precision();
+        let price = Decimal::from_str(&order.price)
+            .ok()
+            .and_then(|d| Price::from_decimal_dp(d, price_precision).ok())
+            .unwrap_or_else(|| Price::zero(price_precision));
 
         if let Some(dust_fill) = ctx.fill_tracker.check_dust_and_build_fill(
             &venue_order_id,
@@ -425,18 +426,20 @@ fn build_ws_order_status_report(
         crate::execution::parse::resolve_order_status(order.status, order.event_type);
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let quantity = Quantity::new(
-        order.original_size.parse::<f64>().unwrap_or(0.0),
-        instrument.size_precision(),
-    );
-    let filled_qty = Quantity::new(
-        order.size_matched.parse::<f64>().unwrap_or(0.0),
-        instrument.size_precision(),
-    );
-    let price = Price::new(
-        order.price.parse::<f64>().unwrap_or(0.0),
-        instrument.price_precision(),
-    );
+    let size_precision = instrument.size_precision();
+    let price_precision = instrument.price_precision();
+    let quantity = Decimal::from_str(&order.original_size)
+        .ok()
+        .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
+        .unwrap_or_else(|| Quantity::zero(size_precision));
+    let filled_qty = Decimal::from_str(&order.size_matched)
+        .ok()
+        .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
+        .unwrap_or_else(|| Quantity::zero(size_precision));
+    let price = Decimal::from_str(&order.price)
+        .ok()
+        .and_then(|d| Price::from_decimal_dp(d, price_precision).ok())
+        .unwrap_or_else(|| Price::zero(price_precision));
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -475,19 +478,17 @@ fn build_ws_taker_fill_report(
         trade.asset_id.as_str(),
     );
 
-    let last_qty = Quantity::new(
-        trade.size.parse::<f64>().unwrap_or(0.0),
-        instrument.size_precision(),
-    );
-    let last_px = Price::new(
-        trade.price.parse::<f64>().unwrap_or(0.0),
-        instrument.price_precision(),
-    );
+    let size_precision = instrument.size_precision();
+    let price_precision = instrument.price_precision();
+    let size_dec = Decimal::from_str(&trade.size).unwrap_or_default();
+    let price_dec = Decimal::from_str(&trade.price).unwrap_or_default();
+    let last_qty = Quantity::from_decimal_dp(size_dec, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let last_px = Price::from_decimal_dp(price_dec, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
 
     let fee_rate = instrument_taker_fee(instrument);
-    let size: Decimal = trade.size.parse().unwrap_or_default();
-    let price_dec: Decimal = trade.price.parse().unwrap_or_default();
-    let commission_value = compute_commission(fee_rate, size, price_dec, liquidity_side);
+    let commission_value = compute_commission(fee_rate, size_dec, price_dec, liquidity_side);
     let pusd = crate::execution::get_pusd_currency();
 
     FillReport {
