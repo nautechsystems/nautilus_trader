@@ -981,7 +981,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.type(command, SubmitOrder, "command")
 
         try:
-            self._ensure_client_ready_for_order_submission()
+            self._ensure_client_ready_for_order_request("submit order")
             ib_order: IBOrder = self._transform_order_to_ib_order(
                 command.order,
                 command.params,
@@ -1000,7 +1000,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.type(command, SubmitOrderList, "command")
 
         try:
-            self._ensure_client_ready_for_order_submission()
+            self._ensure_client_ready_for_order_request("submit order list")
         except ValueError as e:
             for order in command.order_list.orders:
                 self._handle_order_event(
@@ -1064,6 +1064,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if not (command.quantity or command.price or command.trigger_price):
             return
 
+        try:
+            self._ensure_client_ready_for_order_request("modify order")
+        except ValueError as e:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         nautilus_order: Order = self._cache.order(command.client_order_id)
         self._log.info(f"Nautilus order status is {nautilus_order.status_string()}")
 
@@ -1117,10 +1130,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
 
-    def _ensure_client_ready_for_order_submission(self) -> None:
-        if not self._client._is_client_ready.is_set():
+    def _ensure_client_ready_for_order_request(self, request: str) -> None:
+        if not self._client.is_client_ready:
             raise ValueError(
-                "Interactive Brokers client is not ready; refusing to submit order",
+                f"Interactive Brokers client is not ready; refusing to {request}",
             )
 
     def _transform_order_to_ib_order(  # noqa: C901
@@ -1433,6 +1446,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
 
+        try:
+            self._ensure_client_ready_for_order_request("cancel order")
+        except ValueError as e:
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         venue_order_id = command.venue_order_id
 
         if venue_order_id:
@@ -1446,6 +1472,22 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 f"Interactive Brokers does not support order_side filtering for cancel all orders; "
                 f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
             )
+
+        try:
+            self._ensure_client_ready_for_order_request("cancel orders")
+        except ValueError as e:
+            for order in self._cache.orders_open(
+                instrument_id=command.instrument_id,
+            ):
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+            return
 
         for order in self._cache.orders_open(
             instrument_id=command.instrument_id,
