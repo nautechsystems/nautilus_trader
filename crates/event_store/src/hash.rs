@@ -87,9 +87,8 @@ pub fn compute_entry_hash(
     write_str(&mut hasher, topic);
     write_str(&mut hasher, payload_type);
     write_bytes(&mut hasher, payload);
-    write_optional_uuid(&mut hasher, headers.intent_id.as_ref());
     write_optional_uuid(&mut hasher, headers.correlation_id.as_ref());
-    write_optional_uuid(&mut hasher, headers.caused_by.as_ref());
+    write_optional_uuid(&mut hasher, headers.causation_id.as_ref());
     EntryHash(*hasher.finalize().as_bytes())
 }
 
@@ -172,9 +171,8 @@ mod tests {
     #[case::topic(|i: &mut HashInput| i.topic = "other".to_string())]
     #[case::payload_type(|i: &mut HashInput| i.payload_type = "Other".to_string())]
     #[case::payload(|i: &mut HashInput| i.payload = Bytes::from_static(b"\xFF"))]
-    #[case::intent_id(|i: &mut HashInput| i.headers.intent_id = Some(UUID4::new()))]
     #[case::correlation_id(|i: &mut HashInput| i.headers.correlation_id = Some(UUID4::new()))]
-    #[case::caused_by(|i: &mut HashInput| i.headers.caused_by = Some(UUID4::new()))]
+    #[case::causation_id(|i: &mut HashInput| i.headers.causation_id = Some(UUID4::new()))]
     fn every_input_field_affects_hash(#[case] mutate: fn(&mut HashInput)) {
         let input = baseline();
         let mut mutated = input.clone();
@@ -219,7 +217,33 @@ mod tests {
 
         assert_eq!(
             hash_of(&input).to_hex(),
-            "df93fd9a07f7b88a2ecd9b018fe52192510519a90da7b2b9b06371cc4c0da5be",
+            "06b08d9615241ccdee4c21303e8d5a21682ceb085eb4eaf170365c700836e620",
+        );
+    }
+
+    #[rstest]
+    fn compute_entry_hash_known_vector_populated_headers() {
+        // Pinning the BLAKE3 wire format with distinct correlation_id and causation_id
+        // values. The empty-headers vector above is insensitive to write-order changes
+        // between the two header fields (both write a single 0x00 None marker); this
+        // vector flips if the writer ever swaps the two fields' positions.
+        let correlation = UUID4::from_bytes([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
+        ]);
+        let causation = UUID4::from_bytes([
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E,
+            0x1F, 0x20,
+        ]);
+        let mut input = baseline();
+        input.headers = Headers {
+            correlation_id: Some(correlation),
+            causation_id: Some(causation),
+        };
+
+        assert_eq!(
+            hash_of(&input).to_hex(),
+            "69be87a947cbfb61dd445908ae5825ada0b679bb3c9dd7e8cb14dcc0baf74eaa",
         );
     }
 

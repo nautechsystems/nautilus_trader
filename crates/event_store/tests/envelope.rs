@@ -101,9 +101,8 @@ fn entry_round_trip_populated_headers() {
     // still validate; catches regressions in `wire::nanos_as_u64` and in
     // `Option<UUID4>` serde coupling under non-self-describing formats.
     let headers = Headers {
-        intent_id: Some(UUID4::new()),
         correlation_id: Some(UUID4::new()),
-        caused_by: Some(UUID4::new()),
+        causation_id: Some(UUID4::new()),
     };
     let entry = entry_with(headers);
     let decoded = round_trip(&entry);

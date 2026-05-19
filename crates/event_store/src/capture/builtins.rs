@@ -69,6 +69,7 @@ use crate::{
         registry::EncoderRegistry,
     },
     entry::PayloadType,
+    headers::Headers,
 };
 
 /// The canonical `payload_type` tag for [`SubmitOrder`].
@@ -263,6 +264,109 @@ pub fn register_default(registry: &mut EncoderRegistry) {
         payload_type(PAYLOAD_TYPE_DATA_RESPONSE),
         encode_data_response,
     );
+
+    register_default_headers(registry);
+}
+
+/// Attaches header extractors for every type that carries `correlation_id` or
+/// `causation_id` today.
+///
+/// Header propagation lands incrementally per the SPEC's workstream A: extractors only
+/// exist for types whose underlying struct has grown the fields. Other types fall back to
+/// the registry's no-op extractor, which yields [`Headers::empty`]; capture still works
+/// for them, the entry just carries no correlation metadata until the field set arrives.
+fn register_default_headers(registry: &mut EncoderRegistry) {
+    registry.register_headers::<SubmitOrder, _>(extract_submit_order_headers);
+    registry.register_headers::<SubmitOrderList, _>(extract_submit_order_list_headers);
+    registry.register_headers::<ModifyOrder, _>(extract_modify_order_headers);
+    registry.register_headers::<CancelOrder, _>(extract_cancel_order_headers);
+    registry.register_headers::<CancelAllOrders, _>(extract_cancel_all_orders_headers);
+    registry.register_headers::<BatchCancelOrders, _>(extract_batch_cancel_orders_headers);
+    registry.register_headers::<QueryOrder, _>(extract_query_order_headers);
+    registry.register_headers::<QueryAccount, _>(extract_query_account_headers);
+    registry.register_headers::<TradingCommand, _>(extract_trading_command_headers);
+    registry.register_headers::<DataCommand, _>(extract_data_command_headers);
+    registry.register_headers::<DataResponse, _>(extract_data_response_headers);
+}
+
+fn headers_from_fields(correlation_id: Option<UUID4>, causation_id: Option<UUID4>) -> Headers {
+    Headers {
+        correlation_id,
+        causation_id,
+    }
+}
+
+fn extract_submit_order_headers(cmd: &SubmitOrder) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_submit_order_list_headers(cmd: &SubmitOrderList) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_modify_order_headers(cmd: &ModifyOrder) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_cancel_order_headers(cmd: &CancelOrder) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_cancel_all_orders_headers(cmd: &CancelAllOrders) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_batch_cancel_orders_headers(cmd: &BatchCancelOrders) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_query_order_headers(cmd: &QueryOrder) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+fn extract_query_account_headers(cmd: &QueryAccount) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
+// `send_trading_command` reaches the bus tap with the wrapper's `TypeId`, so the
+// extractor must mirror the encoder's variant dispatch to surface the inner command's
+// correlation metadata on the captured entry.
+fn extract_trading_command_headers(command: &TradingCommand) -> Headers {
+    match command {
+        TradingCommand::SubmitOrder(cmd) => extract_submit_order_headers(cmd),
+        TradingCommand::SubmitOrderList(cmd) => extract_submit_order_list_headers(cmd),
+        TradingCommand::ModifyOrder(cmd) => extract_modify_order_headers(cmd),
+        TradingCommand::CancelOrder(cmd) => extract_cancel_order_headers(cmd),
+        TradingCommand::CancelAllOrders(cmd) => extract_cancel_all_orders_headers(cmd),
+        TradingCommand::BatchCancelOrders(cmd) => extract_batch_cancel_orders_headers(cmd),
+        TradingCommand::QueryOrder(cmd) => extract_query_order_headers(cmd),
+        TradingCommand::QueryAccount(cmd) => extract_query_account_headers(cmd),
+    }
+}
+
+// `send_data_command` reaches the bus tap with the wrapper's `TypeId`. The data engine
+// keys RPC request/response pairs by the request's `request_id`: the response's
+// `correlation_id` echoes that uuid back. Surfacing `request_id` as the captured entry's
+// `correlation_id` therefore lines a request entry up with its eventual response entry
+// under the same chain key. Subscribe / Unsubscribe variants carry an explicit
+// `correlation_id` field, which we forward as-is. DeFi variants are not yet wired through
+// header propagation.
+fn extract_data_command_headers(command: &DataCommand) -> Headers {
+    match command {
+        DataCommand::Request(cmd) => headers_from_fields(Some(*cmd.request_id()), None),
+        DataCommand::Subscribe(cmd) => headers_from_fields(cmd.correlation_id(), None),
+        DataCommand::Unsubscribe(cmd) => headers_from_fields(cmd.correlation_id(), None),
+        // `DataCommand` is `#[non_exhaustive]` and the defi variants do not yet carry
+        // header propagation; future variants drop through this arm with empty headers
+        // until their correlation field shape lands.
+        _ => Headers::empty(),
+    }
+}
+
+// Every `DataResponse` variant carries a required `correlation_id` that pairs the
+// response with its originating request; the captured entry mirrors that value.
+fn extract_data_response_headers(response: &DataResponse) -> Headers {
+    headers_from_fields(Some(*response.correlation_id()), None)
 }
 
 fn payload_type(tag: &str) -> PayloadType {
@@ -929,8 +1033,8 @@ pub fn encode_order_status_report(
 ///
 /// `AccountState` carries `AccountId` and `event_id` (UUID4); neither matches an
 /// [`IndexKind`] variant today, so the encoder emits no sidecar keys and forensics
-/// scans rely on sequential range or the header-derived `intent_id` index. This
-/// mirrors the [`PositionStatusReport`] precedent.
+/// scans rely on sequential range over `seq`. This mirrors the [`PositionStatusReport`]
+/// precedent.
 ///
 /// # Errors
 ///
@@ -3198,5 +3302,260 @@ mod tests {
 
         assert_eq!(tag.as_str(), PAYLOAD_TYPE_QUOTES_RESPONSE);
         assert!(encoded.index_keys.is_empty());
+    }
+
+    #[rstest]
+    fn data_response_headers_extractor_surfaces_correlation_id() {
+        // The data engine pairs RPC requests and responses by correlation_id (see
+        // `crates/data/src/engine/mod.rs` `send_response`). Captured DataResponse entries
+        // must carry that uuid in `Headers::correlation_id` so forensics can join a
+        // captured response to its request.
+        let registry = default_registry();
+        let response = make_quotes_response();
+        let expected = response.correlation_id;
+        let envelope = DataResponse::Quotes(response);
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, Some(expected));
+        assert_eq!(headers.causation_id, None);
+    }
+
+    #[rstest]
+    fn data_command_request_headers_use_request_id_as_correlation() {
+        // The request_id of an outbound RequestCommand IS the chain root: the eventual
+        // DataResponse echoes the same uuid back as its correlation_id. Surfacing
+        // request_id in `Headers::correlation_id` lines the request entry up with its
+        // response entry under one chain key.
+        let registry = default_registry();
+        let request = make_quotes_request();
+        let expected = request.request_id;
+        let envelope = DataCommand::Request(RequestCommand::Quotes(request));
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, Some(expected));
+    }
+
+    #[rstest]
+    fn data_command_subscribe_headers_surface_correlation_id() {
+        // Subscribe variants carry an optional correlation_id field; the extractor
+        // must forward whatever the inner command reports so captured subscribe
+        // traffic joins its acknowledgements under one chain key.
+        let registry = default_registry();
+        let subscribe = make_subscribe_command();
+        let expected = subscribe.correlation_id();
+        let envelope = DataCommand::Subscribe(subscribe);
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, expected);
+    }
+
+    #[rstest]
+    fn data_command_unsubscribe_headers_surface_correlation_id() {
+        let registry = default_registry();
+        let unsubscribe = make_unsubscribe_command();
+        let expected = unsubscribe.correlation_id();
+        let envelope = DataCommand::Unsubscribe(unsubscribe);
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, expected);
+    }
+
+    #[rstest]
+    #[case::submit_order(trading_command_submit_order)]
+    #[case::submit_order_list(trading_command_submit_order_list)]
+    #[case::modify_order(trading_command_modify_order)]
+    #[case::cancel_order(trading_command_cancel_order)]
+    #[case::cancel_all_orders(trading_command_cancel_all_orders)]
+    #[case::batch_cancel_orders(trading_command_batch_cancel_orders)]
+    #[case::query_order(trading_command_query_order)]
+    #[case::query_account(trading_command_query_account)]
+    fn trading_command_extractor_surfaces_both_headers(
+        #[case] builder: fn() -> (TradingCommand, UUID4, UUID4),
+    ) {
+        // The TradingCommand envelope dispatch must route every variant to the matching
+        // per-type extractor and forward both correlation_id and causation_id intact.
+        // A swap of args inside any extract_*_headers helper or a misrouted wrapper arm
+        // is caught by exercising each variant with distinct populated values.
+        let (envelope, corr, caus) = builder();
+        let registry = default_registry();
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, Some(corr));
+        assert_eq!(headers.causation_id, Some(caus));
+    }
+
+    fn trading_command_submit_order() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_submit_order();
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::SubmitOrder(cmd), corr, caus)
+    }
+
+    fn trading_command_submit_order_list() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_submit_order_list(vec![client_order_id()]);
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::SubmitOrderList(cmd), corr, caus)
+    }
+
+    fn trading_command_modify_order() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_modify_order(Some(venue_order_id()));
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::ModifyOrder(cmd), corr, caus)
+    }
+
+    fn trading_command_cancel_order() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_cancel_order();
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::CancelOrder(cmd), corr, caus)
+    }
+
+    fn trading_command_cancel_all_orders() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_cancel_all_orders();
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::CancelAllOrders(cmd), corr, caus)
+    }
+
+    fn trading_command_batch_cancel_orders() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_batch_cancel_orders(vec![make_cancel_order()]);
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::BatchCancelOrders(cmd), corr, caus)
+    }
+
+    fn trading_command_query_order() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_query_order(Some(venue_order_id()));
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::QueryOrder(cmd), corr, caus)
+    }
+
+    fn trading_command_query_account() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_query_account();
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::QueryAccount(cmd), corr, caus)
+    }
+
+    #[rstest]
+    #[case::data(data_response_data())]
+    #[case::instrument(data_response_instrument())]
+    #[case::instruments(data_response_instruments())]
+    #[case::book(data_response_book())]
+    #[case::quotes(data_response_quotes())]
+    #[case::trades(data_response_trades())]
+    #[case::funding_rates(data_response_funding_rates())]
+    #[case::forward_prices(data_response_forward_prices())]
+    #[case::bars(data_response_bars())]
+    fn data_response_extractor_surfaces_correlation_id_for_every_variant(
+        #[case] envelope_with_expected: (DataResponse, UUID4),
+    ) {
+        // Every DataResponse variant carries a required correlation_id paired with its
+        // originating request; the extractor must forward that uuid intact regardless
+        // of which variant is captured.
+        let (envelope, expected) = envelope_with_expected;
+        let registry = default_registry();
+
+        let headers = registry
+            .headers_for_any(&envelope as &dyn std::any::Any)
+            .expect("registered");
+        assert_eq!(headers.correlation_id, Some(expected));
+        assert_eq!(headers.causation_id, None);
+    }
+
+    fn data_response_data() -> (DataResponse, UUID4) {
+        let resp = make_custom_data_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Data(resp), expected)
+    }
+
+    fn data_response_instrument() -> (DataResponse, UUID4) {
+        let resp = make_instrument_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Instrument(Box::new(resp)), expected)
+    }
+
+    fn data_response_instruments() -> (DataResponse, UUID4) {
+        let resp = make_instruments_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Instruments(resp), expected)
+    }
+
+    fn data_response_book() -> (DataResponse, UUID4) {
+        let resp = make_book_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Book(resp), expected)
+    }
+
+    fn data_response_quotes() -> (DataResponse, UUID4) {
+        let resp = make_quotes_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Quotes(resp), expected)
+    }
+
+    fn data_response_trades() -> (DataResponse, UUID4) {
+        let resp = make_trades_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Trades(resp), expected)
+    }
+
+    fn data_response_funding_rates() -> (DataResponse, UUID4) {
+        let resp = make_funding_rates_response();
+        let expected = resp.correlation_id;
+        (DataResponse::FundingRates(resp), expected)
+    }
+
+    fn data_response_forward_prices() -> (DataResponse, UUID4) {
+        let resp = make_forward_prices_response();
+        let expected = resp.correlation_id;
+        (DataResponse::ForwardPrices(resp), expected)
+    }
+
+    fn data_response_bars() -> (DataResponse, UUID4) {
+        let resp = make_bars_response();
+        let expected = resp.correlation_id;
+        (DataResponse::Bars(resp), expected)
+    }
+
+    fn make_quotes_request() -> RequestQuotes {
+        RequestQuotes {
+            instrument_id: InstrumentId::from("EUR/USD.SIM"),
+            start: None,
+            end: None,
+            limit: None,
+            client_id: None,
+            request_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        }
     }
 }

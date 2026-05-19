@@ -20,9 +20,9 @@
 //! - The canonical payload bytes, written verbatim into the entry's `payload` field. The
 //!   reader pairs the bytes with [`crate::PayloadType`] to dispatch the matching decoder.
 //! - The sidecar [`IndexKey`]s the writer commits in the same backend transaction so
-//!   forensics scans by `intent_id`, `client_order_id`, or `venue_order_id` resolve to a
-//!   committed `seq` rather than missing entries the reader can observe before the
-//!   indices catch up.
+//!   forensics scans by `client_order_id` or `venue_order_id` resolve to a committed
+//!   `seq` rather than missing entries the reader can observe before the indices catch
+//!   up.
 //!
 //! The trait is type-erased so the registry can lookup by [`std::any::TypeId`]; concrete
 //! encoders are typed via the [`TypedEncoder`] adapter and avoid downcasting at the call

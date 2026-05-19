@@ -20,19 +20,23 @@ use serde::{Deserialize, Serialize};
 
 /// First-class metadata propagated end-to-end across captured messages.
 ///
-/// All fields default to `None` so capture works before propagation discipline lands across
-/// the command, event, and reconciliation report types. Once a field is populated, the bus
-/// capture adapter writes it through; replay never invents values.
+/// Fields are ordered from most abstract (workflow grouping) to most concrete (one-hop
+/// lineage), matching the CQRS / event-sourcing convention (`EventStore`, Axon, Marten
+/// all list correlation, then causation, then message id). All fields default to `None` so
+/// capture works before propagation discipline lands across the command, event, and
+/// reconciliation report types. Once a field is populated, the bus capture adapter writes
+/// it through; replay never invents values.
+///
+/// Agent-level intent is not a separate field at this layer: when an agent decision is
+/// lowered into a bus message, the agent's `intent_id` is written to the message's
+/// `correlation_id`, so forensics queries that need "find by agent intent" scan the
+/// captured stream by `correlation_id`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Headers {
-    /// The agent or strategy intent that originated this message, if known.
-    ///
-    /// Replay keys forensics and decision-correlation lookups by `intent_id`.
-    pub intent_id: Option<UUID4>,
     /// The correlation chain id that ties commands, events, and reports to one logical action.
     pub correlation_id: Option<UUID4>,
     /// The id of the message that directly caused this one, if any.
-    pub caused_by: Option<UUID4>,
+    pub causation_id: Option<UUID4>,
 }
 
 impl Headers {
@@ -40,16 +44,15 @@ impl Headers {
     #[must_use]
     pub const fn empty() -> Self {
         Self {
-            intent_id: None,
             correlation_id: None,
-            caused_by: None,
+            causation_id: None,
         }
     }
 
     /// Returns `true` if every header field is unset.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.intent_id.is_none() && self.correlation_id.is_none() && self.caused_by.is_none()
+        self.correlation_id.is_none() && self.causation_id.is_none()
     }
 }
 
@@ -69,9 +72,8 @@ mod tests {
     #[rstest]
     fn populated_headers_are_not_empty() {
         let headers = Headers {
-            intent_id: Some(UUID4::new()),
-            correlation_id: None,
-            caused_by: None,
+            correlation_id: Some(UUID4::new()),
+            causation_id: None,
         };
         assert!(!headers.is_empty());
     }

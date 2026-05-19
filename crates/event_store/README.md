@@ -71,7 +71,9 @@ The store also enables:
 
 - Forensics: "show me everything that touched this order" as an event-store scan.
 - Counterfactual research: mutate the recorded stream and rerun under deterministic simulation.
-- End-to-end correlation of agent decisions: envelope plus log slice keyed by `intent_id`.
+- End-to-end correlation of agent decisions: envelope plus log slice keyed by
+  `correlation_id` (the value the agent's `intent_id` is lowered into at the dispatch
+  boundary).
 - Eval reproducibility: A/B agent policies against the same captured world stream.
 
 ## Non-goals
@@ -96,9 +98,60 @@ The store also enables:
   Snapshots are anchored to this value.
 - **Snapshot anchor.** The high-watermark recorded atomically with a cache snapshot. Replay from
   a snapshot resumes at `seq > anchor`.
-- **Headers.** First-class metadata propagated end-to-end: `intent_id`, `correlation_id`,
-  `caused_by`. Header propagation spans command construction, endpoint sends, generated events,
-  and reconciliation reports.
+- **Headers.** First-class metadata propagated end-to-end: `correlation_id`, `causation_id`.
+  See [Correlation model](#correlation-model) for the hierarchy. Header propagation lands
+  incrementally per Workstream A: today the capture path surfaces both fields from every
+  execution command (`SubmitOrder`, `ModifyOrder`, `CancelOrder`, the `Generate*` report
+  commands, etc.) and `correlation_id` from `DataResponse` / `DataCommand::Subscribe` /
+  `Unsubscribe`. Generated order/position events and reconciliation reports grow header
+  extractors as their structs carry the fields.
+
+## Correlation model
+
+Every captured entry carries three id concepts that together let forensics answer scope,
+lineage, and identity questions. They are ordered below from most abstract (the whole chain)
+to most concrete (a single message), matching the CQRS / event-sourcing convention
+(EventStore, Axon, Marten all list correlation, then causation, then message id) and the
+field order on message structs:
+
+Chain grouping (answers "which logical workflow am I part of?"):
+
+- `correlation_id`: every message in one logical workflow shares this id. Heritage NT field
+  on the Cython `Command` base class; the Rust port carries it natively on every execution
+  command, `Generate*` report command, `DataResponse`, and `Subscribe*` / `Unsubscribe*`
+  variant. Used today for RPC pairing (request mints, response echoes) but the field's
+  scope is the chain root in general. The agent-level intent id is lowered to
+  `correlation_id` at the dispatch boundary, so any future forensics that need "find by
+  agent intent" can scan the captured stream by `correlation_id`. The event store does not
+  index this field yet; a dedicated sidecar index will land when a concrete forensics
+  caller surfaces the lookup pattern.
+
+Edge between messages (answers "who is my parent?"):
+
+- `causation_id`: points up to the `id` of the message that directly caused this one. Walk
+  it back to reconstruct the full causal chain. Standard CQRS / event-sourcing term
+  (EventStore, Axon, Marten all use the same name).
+
+Per-message identity (answers "who am I?"):
+
+- `command_id`: unique id of this command instance, minted at construction.
+- `event_id`: unique id of this event instance, minted at construction.
+- `report_id`: unique id of this report instance, minted at construction.
+
+In short: `correlation_id` answers scope (sequential scan today, indexed lookup when a
+forensics caller demands it), `causation_id` answers lineage (tree walk), and the
+per-message ids answer identity. Together they let forensics ask "show me the chain this
+message belongs to" (`correlation_id` filter) and "show me the direct ancestors of this
+event" (walk `causation_id`).
+
+### Agent intent lowers to correlation
+
+Higher-level agent envelopes carry their own `intent_id` at the decision layer. When the
+agent's decision is lowered into a bus message (e.g. a `SubmitOrder`), the lowering
+boundary writes the agent's `intent_id` to the message's `correlation_id`. The bus and the
+event store therefore see only the three fields above; the value is preserved across the
+layer change, so an agent envelope and its downstream messages join on
+`agent.intent_id == message.correlation_id`.
 
 ## Capture surface
 
@@ -208,7 +261,9 @@ The tap must fire before fanout, never after. Three guarantees depend on it:
   secondary indices.
 - A single writer for each run, responsible for batching, durability, high-watermark advancement,
   and fail-stop signaling.
-- A reader for range scans, entity lookups, `intent_id` lookups, and run iteration.
+- A reader for range scans, entity lookups (`client_order_id`, `venue_order_id`), and run
+  iteration. Chain lookups by `correlation_id` scan the captured stream today; a sidecar
+  index will land when a concrete forensics caller surfaces the lookup pattern.
 - A message bus capture adapter that converts captured bus traffic into event-store entries and
   hands them to the writer.
 
@@ -220,13 +275,14 @@ alpha implementation details.
 ## On-disk layout
 
 The on-disk realization is backend-specific. The crate exposes only the logical layout. Every
-backend stores per-run entries keyed by `seq`, with sidecar indices for `intent_id` and message
-id lookups, plus a manifest and an optional snapshot anchor.
+backend stores per-run entries keyed by `seq`, with sidecar indices for `client_order_id` and
+`venue_order_id` lookups, plus a manifest and an optional snapshot anchor.
 
 Logical layout, per-run:
 
 - A monotonic ordered sequence of event entries keyed by `seq`.
-- Indices: `intent_id -> seq`, `client_order_id -> seq`, `venue_order_id -> seq`.
+- Indices: `client_order_id -> seq`, `venue_order_id -> seq`. A `correlation_id -> seq`
+  index can be added later when a forensics caller surfaces the lookup pattern.
 - Manifest (durably committed at run start, sealed at end).
 - Snapshot anchor (high-watermark plus snapshot blob reference) recorded atomically with each
   cache snapshot.
@@ -264,8 +320,9 @@ records the crashed predecessor's `run_id` as its `parent_run_id`.
 
 ## Replay modes
 
-- **Forensics replay** (event store only). Range scan by `seq`, or lookup by `intent_id` /
-  `client_order_id` / `venue_order_id`. Loads in seconds for a day's run; no data catalog needed.
+- **Forensics replay** (event store only). Range scan by `seq`, filter by `correlation_id`,
+  or lookup by `client_order_id` / `venue_order_id`. Loads in seconds for a day's run; no
+  data catalog needed.
 - **Decision replay** (event store plus selected data catalog topics). Stream-table join: the
   catalog snapshot at run start plus subscription deltas during the run. Joined by `ts_init`,
   filtered by the strategy or agent's `Subscribe*` activations from the captured stream.
@@ -413,10 +470,9 @@ Two consequences:
    single canonical hash over its full content (`seq`, `ts_init`, `ts_publish`, `topic`,
    `payload_type`, `payload`, `headers`) computed at capture time and stored alongside the
    entry. Readers, replay, export, and the verifier process recompute and check it; a
-   mismatch quarantines the run. Sidecar indices (`intent_id -> seq`,
-   `client_order_id -> seq`, `venue_order_id -> seq`) are rebuildable projections from the
-   `seq -> entry` table, not authoritative storage; the verifier rebuilds and cross-checks
-   them. Corruption that `redb` misses is caught by hash mismatch on the next read of the
+   mismatch quarantines the run. Sidecar indices (`client_order_id -> seq`,
+   `venue_order_id -> seq`) are rebuildable projections from the `seq -> entry` table, not
+   authoritative storage; the verifier cross-checks them. Corruption that `redb` misses is caught by hash mismatch on the next read of the
    affected entry, and the run never proceeds unaudited.
 
 Sealed runs may be exported to opt-in downstream sinks. An outage of any downstream sink
@@ -427,7 +483,7 @@ never blocks trading.
 [Nautilus Agents](https://github.com/nautechsystems/nautilus_agents) records each agent decision
 cycle as a `DecisionEnvelope`. The event store records the engine-side history that surrounds that
 decision: the ordered world inputs, the command stream, and the generated state-affecting events
-keyed by `intent_id`.
+keyed by `correlation_id` (the agent's `intent_id` lowered at the dispatch boundary).
 
 Together, the decision envelope and the event-store slice form one auditable transaction:
 

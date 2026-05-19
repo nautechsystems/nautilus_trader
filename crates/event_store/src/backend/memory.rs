@@ -56,7 +56,6 @@ struct RunState {
 
 #[derive(Debug, Default)]
 struct Indices {
-    intent: IndexMap<String, u64>,
     client_order: IndexMap<String, u64>,
     venue_order: IndexMap<String, u64>,
 }
@@ -64,7 +63,6 @@ struct Indices {
 impl Indices {
     fn map_for(&self, kind: IndexKind) -> &IndexMap<String, u64> {
         match kind {
-            IndexKind::IntentId => &self.intent,
             IndexKind::ClientOrderId => &self.client_order,
             IndexKind::VenueOrderId => &self.venue_order,
         }
@@ -72,7 +70,6 @@ impl Indices {
 
     fn map_for_mut(&mut self, kind: IndexKind) -> &mut IndexMap<String, u64> {
         match kind {
-            IndexKind::IntentId => &mut self.intent,
             IndexKind::ClientOrderId => &mut self.client_order,
             IndexKind::VenueOrderId => &mut self.venue_order,
         }
@@ -398,7 +395,7 @@ mod tests {
                 .scan_range(1, 1, ScanDirection::Forward)
                 .unwrap_err(),
             "scan_seq" => backend.scan_seq(1).unwrap_err(),
-            "lookup" => backend.lookup(IndexKind::IntentId, "k").unwrap_err(),
+            "lookup" => backend.lookup(IndexKind::ClientOrderId, "k").unwrap_err(),
             "record_snapshot_anchor" => backend
                 .record_snapshot_anchor(SnapshotAnchor::new(0, "blob", "hash"))
                 .unwrap_err(),
@@ -644,7 +641,6 @@ mod tests {
 
     #[rstest]
     fn lookup_records_first_occurrence_per_kind(mut open_backend: MemoryBackend) {
-        let intent = "intent-1".to_string();
         let cl_ord = "O-1".to_string();
         let venue = "V-1".to_string();
         open_backend
@@ -652,7 +648,6 @@ mod tests {
                 AppendEntry::new(
                     build_entry(1, Headers::empty(), 10),
                     vec![
-                        IndexKey::new(IndexKind::IntentId, intent.clone()),
                         IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                         IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                     ],
@@ -661,7 +656,6 @@ mod tests {
                     build_entry(2, Headers::empty(), 11),
                     vec![
                         // Same keys re-emitted: lookups must continue to point at seq=1.
-                        IndexKey::new(IndexKind::IntentId, intent.clone()),
                         IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                         IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                     ],
@@ -669,12 +663,6 @@ mod tests {
             ])
             .expect("append");
 
-        assert_eq!(
-            open_backend
-                .lookup(IndexKind::IntentId, &intent)
-                .expect("lookup"),
-            Some(1),
-        );
         assert_eq!(
             open_backend
                 .lookup(IndexKind::ClientOrderId, &cl_ord)
@@ -689,7 +677,7 @@ mod tests {
         );
         assert!(
             open_backend
-                .lookup(IndexKind::IntentId, "missing")
+                .lookup(IndexKind::ClientOrderId, "missing")
                 .expect("lookup")
                 .is_none(),
         );
@@ -876,7 +864,7 @@ mod tests {
         // Backend treats AppendEntry::index_keys as the sole authority. Headers on
         // the entry are not auto-extracted; the writer/encoder is responsible.
         let headers = Headers {
-            intent_id: Some(UUID4::new()),
+            correlation_id: Some(UUID4::new()),
             ..Headers::empty()
         };
         open_backend
@@ -885,7 +873,7 @@ mod tests {
 
         assert!(
             open_backend
-                .lookup(IndexKind::IntentId, "any")
+                .lookup(IndexKind::ClientOrderId, "any")
                 .expect("lookup")
                 .is_none(),
         );
@@ -930,22 +918,13 @@ mod tests {
             .iter_index_keys(IndexKind::VenueOrderId)
             .expect("iter");
         assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
-
-        // No intent_id pairs were emitted; the iter must return an empty vec
-        // rather than reusing the client/venue contents.
-        assert!(
-            open_backend
-                .iter_index_keys(IndexKind::IntentId)
-                .expect("iter")
-                .is_empty(),
-        );
     }
 
     #[rstest]
     fn iter_index_keys_errors_when_no_run_open() {
         let backend = MemoryBackend::new();
 
-        match backend.iter_index_keys(IndexKind::IntentId) {
+        match backend.iter_index_keys(IndexKind::ClientOrderId) {
             Err(EventStoreError::Backend(msg)) => {
                 assert!(msg.contains("no run open"), "msg was: {msg}");
             }

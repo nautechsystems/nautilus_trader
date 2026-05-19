@@ -38,8 +38,6 @@ nautilus-model = { workspace = true }
 anyhow = { workspace = true }
 libloading = { workspace = true, optional = true }
 log = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

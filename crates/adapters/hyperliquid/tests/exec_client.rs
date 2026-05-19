@@ -1499,6 +1499,7 @@ fn make_status_report_cmd(
         venue_order_id,
         params: None,
         correlation_id: None,
+        causation_id: None,
     }
 }
 

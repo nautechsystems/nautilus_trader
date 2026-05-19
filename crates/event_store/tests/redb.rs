@@ -135,7 +135,7 @@ fn methods_error_when_no_run_open(#[case] op: &str) {
             .scan_range(1, 1, ScanDirection::Forward)
             .unwrap_err(),
         "scan_seq" => backend.scan_seq(1).unwrap_err(),
-        "lookup" => backend.lookup(IndexKind::IntentId, "k").unwrap_err(),
+        "lookup" => backend.lookup(IndexKind::ClientOrderId, "k").unwrap_err(),
         "record_snapshot_anchor" => backend
             .record_snapshot_anchor(SnapshotAnchor::new(0, "blob", "hash"))
             .unwrap_err(),
@@ -470,7 +470,6 @@ fn scan_range_yields_expected_seqs(
 #[rstest]
 fn lookup_records_first_occurrence_per_kind() {
     let (_tmp, mut backend) = open_backend();
-    let intent = "intent-1".to_string();
     let cl_ord = "O-1".to_string();
     let venue = "V-1".to_string();
     backend
@@ -478,7 +477,6 @@ fn lookup_records_first_occurrence_per_kind() {
             AppendEntry::new(
                 build_entry(1, Headers::empty(), 10),
                 vec![
-                    IndexKey::new(IndexKind::IntentId, intent.clone()),
                     IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                     IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                 ],
@@ -486,7 +484,6 @@ fn lookup_records_first_occurrence_per_kind() {
             AppendEntry::new(
                 build_entry(2, Headers::empty(), 11),
                 vec![
-                    IndexKey::new(IndexKind::IntentId, intent.clone()),
                     IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
                     IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
                 ],
@@ -494,12 +491,6 @@ fn lookup_records_first_occurrence_per_kind() {
         ])
         .expect("append");
 
-    assert_eq!(
-        backend
-            .lookup(IndexKind::IntentId, &intent)
-            .expect("lookup"),
-        Some(1),
-    );
     assert_eq!(
         backend
             .lookup(IndexKind::ClientOrderId, &cl_ord)
@@ -514,7 +505,7 @@ fn lookup_records_first_occurrence_per_kind() {
     );
     assert!(
         backend
-            .lookup(IndexKind::IntentId, "missing")
+            .lookup(IndexKind::ClientOrderId, "missing")
             .expect("lookup")
             .is_none(),
     );
@@ -885,7 +876,7 @@ fn scan_range_reports_gap_at_tail_when_iter_ends_early() {
 fn append_extracts_no_indices_when_keys_empty() {
     let (_tmp, mut backend) = open_backend();
     let headers = Headers {
-        intent_id: Some(UUID4::new()),
+        correlation_id: Some(UUID4::new()),
         ..Headers::empty()
     };
     backend
@@ -894,7 +885,7 @@ fn append_extracts_no_indices_when_keys_empty() {
 
     assert!(
         backend
-            .lookup(IndexKind::IntentId, "any")
+            .lookup(IndexKind::ClientOrderId, "any")
             .expect("lookup")
             .is_none(),
     );
@@ -911,11 +902,11 @@ fn parity_with_memory_backend_for_indices() {
         .open_run(manifest("1700000000-aaaa1111"))
         .expect("memory open");
 
-    let intent = "intent-1".to_string();
     let cl_ord = "O-1".to_string();
+    let venue = "V-1".to_string();
     let key_set = vec![
-        IndexKey::new(IndexKind::IntentId, intent.clone()),
         IndexKey::new(IndexKind::ClientOrderId, cl_ord.clone()),
+        IndexKey::new(IndexKind::VenueOrderId, venue.clone()),
     ];
 
     let batch = vec![AppendEntry::new(
@@ -925,15 +916,10 @@ fn parity_with_memory_backend_for_indices() {
     redb.append_batch(&batch).expect("redb append");
     memory.append_batch(&batch).expect("memory append");
 
-    for kind in [
-        IndexKind::IntentId,
-        IndexKind::ClientOrderId,
-        IndexKind::VenueOrderId,
-    ] {
+    for kind in [IndexKind::ClientOrderId, IndexKind::VenueOrderId] {
         let key = match kind {
-            IndexKind::IntentId => &intent,
             IndexKind::ClientOrderId => &cl_ord,
-            IndexKind::VenueOrderId => &intent,
+            IndexKind::VenueOrderId => &venue,
         };
         assert_eq!(
             redb.lookup(kind, key).expect("redb lookup"),
@@ -1188,20 +1174,13 @@ fn iter_index_keys_enumerates_first_write_wins_pairs() {
         .iter_index_keys(IndexKind::VenueOrderId)
         .expect("iter");
     assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
-
-    assert!(
-        backend
-            .iter_index_keys(IndexKind::IntentId)
-            .expect("iter")
-            .is_empty(),
-    );
 }
 
 #[rstest]
 fn iter_index_keys_errors_when_no_run_open() {
     let (_tmp, backend) = fresh_backend();
 
-    match backend.iter_index_keys(IndexKind::IntentId) {
+    match backend.iter_index_keys(IndexKind::ClientOrderId) {
         Err(EventStoreError::Backend(msg)) => {
             assert!(msg.contains("no run open"), "msg was: {msg}");
         }

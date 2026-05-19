@@ -30,7 +30,7 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
-    messages::execution::SubmitOrder,
+    messages::execution::{SubmitOrder, TradingCommand},
     msgbus::{
         self, BusTap, Endpoint, MStr, MessageBus, MessagingSwitchboard, ShareableMessageHandler,
     },
@@ -593,6 +593,120 @@ fn raw_report_topics_capture_via_publish_any() {
     let decoded_position: PositionStatusReport =
         rmp_serde::from_slice(&position_entry.payload).expect("decode position");
     assert_eq!(decoded_position, position_report);
+
+    drop(backend);
+    msgbus::clear_bus_tap();
+    drop(adapter);
+    let writer = Arc::try_unwrap(writer).expect("sole writer reference");
+    let _ = writer.close(run_ended_draft()).expect("close writer");
+}
+
+#[rstest]
+fn default_registry_extracts_headers_from_submit_order_fields() {
+    // The bus tap reads headers off the typed message via the registry; the default
+    // registry must wire a per-type extractor that surfaces both correlation_id and
+    // causation_id so forensics scans inherit the same chain and lineage edge the
+    // strategy populated at the minting site.
+    let registry = default_registry();
+    let correlation = UUID4::new();
+    let caused = UUID4::new();
+    let mut cmd = make_submit_order(ClientOrderId::from("O-headers"));
+    cmd.correlation_id = Some(correlation);
+    cmd.causation_id = Some(caused);
+
+    let headers = registry
+        .headers_for_any(&cmd as &dyn Any)
+        .expect("registered");
+    assert_eq!(headers.correlation_id, Some(correlation));
+    assert_eq!(headers.causation_id, Some(caused));
+}
+
+#[rstest]
+fn default_registry_unwraps_trading_command_envelope_headers() {
+    // Production code reaches the tap as TradingCommand, not the bare command type;
+    // the wrapper extractor must dispatch by variant so the captured entry carries the
+    // inner command's headers rather than an empty default.
+    let registry = default_registry();
+    let correlation = UUID4::new();
+    let caused = UUID4::new();
+    let mut cmd = make_submit_order(ClientOrderId::from("O-tc-headers"));
+    cmd.correlation_id = Some(correlation);
+    cmd.causation_id = Some(caused);
+    let envelope = TradingCommand::SubmitOrder(cmd);
+
+    let headers = registry
+        .headers_for_any(&envelope as &dyn Any)
+        .expect("registered");
+    assert_eq!(headers.correlation_id, Some(correlation));
+    assert_eq!(headers.causation_id, Some(caused));
+}
+
+/// Bus tap that mirrors the kernel's [`EventStoreBusTap`]: it consults the registry to
+/// derive headers per-message rather than passing [`Headers::empty`].
+struct HeadersAwareAdapterTap {
+    adapter: Arc<BusCaptureAdapter>,
+    registry: Arc<EncoderRegistry>,
+}
+
+impl BusTap for HeadersAwareAdapterTap {
+    fn on_publish(&self, topic: MStr<msgbus::Topic>, message: &dyn Any) {
+        let headers = self
+            .registry
+            .headers_for_any(message)
+            .unwrap_or_else(Headers::empty);
+        let _ = self
+            .adapter
+            .capture_any(topic, message, headers, UnixNanos::from(0));
+    }
+
+    fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn Any) {
+        let headers = self
+            .registry
+            .headers_for_any(message)
+            .unwrap_or_else(Headers::empty);
+        let topic = Topic::from(*endpoint);
+        let _ = self
+            .adapter
+            .capture_any(topic, message, headers, UnixNanos::from(0));
+    }
+}
+
+#[rstest]
+fn tap_path_writes_headers_from_command_fields() {
+    // End-to-end: a SubmitOrder published with populated correlation_id and
+    // causation_id must reach the writer with both headers on the entry. This is the
+    // contract that makes correlation-keyed forensics filtering and causation-walk
+    // tree reconstruction work once strategies populate the fields at minting time.
+    let bus = MessageBus::new(TraderId::from("TRADER-001"), UUID4::new(), None, None);
+    let _bus_rc = bus.register_message_bus();
+
+    let (writer, backend_arc) = writer_with_open_run("run-tap-headers", noop_halt());
+    let registry = Arc::new(default_registry());
+    let adapter = Arc::new(BusCaptureAdapter::new(
+        Arc::clone(&writer),
+        Arc::clone(&registry),
+        noop_halt(),
+    ));
+    let tap: Rc<dyn BusTap> = Rc::new(HeadersAwareAdapterTap {
+        adapter: Arc::clone(&adapter),
+        registry: Arc::clone(&registry),
+    });
+    msgbus::set_bus_tap(tap);
+
+    let correlation = UUID4::new();
+    let caused = UUID4::new();
+    let mut cmd = make_submit_order(ClientOrderId::from("O-tap-hdr"));
+    cmd.correlation_id = Some(correlation);
+    cmd.causation_id = Some(caused);
+
+    msgbus::publish_any(Topic::from("exec.command.SubmitOrder"), &cmd);
+
+    drain(&writer, 1);
+
+    let backend = backend_arc.lock().expect("backend");
+    let entry = backend.scan_seq(1).expect("scan").expect("present");
+    assert_eq!(entry.headers.correlation_id, Some(correlation));
+    assert_eq!(entry.headers.causation_id, Some(caused));
 
     drop(backend);
     msgbus::clear_bus_tap();
