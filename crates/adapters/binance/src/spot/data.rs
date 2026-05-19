@@ -118,13 +118,13 @@ impl BinanceSpotDataClient {
             config.environment,
             product_type,
         )
-        .map_err(|e| {
+        .inspect_err(|e| {
             log::warn!(
-                "Binance API credentials not found ({e}). \
-                 SBE WebSocket streams require an Ed25519 API key \
-                 (set BINANCE_API_KEY and BINANCE_API_SECRET env vars)"
+                "Failed to resolve Binance API credentials ({e}). \
+                 SBE WebSocket streams require an Ed25519 API key. \
+                 Set the appropriate env vars for your environment, \
+                 or provide api_key/api_secret in the data client config"
             );
-            e
         })
         .ok();
 
@@ -301,6 +301,14 @@ impl DataClient for BinanceSpotDataClient {
             return Ok(());
         }
 
+        if !self.ws_client.has_credentials() {
+            anyhow::bail!(
+                "Binance SBE WebSocket requires Ed25519 API credentials. \
+                 Set the appropriate env vars for your environment, \
+                 or provide api_key/api_secret in the data client config"
+            );
+        }
+
         // Reinitialize token in case of reconnection after disconnect
         self.cancellation_token = CancellationToken::new();
 
@@ -349,14 +357,6 @@ impl DataClient for BinanceSpotDataClient {
         }
 
         self.ws_client.cache_instruments(&instruments);
-
-        if !self.ws_client.has_credential() {
-            anyhow::bail!(
-                "Binance SBE WebSocket requires Ed25519 API credentials. \
-                 Set BINANCE_API_KEY and BINANCE_API_SECRET environment variables, \
-                 or provide api_key/api_secret in the data client config"
-            );
-        }
 
         log::info!("Connecting to Binance SBE WebSocket...");
         self.ws_client.connect().await.map_err(|e| {

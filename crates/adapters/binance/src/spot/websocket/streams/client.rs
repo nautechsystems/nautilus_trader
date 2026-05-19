@@ -142,7 +142,7 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns whether API credentials are configured.
     #[must_use]
-    pub fn has_credential(&self) -> bool {
+    pub fn has_credentials(&self) -> bool {
         self.credential.is_some()
     }
 
