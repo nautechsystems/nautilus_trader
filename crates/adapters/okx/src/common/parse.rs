@@ -376,7 +376,10 @@ pub fn parse_fee_currency(
         return Currency::USDT();
     }
 
-    Currency::get_or_create_crypto_with_context(trimmed, Some(&context()))
+    // Non-empty path: skip context() to avoid the format-string allocation that
+    // `get_or_create_crypto_with_context` would only consume in its own
+    // empty-input warning branch (which we have already short-circuited above).
+    Currency::get_or_create_crypto(trimmed)
 }
 
 /// Parses OKX side to Nautilus aggressor side.

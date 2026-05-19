@@ -786,58 +786,32 @@ pub fn parse_book10_msg(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDepth10> {
-    // Initialize arrays - need to fill all 10 levels even if we have fewer
-    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let zero_price = Price::zero(price_precision);
+    let zero_qty = Quantity::zero(size_precision);
+    let empty_bid = BookOrder::new(OrderSide::Buy, zero_price, zero_qty, 0);
+    let empty_ask = BookOrder::new(OrderSide::Sell, zero_price, zero_qty, 0);
+
+    let mut bids: [BookOrder; DEPTH10_LEN] = [empty_bid; DEPTH10_LEN];
+    let mut asks: [BookOrder; DEPTH10_LEN] = [empty_ask; DEPTH10_LEN];
     let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
     let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
-
-    // Parse available bid levels (up to 10)
-    let bid_len = msg.bids.len().min(DEPTH10_LEN);
 
     for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
         let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
 
-        let bid_order = BookOrder::new(OrderSide::Buy, price, size, 0);
-        bids[i] = bid_order;
+        bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
         bid_counts[i] = orders_count;
     }
-
-    // Fill remaining bid slots with empty Buy orders (not NULL orders)
-    for i in bid_len..DEPTH10_LEN {
-        bids[i] = BookOrder::new(
-            OrderSide::Buy,
-            Price::zero(price_precision),
-            Quantity::zero(size_precision),
-            0,
-        );
-        bid_counts[i] = 0;
-    }
-
-    // Parse available ask levels (up to 10)
-    let ask_len = msg.asks.len().min(DEPTH10_LEN);
 
     for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
         let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
 
-        let ask_order = BookOrder::new(OrderSide::Sell, price, size, 0);
-        asks[i] = ask_order;
+        asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
         ask_counts[i] = orders_count;
-    }
-
-    // Fill remaining ask slots with empty Sell orders (not NULL orders)
-    for i in ask_len..DEPTH10_LEN {
-        asks[i] = BookOrder::new(
-            OrderSide::Sell,
-            Price::zero(price_precision),
-            Quantity::zero(size_precision),
-            0,
-        );
-        ask_counts[i] = 0;
     }
 
     let ts_event = parse_millisecond_timestamp(msg.ts);
@@ -1450,15 +1424,13 @@ pub fn parse_order_status_report(
             parse_quantity(&msg.sz, size_precision)?
         };
 
-        let filled_qty =
-            parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+        let filled_qty = parse_quantity(msg.acc_fill_sz.as_deref().unwrap_or(""), size_precision)?;
 
         (quantity_base, filled_qty)
     } else {
         // Base-quantity order: both sz and acc_fill_sz are in base currency
         let quantity = parse_quantity(&msg.sz, size_precision)?;
-        let filled_qty =
-            parse_quantity(&msg.acc_fill_sz.clone().unwrap_or_default(), size_precision)?;
+        let filled_qty = parse_quantity(msg.acc_fill_sz.as_deref().unwrap_or(""), size_precision)?;
 
         (quantity, filled_qty)
     };

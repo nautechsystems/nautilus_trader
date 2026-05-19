@@ -253,40 +253,43 @@ impl<'de> Deserialize<'de> for OKXWsFrame {
     {
         use serde::de::Error;
 
-        // Deserialize to a map to inspect discriminant fields first
-        let value = serde_json::Value::deserialize(deserializer)?;
+        // Buffer once via serde_json::Value, then take ownership of the
+        // typed subtrees with `.remove(...)` instead of `.cloned()`: the
+        // latter deep-cloned every level for L2 books and dominated the
+        // inbound decode cost.
+        let mut value = serde_json::Value::deserialize(deserializer)?;
         let obj = value
-            .as_object()
+            .as_object_mut()
             .ok_or_else(|| D::Error::custom("expected JSON object for OKXWsFrame"))?;
 
-        // Check discriminant fields in priority order
+        // Check discriminant fields in priority order. Discriminants stay
+        // borrowed via `.get(...).as_str()`; only the structured payloads
+        // (`arg`, `data`, `channel`, `op`, `action`) are moved out.
 
-        // 1. Check for "event" field - Login, Subscription, ChannelConnCount, or Error
+        // 1. "event" field - Login, Subscription, ChannelConnCount, or Error
         if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
-            if event == "login" {
-                return parse_login(obj);
-            } else if event == "subscribe" || event == "unsubscribe" {
-                return parse_subscription(obj);
-            } else if event == "error" {
-                // All error events (simple or subscription-related) go to parse_error
-                // Extra fields like "arg" and "connId" are ignored
-                return parse_error(obj);
-            } else if obj.contains_key("channel") && obj.contains_key("connCount") {
-                return parse_channel_conn_count(obj);
+            match event {
+                "login" => return parse_login(obj),
+                "subscribe" | "unsubscribe" => return parse_subscription(obj),
+                "error" => return parse_error(obj),
+                _ if obj.contains_key("channel") && obj.contains_key("connCount") => {
+                    return parse_channel_conn_count(obj);
+                }
+                _ => {}
             }
         }
 
-        // 2. Check for "op" field - OrderResponse
+        // 2. "op" field - OrderResponse
         if obj.contains_key("op") {
             return parse_order_response(obj);
         }
 
-        // 3. Check for "action" field with "arg" - BookData
+        // 3. "action" + "arg" - BookData
         if obj.contains_key("action") && obj.contains_key("arg") {
             return parse_book_data(obj);
         }
 
-        // 4. Check for "arg" and "data" without "action" - Data
+        // 4. "arg" + "data" without "action" - Data
         if obj.contains_key("arg") && obj.contains_key("data") {
             return parse_data(obj);
         }
@@ -296,6 +299,9 @@ impl<'de> Deserialize<'de> for OKXWsFrame {
             return parse_error(obj);
         }
 
+        // No variant matched; no `remove` happened above, so `value` is still
+        // intact. Serialize it back into the error message to preserve the
+        // original diagnostic shape.
         Err(D::Error::custom(format!(
             "cannot determine OKXWsFrame variant from: {}",
             serde_json::to_string(&value).unwrap_or_default()
@@ -303,196 +309,140 @@ impl<'de> Deserialize<'de> for OKXWsFrame {
     }
 }
 
+#[inline]
+fn take_str<E: serde::de::Error>(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &'static str,
+) -> Result<String, E> {
+    match obj.remove(key) {
+        Some(serde_json::Value::String(s)) => Ok(s),
+        Some(_) => Err(E::custom(format!("field `{key}` is not a string"))),
+        None => Err(E::missing_field(key)),
+    }
+}
+
+#[inline]
+fn take_optional_str(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &'static str,
+) -> Option<String> {
+    match obj.remove(key) {
+        Some(serde_json::Value::String(s)) => Some(s),
+        _ => None,
+    }
+}
+
 fn parse_login<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
     Ok(OKXWsFrame::Login {
-        event: obj
-            .get("event")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("event"))?,
-        code: obj
-            .get("code")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("code"))?,
-        msg: obj
-            .get("msg")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("msg"))?,
-        conn_id: obj
-            .get("connId")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("connId"))?,
+        event: take_str(obj, "event")?,
+        code: take_str(obj, "code")?,
+        msg: take_str(obj, "msg")?,
+        conn_id: take_str(obj, "connId")?,
     })
 }
 
 fn parse_subscription<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
-    let event_str = obj
-        .get("event")
-        .and_then(|v| v.as_str())
+    let event_val = obj
+        .remove("event")
         .ok_or_else(|| E::missing_field("event"))?;
-
     let event: OKXSubscriptionEvent =
-        serde_json::from_value(serde_json::Value::String(event_str.to_string()))
-            .map_err(|e| E::custom(format!("invalid event: {e}")))?;
+        serde_json::from_value(event_val).map_err(|e| E::custom(format!("invalid event: {e}")))?;
 
-    let arg: OKXWebSocketArg = obj
-        .get("arg")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
-        .ok_or_else(|| E::missing_field("arg"))?;
+    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
+    let arg: OKXWebSocketArg =
+        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
 
     Ok(OKXWsFrame::Subscription {
         event,
         arg,
-        conn_id: obj
-            .get("connId")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("connId"))?,
-        code: obj.get("code").and_then(|v| v.as_str()).map(String::from),
-        msg: obj.get("msg").and_then(|v| v.as_str()).map(String::from),
+        conn_id: take_str(obj, "connId")?,
+        code: take_optional_str(obj, "code"),
+        msg: take_optional_str(obj, "msg"),
     })
 }
 
 fn parse_channel_conn_count<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
-    let channel: OKXWsChannel = obj
-        .get("channel")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid channel: {e}")))?
+    let channel_val = obj
+        .remove("channel")
         .ok_or_else(|| E::missing_field("channel"))?;
+    let channel: OKXWsChannel = serde_json::from_value(channel_val)
+        .map_err(|e| E::custom(format!("invalid channel: {e}")))?;
 
     Ok(OKXWsFrame::ChannelConnCount {
-        event: obj
-            .get("event")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("event"))?,
+        event: take_str(obj, "event")?,
         channel,
-        conn_count: obj
-            .get("connCount")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("connCount"))?,
-        conn_id: obj
-            .get("connId")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("connId"))?,
+        conn_count: take_str(obj, "connCount")?,
+        conn_id: take_str(obj, "connId")?,
     })
 }
 
 fn parse_order_response<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
-    let op: OKXWsOperation = obj
-        .get("op")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid op: {e}")))?
-        .ok_or_else(|| E::missing_field("op"))?;
+    let op_val = obj.remove("op").ok_or_else(|| E::missing_field("op"))?;
+    let op: OKXWsOperation =
+        serde_json::from_value(op_val).map_err(|e| E::custom(format!("invalid op: {e}")))?;
 
-    let data: Vec<serde_json::Value> = obj
-        .get("data")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid data: {e}")))?
-        .unwrap_or_default();
+    let data: Vec<serde_json::Value> = match obj.remove("data") {
+        Some(v) => {
+            serde_json::from_value(v).map_err(|e| E::custom(format!("invalid data: {e}")))?
+        }
+        None => Vec::new(),
+    };
 
     Ok(OKXWsFrame::OrderResponse {
-        id: obj.get("id").and_then(|v| v.as_str()).map(String::from),
+        id: take_optional_str(obj, "id"),
         op,
-        code: obj
-            .get("code")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("code"))?,
-        msg: obj
-            .get("msg")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("msg"))?,
+        code: take_str(obj, "code")?,
+        msg: take_str(obj, "msg")?,
         data,
     })
 }
 
 fn parse_book_data<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
-    let arg: OKXWebSocketArg = obj
-        .get("arg")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
-        .ok_or_else(|| E::missing_field("arg"))?;
+    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
+    let arg: OKXWebSocketArg =
+        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
 
-    let action: OKXBookAction = obj
-        .get("action")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid action: {e}")))?
+    let action_val = obj
+        .remove("action")
         .ok_or_else(|| E::missing_field("action"))?;
+    let action: OKXBookAction = serde_json::from_value(action_val)
+        .map_err(|e| E::custom(format!("invalid action: {e}")))?;
 
-    let data: Vec<OKXBookMsg> = obj
-        .get("data")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid data: {e}")))?
-        .ok_or_else(|| E::missing_field("data"))?;
+    let data_val = obj.remove("data").ok_or_else(|| E::missing_field("data"))?;
+    let data: Vec<OKXBookMsg> =
+        serde_json::from_value(data_val).map_err(|e| E::custom(format!("invalid data: {e}")))?;
 
     Ok(OKXWsFrame::BookData { arg, action, data })
 }
 
 fn parse_data<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
-    let arg: OKXWebSocketArg = obj
-        .get("arg")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|e| E::custom(format!("invalid arg: {e}")))?
-        .ok_or_else(|| E::missing_field("arg"))?;
+    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
+    let arg: OKXWebSocketArg =
+        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
 
-    let data = obj
-        .get("data")
-        .cloned()
-        .ok_or_else(|| E::missing_field("data"))?;
+    let data = obj.remove("data").ok_or_else(|| E::missing_field("data"))?;
 
     Ok(OKXWsFrame::Data { arg, data })
 }
 
 fn parse_error<E: serde::de::Error>(
-    obj: &serde_json::Map<String, serde_json::Value>,
+    obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
     Ok(OKXWsFrame::Error {
-        code: obj
-            .get("code")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("code"))?,
-        msg: obj
-            .get("msg")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| E::missing_field("msg"))?,
+        code: take_str(obj, "code")?,
+        msg: take_str(obj, "msg")?,
     })
 }
 

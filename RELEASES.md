@@ -30,21 +30,24 @@ None
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements
-- Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
-- Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
 - Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
 - Added `try_liquidity_math_add` returning structured `LiquidityMathError` alongside the panicking variant
-- Added DEX event-signature/parser parity tests across all registered chains
 - Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
 - Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
+- Added DEX event-signature/parser parity tests across all registered chains
+- Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
+- Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
+- Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
-- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
-- Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
+- Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
+- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
+- Optimized Hyperliquid hot paths with benchmark report
+- Optimized OKX hot paths with benchmark report
 
 ### Documentation Updates
 None
