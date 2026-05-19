@@ -43,8 +43,8 @@ use crate::{
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
-            arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
-            polygon::PolygonRpcClient,
+            arbitrum::ArbitrumRpcClient, base::BaseRpcClient, bsc::BscRpcClient,
+            ethereum::EthereumRpcClient, polygon::PolygonRpcClient,
         },
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
@@ -176,6 +176,9 @@ impl BlockchainDataClientCore {
             }
             Blockchain::Arbitrum => {
                 BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url, proxy_url))
+            }
+            Blockchain::Bsc => {
+                BlockchainRpcClientAny::Bsc(BscRpcClient::new(wss_rpc_url, proxy_url))
             }
             _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
         };
@@ -998,7 +1001,7 @@ impl BlockchainDataClientCore {
 
         if !profiler.is_initialized {
             if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
-                profiler.initialize(initial_sqrt_price_x96);
+                profiler.initialize(initial_sqrt_price_x96)?;
             } else {
                 anyhow::bail!(
                     "Pool is not initialized and it doesn't contain initial price, cannot bootstrap profiler"
@@ -1129,7 +1132,7 @@ impl BlockchainDataClientCore {
 
             if event_sig_bytes == initialize_sig_bytes {
                 let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
-                profiler.initialize(initialize_event.sqrt_price_x96);
+                profiler.initialize(initialize_event.sqrt_price_x96)?;
                 self.cache
                     .database
                     .as_ref()

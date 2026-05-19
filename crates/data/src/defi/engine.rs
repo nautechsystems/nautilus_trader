@@ -471,7 +471,11 @@ impl DataEngine {
                 let mut pool_profiler = PoolProfiler::new(pool.clone());
 
                 if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
-                    pool_profiler.initialize(initial_sqrt_price_x96);
+                    if let Err(e) = pool_profiler.initialize(initial_sqrt_price_x96) {
+                        log::error!("Failed to initialize pool profiler for {instrument_id}: {e}");
+                        drop(cache);
+                        return;
+                    }
                     log::debug!(
                         "Initialized pool profiler for {instrument_id} with sqrt_price {initial_sqrt_price_x96}"
                     );

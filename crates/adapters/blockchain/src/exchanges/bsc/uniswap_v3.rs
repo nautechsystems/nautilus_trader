@@ -22,20 +22,16 @@ use nautilus_model::defi::{
 
 use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
 
-/// Aerodrome Slipstream DEX on Base.
-///
-/// Slipstream is a Uniswap V3 fork; pool events reuse the V3 parsers. The factory
-/// PoolCreated layout differs (tickSpacing in place of fee) and is left empty until
-/// a Slipstream parser is written, since advertising a topic without a parser would
-/// abort pool discovery.
-pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
+/// Uniswap V3 DEX on BSC.
+/// Factory: <https://bscscan.com/address/0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7>
+pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let mut dex = Dex::new(
-        chains::BASE.clone(),
-        DexType::AerodromeSlipstream,
-        "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
-        3200559,
+        chains::BSC.clone(),
+        DexType::UniswapV3,
+        "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
+        26324014,
         AmmType::CLAMM,
-        "",
+        "PoolCreated(address,address,uint24,int24,address)",
         "Swap(address,address,int256,int256,uint160,uint128,int24)",
         "Mint(address,address,int24,int24,uint128,uint256,uint256)",
         "Burn(address,int24,int24,uint128,uint256,uint256)",
@@ -43,9 +39,12 @@ pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
     );
     dex.set_initialize_event("Initialize(uint160,int24)");
     dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
-
     let mut dex_extended = DexExtended::new(dex);
 
+    // HyperSync parsers
+    dex_extended.set_pool_created_event_hypersync_parsing(
+        uniswap_v3::pool_created::parse_pool_created_event_hypersync,
+    );
     dex_extended.set_initialize_event_hypersync_parsing(
         uniswap_v3::initialize::parse_initialize_event_hypersync,
     );
@@ -56,6 +55,9 @@ pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
         .set_collect_event_hypersync_parsing(uniswap_v3::collect::parse_collect_event_hypersync);
     dex_extended.set_flash_event_hypersync_parsing(uniswap_v3::flash::parse_flash_event_hypersync);
 
+    // RPC parsers
+    dex_extended
+        .set_pool_created_event_rpc_parsing(uniswap_v3::pool_created::parse_pool_created_event_rpc);
     dex_extended
         .set_initialize_event_rpc_parsing(uniswap_v3::initialize::parse_initialize_event_rpc);
     dex_extended.set_swap_event_rpc_parsing(uniswap_v3::swap::parse_swap_event_rpc);

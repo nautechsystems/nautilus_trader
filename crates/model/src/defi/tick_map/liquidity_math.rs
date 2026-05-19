@@ -13,9 +13,39 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::defi::tick_map::tick::PoolTick;
+use crate::defi::{pool_analysis::error::LiquidityMathError, tick_map::tick::PoolTick};
 
-/// Add a signed liquidity delta to liquidity and panic if it overflows or underflows.
+/// Adds a signed liquidity delta to liquidity, returning a structured error on
+/// overflow or underflow.
+///
+/// # Errors
+///
+/// Returns [`LiquidityMathError::Overflow`] when adding a positive delta wraps past
+/// `u128::MAX`, or [`LiquidityMathError::Underflow`] when subtracting wraps below zero.
+pub fn try_liquidity_math_add(x: u128, y: i128) -> Result<u128, LiquidityMathError> {
+    if y < 0 {
+        let delta = y.unsigned_abs();
+        let z = x.wrapping_sub(delta);
+        if z >= x {
+            return Err(LiquidityMathError::Underflow { current: x, delta });
+        }
+        Ok(z)
+    } else {
+        let delta = y as u128;
+        let z = x.wrapping_add(delta);
+        if z < x {
+            return Err(LiquidityMathError::Overflow { current: x, delta });
+        }
+        Ok(z)
+    }
+}
+
+/// Adds a signed liquidity delta to liquidity, panicking on overflow or underflow.
+///
+/// Prefer [`try_liquidity_math_add`] in event-replay paths where a structured error
+/// with surrounding context is preferred. This panic-style variant is kept for
+/// in-pool invariants where overflow is treated as a contract bug rather than an
+/// expected runtime error.
 ///
 /// # Returns
 ///
@@ -28,22 +58,14 @@ use crate::defi::tick_map::tick::PoolTick;
 /// - Subtracting causes underflow.
 #[must_use]
 pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
-    if y < 0 {
-        let delta = y.unsigned_abs();
-        let z = x.wrapping_sub(delta);
-        assert!(
-            z < x,
-            "Liquidity subtraction underflow: x={x}, y={y}, delta={delta}, result={z}"
-        );
-        z
-    } else {
-        let delta = y as u128;
-        let z = x.wrapping_add(delta);
-        assert!(
-            z >= x,
-            "Liquidity addition overflow: x={x}, y={y}, delta={delta}, result={z}"
-        );
-        z
+    match try_liquidity_math_add(x, y) {
+        Ok(value) => value,
+        Err(LiquidityMathError::Overflow { current, delta }) => {
+            panic!("Liquidity addition overflow: x={current}, y={y}, delta={delta}")
+        }
+        Err(LiquidityMathError::Underflow { current, delta }) => {
+            panic!("Liquidity subtraction underflow: x={current}, y={y}, delta={delta}")
+        }
     }
 }
 
@@ -101,6 +123,31 @@ mod tests {
     #[should_panic(expected = "Liquidity subtraction underflow")]
     fn test_subtraction_underflow() {
         let _ = liquidity_math_add(3, -4);
+    }
+
+    #[rstest]
+    fn test_try_add_returns_overflow_error() {
+        let x = u128::MAX - 14;
+        let err = try_liquidity_math_add(x, 15).unwrap_err();
+        assert_eq!(
+            err,
+            LiquidityMathError::Overflow {
+                current: x,
+                delta: 15
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_try_add_returns_underflow_error() {
+        let err = try_liquidity_math_add(3, -4).unwrap_err();
+        assert_eq!(
+            err,
+            LiquidityMathError::Underflow {
+                current: 3,
+                delta: 4
+            }
+        );
     }
 
     #[rstest]

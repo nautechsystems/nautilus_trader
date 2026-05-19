@@ -7464,7 +7464,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
 
     // Add liquidity so swaps can be processed
     let mint = PoolLiquidityUpdate::new(
@@ -7635,7 +7635,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Capture initial profiler tick state
@@ -7754,7 +7754,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
 
     // First mint some liquidity
     let owner = Address::from([0xAB; 20]);
@@ -7897,7 +7897,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Subscribe to pool fee collects
@@ -8005,7 +8005,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     let shared_pool = Arc::new(pool.clone());
     cache.borrow_mut().add_pool(pool).unwrap();
     let mut profiler = PoolProfiler::new(shared_pool);
-    profiler.initialize(initial_price);
+    profiler.initialize(initial_price).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
 
     // Subscribe to pool flash events
@@ -8253,6 +8253,106 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
 
     // The single command should be the subscription
     assert_eq!(recorded[0], cmd);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0x99; 20]),
+        PoolIdentifier::from_address(Address::from([0x99; 20])),
+        0u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    // Construct a pool whose stored initial_tick disagrees with the tick derived
+    // from its sqrt price. setup_pool_updater calls PoolProfiler::initialize which
+    // must return InitialTickMismatch and must not cache the half-initialized profiler.
+    // Pool::initialize asserts consistency, so set the fields directly.
+    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let real_tick = get_tick_at_sqrt_ratio(initial_price);
+    pool.initial_sqrt_price_x96 = Some(initial_price);
+    pool.initial_tick = Some(real_tick + 100);
+    let instrument_id = pool.instrument_id;
+
+    data_engine.cache_rc().borrow_mut().add_pool(pool).unwrap();
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none()
+    );
+
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "profiler must not be cached when initialize fails"
+    );
 }
 
 #[cfg(feature = "defi")]

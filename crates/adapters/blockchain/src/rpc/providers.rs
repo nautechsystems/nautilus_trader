@@ -31,6 +31,7 @@ pub fn check_infura_rpc_provider(chain: &Blockchain) -> Option<String> {
             Blockchain::Arbitrum => Some(format!(
                 "https://arbitrum-mainnet.infura.io/v3/{infura_api_key}"
             )),
+            Blockchain::Bsc => Some(format!("https://bsc-mainnet.infura.io/v3/{infura_api_key}")),
             _ => None, // We can specify other chains here
         };
     }

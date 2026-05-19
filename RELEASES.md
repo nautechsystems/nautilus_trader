@@ -3,20 +3,31 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
+- Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
+- Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 
 ### Breaking Changes
+- Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
 
 ### Security
+None
 
 ### Fixes
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
+- Fixed blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
+- Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
+- Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 
 ### Internal Improvements
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
 - Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
+- Added `try_liquidity_math_add` returning structured `LiquidityMathError` alongside the panicking variant
+- Added DEX event-signature/parser parity tests across all registered chains
+- Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
 - Optimized Hyperliquid hot paths with benchmark report
@@ -25,8 +36,10 @@ Released on TBD (UTC).
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
 
 ### Documentation Updates
+None
 
 ### Deprecations
+None
 
 ---
 
