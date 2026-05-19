@@ -32,6 +32,7 @@ use nautilus_core::{
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
+use smallvec::SmallVec;
 use ustr::Ustr;
 
 pub use super::config::LoggerConfig;
@@ -47,6 +48,11 @@ use crate::{
 const LOGGING: &str = "logging";
 const KV_COLOR: &str = "color";
 const KV_COMPONENT: &str = "component";
+const LOG_FIELDS_INLINE_CAP: usize = 4;
+
+/// Inline-optimized storage for structured log fields.
+/// Up to 4 key-value pairs are stored on the stack; beyond that, spills to heap.
+pub type LogFields = SmallVec<[(Ustr, String); LOG_FIELDS_INLINE_CAP]>;
 
 /// Global log sender which allows multiple log guards per process.
 static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
@@ -91,11 +97,18 @@ pub struct LogLine {
     pub component: Ustr,
     /// The log message content.
     pub message: String,
+    /// Arbitrary structured key-value fields attached to this log event.
+    #[serde(default, skip_serializing_if = "SmallVec::is_empty")]
+    pub fields: LogFields,
 }
 
 impl Display for LogLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}: {}", self.level, self.component, self.message)
+        write!(f, "[{}] {}: {}", self.level, self.component, self.message)?;
+        for (k, v) in &self.fields {
+            write!(f, " {k}={v}")?;
+        }
+        Ok(())
     }
 }
 
@@ -135,14 +148,23 @@ impl LogLineWrapper {
     /// same log message needs to be printed multiple times.
     pub fn get_string(&mut self) -> &str {
         self.cache.get_or_insert_with(|| {
-            format!(
-                "{} [{}] {}.{}: {}\n",
+            let mut s = format!(
+                "{} [{}] {}.{}: {}",
                 unix_nanos_to_iso8601(self.line.timestamp),
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
                 &self.line.message,
-            )
+            );
+
+            for (k, v) in &self.line.fields {
+                s.push(' ');
+                s.push_str(k);
+                s.push('=');
+                s.push_str(v);
+            }
+            s.push('\n');
+            s
         })
     }
 
@@ -153,15 +175,24 @@ impl LogLineWrapper {
     /// logger is configured to use colors.
     pub fn get_colored(&mut self) -> &str {
         self.colored.get_or_insert_with(|| {
-            format!(
-                "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
+            let mut s = format!(
+                "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}",
                 unix_nanos_to_iso8601(self.line.timestamp),
                 &self.line.color.as_ansi(),
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
                 &self.line.message,
-            )
+            );
+
+            for (k, v) in &self.line.fields {
+                s.push(' ');
+                s.push_str(k);
+                s.push('=');
+                s.push_str(v);
+            }
+            s.push_str("\x1b[0m\n");
+            s
         })
     }
 
@@ -194,8 +225,55 @@ impl Serialize for LogLineWrapper {
         json_obj.insert("color".to_string(), self.line.color.to_string());
         json_obj.insert("component".to_string(), self.line.component.to_string());
         json_obj.insert("message".to_string(), self.line.message.clone());
+        for (k, v) in &self.line.fields {
+            let key = k.as_str();
+            if !matches!(
+                key,
+                "timestamp" | "trader_id" | "level" | "color" | "component" | "message"
+            ) {
+                json_obj.insert(k.to_string(), v.clone());
+            }
+        }
 
         json_obj.serialize(serializer)
+    }
+}
+
+struct FieldCollector {
+    color: Option<LogColor>,
+    component: Option<Ustr>,
+    fields: LogFields,
+}
+
+impl FieldCollector {
+    fn new() -> Self {
+        Self {
+            color: None,
+            component: None,
+            fields: SmallVec::new(),
+        }
+    }
+}
+
+impl<'kvs> log::kv::VisitSource<'kvs> for FieldCollector {
+    fn visit_pair(
+        &mut self,
+        key: log::kv::Key<'kvs>,
+        value: log::kv::Value<'kvs>,
+    ) -> Result<(), log::kv::Error> {
+        match key.as_str() {
+            KV_COLOR => {
+                self.color = value.to_u64().map(|v| (v as u8).into());
+            }
+            KV_COMPONENT => {
+                self.component = Some(Ustr::from(&value.to_string()));
+            }
+            _ => {
+                self.fields
+                    .push((Ustr::from(key.as_str()), value.to_string()));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -215,15 +293,14 @@ impl Log for Logger {
                 get_atomic_clock_static().get_time_ns()
             };
             let level = record.level();
-            let key_values = record.key_values();
-            let color: LogColor = key_values
-                .get(KV_COLOR.into())
-                .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
-                .unwrap_or(level.into());
-            let component = key_values.get(KV_COMPONENT.into()).map_or_else(
-                || Ustr::from(record.metadata().target()),
-                |v| Ustr::from(&v.to_string()),
-            );
+
+            let mut collector = FieldCollector::new();
+            let _ = record.key_values().visit(&mut collector);
+
+            let color = collector.color.unwrap_or_else(|| level.into());
+            let component = collector
+                .component
+                .unwrap_or_else(|| Ustr::from(record.metadata().target()));
 
             let line = LogLine {
                 timestamp,
@@ -231,6 +308,7 @@ impl Log for Logger {
                 color,
                 component,
                 message: format!("{}", record.args()),
+                fields: collector.fields,
             };
 
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
@@ -736,6 +814,7 @@ mod tests {
             color: LogColor::Normal,
             component: Ustr::from("Portfolio"),
             message: "This is a log message".to_string(),
+            fields: SmallVec::new(),
         };
 
         let serialized_json = serde_json::to_string(&log_message).unwrap();
@@ -820,6 +899,7 @@ mod tests {
             color: LogColor::Normal,
             component: Ustr::from("TestComponent"),
             message: "Test message".to_string(),
+            fields: SmallVec::new(),
         };
 
         let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
@@ -842,6 +922,7 @@ mod tests {
             color: LogColor::Green,
             component: Ustr::from("TestComponent"),
             message: "Test message".to_string(),
+            fields: SmallVec::new(),
         };
 
         let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
@@ -863,6 +944,7 @@ mod tests {
             color: LogColor::Yellow,
             component: Ustr::from("RiskEngine"),
             message: "Warning message".to_string(),
+            fields: SmallVec::new(),
         };
 
         let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-002"));
@@ -884,6 +966,7 @@ mod tests {
             color: LogColor::Normal,
             component: Ustr::from("Test"),
             message: "Cached".to_string(),
+            fields: SmallVec::new(),
         };
 
         let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER"));
@@ -901,10 +984,125 @@ mod tests {
             color: LogColor::Red,
             component: Ustr::from("Component"),
             message: "Error occurred".to_string(),
+            fields: SmallVec::new(),
         };
 
         let display = format!("{line}");
         assert_eq!(display, "[ERROR] Component: Error occurred");
+    }
+
+    #[rstest]
+    fn test_log_line_display_with_fields() {
+        let line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("RiskEngine"),
+            message: "Order filled".to_string(),
+            fields: smallvec::smallvec![
+                (Ustr::from("venue"), "BINANCE".to_string()),
+                (Ustr::from("order_id"), "O-001".to_string()),
+            ],
+        };
+
+        let display = format!("{line}");
+        assert_eq!(
+            display,
+            "[INFO] RiskEngine: Order filled venue=BINANCE order_id=O-001"
+        );
+    }
+
+    #[rstest]
+    fn test_log_line_wrapper_plain_string_with_fields() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("DataEngine"),
+            message: "Connected".to_string(),
+            fields: smallvec::smallvec![
+                (Ustr::from("venue"), "BINANCE".to_string()),
+                (Ustr::from("product_type"), "SPOT".to_string()),
+            ],
+        };
+
+        let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let result = wrapper.get_string();
+
+        assert!(result.contains("Connected"));
+        assert!(result.contains("venue=BINANCE"));
+        assert!(result.contains("product_type=SPOT"));
+        assert!(result.ends_with('\n'));
+        assert!(!result.contains("\x1b["));
+    }
+
+    #[rstest]
+    fn test_log_line_wrapper_json_with_fields() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("RiskEngine"),
+            message: "Order filled".to_string(),
+            fields: smallvec::smallvec![
+                (Ustr::from("strategy_id"), "S-001".to_string()),
+                (Ustr::from("venue"), "BINANCE".to_string()),
+            ],
+        };
+
+        let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let json = wrapper.get_json();
+
+        let parsed: Value = serde_json::from_str(json.trim()).unwrap();
+        assert_eq!(parsed["component"], "RiskEngine");
+        assert_eq!(parsed["message"], "Order filled");
+        assert_eq!(parsed["strategy_id"], "S-001");
+        assert_eq!(parsed["venue"], "BINANCE");
+    }
+
+    #[rstest]
+    fn test_log_line_wrapper_json_no_fields_has_no_extra_keys() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("Test"),
+            message: "Simple".to_string(),
+            fields: SmallVec::new(),
+        };
+
+        let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let json = wrapper.get_json();
+
+        let parsed: Value = serde_json::from_str(json.trim()).unwrap();
+        let obj = parsed.as_object().unwrap();
+        assert_eq!(obj.len(), 6); // timestamp, trader_id, level, color, component, message
+    }
+
+    #[rstest]
+    fn test_log_line_wrapper_json_reserved_keys_not_overwritten() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Warn,
+            color: LogColor::Normal,
+            component: Ustr::from("Test"),
+            message: "Real message".to_string(),
+            fields: smallvec::smallvec![
+                (Ustr::from("level"), "FAKE".to_string()),
+                (Ustr::from("message"), "injected".to_string()),
+                (Ustr::from("timestamp"), "bogus".to_string()),
+                (Ustr::from("venue"), "BINANCE".to_string()),
+            ],
+        };
+
+        let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let json = wrapper.get_json();
+        let parsed: Value = serde_json::from_str(json.trim()).unwrap();
+
+        assert_eq!(parsed["level"], "WARN");
+        assert_eq!(parsed["message"], "Real message");
+        assert_ne!(parsed["timestamp"], "bogus");
+        assert_eq!(parsed["venue"], "BINANCE");
     }
 
     /// Helper to convert module level map to sorted vec (descending by path length)
@@ -1556,6 +1754,129 @@ mod tests {
                 !log_contents.contains("SHOULD NOT APPEAR"),
                 "Binance info should be filtered (adapters=Warn)"
             );
+        }
+
+        #[rstest]
+        fn test_logging_to_file_with_kv_fields() {
+            let config = LoggerConfig {
+                fileout_level: LevelFilter::Debug,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "DataEngine",
+                venue = "BINANCE",
+                product_type = "SPOT";
+                "WebSocket connected"
+            );
+
+            let mut log_contents = String::new();
+
+            drop(log_guard);
+
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        log_contents = std::fs::read_to_string(log_file.path())
+                            .expect("Error while reading log file");
+                        !log_contents.is_empty()
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(3),
+            );
+
+            assert!(
+                log_contents.contains("WebSocket connected"),
+                "Message should be present"
+            );
+            assert!(
+                log_contents.contains("venue=BINANCE"),
+                "venue field should appear in output, was:\n{log_contents}"
+            );
+            assert!(
+                log_contents.contains("product_type=SPOT"),
+                "product_type field should appear in output, was:\n{log_contents}"
+            );
+        }
+
+        #[rstest]
+        fn test_logging_to_file_json_with_kv_fields() {
+            let config =
+                LoggerConfig::from_spec("stdout=Off;fileout=Debug;DataEngine=Debug").unwrap();
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                file_format: Some("json".to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "DataEngine",
+                venue = "BINANCE",
+                order_id = "O-12345";
+                "Order filled"
+            );
+
+            let mut log_contents = String::new();
+
+            drop(log_guard);
+
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        log_contents = std::fs::read_to_string(log_file.path())
+                            .expect("Error while reading log file");
+                        !log_contents.is_empty()
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(3),
+            );
+
+            let parsed: serde_json::Value =
+                serde_json::from_str(log_contents.trim()).expect("Should be valid JSON");
+            assert_eq!(parsed["component"], "DataEngine");
+            assert_eq!(parsed["message"], "Order filled");
+            assert_eq!(parsed["venue"], "BINANCE");
+            assert_eq!(parsed["order_id"], "O-12345");
         }
     }
 

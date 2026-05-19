@@ -466,6 +466,7 @@ fn strip_ansi_codes(s: &str) -> String {
 mod tests {
     use log::LevelFilter;
     use rstest::rstest;
+    use smallvec::SmallVec;
     use tempfile::tempdir;
 
     use super::*;
@@ -692,6 +693,7 @@ mod tests {
             color: crate::enums::LogColor::Normal,
             component: ustr::Ustr::from("Test"),
             message: "error".to_string(),
+            fields: SmallVec::new(),
         };
         assert!(!writer.enabled(&error_line));
 
@@ -702,6 +704,7 @@ mod tests {
             color: crate::enums::LogColor::Normal,
             component: ustr::Ustr::from("Test"),
             message: "info".to_string(),
+            fields: SmallVec::new(),
         };
         assert!(writer.enabled(&info_line));
 
@@ -712,6 +715,7 @@ mod tests {
             color: crate::enums::LogColor::Normal,
             component: ustr::Ustr::from("Test"),
             message: "debug".to_string(),
+            fields: SmallVec::new(),
         };
         assert!(!writer.enabled(&debug_line));
     }
@@ -726,6 +730,7 @@ mod tests {
             color: crate::enums::LogColor::Normal,
             component: ustr::Ustr::from("Test"),
             message: "error".to_string(),
+            fields: SmallVec::new(),
         };
         assert!(writer.enabled(&error_line));
 
@@ -735,6 +740,7 @@ mod tests {
             color: crate::enums::LogColor::Normal,
             component: ustr::Ustr::from("Test"),
             message: "warn".to_string(),
+            fields: SmallVec::new(),
         };
         assert!(!writer.enabled(&warn_line));
     }
