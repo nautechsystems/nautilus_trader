@@ -1748,6 +1748,7 @@ mod tests {
             UUID4::new(),
             0.into(),
             None,
+            None, // correlation_id
         ));
         send_trading_command(endpoint, cmd);
 
@@ -2018,6 +2019,7 @@ mod tests {
                 UUID4::new(),
                 0.into(),
                 None,
+                None, // correlation_id
             ));
             send_trading_command(cmd_endpoint, command);
             *command_sent_clone.borrow_mut() = true;
@@ -2135,6 +2137,7 @@ mod tests {
             UUID4::new(),
             0.into(),
             None,
+            None, // correlation_id
         ));
         send_trading_command(cmd_endpoint, command);
 
@@ -2193,6 +2196,7 @@ mod tests {
                 UUID4::new(),
                 0.into(),
                 None,
+                None, // correlation_id
             ));
             send_trading_command(mid_cmd_endpoint, command);
         });
@@ -2330,6 +2334,7 @@ mod tests {
             UUID4::new(),
             nautilus_core::UnixNanos::from(1),
             None,
+            None, // correlation_id
         );
         send_trading_command(
             "endpoint.send.trading.command.test".into(),

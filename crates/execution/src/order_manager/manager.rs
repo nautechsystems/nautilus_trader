@@ -162,6 +162,7 @@ impl OrderManager {
         order: &OrderAny,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
+        correlation_id: Option<UUID4>,
     ) -> anyhow::Result<()> {
         let order_exists = self.cache.borrow().order_exists(&order.client_order_id());
 
@@ -185,6 +186,7 @@ impl OrderManager {
             None, // params
             UUID4::new(),
             self.clock.borrow().timestamp_ns(),
+            correlation_id,
         );
 
         if order.emulation_trigger() == Some(TriggerType::NoTrigger) {
@@ -395,7 +397,7 @@ impl OrderManager {
                         .submit_order_commands
                         .contains_key(&child_order.client_order_id())
                         && let Err(e) =
-                            self.create_new_submit_order(&child_order, position_id, client_id)
+                            self.create_new_submit_order(&child_order, position_id, client_id, None)
                     {
                         log::error!("Failed to create new submit order: {e}");
                     }
@@ -768,6 +770,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::default(),
+            None, // correlation_id
         )
     }
 
@@ -859,7 +862,9 @@ mod tests {
         let strategy_id = order.strategy_id();
         let (handler, events) = subscribe_order_topic(strategy_id);
 
-        manager.create_new_submit_order(&order, None, None).unwrap();
+        manager
+            .create_new_submit_order(&order, None, None, None)
+            .unwrap();
 
         msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
         let events = events.borrow();
@@ -883,7 +888,9 @@ mod tests {
             .unwrap();
         let (handler, events) = subscribe_order_topic(strategy_id);
 
-        manager.create_new_submit_order(&order, None, None).unwrap();
+        manager
+            .create_new_submit_order(&order, None, None, None)
+            .unwrap();
 
         msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
         assert!(events.borrow().is_empty());

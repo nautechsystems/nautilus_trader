@@ -3058,6 +3058,7 @@ impl DataActorCore {
             reason,
             UUID4::new(),
             self.timestamp_ns(),
+            None, // correlation_id
         );
 
         let topic = MessagingSwitchboard::shutdown_system_topic();

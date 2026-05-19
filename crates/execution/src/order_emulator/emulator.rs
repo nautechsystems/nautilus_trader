@@ -296,6 +296,7 @@ impl OrderEmulator {
                 None, // params
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
+                None, // correlation_id
             );
 
             self.handle_submit_order(command);
@@ -561,10 +562,12 @@ impl OrderEmulator {
                 }
             }
 
-            if let Err(e) =
-                self.manager
-                    .create_new_submit_order(order, command.position_id, command.client_id)
-            {
+            if let Err(e) = self.manager.create_new_submit_order(
+                order,
+                command.position_id,
+                command.client_id,
+                command.correlation_id,
+            ) {
                 log::error!("Error creating new submit order: {e}");
             }
         }
@@ -1445,6 +1448,7 @@ mod tests {
             None,
             UUID4::new(),
             0.into(),
+            None, // correlation_id
         )
     }
 

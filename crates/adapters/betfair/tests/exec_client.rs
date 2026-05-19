@@ -331,6 +331,7 @@ fn make_cancel_order(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -709,6 +710,7 @@ async fn test_modify_order_price_and_quantity_rejects() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -769,6 +771,7 @@ async fn test_modify_order_no_effective_change_rejects() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -819,6 +822,7 @@ async fn test_cancel_all_orders_sends_request() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.cancel_all_orders(cmd).unwrap();
 
@@ -1358,6 +1362,7 @@ async fn test_query_order_emits_order_status_report() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(cmd).unwrap();
@@ -1421,6 +1426,7 @@ async fn test_query_order_no_match_emits_nothing() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(cmd).unwrap();
@@ -1467,6 +1473,7 @@ fn make_submit_order_list_cmd(
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
     (cmd, order_list)
 }
@@ -1667,6 +1674,7 @@ fn make_batch_cancel_cmd(
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
+                None, // correlation_id
             )
         })
         .collect();
@@ -1679,6 +1687,7 @@ fn make_batch_cancel_cmd(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -1891,6 +1900,7 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -1953,6 +1963,7 @@ async fn test_modify_order_without_venue_id_returns_error() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.modify_order(cmd);
@@ -2399,6 +2410,7 @@ async fn test_cancel_order_without_venue_id_returns_error() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.cancel_order(cmd);
@@ -2447,6 +2459,7 @@ async fn test_modify_order_quantity_increase_rejects() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -2566,6 +2579,7 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -2828,6 +2842,7 @@ async fn test_query_order_recovers_from_no_session() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(cmd).unwrap();
@@ -2941,6 +2956,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(modify_cmd).unwrap();
 

@@ -375,6 +375,7 @@ fn test_counters_increment_and_reset(mut execution_engine: ExecutionEngine) {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     execution_engine.execute(TradingCommand::CancelAllOrders(command));
 
@@ -464,6 +465,7 @@ fn test_submit_order_denied_with_custom_position_id_under_netting(
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -570,6 +572,7 @@ fn test_submit_order_list_denied_with_custom_position_id_under_netting(
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
@@ -644,6 +647,7 @@ fn test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -706,6 +710,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order.clone()));
@@ -794,6 +799,7 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     // This should find the client by venue routing since instrument is AUD/USD.SIM
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1116,6 +1122,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Insert orders into cache (simulating what the strategy does)
@@ -1239,6 +1246,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         client_id: Some(ClientId::from("STUB")),
         instrument_id: instrument.id,
         exec_algorithm_id: None,
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     let cache = execution_engine.cache().borrow();
@@ -1331,6 +1339,7 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     assert!(
@@ -1422,6 +1431,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     assert!(
@@ -1570,6 +1580,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit and process order through full lifecycle to FILLED status
@@ -1629,6 +1640,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::CancelOrder(cancel_order));
@@ -2097,6 +2109,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::ModifyOrder(modify_order));
     let cache = execution_engine.cache().borrow();
@@ -5476,6 +5489,7 @@ fn test_submit_market_should_not_add_to_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5555,6 +5569,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5631,6 +5646,7 @@ fn test_submit_order_adds_to_own_book_bid() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5778,6 +5794,7 @@ fn test_submit_order_adds_to_own_book_ask() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5941,6 +5958,7 @@ fn test_cancel_order_removes_from_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_order_ask = SubmitOrder {
@@ -5955,6 +5973,7 @@ fn test_cancel_order_removes_from_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit orders to create own order books
@@ -5982,6 +6001,7 @@ fn test_cancel_order_removes_from_own_book() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     let cancel_order_ask = CancelOrder {
@@ -5994,6 +6014,7 @@ fn test_cancel_order_removes_from_own_book() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::CancelOrder(cancel_order_bid));
@@ -6105,6 +6126,7 @@ fn test_own_book_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_order_ask = SubmitOrder {
@@ -6119,6 +6141,7 @@ fn test_own_book_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit orders to create own order books
@@ -6146,6 +6169,7 @@ fn test_own_book_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     let cancel_order_ask = CancelOrder {
@@ -6158,6 +6182,7 @@ fn test_own_book_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::CancelOrder(cancel_order_bid));
@@ -6307,6 +6332,7 @@ fn test_filled_order_removes_from_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_order_ask = SubmitOrder {
@@ -6321,6 +6347,7 @@ fn test_filled_order_removes_from_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit orders to create own order books
@@ -6507,6 +6534,7 @@ fn test_order_updates_in_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_order_ask = SubmitOrder {
@@ -6521,6 +6549,7 @@ fn test_order_updates_in_own_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit orders to create own order books
@@ -6731,6 +6760,7 @@ fn test_position_flip_with_own_order_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit buy order to create own order book
@@ -6823,6 +6853,7 @@ fn test_position_flip_with_own_order_book() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine.execute(TradingCommand::SubmitOrder(submit_sell_order));
@@ -6988,6 +7019,7 @@ fn test_own_book_with_crossed_orders() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_sell_order = SubmitOrder {
@@ -7002,6 +7034,7 @@ fn test_own_book_with_crossed_orders() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // Submit orders to create own order books
@@ -7144,6 +7177,7 @@ fn test_own_book_with_contingent_orders() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_tp_order = SubmitOrder {
@@ -7158,6 +7192,7 @@ fn test_own_book_with_contingent_orders() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     let submit_sl_order = SubmitOrder {
@@ -7172,6 +7207,7 @@ fn test_own_book_with_contingent_orders() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     execution_engine
@@ -7402,6 +7438,7 @@ fn test_own_book_order_status_filtering_parameterized(
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
@@ -7643,6 +7680,7 @@ fn test_own_book_combined_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_initialized));
 
@@ -7659,6 +7697,7 @@ fn test_own_book_combined_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_submitted));
     let submitted_event = TestOrderEventStubs::submitted(&submitted_order, account_id);
@@ -7677,6 +7716,7 @@ fn test_own_book_combined_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_accepted));
     let accepted_submitted_event = TestOrderEventStubs::submitted(&accepted_order, account_id);
@@ -7698,6 +7738,7 @@ fn test_own_book_combined_status_filtering() {
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
     execution_engine.execute(TradingCommand::SubmitOrder(submit_partial));
     let partial_submitted_event =
@@ -7875,6 +7916,7 @@ fn test_own_book_status_integrity_during_transitions() {
             exec_algorithm_id: None,
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
+            correlation_id: None,
         };
         execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
@@ -10120,6 +10162,7 @@ fn test_submit_order_with_no_client_denies_order(execution_engine: ExecutionEngi
         exec_algorithm_id: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // No clients registered, no default client: should deny the order
@@ -10222,6 +10265,7 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        correlation_id: None,
     };
 
     // No clients registered: all child orders should be denied

@@ -784,6 +784,7 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
         None, // params
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -823,6 +824,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.cancel_all_orders(cancel_all_cmd).unwrap();
@@ -901,6 +903,7 @@ async fn test_cancel_order_generates_canceled_event() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.cancel_order(cancel_cmd).unwrap();
@@ -981,6 +984,7 @@ async fn test_modify_order_generates_events() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     // Modify uses cancel-replace on Binance Spot, which generates cancel + new events
@@ -1039,6 +1043,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.query_account(query_cmd);
@@ -1081,6 +1086,7 @@ async fn test_query_order_missing_order_emits_no_order_report() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(query_cmd).unwrap();

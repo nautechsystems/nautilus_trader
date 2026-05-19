@@ -437,6 +437,7 @@ mod serial_tests {
                 Some("integration test".to_string()),
                 UUID4::new(),
                 ts,
+                None, // correlation_id
             );
             msgbus::publish_any(
                 MessagingSwitchboard::shutdown_system_topic(),

@@ -802,6 +802,7 @@ mod tests {
             Some("unit test".to_string()),
             UUID4::new(),
             kernel.generate_timestamp_ns(),
+            None, // correlation_id
         );
 
         msgbus::publish_any(
@@ -825,6 +826,7 @@ mod tests {
                 None,
                 UUID4::new(),
                 kernel.generate_timestamp_ns(),
+                None, // correlation_id
             )
         };
 
@@ -852,6 +854,7 @@ mod tests {
             None,
             UUID4::new(),
             kernel.generate_timestamp_ns(),
+            None, // correlation_id
         );
 
         msgbus::publish_any(

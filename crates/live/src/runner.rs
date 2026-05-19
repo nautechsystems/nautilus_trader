@@ -797,6 +797,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::default(),
             None,
+            None, // correlation_id
         ));
 
         sender.execute(command);
@@ -842,6 +843,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::default(),
             None,
+            None, // correlation_id
         ));
         exec_cmd_tx.send(command).unwrap();
 
@@ -887,6 +889,7 @@ mod tests {
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
+                None, // correlation_id
             ));
             exec_cmd_tx.send(command).unwrap();
         }
@@ -1371,6 +1374,7 @@ mod tests {
                     UUID4::new(),
                     UnixNanos::default(),
                     None,
+                    None, // correlation_id
                 ),
             ));
             assert!(runner.channels.exec_cmd_rx.try_recv().is_ok());

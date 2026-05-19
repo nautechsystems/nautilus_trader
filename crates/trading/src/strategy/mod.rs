@@ -161,6 +161,7 @@ pub trait Strategy: DataActor {
             params,
             UUID4::new(),
             ts_init,
+            None, // correlation_id
         );
 
         let manager = core.order_manager();
@@ -276,6 +277,7 @@ pub trait Strategy: DataActor {
             params,
             UUID4::new(),
             ts_init,
+            None, // correlation_id
         );
 
         let has_emulated_order = orders.iter().any(|o| {
@@ -398,6 +400,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             self.core_mut().clock().timestamp_ns(),
             params,
+            None, // correlation_id
         );
 
         let manager = self.core_mut().order_manager();
@@ -459,6 +462,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         let manager = self.core_mut().order_manager();
@@ -559,6 +563,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params.clone(),
+                None, // correlation_id
             ));
         }
 
@@ -577,6 +582,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         manager.send_exec_command(TradingCommand::BatchCancelOrders(command));
@@ -818,6 +824,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params.clone(),
+                None, // correlation_id
             );
 
             manager.send_exec_command(TradingCommand::CancelAllOrders(command));
@@ -833,6 +840,7 @@ pub trait Strategy: DataActor {
                 UUID4::new(),
                 ts_init,
                 params,
+                None, // correlation_id
             );
 
             manager.send_emulator_command(TradingCommand::CancelAllOrders(command));
@@ -985,6 +993,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         core.order_manager()
@@ -1022,6 +1031,7 @@ pub trait Strategy: DataActor {
             UUID4::new(),
             ts_init,
             params,
+            None, // correlation_id
         );
 
         core.order_manager()

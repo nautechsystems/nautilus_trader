@@ -802,6 +802,25 @@ class TestMsgSpecSerializer:
         # Assert
         assert deserialized == command
 
+    def test_serialize_and_deserialize_shutdown_system_commands_preserves_correlation_id(self):
+        # Arrange
+        correlation_id = UUID4()
+        command = ShutdownSystem(
+            trader_id=TestIdStubs.trader_id(),
+            component_id=ComponentId("Controller"),
+            reason="Maintenance",
+            command_id=UUID4(),
+            ts_init=0,
+            correlation_id=correlation_id,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized.correlation_id == correlation_id
+
     def test_serialize_and_deserialize_component_state_changed_events(self):
         # Arrange
         event = ComponentStateChanged(

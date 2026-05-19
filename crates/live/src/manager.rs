@@ -917,6 +917,7 @@ impl ExecutionManager {
                         UUID4::new(),
                         current_time,
                         None,
+                        None, // correlation_id
                     ));
                     result.queries.push(query);
                 }

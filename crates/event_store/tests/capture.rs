@@ -214,6 +214,7 @@ fn make_submit_order(client_order_id: ClientOrderId) -> SubmitOrder {
         None,
         UUID4::new(),
         UnixNanos::from(3),
+        None, // correlation_id
     )
 }
 

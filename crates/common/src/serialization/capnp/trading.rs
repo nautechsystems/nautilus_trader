@@ -40,6 +40,7 @@ fn populate_string_map(builder: base_capnp::string_map::Builder<'_>, params: &Pa
 }
 
 /// Helper function to populate a `TradingCommandHeader` builder
+#[allow(clippy::too_many_arguments)]
 fn populate_trading_command_header(
     mut builder: trading_capnp::trading_command_header::Builder<'_>,
     trader_id: &TraderId,
@@ -48,6 +49,7 @@ fn populate_trading_command_header(
     instrument_id: &InstrumentId,
     command_id: &UUID4,
     ts_init: UnixNanos,
+    correlation_id: Option<&UUID4>,
 ) {
     let trader_id_builder = builder.reborrow().init_trader_id();
     trader_id.to_capnp(trader_id_builder);
@@ -68,6 +70,11 @@ fn populate_trading_command_header(
 
     let mut ts_init_builder = builder.reborrow().init_ts_init();
     ts_init_builder.set_value(*ts_init);
+
+    if let Some(correlation_id) = correlation_id {
+        let correlation_id_builder = builder.reborrow().init_correlation_id();
+        correlation_id.to_capnp(correlation_id_builder);
+    }
 }
 
 impl<'a> ToCapnp<'a> for CancelOrder {
@@ -83,6 +90,7 @@ impl<'a> ToCapnp<'a> for CancelOrder {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let client_order_id_builder = builder.reborrow().init_client_order_id();
@@ -113,6 +121,7 @@ impl<'a> ToCapnp<'a> for CancelAllOrders {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         builder.set_order_side(order_side_to_capnp(self.order_side));
@@ -137,6 +146,7 @@ impl<'a> ToCapnp<'a> for BatchCancelOrders {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let mut cancellations_builder = builder
@@ -167,6 +177,7 @@ impl<'a> ToCapnp<'a> for ModifyOrder {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let client_order_id_builder = builder.reborrow().init_client_order_id();
@@ -212,6 +223,7 @@ impl<'a> ToCapnp<'a> for QueryOrder {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let client_order_id_builder = builder.reborrow().init_client_order_id();
@@ -239,6 +251,11 @@ impl<'a> ToCapnp<'a> for QueryAccount {
 
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
+
+        if let Some(ref correlation_id) = self.correlation_id {
+            let correlation_id_builder = builder.reborrow().init_correlation_id();
+            correlation_id.to_capnp(correlation_id_builder);
+        }
     }
 }
 
@@ -255,6 +272,7 @@ impl<'a> ToCapnp<'a> for SubmitOrder {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let order_init_builder = builder.reborrow().init_order_init();
@@ -285,6 +303,7 @@ impl<'a> ToCapnp<'a> for SubmitOrderList {
             &self.instrument_id,
             &self.command_id,
             self.ts_init,
+            self.correlation_id.as_ref(),
         );
 
         let mut order_inits_builder = builder
@@ -361,6 +380,7 @@ mod tests {
         stubs::TestDefault,
         types::{Price, Quantity},
     };
+    use nautilus_serialization::capnp::FromCapnp;
     use rstest::*;
 
     use super::*;
@@ -650,6 +670,88 @@ mod tests {
     }
 
     #[rstest]
+    #[case(None)]
+    #[case(Some(UUID4::new()))]
+    fn test_cancel_order_correlation_id_roundtrips_through_capnp_header(
+        trader_id: TraderId,
+        client_id: ClientId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        #[case] correlation_id: Option<UUID4>,
+    ) {
+        let command = CancelOrderBuilder::default()
+            .trader_id(trader_id)
+            .client_id(Some(client_id))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .venue_order_id(None)
+            .command_id(UUID4::new())
+            .ts_init(UnixNanos::default())
+            .params(None)
+            .correlation_id(correlation_id)
+            .build()
+            .unwrap();
+
+        let mut message = Builder::new_default();
+        {
+            let builder = message.init_root::<trading_capnp::cancel_order::Builder>();
+            command.to_capnp(builder);
+        }
+
+        let reader = message
+            .get_root_as_reader::<trading_capnp::cancel_order::Reader>()
+            .expect("Valid capnp message");
+        let header = reader.get_header().unwrap();
+
+        assert_eq!(header.has_correlation_id(), correlation_id.is_some());
+        if let Some(expected) = correlation_id {
+            let decoded = UUID4::from_capnp(header.get_correlation_id().unwrap())
+                .expect("correlation_id decodes");
+            assert_eq!(decoded, expected);
+        }
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(UUID4::new()))]
+    fn test_query_account_correlation_id_roundtrips_through_capnp(
+        trader_id: TraderId,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        #[case] correlation_id: Option<UUID4>,
+    ) {
+        let command = QueryAccountBuilder::default()
+            .trader_id(trader_id)
+            .client_id(None)
+            .account_id(AccountId::new("ACC-001"))
+            .command_id(command_id)
+            .ts_init(ts_init)
+            .params(None)
+            .correlation_id(correlation_id)
+            .build()
+            .unwrap();
+
+        let mut message = Builder::new_default();
+        {
+            let builder = message.init_root::<trading_capnp::query_account::Builder>();
+            command.to_capnp(builder);
+        }
+
+        let reader = message
+            .get_root_as_reader::<trading_capnp::query_account::Reader>()
+            .expect("Valid capnp message");
+
+        assert_eq!(reader.has_correlation_id(), correlation_id.is_some());
+        if let Some(expected) = correlation_id {
+            let decoded = UUID4::from_capnp(reader.get_correlation_id().unwrap())
+                .expect("correlation_id decodes");
+            assert_eq!(decoded, expected);
+        }
+    }
+
+    #[rstest]
     fn test_submit_order_serialization(command_id: UUID4, ts_init: UnixNanos, client_id: ClientId) {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
@@ -670,6 +772,7 @@ mod tests {
             None,
             command_id,
             ts_init,
+            None, // correlation_id
         );
 
         let mut message = Builder::new_default();
@@ -729,6 +832,7 @@ mod tests {
             None,
             command_id,
             ts_init,
+            None, // correlation_id
         );
 
         let mut message = Builder::new_default();

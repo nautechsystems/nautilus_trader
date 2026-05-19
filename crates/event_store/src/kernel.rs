@@ -1868,6 +1868,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::from(3),
+            None, // correlation_id
         );
 
         let endpoint = MStr::<Endpoint>::from("test.exec.engine.process");
@@ -2035,6 +2036,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::from(3),
+            None, // correlation_id
         );
         let command = TradingCommand::SubmitOrder(submit_order.clone());
 

@@ -660,6 +660,7 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // params
             UUID4::new(),
             ts_init,
+            None, // correlation_id
         );
 
         if core.config.log_commands {
@@ -752,7 +753,8 @@ pub trait ExecutionAlgorithm: DataActor {
             trigger_price,
             UUID4::new(),
             ts_init,
-            None, // params
+            None, // params,
+            None, // correlation_id
         );
 
         if self.core_mut().config.log_commands {
@@ -921,7 +923,8 @@ pub trait ExecutionAlgorithm: DataActor {
             order.venue_order_id(),
             UUID4::new(),
             ts_init,
-            None, // params
+            None, // params,
+            None, // correlation_id
         );
 
         if self.core_mut().config.log_commands {

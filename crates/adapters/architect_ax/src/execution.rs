@@ -673,6 +673,7 @@ impl ExecutionClient for AxExecutionClient {
                 cmd.params.clone(),
                 UUID4::new(),
                 cmd.ts_init,
+                cmd.correlation_id,
             );
             self.submit_order(submit_cmd)?;
         }

@@ -35,6 +35,8 @@ pub struct CancelOrder {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
 }
 
 impl CancelOrder {
@@ -51,6 +53,7 @@ impl CancelOrder {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -62,6 +65,7 @@ impl CancelOrder {
             command_id,
             ts_init,
             params,
+            correlation_id,
         }
     }
 }
@@ -87,6 +91,8 @@ pub struct CancelAllOrders {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
 }
 
 impl CancelAllOrders {
@@ -102,6 +108,7 @@ impl CancelAllOrders {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -112,6 +119,7 @@ impl CancelAllOrders {
             command_id,
             ts_init,
             params,
+            correlation_id,
         }
     }
 }
@@ -137,6 +145,8 @@ pub struct BatchCancelOrders {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
 }
 
 impl BatchCancelOrders {
@@ -152,6 +162,7 @@ impl BatchCancelOrders {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -162,6 +173,7 @@ impl BatchCancelOrders {
             command_id,
             ts_init,
             params,
+            correlation_id,
         }
     }
 }

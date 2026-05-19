@@ -38,6 +38,8 @@ pub struct ModifyOrder {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    #[builder(default)]
+    pub correlation_id: Option<UUID4>,
 }
 
 impl ModifyOrder {
@@ -57,6 +59,7 @@ impl ModifyOrder {
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -71,6 +74,7 @@ impl ModifyOrder {
             command_id,
             ts_init,
             params,
+            correlation_id,
         }
     }
 }

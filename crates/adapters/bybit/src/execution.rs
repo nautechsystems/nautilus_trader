@@ -2059,6 +2059,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::default(),
+            None, // correlation_id
         );
 
         client.submit_order(command).unwrap();
@@ -2143,6 +2144,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::default(),
+            None, // correlation_id
         );
 
         client.submit_order_list(command).unwrap();

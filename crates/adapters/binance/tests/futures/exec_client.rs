@@ -742,6 +742,7 @@ async fn test_submit_order_generates_submitted_event() {
         None, // params
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -827,6 +828,7 @@ async fn test_submit_trailing_stop_order_uses_activate_price_and_precise_callbac
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -872,6 +874,7 @@ async fn test_cancel_all_orders_completes() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     // Futures cancel_all returns success code via HTTP; cancel events arrive through WS
@@ -941,6 +944,7 @@ async fn test_cancel_order_completes() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     // Futures cancel queues an async HTTP task. The actual OrderCanceled event
@@ -1015,6 +1019,7 @@ async fn test_modify_order_completes() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(modify_cmd).unwrap();
@@ -1101,6 +1106,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -1115,6 +1121,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.cancel_order(cancel_cmd).unwrap();
@@ -1204,6 +1211,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -1221,6 +1229,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(modify_cmd).unwrap();
@@ -1332,6 +1341,7 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
         Some(params),
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(submit_cmd).unwrap();
@@ -1602,6 +1612,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.query_account(cmd);

@@ -39,6 +39,7 @@ pub struct SubmitOrder {
     pub params: Option<Params>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
 }
 
 impl SubmitOrder {
@@ -57,6 +58,7 @@ impl SubmitOrder {
         params: Option<Params>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         Self {
             trader_id,
@@ -70,6 +72,7 @@ impl SubmitOrder {
             params,
             command_id,
             ts_init,
+            correlation_id,
         }
     }
 
@@ -95,6 +98,7 @@ impl SubmitOrder {
             params: None,
             command_id,
             ts_init,
+            correlation_id: None,
         }
     }
 }
@@ -126,6 +130,7 @@ pub struct SubmitOrderList {
     pub params: Option<Params>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
 }
 
 impl SubmitOrderList {
@@ -148,6 +153,7 @@ impl SubmitOrderList {
         params: Option<Params>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
     ) -> Self {
         check_equal(
             &order_inits.len(),
@@ -179,6 +185,7 @@ impl SubmitOrderList {
             params,
             command_id,
             ts_init,
+            correlation_id,
         }
     }
 }

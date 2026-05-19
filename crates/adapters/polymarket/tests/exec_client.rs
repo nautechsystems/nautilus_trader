@@ -1214,6 +1214,7 @@ async fn test_modify_order_emits_rejection() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     client.modify_order(cmd).unwrap();
@@ -1282,6 +1283,7 @@ async fn test_submit_market_order_denied_buy_without_quote_quantity() {
         None, // params
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1341,6 +1343,7 @@ async fn test_submit_market_order_denied_sell_with_quote_quantity() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1993,6 +1996,7 @@ fn make_submit_cmd(order: &OrderAny, instrument_id: InstrumentId) -> SubmitOrder
         None, // params
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     )
 }
 
@@ -2021,6 +2025,7 @@ fn make_submit_order_list_cmd(instrument_id: InstrumentId, orders: &[OrderAny]) 
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     )
 }
 
@@ -2035,6 +2040,7 @@ fn make_cancel_cmd(client_order_id: &str, instrument_id: InstrumentId) -> Cancel
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -3461,6 +3467,7 @@ async fn test_batch_cancel_orders_with_partial_failure() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.batch_cancel_orders(cmd).unwrap();
@@ -3784,6 +3791,7 @@ async fn test_query_order_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     // This must not panic with "Cannot start a runtime from within a runtime"
@@ -3811,6 +3819,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     // This must not panic with "Cannot start a runtime from within a runtime"

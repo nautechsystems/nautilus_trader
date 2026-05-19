@@ -141,6 +141,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "reason": pa.string(),
             "command_id": pa.string(),
             "ts_init": pa.uint64(),
+            "correlation_id": pa.string(),
         },
         metadata={"type": "ShutdownSystem"},
     ),

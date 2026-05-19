@@ -1280,6 +1280,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::from(3),
+            None, // correlation_id
         )
     }
 
@@ -1427,6 +1428,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(4),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1438,6 +1440,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(5),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1468,6 +1471,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(6),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1481,6 +1485,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(7),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1495,6 +1500,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(8),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1508,6 +1514,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::from(9),
             None,
+            None, // correlation_id
         )
     }
 
@@ -1537,6 +1544,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::from(11),
+            None, // correlation_id
         )
     }
 

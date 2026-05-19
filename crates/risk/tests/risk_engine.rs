@@ -136,6 +136,7 @@ fn test_deny_order_on_price_precision_exceeded(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -213,6 +214,7 @@ fn test_deny_order_exceeding_max_notional(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -313,6 +315,7 @@ fn get_stub_submit_order(
         None, // params
         UUID4::new(),
         UnixNanos::from(10),
+        None, // correlation_id
     );
     (order, submit_order)
 }
@@ -668,6 +671,7 @@ fn test_given_random_command_then_logs_and_continues(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let random_command = TradingCommand::SubmitOrder(submit_order);
@@ -729,6 +733,7 @@ fn test_submit_order_with_default_settings_then_sends_to_client(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -780,6 +785,7 @@ fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -851,6 +857,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let account_id = AccountId::new("SIM-001");
@@ -891,6 +898,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let venue_order_id2 = VenueOrderId::new("002");
@@ -922,6 +930,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order3));
@@ -991,6 +1000,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let account_id = AccountId::new("SIM-001");
@@ -1031,6 +1041,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let venue_order_id2 = VenueOrderId::new("002");
@@ -1122,6 +1133,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
         None,                                // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1187,6 +1199,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1256,6 +1269,7 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1329,6 +1343,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1395,6 +1410,7 @@ fn test_submit_order_when_negative_price_for_futures_spread_then_allows(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1456,6 +1472,7 @@ fn test_submit_order_when_negative_price_for_option_spread_then_allows(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1521,6 +1538,7 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1591,6 +1609,7 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1659,6 +1678,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1727,6 +1747,7 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1798,6 +1819,7 @@ fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1873,6 +1895,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -1958,6 +1981,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2040,6 +2064,7 @@ fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2122,6 +2147,7 @@ fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2192,6 +2218,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2266,6 +2293,7 @@ fn test_submit_order_when_market_order_over_free_balance_with_borrowing_enabled_
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2348,6 +2376,7 @@ fn test_submit_order_list_buys_when_over_free_balance_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_order));
@@ -2439,6 +2468,7 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_order));
@@ -2501,6 +2531,7 @@ fn test_submit_order_when_trading_halted_then_denies_order(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.set_trading_state(TradingState::Halted);
@@ -2568,6 +2599,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
             None, // params
             UUID4::new(),
             risk_engine.clock().borrow().timestamp_ns(),
+            None, // correlation_id
         );
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2670,6 +2702,7 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.set_trading_state(TradingState::Halted);
@@ -2758,6 +2791,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2816,6 +2850,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
@@ -2897,6 +2932,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -2963,6 +2999,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
@@ -3066,6 +3103,7 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_bracket));
@@ -3133,6 +3171,7 @@ fn test_modify_order_when_no_order_found_logs_error(
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
         None,
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
@@ -3191,6 +3230,7 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
             UUID4::new(),
             risk_engine.clock().borrow().timestamp_ns(),
             None,
+            None, // correlation_id
         );
 
         risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
@@ -3258,6 +3298,7 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     let modify_order = ModifyOrder::new(
@@ -3273,6 +3314,7 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
         None,
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3363,6 +3405,7 @@ fn test_submit_order_when_betting_back_order_liability_within_free_balance_then_
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3434,6 +3477,7 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3548,6 +3592,7 @@ fn test_submit_order_when_betting_sell_reduces_long_position_then_accepts(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3618,6 +3663,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3715,6 +3761,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
         None, // params
         UUID4::new(),
         clock.timestamp_ns(),
+        None, // correlation_id
     );
 
     clock.set_time(UnixNanos::from(2_000)); // <-- Set time to 2,000 nanos past epoch
@@ -3828,6 +3875,7 @@ fn test_submit_order_with_quote_quantity_skips_min_max_quantity_check(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -3947,6 +3995,7 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(
         None, // params
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4061,6 +4110,7 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4175,6 +4225,7 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4260,6 +4311,7 @@ fn test_submit_order_list_beyond_rate_limit_then_denies_all_orders(
             None,
             UUID4::new(),
             risk_engine.clock().borrow().timestamp_ns(),
+            None, // correlation_id
         );
 
         risk_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
@@ -4304,6 +4356,7 @@ fn test_submit_order_list_beyond_rate_limit_then_denies_all_orders(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_throttled));
@@ -4384,6 +4437,7 @@ fn test_submit_order_list_beyond_rate_limit_denies_all_orders_in_list(
             None,
             UUID4::new(),
             risk_engine.clock().borrow().timestamp_ns(),
+            None, // correlation_id
         );
 
         risk_engine.execute(TradingCommand::SubmitOrderList(submit));
@@ -4441,6 +4495,7 @@ fn test_submit_order_list_beyond_rate_limit_denies_all_orders_in_list(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit_bracket));
@@ -4617,6 +4672,7 @@ fn test_submit_order_list_within_rate_limit_passes_through(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit));
@@ -4713,6 +4769,7 @@ fn test_submit_order_margin_account_buy_within_free_balance(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4788,6 +4845,7 @@ fn test_submit_order_margin_account_buy_exceeds_free_balance(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4862,6 +4920,7 @@ fn test_submit_order_margin_account_sell_short_exceeds_free_balance(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -4964,6 +5023,7 @@ fn test_submit_order_margin_account_position_reducing_sell_passes(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5068,6 +5128,7 @@ fn test_submit_order_margin_account_position_reducing_buy_passes(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5163,6 +5224,7 @@ fn test_submit_order_list_margin_account_cum_margin_exceeds_free_balance(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrderList(submit));
@@ -5238,6 +5300,7 @@ fn test_submit_order_margin_account_limit_order_within_balance(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5343,6 +5406,7 @@ fn test_submit_buy_when_reducing_and_net_long_then_denies(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5454,6 +5518,7 @@ fn test_submit_sell_when_reducing_and_net_short_then_denies(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5564,6 +5629,7 @@ fn test_submit_sell_when_reducing_and_net_long_then_allows(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5638,6 +5704,7 @@ fn test_submit_trailing_stop_market_buy_with_trigger_price_then_passes(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5712,6 +5779,7 @@ fn test_submit_trailing_stop_with_trigger_price_set_then_passes(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5774,6 +5842,7 @@ fn test_submit_order_with_zero_price_on_non_spread_instrument_then_denies(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
@@ -5857,6 +5926,7 @@ fn test_modify_order_when_trading_halted_then_rejects(
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
         None,
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
@@ -5941,6 +6011,7 @@ fn test_modify_order_with_invalid_price_precision_then_rejects(
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
         None,
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
@@ -6021,6 +6092,7 @@ fn test_modify_order_with_invalid_quantity_precision_then_rejects(
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
         None,
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
@@ -6132,6 +6204,7 @@ fn test_submit_sell_cash_account_with_long_position_reduces_then_passes(
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
     );
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));

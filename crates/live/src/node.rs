@@ -2083,6 +2083,7 @@ mod tests {
             UUID4::new(),
             UnixNanos::default(),
             None,
+            None, // correlation_id
         ))
     }
 

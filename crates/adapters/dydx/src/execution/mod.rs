@@ -1702,6 +1702,7 @@ impl ExecutionClient for DydxExecutionClient {
                     cmd.params.clone(),
                     UUID4::new(),
                     cmd.ts_init,
+                    cmd.correlation_id,
                 );
 
                 if let Err(e) = self.submit_order(submit_cmd) {
@@ -3560,6 +3561,7 @@ mod tests {
             None,
             UUID4::new(),
             UnixNanos::default(),
+            None, // correlation_id
         );
         client.submit_order_list(cmd).unwrap();
 

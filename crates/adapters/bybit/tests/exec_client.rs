@@ -1019,6 +1019,7 @@ async fn test_exec_client_query_order() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_order(cmd).unwrap();
@@ -1068,6 +1069,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.query_account(cmd).unwrap();
@@ -1231,6 +1233,7 @@ async fn test_exec_client_submit_order_list_demo() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();
@@ -1343,6 +1346,7 @@ async fn test_exec_client_demo_submit_post_lookup_failure_does_not_reject() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1471,6 +1475,7 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order(cmd).unwrap();
@@ -1662,6 +1667,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();

@@ -951,6 +951,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.query_account(cmd);
@@ -990,6 +991,7 @@ async fn test_query_account_emits_spot_balances() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.query_account(cmd).unwrap();
 
@@ -1051,6 +1053,7 @@ async fn test_query_account_propagates_spot_endpoint_failure() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.query_account(cmd).unwrap();
 
@@ -1212,6 +1215,7 @@ async fn test_modify_order_marks_pending_modify_before_http_completes() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -1285,6 +1289,7 @@ async fn test_modify_order_success_marks_pending_modify() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -1342,6 +1347,7 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -1403,6 +1409,7 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -1458,6 +1465,7 @@ async fn test_modify_order_transport_failure_clears_pending_modify() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -1742,6 +1750,7 @@ fn make_cancel_entry(coid: ClientOrderId, voi: VenueOrderId) -> CancelOrder {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -1827,6 +1836,7 @@ async fn test_batch_cancel_orders_per_item_error_emits_cancel_rejected() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.batch_cancel_orders(batch).unwrap();
@@ -1877,6 +1887,7 @@ async fn test_batch_cancel_orders_http_error_rejects_all_sent() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.batch_cancel_orders(batch).unwrap();
@@ -1925,6 +1936,7 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let batch = BatchCancelOrders::new(
@@ -1939,6 +1951,7 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.batch_cancel_orders(batch).unwrap();
@@ -2021,6 +2034,7 @@ fn make_cancel_all_cmd(instrument_id: &str, side: OrderSide) -> CancelAllOrders 
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -2270,6 +2284,7 @@ async fn test_cancel_order_missing_emits_cancel_rejected() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.cancel_order(cmd).unwrap();
@@ -2327,6 +2342,7 @@ fn make_query_order_cmd(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     )
 }
 
@@ -2718,6 +2734,7 @@ fn make_submit_cmd_with_params(order: &OrderAny, params: Params) -> SubmitOrder 
         Some(params),
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     )
 }
 
@@ -2842,6 +2859,7 @@ async fn test_submit_order_list_denies_outcome_reduce_only() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();
@@ -3204,6 +3222,7 @@ async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     client.modify_order(cmd).unwrap();
@@ -3264,6 +3283,7 @@ async fn test_modify_order_subtracts_filled_from_target_total() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.modify_order(cmd).unwrap();
 
@@ -3356,6 +3376,7 @@ async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();
@@ -3532,6 +3553,7 @@ async fn test_submit_order_list_grouped_error_broadcast_to_all() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     client.submit_order_list(cmd).unwrap();
@@ -3586,6 +3608,7 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
     client.query_account(cmd).unwrap();
 

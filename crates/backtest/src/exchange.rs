@@ -1170,6 +1170,7 @@ mod tests {
             None, // params
             UUID4::default(),
             ts_init,
+            None, // correlation_id
         ));
         (order, command)
     }
@@ -1978,6 +1979,7 @@ mod tests {
             None,
             UUID4::default(),
             UnixNanos::from(1),
+            None, // correlation_id
         ));
         exchange.borrow_mut().send(command);
 

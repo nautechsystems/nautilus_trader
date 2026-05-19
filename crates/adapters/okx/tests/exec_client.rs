@@ -149,6 +149,7 @@ fn test_batch_cancel_orders_builds_payload() {
                 command_id: UUID4::default(),
                 ts_init: UnixNanos::default(),
                 params: None,
+                correlation_id: None,
             },
             CancelOrder {
                 trader_id,
@@ -160,11 +161,13 @@ fn test_batch_cancel_orders_builds_payload() {
                 command_id: UUID4::default(),
                 ts_init: UnixNanos::default(),
                 params: None,
+                correlation_id: None,
             },
         ],
         command_id: UUID4::default(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     let mut payload = Vec::with_capacity(cmd.cancels.len());
@@ -196,6 +199,7 @@ fn test_batch_cancel_orders_with_empty_cancels() {
         command_id: UUID4::default(),
         ts_init: UnixNanos::default(),
         params: None,
+        correlation_id: None,
     };
 
     let payload: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)> =
@@ -511,6 +515,7 @@ fn test_submit_order_list_builds_individual_commands() {
         None,
         UUID4::default(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     // Verify each SubmitOrder can be constructed from the list
@@ -531,6 +536,7 @@ fn test_submit_order_list_builds_individual_commands() {
             params: cmd.params.clone(),
             command_id: cmd.command_id,
             ts_init: cmd.ts_init,
+            correlation_id: None,
         })
         .collect();
 
@@ -575,6 +581,7 @@ fn test_submit_order_list_single_order() {
         None,
         UUID4::default(),
         UnixNanos::default(),
+        None, // correlation_id
     );
 
     let submits: Vec<SubmitOrder> = cmd
@@ -594,6 +601,7 @@ fn test_submit_order_list_single_order() {
             params: cmd.params.clone(),
             command_id: cmd.command_id,
             ts_init: cmd.ts_init,
+            correlation_id: None,
         })
         .collect();
 
@@ -964,6 +972,7 @@ async fn test_query_account_does_not_block_within_runtime() {
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None, // correlation_id
     );
 
     let result = client.query_account(cmd);

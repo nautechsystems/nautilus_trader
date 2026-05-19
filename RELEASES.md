@@ -6,9 +6,12 @@ Released on TBD (UTC).
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
+- Added `correlation_id` field to Rust trading and system command structs for request tracing
+- Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
+- Changed Rust command `new` constructors to accept `correlation_id: Option<UUID4>` (pass `None` for old behavior)
 
 ### Security
 None
@@ -19,6 +22,7 @@ None
 - Fixed blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
+- Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
@@ -28,6 +32,7 @@ None
 - Added `try_liquidity_math_add` returning structured `LiquidityMathError` alongside the panicking variant
 - Added DEX event-signature/parser parity tests across all registered chains
 - Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
+- Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
 - Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
