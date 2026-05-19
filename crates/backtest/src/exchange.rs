@@ -560,6 +560,17 @@ impl SimulatedExchange {
             .is_some_and(|inflight| inflight.timestamp <= ts_now)
     }
 
+    /// Returns the latest arrival timestamp across all latency-deferred
+    /// inflight commands, or `None` when the inflight queue is empty.
+    ///
+    /// Used at shutdown to advance the clock past the configured `LatencyModel`
+    /// delay so trailing commands (those emitted on the final data tick or
+    /// in `on_stop`) settle before the engines stop.
+    #[must_use]
+    pub fn max_inflight_command_ts(&self) -> Option<UnixNanos> {
+        self.inflight_queue.iter().map(|c| c.timestamp).max()
+    }
+
     /// Iterates all matching engines so newly submitted orders can match
     /// against the current market state.
     pub fn iterate_matching_engines(&mut self, ts_now: UnixNanos) {
@@ -1799,6 +1810,88 @@ mod tests {
         assert_eq!(second.counter, 2);
         assert_eq!(third.timestamp, UnixNanos::from(200));
         assert_eq!(third.counter, 2);
+    }
+
+    #[rstest]
+    fn test_max_inflight_command_ts_empty() {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+        );
+        assert_eq!(exchange.borrow().max_inflight_command_ts(), None);
+    }
+
+    #[rstest]
+    fn test_max_inflight_command_ts_single_entry() {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+        );
+        let (_, cmd) = create_submit_order_command(UnixNanos::from(100), "O-1");
+        exchange
+            .borrow_mut()
+            .inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(150), 1, cmd));
+
+        assert_eq!(
+            exchange.borrow().max_inflight_command_ts(),
+            Some(UnixNanos::from(150))
+        );
+    }
+
+    #[rstest]
+    fn test_max_inflight_command_ts_returns_global_max_across_entries() {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+        );
+        let (_, cmd1) = create_submit_order_command(UnixNanos::from(50), "O-1");
+        let (_, cmd2) = create_submit_order_command(UnixNanos::from(200), "O-2");
+        let (_, cmd3) = create_submit_order_command(UnixNanos::from(100), "O-3");
+
+        let mut ex = exchange.borrow_mut();
+        ex.inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(50), 1, cmd1));
+        ex.inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(200), 1, cmd2));
+        ex.inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(100), 1, cmd3));
+        drop(ex);
+
+        assert_eq!(
+            exchange.borrow().max_inflight_command_ts(),
+            Some(UnixNanos::from(200))
+        );
+    }
+
+    #[rstest]
+    fn test_max_inflight_command_ts_ignores_counter_for_same_timestamp() {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L2_MBP,
+            None,
+        );
+        let (_, cmd1) = create_submit_order_command(UnixNanos::from(100), "O-1");
+        let (_, cmd2) = create_submit_order_command(UnixNanos::from(100), "O-2");
+
+        let mut ex = exchange.borrow_mut();
+        ex.inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(100), 1, cmd1));
+        ex.inflight_queue
+            .push(InflightCommand::new(UnixNanos::from(100), 2, cmd2));
+        drop(ex);
+
+        assert_eq!(
+            exchange.borrow().max_inflight_command_ts(),
+            Some(UnixNanos::from(100))
+        );
     }
 
     #[rstest]

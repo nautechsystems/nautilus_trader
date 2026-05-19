@@ -788,9 +788,23 @@ impl BacktestEngine {
 
         self.kernel.stop_trader();
 
-        // Settle residual on_stop commands (e.g. close_all_positions) before stopping
-        // engines. Venue modules are not re-run; process_modules is once per timestamp.
-        let ts_now = self.kernel.clock.borrow().timestamp_ns();
+        // Settle residual on_stop commands before stopping engines. Venue modules are
+        // not re-run; process_modules is once per timestamp.
+        let mut ts_now = self.kernel.clock.borrow().timestamp_ns();
+
+        // Drain first so latency-deferred commands reach venue inflight queues
+        self.drain_command_queues();
+
+        // Advance the clock to the latest inflight arrival; otherwise commands deferred
+        // by a LatencyModel sit past ts_now and never settle.
+        if let Some(max_inflight_ts) = self.max_inflight_command_ts()
+            && max_inflight_ts > ts_now
+        {
+            ts_now = max_inflight_ts;
+            let clocks = self.collect_all_clocks();
+            Self::set_all_clocks_time(&clocks, ts_now);
+        }
+
         self.settle_venues(ts_now);
 
         // Stop engines
@@ -1195,6 +1209,13 @@ impl BacktestEngine {
         let mut clocks = vec![self.kernel.clock.clone()];
         clocks.extend(self.kernel.trader.borrow().get_component_clocks());
         clocks
+    }
+
+    fn max_inflight_command_ts(&self) -> Option<UnixNanos> {
+        self.venues
+            .values()
+            .filter_map(|v| v.borrow().max_inflight_command_ts())
+            .max()
     }
 
     fn settle_venues(&self, ts_now: UnixNanos) {
