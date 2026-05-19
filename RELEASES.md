@@ -9,6 +9,8 @@ Released on TBD (UTC).
 ### Security
 
 ### Fixes
+- Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
+- Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 
 ### Internal Improvements
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions

@@ -325,6 +325,7 @@ impl BetfairDataLoader {
                                 .unwrap_or(Decimal::ZERO);
 
                             if pv.volume <= prev_volume {
+                                self.traded_volumes.insert(key, pv.volume);
                                 continue;
                             }
 

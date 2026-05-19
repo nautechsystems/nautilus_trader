@@ -105,6 +105,10 @@ pub fn parse_runner_book_deltas(
 
     // Buy side (bid): atb (available to back) is price-keyed
     for pv in rc.atb.as_deref().unwrap_or(&[]) {
+        if is_snapshot && pv.volume == Decimal::ZERO {
+            continue;
+        }
+
         let action = if is_snapshot {
             BookAction::Add
         } else if pv.volume == Decimal::ZERO {
@@ -131,6 +135,10 @@ pub fn parse_runner_book_deltas(
 
     // Sell side (ask): atl (available to lay) is price-keyed
     for pv in rc.atl.as_deref().unwrap_or(&[]) {
+        if is_snapshot && pv.volume == Decimal::ZERO {
+            continue;
+        }
+
         let action = if is_snapshot {
             BookAction::Add
         } else if pv.volume == Decimal::ZERO {
@@ -888,7 +896,7 @@ mod tests {
             enums::{StreamingOrderType, StreamingPersistenceType, StreamingSide},
             testing::load_test_json,
         },
-        stream::messages::{PV, RunnerDefinition, StreamMessage, stream_decode},
+        stream::messages::{PV, RunnerChange, RunnerDefinition, StreamMessage, stream_decode},
     };
 
     #[rstest]
@@ -948,6 +956,40 @@ mod tests {
         } else {
             panic!("expected MarketChange");
         }
+    }
+
+    #[rstest]
+    fn test_parse_runner_book_snapshot_skips_zero_volume_levels() {
+        let rc: RunnerChange = serde_json::from_str(
+            r#"{
+                "id": 123,
+                "atb": [[2.0, 0.0], [2.1, 3.0]],
+                "atl": [[2.2, 0.0], [2.3, 4.0]]
+            }"#,
+        )
+        .unwrap();
+        let instrument_id = make_instrument_id("1.234", rc.id, Decimal::ZERO);
+
+        let deltas = parse_runner_book_deltas(
+            instrument_id,
+            &rc,
+            true,
+            1_551_400_000_000,
+            parse_millis_timestamp(1_551_400_000_000),
+            parse_millis_timestamp(1_551_400_000_000),
+        )
+        .unwrap()
+        .expect("should produce deltas");
+
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .filter(|delta| delta.action == BookAction::Add)
+                .all(|delta| !delta.order.size.is_zero())
+        );
     }
 
     #[rstest]

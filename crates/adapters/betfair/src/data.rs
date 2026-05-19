@@ -324,6 +324,7 @@ impl BetfairDataClient {
                                             volumes.get(&key).copied().unwrap_or(Decimal::ZERO);
 
                                         if pv.volume <= prev_volume {
+                                            volumes.insert(key, pv.volume);
                                             continue;
                                         }
 
