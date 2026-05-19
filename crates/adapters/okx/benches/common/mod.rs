@@ -18,6 +18,11 @@
 //! Fixtures are real venue captures from `test_data/` loaded via `include_str!`
 //! so bench inputs track the parser test corpus; canonical bench numbers thus
 //! describe the same wire shapes used to verify parser correctness.
+//!
+//! Each criterion bench is a separate compilation unit that pulls in this
+//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module-level `allow`, the unused subset in any given bench triggers
+//! per-crate dead-code warnings.
 
 #![allow(dead_code)]
 
