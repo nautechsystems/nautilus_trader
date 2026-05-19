@@ -27,6 +27,8 @@ ignore = [
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
 
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
+  # Upstream advisory-db duplicates each entry under both a specific RUSTSEC-2025-* ID and an
+  # umbrella RUSTSEC-0000-0000 entry; cargo-deny matches whichever it sees first, so ignore both.
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
@@ -34,6 +36,7 @@ ignore = [
   { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+  { id = "RUSTSEC-0000-0000", reason = "umbrella ID for unic-* unmaintained announcement (rustsec/advisory-db#2414)" },
 
   # bincode 1.3.3 unmaintained, transitive via hypersync-client. Not a vulnerability.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration
