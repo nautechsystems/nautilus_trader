@@ -58,6 +58,7 @@ The integration includes several custom data types:
 - `BinanceTicker`: 24-hour ticker data including price and statistical information.
 - `BinanceBar`: Bar data with additional volume metrics for historical and real-time use.
 - `BinanceFuturesMarkPriceUpdate`: Mark price updates for Binance Futures.
+- `BinanceFuturesLiquidation`: Futures liquidation events from the `forceOrder` stream.
 
 See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) for full definitions.
 
@@ -492,6 +493,37 @@ def on_data(self, data: Data):
     if isinstance(data, BinanceFuturesMarkPriceUpdate):
         # Do something with the data
 ```
+
+### `BinanceFuturesLiquidation`
+
+Subscribe to liquidation updates for either:
+
+- a specific instrument (`<symbol>@forceOrder`), or
+- all symbols (`!forceOrder@arr`) by omitting `instrument_id`.
+
+```python
+from nautilus_trader.adapters.binance import BinanceFuturesLiquidation
+from nautilus_trader.model import DataType, ClientId
+
+# Instrument-specific
+self.subscribe_data(
+    data_type=DataType(
+        BinanceFuturesLiquidation,
+        metadata={"instrument_id": self.instrument.id},
+    ),
+    client_id=ClientId("BINANCE"),
+)
+
+# All-market (no instrument_id metadata)
+self.subscribe_data(
+    data_type=DataType(BinanceFuturesLiquidation),
+    client_id=ClientId("BINANCE"),
+)
+```
+
+For instrument-specific subscriptions, `CustomData.data_type` includes
+`metadata={"instrument_id": "<instrument_id>"}`. For all-market subscriptions,
+the data type has no metadata.
 
 ## Funding rates
 
