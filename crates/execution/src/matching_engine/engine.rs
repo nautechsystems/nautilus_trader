@@ -43,7 +43,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-        OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
+        OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
@@ -2513,29 +2514,33 @@ impl OrderMatchingEngine {
         }
 
         let instrument_id = self.instrument.id();
-        let positions: Vec<(TraderId, StrategyId, PositionId, OrderSide, Quantity)> = {
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
             let cache = self.cache.borrow();
             cache
                 .positions_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
                 .map(|pos| {
-                    let closing_side = match pos.side {
-                        PositionSide::Long => OrderSide::Sell,
-                        PositionSide::Short => OrderSide::Buy,
-                        _ => OrderSide::NoOrderSide,
-                    };
                     (
                         pos.trader_id,
                         pos.strategy_id,
+                        pos.account_id,
                         pos.id,
-                        closing_side,
+                        OrderCore::closing_side(pos.side),
                         pos.quantity,
                     )
                 })
                 .collect()
         };
 
-        for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
+            self.account_ids.insert(trader_id, account_id);
             let fill_price = if closing_side == OrderSide::Sell {
                 self.best_bid_price().or(self.settlement_price)
             } else {
@@ -2552,14 +2557,14 @@ impl OrderMatchingEngine {
             let client_order_id = ClientOrderId::from(
                 format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
             );
-            let order = OrderAny::Market(MarketOrder::new(
+            let mut order = OrderAny::Market(MarketOrder::new(
                 trader_id,
                 strategy_id,
                 instrument_id,
                 client_order_id,
                 closing_side,
                 quantity,
-                TimeInForce::Gtc,
+                TimeInForce::Ioc,
                 UUID4::new(),
                 ts_now,
                 true, // reduce_only
@@ -2577,17 +2582,24 @@ impl OrderMatchingEngine {
                 ))]),
             ));
 
-            if self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), Some(position_id), None, false)
-                .is_err()
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
             {
-                log::debug!("Liquidation order already in cache: {client_order_id}");
+                let mut cache = self.cache.borrow_mut();
+                if let Err(e) = cache.add_order(order.clone(), Some(position_id), None, false) {
+                    log::debug!("Liquidation order already in cache: {e}");
+                } else {
+                    drop(cache);
+                    self.publish_order_initialized(&order);
+                    self.cache
+                        .borrow_mut()
+                        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+                        .ok();
+                }
             }
 
-            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            self.generate_order_submitted(&order, account_id);
             self.generate_order_accepted(&order, venue_order_id);
+            order.set_liquidity_side(LiquiditySide::Taker);
             self.apply_fills(
                 &order,
                 &[(fill_price, quantity)],
@@ -5624,6 +5636,21 @@ impl OrderMatchingEngine {
                 }
             }
         }
+    }
+
+    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ));
+        self.dispatch_order_event(event);
     }
 
     fn create_order_rejected(&self, order: &OrderAny, reason: Ustr) -> OrderEventAny {

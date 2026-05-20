@@ -54,7 +54,6 @@ use nautilus_trading::{
 };
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 use super::node::create_config_instance;
 use crate::{
@@ -87,6 +86,18 @@ impl PyBacktestEngine {
     }
 
     /// Adds a simulated exchange with the given parameters to the engine.
+    ///
+    /// # Liquidation parameters
+    ///
+    /// - `liquidation_enabled` (bool, default `False`): if margin liquidation should be
+    ///   triggered when the account's equity falls to or below the maintenance
+    ///   margin threshold scaled by `liquidation_trigger_ratio`.
+    /// - `liquidation_trigger_ratio` (float, optional, default `1.0`): the ratio of
+    ///   maintenance margin used as the liquidation threshold. A value of `1.0`
+    ///   liquidates when equity <= maintenance margin; higher values trigger earlier.
+    /// - `liquidation_cancel_open_orders` (bool, default `True`): if open resting
+    ///   orders for the venue should be cancelled before synthetic close-out fills
+    ///   are emitted for open positions.
     #[pyo3(
         name = "add_venue",
         signature = (
@@ -163,7 +174,7 @@ impl PyBacktestEngine {
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, Price>>,
         liquidation_enabled: bool,
-        liquidation_trigger_ratio: Option<Decimal>,
+        liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
@@ -234,11 +245,7 @@ impl PyBacktestEngine {
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
             .liquidation_enabled(liquidation_enabled)
-            .liquidation_trigger_ratio(
-                liquidation_trigger_ratio
-                    .and_then(|d| d.to_f64())
-                    .unwrap_or(1.0),
-            )
+            .liquidation_trigger_ratio(liquidation_trigger_ratio.unwrap_or(1.0))
             .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build();
 

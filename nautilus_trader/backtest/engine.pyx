@@ -533,9 +533,6 @@ cdef class BacktestEngine:
         frozen_account: bool = False,
         price_protection_points = None,
         settlement_prices: dict[InstrumentId, float] | None = None,
-        liquidation_enabled: bool = False,
-        liquidation_trigger_ratio: float = 1.0,
-        liquidation_cancel_open_orders: bool = True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -694,9 +691,6 @@ cdef class BacktestEngine:
             queue_position=queue_position,
             price_protection_points=price_protection_points,
             settlement_prices=settlement_prices,
-            liquidation_enabled=liquidation_enabled,
-            liquidation_trigger_ratio=liquidation_trigger_ratio,
-            liquidation_cancel_open_orders=liquidation_cancel_open_orders,
         )
 
         self._venues[venue] = exchange
@@ -1874,7 +1868,6 @@ cdef class BacktestEngine:
             for module in exchange.modules:
                 module.process(ts_now)
             exchange._process_instrument_expirations(ts_now)
-            exchange._process_margin_liquidations(ts_now)
 
     cdef void _flush_accumulator_events(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
@@ -2796,9 +2789,6 @@ cdef class SimulatedExchange:
         bint queue_position = False,
         price_protection_points=None,
         settlement_prices: dict[InstrumentId, float] | None = None,
-        bint liquidation_enabled=False,
-        object liquidation_trigger_ratio=None,
-        bint liquidation_cancel_open_orders=True,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -2848,12 +2838,6 @@ cdef class SimulatedExchange:
         self.liquidity_consumption = liquidity_consumption
         self.queue_position = queue_position
         self.price_protection_points = price_protection_points if price_protection_points is not None else 0
-
-        # Liquidation
-        self.liquidation_enabled = liquidation_enabled
-        self.liquidation_trigger_ratio = Decimal("1.0") if liquidation_trigger_ratio is None else Decimal(str(liquidation_trigger_ratio))
-        self.liquidation_cancel_open_orders = liquidation_cancel_open_orders
-        self._liquidated_accounts = set()
 
         # Execution models
         self.fill_model = fill_model
@@ -3595,7 +3579,6 @@ cdef class SimulatedExchange:
             module.process(ts_now)
 
         self._process_instrument_expirations(ts_now)
-        self._process_margin_liquidations(ts_now)
 
     cdef void _drain_commands(self, uint64_t ts_now):
         self._clock.set_time(ts_now)
@@ -3649,81 +3632,6 @@ cdef class SimulatedExchange:
 
     cpdef void _process_instrument_expiration_time_event(self, TimeEvent event):
         self._process_instrument_expirations(event.ts_event)
-
-    cdef void _process_margin_liquidations(self, uint64_t ts_now):
-        """Check equity vs maintenance margin and liquidate if breached."""
-        cdef object currency
-        cdef object balance
-        cdef list positions
-        cdef object pos
-        cdef object pnl
-        cdef double upnl_total
-        cdef double equity_f64
-        cdef double maintenance_f64
-        cdef double threshold_f64
-        cdef bint all_priced
-        cdef OrderMatchingEngine matching_engine
-
-        if not self.liquidation_enabled:
-            return
-        if self.is_frozen_account:
-            return
-
-        account = self.exec_client.get_account() if self.exec_client is not None else None
-        if account is None:
-            return
-        if not hasattr(account, 'margins_maint'):
-            return  # Not a margin account
-
-        account_id = account.id
-
-        for currency in account.currencies():
-            key = (account_id, currency)
-            if key in self._liquidated_accounts:
-                continue
-
-            balance = account.balance(currency)
-            if balance is None:
-                continue
-
-            positions = self.cache.positions_open(venue=self.id)
-            upnl_total = 0.0
-            all_priced = True
-            for pos in positions:
-                if pos.settlement_currency != currency:
-                    continue
-                pnl = self.cache.calculate_unrealized_pnl(pos)
-                if pnl is None:
-                    all_priced = False
-                    break
-                upnl_total += float(pnl)
-
-            if not all_priced:
-                continue  # Defer until all positions are priced
-
-            equity_f64 = float(balance.total) + upnl_total
-            maintenance_f64 = float(account.total_margin_maint(currency))
-
-            if maintenance_f64 == 0.0:
-                continue  # No open margin requirement
-
-            threshold_f64 = maintenance_f64 * float(self.liquidation_trigger_ratio)
-
-            if equity_f64 > threshold_f64:
-                continue  # Account is healthy
-
-            self._log.warning(
-                f"LIQUIDATION triggered for {account_id} {currency}: "
-                f"equity={equity_f64:.4f} <= threshold={threshold_f64:.4f} "
-                f"(maintenance={maintenance_f64:.4f} x ratio={self.liquidation_trigger_ratio})",
-            )
-
-            self._liquidated_accounts.add(key)
-
-            for matching_engine in self._matching_engines.values():
-                matching_engine.liquidate_open_positions(ts_now, self.liquidation_cancel_open_orders)
-
-            break  # All engines liquidated for this breach; no need to check further currencies
 
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine):
         cdef uint64_t expiration_ns
@@ -3787,8 +3695,6 @@ cdef class SimulatedExchange:
 
         for matching_engine in self._matching_engines.values():
             self._update_next_instrument_expiration(matching_engine)
-
-        self._liquidated_accounts = set()
 
         self._log.info("Reset")
 
@@ -6006,56 +5912,6 @@ cdef class OrderMatchingEngine:
                         self.fill_market_order(order)
 
             self._instrument_close = None
-
-    cpdef void liquidate_open_positions(self, uint64_t ts_now, bint cancel_open_orders):
-        """
-        Force-close all open positions for this instrument.
-
-        Called by SimulatedExchange._process_margin_liquidations when account
-        equity breaches the maintenance margin threshold.
-
-        Parameters
-        ----------
-        ts_now : uint64_t
-            The current UNIX timestamp (nanoseconds).
-        cancel_open_orders : bool
-            If True, cancel all open orders before closing positions.
-        """
-        cdef list open_orders
-        cdef Order order
-        cdef list positions
-        cdef Position position
-        cdef MarketOrder close_order
-        cdef str venue_str
-
-        # Step 1: Cancel resting orders if configured
-        if cancel_open_orders:
-            open_orders = list(self.get_open_orders())
-            for order in open_orders:
-                self.cancel_order(order)
-
-        # Step 2: Close all open positions for this instrument
-        positions = self.cache.positions_open(None, self.instrument.id)
-        if not positions:
-            return
-
-        venue_str = self.venue.value
-
-        for position in positions:
-            close_order = MarketOrder(
-                trader_id=position.trader_id,
-                strategy_id=position.strategy_id,
-                instrument_id=position.instrument_id,
-                client_order_id=ClientOrderId(f"LIQUIDATION-{venue_str}-{uuid.uuid4()}"),
-                order_side=Order.closing_side_c(position.side),
-                quantity=position.quantity,
-                init_id=UUID4(),
-                ts_init=ts_now,
-                reduce_only=True,
-                tags=[f"LIQUIDATION_{venue_str}_CLOSE"],
-            )
-            self.cache.add_order(close_order, position_id=position.id)
-            self.fill_market_order(close_order)
 
     cdef void _process_option_expiry(self, uint64_t ts_now):
         """Process option expiration: ITM exercise (cash/physical) or OTM expire worthless."""

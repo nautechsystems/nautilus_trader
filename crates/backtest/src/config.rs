@@ -434,8 +434,8 @@ pub struct BacktestVenueConfig {
     liquidation_enabled: bool,
     /// The ratio of equity to maintenance margin at which liquidation is triggered.
     /// A value of 1.0 means liquidation triggers when equity <= maintenance_margin.
-    #[builder(default = Decimal::ONE)]
-    liquidation_trigger_ratio: Decimal,
+    #[builder(default = 1.0)]
+    liquidation_trigger_ratio: f64,
     /// If open orders should be canceled before closing positions during liquidation.
     #[builder(default = true)]
     liquidation_cancel_open_orders: bool,
@@ -603,7 +603,7 @@ impl BacktestVenueConfig {
     }
 
     #[must_use]
-    pub fn liquidation_trigger_ratio(&self) -> Decimal {
+    pub fn liquidation_trigger_ratio(&self) -> f64 {
         self.liquidation_trigger_ratio
     }
 

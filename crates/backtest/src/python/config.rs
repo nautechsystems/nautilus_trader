@@ -265,7 +265,7 @@ impl BacktestVenueConfig {
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, f64>>,
         liquidation_enabled: Option<bool>,
-        liquidation_trigger_ratio: Option<Decimal>,
+        liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: Option<bool>,
     ) -> pyo3::PyResult<Self> {
         let margin_model = margin_model
@@ -379,7 +379,7 @@ impl BacktestVenueConfig {
 
     #[getter]
     #[pyo3(name = "liquidation_trigger_ratio")]
-    fn py_liquidation_trigger_ratio(&self) -> Decimal {
+    fn py_liquidation_trigger_ratio(&self) -> f64 {
         self.liquidation_trigger_ratio()
     }
 

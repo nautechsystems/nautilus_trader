@@ -23,7 +23,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -53,7 +52,8 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    position::Position,
+    types::{AccountBalance, Currency, Money, Price},
 };
 use rust_decimal::Decimal;
 
@@ -160,7 +160,6 @@ pub struct SimulatedExchange {
     liquidation_enabled: bool,
     liquidation_trigger_ratio: f64,
     liquidation_cancel_open_orders: bool,
-    liquidated_accounts: AHashSet<(AccountId, Currency)>,
 }
 
 impl Debug for SimulatedExchange {
@@ -244,7 +243,6 @@ impl SimulatedExchange {
             liquidation_enabled: config.liquidation_enabled,
             liquidation_trigger_ratio: config.liquidation_trigger_ratio,
             liquidation_cancel_open_orders: config.liquidation_cancel_open_orders,
-            liquidated_accounts: AHashSet::new(),
         })
     }
 
@@ -1011,7 +1009,6 @@ impl SimulatedExchange {
         self.settlement_prices.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
-        self.liquidated_accounts.clear();
 
         log::info!("Resetting exchange state");
     }
@@ -1025,6 +1022,10 @@ impl SimulatedExchange {
 
     /// Checks if any margin accounts have breached maintenance margin and liquidates open
     /// positions when the trigger threshold is met.
+    ///
+    /// > **Note**: This implementation assumes cross-margin mode — all positions in the same
+    /// > settlement currency share a single margin pool. Isolated-margin per-position tracking
+    /// > is not yet supported.
     pub fn process_liquidations(&mut self, ts_now: UnixNanos) {
         if !self.liquidation_enabled {
             return;
@@ -1046,26 +1047,41 @@ impl SimulatedExchange {
 
         let currencies: Vec<Currency> = margin_account.currencies();
 
-        for currency in currencies {
-            if self.liquidated_accounts.contains(&(account_id, currency)) {
-                continue;
-            }
+        let open_positions: Vec<Position> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(Some(&self.id), None, None, None, None)
+                .into_iter()
+                .map(|p| p.cloned())
+                .collect()
+        };
 
+        // Pre-bucket position indices by settlement currency to avoid repeated full scans.
+        let mut positions_by_currency: AHashMap<Currency, Vec<usize>> = AHashMap::new();
+        for (i, p) in open_positions.iter().enumerate() {
+            positions_by_currency
+                .entry(p.settlement_currency)
+                .or_default()
+                .push(i);
+        }
+
+        for currency in currencies {
             let Some(balance) = margin_account.balance(Some(currency)) else {
                 continue;
             };
             let balance_f64 = balance.total.as_f64();
 
+            let Some(indices) = positions_by_currency.get(&currency) else {
+                continue;
+            };
+
             let (upnl_f64, all_priced) = {
                 let cache = self.cache.borrow();
-                let positions = cache.positions_open(Some(&self.id), None, None, None, None);
                 let mut upnl = 0.0_f64;
                 let mut all_priced = true;
 
-                for p in positions
-                    .iter()
-                    .filter(|p| p.settlement_currency == currency)
-                {
+                for &i in indices {
+                    let p = &open_positions[i];
                     match cache.calculate_unrealized_pnl(p) {
                         Some(pnl) => upnl += pnl.as_f64(),
                         None => {
@@ -1103,8 +1119,6 @@ impl SimulatedExchange {
                 maintenance,
                 self.liquidation_trigger_ratio
             );
-
-            self.liquidated_accounts.insert((account_id, currency));
 
             for matching_engine in self.matching_engines.values_mut() {
                 matching_engine

@@ -30,7 +30,6 @@ use nautilus_model::{
     types::Money,
 };
 use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
-use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType, SimulatedVenueConfig},
@@ -151,12 +150,7 @@ impl BacktestNode {
                     .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
                     .price_protection_points(venue_config.price_protection_points())
                     .liquidation_enabled(venue_config.liquidation_enabled())
-                    .liquidation_trigger_ratio(
-                        venue_config
-                            .liquidation_trigger_ratio()
-                            .to_f64()
-                            .unwrap_or(1.0),
-                    )
+                    .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
                     .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
                     .build();
                 engine.add_venue(sim_config)?;
