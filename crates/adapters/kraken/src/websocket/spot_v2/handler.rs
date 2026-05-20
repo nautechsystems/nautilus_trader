@@ -39,7 +39,10 @@ use super::{
     },
     parse::parse_order_response,
 };
-use crate::websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData};
+use crate::{
+    common::consts::{KRAKEN_RATE_LIMIT_KEY_ORDER, KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION},
+    websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
+};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -110,17 +113,23 @@ impl SpotFeedHandler {
                             }
                         }
                         SpotHandlerCommand::Subscribe { payload }
-                        | SpotHandlerCommand::Unsubscribe { payload }
-                        | SpotHandlerCommand::Ping { payload } => {
+                        | SpotHandlerCommand::Unsubscribe { payload } => {
                             if let Some(client) = &self.inner
-                                && let Err(e) = client.send_text(payload.clone(), None).await
+                                && let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
+                            {
+                                log::error!("Failed to send text: {e}");
+                            }
+                        }
+                        SpotHandlerCommand::Ping { payload } => {
+                            if let Some(client) = &self.inner
+                                && let Err(e) = client.send_text(payload, None).await
                             {
                                 log::error!("Failed to send text: {e}");
                             }
                         }
                         SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
                             if let Some(client) = &self.inner {
-                                if let Err(e) = client.send_text(payload, None).await {
+                                if let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_ORDER.as_slice())).await {
                                     log::error!(
                                         "Kraken WS send_order_request failed req_id={req_id}: {e}"
                                     );
