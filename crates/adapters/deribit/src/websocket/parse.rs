@@ -1265,6 +1265,111 @@ mod tests {
         assert_eq!(tick.trade_id.to_string(), "403691825");
     }
 
+    fn load_combo_option_instrument() -> InstrumentAny {
+        let combo_json = load_test_json("http_get_instruments_option_combo.json");
+        let combo_response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&combo_json).unwrap();
+        let combo_raw = combo_response
+            .result
+            .unwrap()
+            .into_iter()
+            .find(|i| i.instrument_name.as_str() == "BTC-CS-19MAY26-70000_75000")
+            .expect("fixture must contain BTC-CS-19MAY26-70000_75000");
+        parse_deribit_instrument_any(&combo_raw, UnixNanos::default(), UnixNanos::default())
+            .unwrap()
+            .unwrap()
+    }
+
+    fn load_combo_trade_msgs() -> Vec<DeribitTradeMsg> {
+        let json = load_test_json("ws_trades_option_combo.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        serde_json::from_value(response["params"]["data"].clone()).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_trades_data_combo_emits_single_tick() {
+        // Step 1 finding: combo legs already publish on their own per-leg
+        // streams. Parsing a combo trade message should produce exactly one
+        // TradeTick (for the combo), not N+1.
+        let combo_inst = load_combo_option_instrument();
+        let mut cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        cache.insert(Ustr::from("BTC-CS-19MAY26-70000_75000"), combo_inst.clone());
+
+        let trades = load_combo_trade_msgs();
+        // Sanity: the combo message itself carries the legs array.
+        let legs = trades[0].legs.as_ref().expect("combo trade must have legs");
+        assert_eq!(legs.len(), 2);
+
+        let data = parse_trades_data(&trades, &cache, UnixNanos::default());
+        assert_eq!(data.len(), 1, "should emit one tick for the combo only");
+
+        let Data::Trade(tick) = &data[0] else {
+            panic!("expected Data::Trade");
+        };
+        assert_eq!(tick.instrument_id, combo_inst.id());
+        // Exact values from fixture; independent of the instrument under test
+        // so a regression in price/size precision is caught here too.
+        assert_eq!(tick.price, Price::from("0.0639"));
+        assert_eq!(tick.size, Quantity::from("0.1"));
+        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.trade_id.to_string(), "244365193");
+    }
+
+    #[rstest]
+    fn test_parse_trades_data_combo_not_cached_emits_no_tick() {
+        // When the combo InstrumentAny is not in the WS handler cache,
+        // parse_trades_data must drop the message rather than panic or
+        // synthesise a tick against an unknown instrument.
+        let cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        let trades = load_combo_trade_msgs();
+        let data = parse_trades_data(&trades, &cache, UnixNanos::default());
+        assert!(data.is_empty(), "uncached combo must not emit ticks");
+    }
+
+    #[rstest]
+    fn test_parse_trades_data_mixed_combo_and_per_leg() {
+        // Combo trade and a plain per-leg trade on the underlying perpetual,
+        // both cached, must each produce a tick against their own instrument.
+        let combo_inst = load_combo_option_instrument();
+        let perp_inst = test_perpetual_instrument();
+
+        let mut cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+        cache.insert(Ustr::from("BTC-CS-19MAY26-70000_75000"), combo_inst.clone());
+        cache.insert(Ustr::from("BTC-PERPETUAL"), perp_inst.clone());
+
+        let mut trades = load_combo_trade_msgs();
+        let perp_msgs: Vec<DeribitTradeMsg> = {
+            let json = load_test_json("ws_trades.json");
+            let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+            serde_json::from_value(response["params"]["data"].clone()).unwrap()
+        };
+        trades.extend(perp_msgs);
+
+        let data = parse_trades_data(&trades, &cache, UnixNanos::default());
+        // 1 combo + 2 plain BTC-PERPETUAL trades from the existing fixture.
+        assert_eq!(data.len(), 3);
+
+        let mut combo_ticks = 0;
+        let mut perp_ticks = 0;
+
+        for item in &data {
+            let Data::Trade(tick) = item else {
+                panic!("expected Data::Trade, was {item:?}");
+            };
+
+            if tick.instrument_id == combo_inst.id() {
+                combo_ticks += 1;
+                assert_eq!(tick.trade_id.to_string(), "244365193");
+            } else if tick.instrument_id == perp_inst.id() {
+                perp_ticks += 1;
+            } else {
+                panic!("unexpected instrument_id: {}", tick.instrument_id);
+            }
+        }
+        assert_eq!(combo_ticks, 1);
+        assert_eq!(perp_ticks, 2);
+    }
+
     #[rstest]
     fn test_parse_book_snapshot() {
         let instrument = test_perpetual_instrument();

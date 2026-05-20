@@ -81,8 +81,8 @@ use crate::{
     http::{
         models::{DeribitOrderBook, DeribitTradesResponse, DeribitTradingViewChartData},
         query::{
-            GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
-            GetTradingViewChartDataParams,
+            GetLastTradesByCurrencyParams, GetLastTradesByInstrumentAndTimeParams,
+            GetOrderBookParams, GetTradingViewChartDataParams,
         },
     },
     websocket::{
@@ -636,6 +636,23 @@ impl DeribitRawHttpClient {
         .await
     }
 
+    /// Gets recent trades for a currency, optionally filtered by product kind.
+    ///
+    /// The instrument-and-time variant accepts combo instrument names, but
+    /// this currency-scoped endpoint is the only way to sweep trades across
+    /// all combos of a given kind (e.g., every BTC future combo) in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_last_trades_by_currency(
+        &self,
+        params: GetLastTradesByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitTradesResponse>, DeribitHttpError> {
+        self.send_request("public/get_last_trades_by_currency", params, false)
+            .await
+    }
+
     /// Gets TradingView chart data (OHLCV) for an instrument.
     ///
     /// # Errors
@@ -875,6 +892,15 @@ impl Clone for DeribitHttpClient {
 }
 
 impl DeribitHttpClient {
+    /// Returns a reference to the underlying raw HTTP client.
+    ///
+    /// Exposes low-level endpoint methods (e.g., `get_last_trades_by_currency`)
+    /// that this wrapper does not yet adapt.
+    #[must_use]
+    pub fn inner(&self) -> &DeribitRawHttpClient {
+        &self.inner
+    }
+
     /// Creates a new [`DeribitHttpClient`] with default configuration.
     ///
     /// # Parameters

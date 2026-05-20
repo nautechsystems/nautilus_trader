@@ -107,6 +107,95 @@ Examples:
 InstrumentId.from_str("BTC_USDC.DERIBIT")
 ```
 
+### Future combos
+
+Format: `{Currency}-FS-{LegA}_{LegB}`
+
+Legs are dated futures or the perpetual (denoted `PERP` inside combo names, even though the
+standalone instrument is `BTC-PERPETUAL`). The combo expires with its earliest leg.
+
+Examples:
+
+- `BTC-FS-25DEC26_PERP` - calendar spread between the Dec 2026 future and the perpetual.
+- `BTC-FS-22MAY26_19MAY26` - inter-month spread between two dated futures.
+
+```python
+InstrumentId.from_str("BTC-FS-25DEC26_PERP.DERIBIT")
+```
+
+The adapter models future combos as `FuturesSpread`, priced in USD as the spread between legs.
+
+### Option combos
+
+Format: `{Currency}-{Strategy}-{DDMMMYY}-{Strikes}`
+
+Strategy codes include CS (call spread), PS (put spread), STRG (strangle), STRD (straddle),
+BOX (box), and RR (risk reversal). The strikes segment separates multiple strikes with `_`.
+
+Examples:
+
+- `BTC-CS-19MAY26-70000_75000` - 70k / 75k call spread expiring 19 May 2026.
+- `BTC-STRG-29MAY26-72000_80000` - 72k / 80k strangle.
+- `BTC-STRD-29MAY26-77000` - 77k straddle.
+- `BTC-BOX-25DEC26-58000_60000` - 58k / 60k box.
+
+```python
+InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
+```
+
+The adapter models option combos as `OptionSpread`, priced in the base currency under Deribit's
+inverse-option convention.
+
+## Combo instruments
+
+The instrument provider loads combos when `product_types` includes
+`DeribitProductType.OptionCombo` or `DeribitProductType.FutureCombo`. Deribit exposes the leg
+makeup of every active combo on `/public/get_combos`, and the combo's trading metadata
+(tick size, contract size, expiration, min trade amount) on the standard
+`/public/get_instruments?kind=option_combo|future_combo` response.
+
+### Trade publishing
+
+Deribit publishes each combo trade twice:
+
+- On the combo's trade channel (`trades.{combo_name}.{interval}`): the parent trade plus a
+  `legs[]` array describing each leg fill.
+- On each leg's trade channel (`trades.{leg_instrument}.{interval}`): a standalone trade for the
+  leg, tagged with `combo_id` and `combo_trade_id` pointing back to the parent.
+
+A subscriber to a plain option or future therefore sees combo-origin fills on its existing
+trade stream, and a subscriber to the combo itself sees the combo-level trade. The adapter
+does not fan out combo parent messages into extra leg ticks; it forwards the upstream parent
+and per-leg messages as separate `TradeTick`s against their respective `InstrumentId`s, so a
+subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
+that combo trade — not duplicate ticks against the same instrument.
+
+Deribit already publishes block trades and Block RFQs per leg, so they need no special handling.
+
+### Historical combo trades
+
+The standard per-instrument trades endpoint accepts combo instrument names. To sweep all combos
+of a given product kind in one call, use `get_last_trades_by_currency` via
+`DeribitHttpClient::inner()`:
+
+```rust
+use nautilus_deribit::http::{
+    models::{DeribitCurrency, DeribitProductType},
+    query::GetLastTradesByCurrencyParams,
+};
+
+let params = GetLastTradesByCurrencyParams::builder()
+    .currency(DeribitCurrency::BTC)
+    .kind(DeribitProductType::FutureCombo)
+    .count(50_u32)
+    .include_old(true)
+    .build()?;
+let resp = client.inner().get_last_trades_by_currency(params).await?;
+```
+
+Each returned `DeribitPublicTrade` carries `legs: Option<Vec<DeribitTradeLeg>>` plus the
+`combo_id` and `combo_trade_id` fields used to correlate per-leg trades.
+
 ## Order book subscriptions
 
 Deribit provides two types of order book feeds, each suited for different use cases.
@@ -134,10 +223,10 @@ This groups multiple order book changes into single messages.
 
 The Nautilus adapter supports both feed types via subscription parameters:
 
-| Parameter | Values | Notes |
-|-----------|--------|-------|
+| Parameter  | Values                 | Notes                                                                         |
+|------------|------------------------|-------------------------------------------------------------------------------|
 | `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. `agg2` batches at ~1 second intervals. `raw` requires auth. |
-| `depth` | `1`, `10`, `20` | Default: `10`. Number of price levels per side. |
+| `depth`    | `1`, `10`, `20`        | Default: `10`. Number of price levels per side.                               |
 
 ```python
 from nautilus_trader.model.identifiers import InstrumentId

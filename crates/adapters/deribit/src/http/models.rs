@@ -22,6 +22,7 @@ use ustr::Ustr;
 
 pub use crate::common::{
     enums::{DeribitCurrency, DeribitOptionType, DeribitProductType},
+    models::DeribitTradeLeg,
     rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
 };
 
@@ -415,8 +416,11 @@ pub struct DeribitPublicTrade {
     #[serde(default)]
     pub combo_id: Option<String>,
     /// Optional field containing combo trade identifier if the trade is a combo trade.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
-    pub combo_trade_id: Option<Decimal>,
+    #[serde(default)]
+    pub combo_trade_id: Option<String>,
+    /// Per-leg trades when this is the parent combo trade.
+    #[serde(default)]
+    pub legs: Option<Vec<DeribitTradeLeg>>,
 }
 
 /// Response wrapper for trades endpoints.

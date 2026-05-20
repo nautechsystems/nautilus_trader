@@ -39,7 +39,7 @@ pub use crate::common::{
     enums::DeribitInstrumentState,
     rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
 };
-use crate::websocket::error::DeribitWsError;
+use crate::{common::models::DeribitTradeLeg, websocket::error::DeribitWsError};
 
 /// JSON-RPC subscription notification from Deribit.
 #[derive(Debug, Clone, Deserialize)]
@@ -174,6 +174,9 @@ pub struct DeribitTradeMsg {
     pub block_trade_id: Option<String>,
     /// Combo ID.
     pub combo_id: Option<String>,
+    /// Per-leg trades when this is the parent combo trade.
+    #[serde(default)]
+    pub legs: Option<Vec<DeribitTradeLeg>>,
 }
 
 /// Order book data from book.{instrument}.{interval} or book.{instrument}.{group}.{depth}.{interval} channels.

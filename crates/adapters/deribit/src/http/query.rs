@@ -133,6 +133,78 @@ impl GetLastTradesByInstrumentAndTimeParams {
     }
 }
 
+/// Query parameters for `/public/get_last_trades_by_currency` endpoint.
+///
+/// Mirrors the per-instrument variant but selects trades by currency and
+/// (optionally) product kind. Required to backfill combo trades, which are
+/// not accessible via the instrument-scoped endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetLastTradesByCurrencyParams {
+    /// Currency to query.
+    pub currency: DeribitCurrency,
+    /// Optional product kind filter (e.g., `option_combo`, `future_combo`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub kind: Option<DeribitProductType>,
+    /// First trade ID (inclusive) of the range to fetch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub start_id: Option<String>,
+    /// Last trade ID (inclusive) of the range to fetch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub end_id: Option<String>,
+    /// Maximum number of trades to return (default 10, max 1000).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+    /// Whether to include expired-instrument trades.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_old: Option<bool>,
+    /// Direction of results sorting: `asc`, `desc`, or `default`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub sorting: Option<String>,
+}
+
+impl GetLastTradesByCurrencyParams {
+    /// Creates a new builder for [`GetLastTradesByCurrencyParams`].
+    #[must_use]
+    pub fn builder() -> GetLastTradesByCurrencyParamsBuilder {
+        GetLastTradesByCurrencyParamsBuilder::default()
+    }
+
+    /// Creates parameters for a specific currency.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency) -> Self {
+        Self {
+            currency,
+            kind: None,
+            start_id: None,
+            end_id: None,
+            count: None,
+            include_old: None,
+            sorting: None,
+        }
+    }
+
+    /// Creates parameters for a specific currency and product kind.
+    #[must_use]
+    pub fn with_kind(currency: DeribitCurrency, kind: DeribitProductType) -> Self {
+        Self {
+            currency,
+            kind: Some(kind),
+            start_id: None,
+            end_id: None,
+            count: None,
+            include_old: None,
+            sorting: None,
+        }
+    }
+}
+
 /// Query parameters for `/public/get_tradingview_chart_data` endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetTradingViewChartDataParams {
@@ -489,5 +561,81 @@ impl GetPositionsParams {
     #[must_use]
     pub fn builder() -> GetPositionsParamsBuilder {
         GetPositionsParamsBuilder::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_last_trades_by_currency_params_default_omits_optionals() {
+        // Only `currency` should appear on the wire when no optional fields
+        // are set; skip_serializing_if = Option::is_none must elide the rest.
+        let params = GetLastTradesByCurrencyParams::new(DeribitCurrency::BTC);
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(value, json!({"currency": "BTC"}));
+    }
+
+    #[rstest]
+    fn test_get_last_trades_by_currency_params_full_payload() {
+        // All fields populated. Pins Deribit wire key names and value
+        // serialization (DeribitProductType uses serde rename for combos).
+        let params = GetLastTradesByCurrencyParams {
+            currency: DeribitCurrency::BTC,
+            kind: Some(DeribitProductType::FutureCombo),
+            start_id: Some("100".to_string()),
+            end_id: Some("200".to_string()),
+            count: Some(50),
+            include_old: Some(true),
+            sorting: Some("asc".to_string()),
+        };
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "currency": "BTC",
+                "kind": "future_combo",
+                "start_id": "100",
+                "end_id": "200",
+                "count": 50,
+                "include_old": true,
+                "sorting": "asc",
+            }),
+        );
+    }
+
+    #[rstest]
+    fn test_get_last_trades_by_currency_params_with_kind_constructor() {
+        let params = GetLastTradesByCurrencyParams::with_kind(
+            DeribitCurrency::ETH,
+            DeribitProductType::OptionCombo,
+        );
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(value, json!({"currency": "ETH", "kind": "option_combo"}));
+    }
+
+    #[rstest]
+    fn test_get_last_trades_by_currency_params_builder_partial() {
+        let params = GetLastTradesByCurrencyParams::builder()
+            .currency(DeribitCurrency::BTC)
+            .kind(DeribitProductType::FutureCombo)
+            .count(25_u32)
+            .include_old(true)
+            .build()
+            .unwrap();
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "currency": "BTC",
+                "kind": "future_combo",
+                "count": 25,
+                "include_old": true,
+            }),
+        );
     }
 }
