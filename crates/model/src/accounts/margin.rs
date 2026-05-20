@@ -522,7 +522,7 @@ impl Account for MarginAccount {
     }
 
     fn calculated_account_state(&self) -> bool {
-        false // TODO (implement this logic)
+        self.calculate_account_state
     }
 
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
@@ -728,6 +728,14 @@ mod tests {
             margin_account.to_string(),
             "MarginAccount(id=SIM-001, type=MARGIN, base=USD)"
         );
+    }
+
+    #[rstest]
+    fn test_calculated_account_state_returns_field_value(margin_account_state: AccountState) {
+        assert!(
+            MarginAccount::new(margin_account_state.clone(), true).calculated_account_state()
+        );
+        assert!(!MarginAccount::new(margin_account_state, false).calculated_account_state());
     }
 
     #[rstest]

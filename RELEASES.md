@@ -17,6 +17,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
+- Fixed `Account::calculated_account_state` returning hardcoded `false` for `CashAccount` and `MarginAccount` (the trait method now returns the underlying `calculate_account_state` field, matching `BettingAccount`)
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`

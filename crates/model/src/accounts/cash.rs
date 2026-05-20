@@ -211,7 +211,7 @@ impl Account for CashAccount {
     }
 
     fn calculated_account_state(&self) -> bool {
-        false // TODO (implement this logic)
+        self.calculate_account_state
     }
 
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
@@ -391,6 +391,16 @@ mod tests {
         assert_eq!(
             format!("{cash_account}"),
             "CashAccount(id=SIM-001, type=CASH, base=USD)"
+        );
+    }
+
+    #[rstest]
+    fn test_calculated_account_state_returns_field_value(cash_account_state: AccountState) {
+        assert!(
+            CashAccount::new(cash_account_state.clone(), true, false).calculated_account_state()
+        );
+        assert!(
+            !CashAccount::new(cash_account_state, false, false).calculated_account_state()
         );
     }
 
