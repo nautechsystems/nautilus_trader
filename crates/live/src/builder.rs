@@ -437,13 +437,11 @@ impl LiveNodeBuilder {
             exec_manager_config,
         );
 
+        let mut node = LiveNode::new_from_builder(kernel, runner, self.config, exec_manager);
+        node.load_configured_plugins()?;
+
         log::info!("Built successfully");
 
-        Ok(LiveNode::new_from_builder(
-            kernel,
-            runner,
-            self.config,
-            exec_manager,
-        ))
+        Ok(node)
     }
 }

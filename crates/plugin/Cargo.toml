@@ -42,10 +42,18 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+serde_json = { workspace = true }
 ustr = { workspace = true }
 
 [[example]]
 name = "custom_data_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "runtime_smoke_plugin"
 crate-type = ["cdylib"]
 required-features = []
 doc = false

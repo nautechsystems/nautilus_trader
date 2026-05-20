@@ -42,8 +42,13 @@ pub mod host;
 pub mod registry;
 pub mod strategy;
 
+pub(crate) mod configured;
+
 pub use actor::PluginActorAdapter;
 pub use commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand};
+pub(crate) use configured::{
+    ConfiguredPluginEntry, configured_entry, register_manifest_custom_data,
+};
 pub use custom_data::{PluginCustomDataValue, register_custom_data_from_manifest};
 pub use host::{host_vtable, plugin_loader};
 pub use registry::HostContextInner;

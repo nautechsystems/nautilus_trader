@@ -100,6 +100,9 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Submit an order through the Hyperliquid WebSocket post API.
+    ///
+    /// The HTTP client supplies signing credentials, builder attribution, and
+    /// cached instrument metadata. The action itself is sent over WebSocket.
     #[pyo3(name = "submit_order", signature = (
         signer,
         instrument_id,

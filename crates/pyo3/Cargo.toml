@@ -108,7 +108,11 @@ nautilus-data = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
-nautilus-live = { workspace = true, features = ["python", "examples"] }
+nautilus-live = { workspace = true, features = [
+  "python",
+  "examples",
+  "plugin",
+] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = [
   "python",

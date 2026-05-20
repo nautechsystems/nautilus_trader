@@ -29,7 +29,7 @@ node = [
   "dep:nautilus-system",
   "dep:nautilus-trading",
 ]
-plugin = ["node", "dep:nautilus-plugin"]
+plugin = ["node", "dep:aws-lc-rs", "dep:nautilus-plugin"]
 examples = ["node", "nautilus-trading/examples"]
 streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
@@ -88,6 +88,7 @@ nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }

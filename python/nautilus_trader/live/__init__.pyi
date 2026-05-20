@@ -19,6 +19,7 @@ __all__ = [
     "LiveNodeBuilder",
     "LiveNodeConfig",
     "LiveRiskEngineConfig",
+    "PluginConfig",
     "PortfolioConfig",
     "RoutingConfig",
 ]
@@ -207,6 +208,8 @@ class LiveNodeConfig:
     def delay_post_stop_secs(self) -> float: ...
     @property
     def timeout_shutdown_secs(self) -> float: ...
+    @property
+    def plugins(self) -> list[PluginConfig]: ...
     def __new__(
         cls,
         environment: common.Environment | None = None,
@@ -228,6 +231,7 @@ class LiveNodeConfig:
         data_engine: LiveDataEngineConfig | None = None,
         risk_engine: LiveRiskEngineConfig | None = None,
         exec_engine: LiveExecEngineConfig | None = None,
+        plugins: typing.Sequence[PluginConfig] | None = None,
     ) -> LiveNodeConfig: ...
 
 @typing.final
@@ -241,6 +245,24 @@ class LiveRiskEngineConfig:
         debug: bool | None = None,
         graceful_shutdown_on_error: bool | None = None,
     ) -> LiveRiskEngineConfig: ...
+
+@typing.final
+class PluginConfig:
+    @property
+    def path(self) -> str: ...
+    @property
+    def type_name(self) -> str: ...
+    @property
+    def config(self) -> dict: ...
+    @property
+    def sha256(self) -> str | None: ...
+    def __new__(
+        cls,
+        path: str,
+        type_name: str,
+        config: typing.Mapping[str, typing.Any] | None = None,
+        sha256: str | None = None,
+    ) -> PluginConfig: ...
 
 @typing.final
 class RoutingConfig:

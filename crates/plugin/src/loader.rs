@@ -116,7 +116,7 @@ impl LoadedPlugin {
 /// Owns every `Library` for the lifetime of the live node, since v1 does not
 /// support `dlclose`. Caller walks the returned [`LoadedPlugin`] manifests to
 /// register entries into the relevant runtime registries.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PluginLoader {
     loaded: Vec<LoadedPlugin>,
     host: Option<*const HostVTable>,

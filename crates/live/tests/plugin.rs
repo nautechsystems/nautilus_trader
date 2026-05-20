@@ -34,15 +34,24 @@
 #![allow(unsafe_code)]
 
 use std::{
+    collections::HashMap,
+    fs,
     path::PathBuf,
     process::Command,
     sync::{Mutex, OnceLock},
+    time::Duration,
 };
 
+use aws_lc_rs::digest;
 use nautilus_common::actor::DataActor;
-use nautilus_live::plugin::{
-    PluginActorAdapter, PluginStrategyAdapter, host_vtable, plugin_loader,
-    register_custom_data_from_manifest,
+use nautilus_core::{UUID4, hex};
+use nautilus_live::{
+    config::{LiveExecEngineConfig, LiveNodeConfig, PluginConfig},
+    node::LiveNode,
+    plugin::{
+        PluginActorAdapter, PluginStrategyAdapter, host_vtable, plugin_loader,
+        register_custom_data_from_manifest,
+    },
 };
 use nautilus_model::{
     data::{Data, registry::deserialize_custom_from_json},
@@ -53,6 +62,7 @@ use nautilus_trading::strategy::StrategyConfig;
 use rstest::{fixture, rstest};
 
 const EXAMPLE_NAME: &str = "custom_data_plugin";
+const RUNTIME_SMOKE_EXAMPLE_NAME: &str = "runtime_smoke_plugin";
 
 fn workspace_root() -> PathBuf {
     let p = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo");
@@ -100,6 +110,39 @@ fn build_example_once() -> PathBuf {
         })
         .clone()
     // OnceLock cloned PathBuf so callers can use it without holding the lock.
+}
+
+fn build_runtime_smoke_example_once() -> PathBuf {
+    static EXAMPLE_PATH: OnceLock<PathBuf> = OnceLock::new();
+    EXAMPLE_PATH
+        .get_or_init(|| {
+            let root = workspace_root();
+            let status = Command::new(env!("CARGO"))
+                .current_dir(&root)
+                .args([
+                    "build",
+                    "-p",
+                    "nautilus-plugin",
+                    "--example",
+                    RUNTIME_SMOKE_EXAMPLE_NAME,
+                ])
+                .status()
+                .expect("cargo build of runtime smoke cdylib");
+            assert!(status.success(), "failed to build runtime smoke cdylib");
+
+            let artifact = root
+                .join("target")
+                .join("debug")
+                .join("examples")
+                .join(cdylib_filename(RUNTIME_SMOKE_EXAMPLE_NAME));
+            assert!(
+                artifact.exists(),
+                "runtime smoke cdylib artifact not at {}",
+                artifact.display()
+            );
+            artifact
+        })
+        .clone()
 }
 
 // The PluginLoader keeps libraries alive for the process lifetime, so we
@@ -242,4 +285,176 @@ fn custom_data_registration_round_trips_via_registry(example_manifest: &'static 
         panic!("expected Custom variant");
     };
     assert_eq!(custom.data.type_name(), "ExampleTick");
+}
+
+#[rstest]
+#[ignore]
+fn live_node_loads_configured_plugin_actor_strategy_and_custom_data() {
+    let path = build_example_once();
+    let config = LiveNodeConfig {
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![
+            PluginConfig {
+                path: path.display().to_string(),
+                type_name: "ExampleActor".to_string(),
+                config: HashMap::from([(
+                    "actor_id".to_string(),
+                    serde_json::json!("ExampleActor-001"),
+                )]),
+                sha256: None,
+            },
+            PluginConfig {
+                path: path.display().to_string(),
+                type_name: "ExampleStrategy".to_string(),
+                config: HashMap::from([(
+                    "strategy_id".to_string(),
+                    serde_json::json!("ExampleStrategy-001"),
+                )]),
+                sha256: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let node = LiveNode::build("PluginConfigNode".to_string(), Some(config)).unwrap();
+    let trader = node.kernel().trader.borrow();
+
+    assert!(
+        trader
+            .actor_ids()
+            .contains(&ActorId::from("ExampleActor-001"))
+    );
+    assert!(
+        trader
+            .strategy_ids()
+            .contains(&StrategyId::from("ExampleStrategy-001"))
+    );
+    drop(trader);
+
+    let envelope = serde_json::json!({
+        "type": "Custom",
+        "data_type": {
+            "type_name": "ExampleTick",
+        },
+        "payload": {
+            "value": 2.5,
+            "ts_event": 20,
+            "ts_init": 21,
+        },
+    });
+    let data = deserialize_custom_from_json("ExampleTick", &envelope)
+        .expect("deserializer returns Ok")
+        .expect("custom data type is registered");
+    assert!(matches!(data, Data::Custom(_)));
+}
+
+#[rstest]
+#[ignore]
+fn live_node_accepts_matching_plugin_sha256() {
+    let path = build_example_once();
+    let bytes = fs::read(&path).expect("example cdylib can be read");
+    let sha256 = hex::encode(digest::digest(&digest::SHA256, &bytes).as_ref());
+    let config = LiveNodeConfig {
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![PluginConfig {
+            path: path.display().to_string(),
+            type_name: "ExampleActor".to_string(),
+            config: HashMap::from([(
+                "actor_id".to_string(),
+                serde_json::json!("ExampleActorSha-001"),
+            )]),
+            sha256: Some(sha256),
+        }],
+        ..Default::default()
+    };
+
+    let node = LiveNode::build("PluginShaOkNode".to_string(), Some(config)).unwrap();
+    let trader = node.kernel().trader.borrow();
+
+    assert!(
+        trader
+            .actor_ids()
+            .contains(&ActorId::from("ExampleActorSha-001"))
+    );
+}
+
+#[rstest]
+#[ignore]
+fn live_node_checks_sha256_for_each_configured_plugin_instance() {
+    let path = build_example_once();
+    let config = LiveNodeConfig {
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![
+            PluginConfig {
+                path: path.display().to_string(),
+                type_name: "ExampleActor".to_string(),
+                sha256: None,
+                ..Default::default()
+            },
+            PluginConfig {
+                path: path.display().to_string(),
+                type_name: "ExampleStrategy".to_string(),
+                sha256: Some("0".repeat(64)),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let error = LiveNode::build("PluginShaNode".to_string(), Some(config))
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("SHA-256 mismatch"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn live_node_start_invokes_configured_plugin_actor() {
+    let path = build_runtime_smoke_example_once();
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+
+    let config = LiveNodeConfig {
+        delay_post_stop: Duration::ZERO,
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![PluginConfig {
+            path: path.display().to_string(),
+            type_name: "RuntimeSmokeActor".to_string(),
+            config: HashMap::from([
+                (
+                    "actor_id".to_string(),
+                    serde_json::json!("RuntimeSmokeActor-001"),
+                ),
+                (
+                    "callback_path".to_string(),
+                    serde_json::json!(marker.display().to_string()),
+                ),
+                ("label".to_string(), serde_json::json!("rust")),
+            ]),
+            sha256: None,
+        }],
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("PluginRuntimeNode".to_string(), Some(config)).unwrap();
+
+    node.start().await.unwrap();
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes callback marker");
+    node.stop().await.unwrap();
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "rust:on_start\n");
 }

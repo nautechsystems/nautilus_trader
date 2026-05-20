@@ -1348,6 +1348,123 @@ fn host_subscribe_bars_routes_msgbus_events_to_registered_strategy_adapter() {
 }
 
 #[rstest]
+fn host_subscriptions_route_msgbus_events_to_registered_actor_adapter() {
+    let _lock = lock_counters();
+    a_reset();
+
+    let mut adapter = build_actor_adapter("PluginPhaseTwoActorSub-001");
+    adapter
+        .register(
+            TraderId::from("TRADER-001"),
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+        )
+        .expect("actor register");
+    Component::start(&mut adapter).expect("actor starts");
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: false,
+    });
+
+    let instrument = instrument_id().to_string();
+    let bar = make_bar();
+    let bar_type = bar.bar_type;
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.subscribe_quotes)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_quotes succeeds");
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.subscribe_trades)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_trades succeeds");
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.subscribe_bars)(
+            ctx,
+            BorrowedStr::from_str(&bar_type.to_string()),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_bars succeeds");
+
+    msgbus::publish_quote(get_quotes_topic(instrument_id()), &make_quote());
+    msgbus::publish_trade(get_trades_topic(instrument_id()), &make_trade());
+    msgbus::publish_bar(get_bars_topic(bar_type), &bar);
+
+    assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.unsubscribe_quotes)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_quotes succeeds");
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.unsubscribe_trades)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_trades succeeds");
+    // SAFETY: ctx + borrowed strings are live for each call.
+    unsafe {
+        (v.unsubscribe_bars)(
+            ctx,
+            BorrowedStr::from_str(&bar_type.to_string()),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_bars succeeds");
+
+    msgbus::publish_quote(get_quotes_topic(instrument_id()), &make_quote());
+    msgbus::publish_trade(get_trades_topic(instrument_id()), &make_trade());
+    msgbus::publish_bar(get_bars_topic(bar_type), &bar);
+
+    assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
 fn host_book_subscription_callbacks_emit_data_commands() {
     let strategy_id = "PluginPhaseTwoBookCmd-001";
     let mut adapter = build_strategy_adapter(strategy_id);

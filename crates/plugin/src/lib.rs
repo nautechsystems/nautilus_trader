@@ -58,13 +58,14 @@ pub const NAUTILUS_PLUGIN_INIT_SYMBOL: &[u8] = b"nautilus_plugin_init";
 
 pub mod boundary;
 pub mod host;
-mod macros;
 pub mod manifest;
 pub mod panic;
 pub mod surfaces;
 
 #[cfg(feature = "host")]
 pub mod loader;
+
+mod macros;
 
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
 pub use host::{HostContext, HostVTable};

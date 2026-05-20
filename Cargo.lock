@@ -6200,6 +6200,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "async-trait",
+ "aws-lc-rs",
  "bon",
  "criterion",
  "indexmap 2.14.0",
@@ -6415,6 +6416,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "rstest",
+ "serde_json",
  "thiserror 2.0.18",
  "ustr",
 ]

@@ -89,6 +89,12 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "plugin")]
+use ahash::AHashSet;
+#[cfg(feature = "plugin")]
+use anyhow::Context;
+#[cfg(feature = "plugin")]
+use aws_lc_rs::digest;
 use nautilus_common::{
     actor::{Actor, DataActor},
     cache::database::CacheDatabaseAdapter,
@@ -101,16 +107,24 @@ use nautilus_common::{
     },
     timer::TimeEventHandler,
 };
+#[cfg(feature = "plugin")]
+use nautilus_core::hex;
 use nautilus_core::{
     UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
+#[cfg(feature = "plugin")]
+use nautilus_model::identifiers::{ActorId, StrategyId};
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientOrderId, TraderId},
     orders::Order,
 };
+#[cfg(feature = "plugin")]
+use nautilus_plugin::loader::PluginLoader;
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
+#[cfg(feature = "plugin")]
+use nautilus_trading::strategy::StrategyConfig;
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use tabled::{Table, Tabled, settings::Style};
 
@@ -119,6 +133,13 @@ use crate::{
     config::LiveNodeConfig,
     manager::{ExecutionManager, ExecutionManagerConfig},
     runner::{AsyncRunner, AsyncRunnerChannels},
+};
+#[cfg(feature = "plugin")]
+use crate::{
+    config::PluginConfig,
+    plugin::{
+        ConfiguredPluginEntry, configured_entry, plugin_loader, register_manifest_custom_data,
+    },
 };
 
 /// Lifecycle state of the `LiveNode` runner.
@@ -245,6 +266,8 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     shutdown_deadline: Option<dst::time::Instant>,
+    #[cfg(feature = "plugin")]
+    plugin_loader: Option<PluginLoader>,
     #[cfg(feature = "python")]
     #[allow(dead_code)] // TODO: Under development
     python_actors: Vec<pyo3::Py<pyo3::PyAny>>,
@@ -268,6 +291,8 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             shutdown_deadline: None,
+            #[cfg(feature = "plugin")]
+            plugin_loader: None,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         }
@@ -320,18 +345,134 @@ impl LiveNode {
             exec_manager_config,
         );
 
-        log::info!("LiveNode built successfully with kernel config");
-
-        Ok(Self {
+        let mut node = Self {
             kernel,
             runner: Some(runner),
             config,
             handle: LiveNodeHandle::new(),
             exec_manager,
             shutdown_deadline: None,
+            #[cfg(feature = "plugin")]
+            plugin_loader: None,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
-        })
+        };
+        node.load_configured_plugins()?;
+
+        log::info!("LiveNode built successfully with kernel config");
+
+        Ok(node)
+    }
+
+    /// Loads and registers plug-ins declared on the node config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any configured plug-in cannot be loaded, verified,
+    /// registered, or instantiated.
+    #[cfg(feature = "plugin")]
+    pub(crate) fn load_configured_plugins(&mut self) -> anyhow::Result<()> {
+        let configs = self.config.plugins.clone();
+        if configs.is_empty() {
+            return Ok(());
+        }
+
+        if self.state() != NodeState::Idle {
+            anyhow::bail!("Cannot load plug-ins after the node leaves Idle state");
+        }
+
+        let mut loader = plugin_loader();
+        let mut loaded_paths = AHashSet::new();
+
+        for config in &configs {
+            verify_plugin_sha256(config)?;
+            if loaded_paths.insert(config.path.clone()) {
+                loader
+                    .load(&config.path)
+                    .with_context(|| format!("failed to load plug-in '{}'", config.path))?;
+            }
+        }
+
+        for loaded in loader.loaded() {
+            let registered =
+                register_manifest_custom_data(loaded.manifest()).with_context(|| {
+                    format!(
+                        "failed to register custom data from plug-in '{}'",
+                        loaded.path().display()
+                    )
+                })?;
+
+            if registered > 0 {
+                log::info!(
+                    "Registered {registered} custom data type(s) from plug-in {}",
+                    loaded.path().display()
+                );
+            }
+        }
+
+        for config in &configs {
+            self.instantiate_configured_plugin(&loader, config)?;
+        }
+
+        self.plugin_loader = Some(loader);
+        Ok(())
+    }
+
+    /// Loads and registers plug-ins declared on the node config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when plug-ins are configured without plug-in support.
+    #[cfg(not(feature = "plugin"))]
+    pub(crate) fn load_configured_plugins(&mut self) -> anyhow::Result<()> {
+        if self.config.plugins.is_empty() {
+            return Ok(());
+        }
+
+        anyhow::bail!("LiveNodeConfig.plugins requires the `plugin` feature")
+    }
+
+    #[cfg(feature = "plugin")]
+    fn instantiate_configured_plugin(
+        &mut self,
+        loader: &PluginLoader,
+        config: &PluginConfig,
+    ) -> anyhow::Result<()> {
+        let loaded = loader
+            .loaded()
+            .iter()
+            .find(|loaded| loaded.path() == std::path::Path::new(&config.path))
+            .ok_or_else(|| anyhow::anyhow!("plug-in '{}' was not loaded", config.path))?;
+
+        let entry = configured_entry(loaded.manifest(), &config.path, &config.type_name)?;
+        let config_json = serde_json::to_string(&config.config)?;
+
+        match entry {
+            ConfiguredPluginEntry::Actor(entry) => {
+                let actor_id = plugin_actor_id(config)?;
+                let adapter = entry
+                    .create_adapter(actor_id, &config_json)
+                    .with_context(|| {
+                        format!(
+                            "failed to instantiate plug-in actor '{}' from {}",
+                            config.type_name, config.path
+                        )
+                    })?;
+                self.add_actor(adapter)
+            }
+            ConfiguredPluginEntry::Strategy(entry) => {
+                let strategy_config = plugin_strategy_config(config)?;
+                let adapter = entry
+                    .create_adapter(strategy_config, &config_json)
+                    .with_context(|| {
+                        format!(
+                            "failed to instantiate plug-in strategy '{}' from {}",
+                            config.type_name, config.path
+                        )
+                    })?;
+                self.add_strategy(adapter)
+            }
+        }
     }
 
     /// Returns a thread-safe handle to control this node.
@@ -1472,6 +1613,82 @@ impl LiveNode {
     }
 }
 
+#[cfg(feature = "plugin")]
+fn verify_plugin_sha256(config: &PluginConfig) -> anyhow::Result<()> {
+    let Some(expected) = &config.sha256 else {
+        return Ok(());
+    };
+
+    let bytes = std::fs::read(&config.path)
+        .with_context(|| format!("failed to read plug-in '{}'", config.path))?;
+    let actual = hex::encode(digest::digest(&digest::SHA256, &bytes).as_ref());
+    if actual.eq_ignore_ascii_case(expected) {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "plug-in '{}' SHA-256 mismatch: expected {}, actual {}",
+        config.path,
+        expected,
+        actual
+    )
+}
+
+#[cfg(feature = "plugin")]
+fn plugin_actor_id(config: &PluginConfig) -> anyhow::Result<ActorId> {
+    let actor_id = plugin_config_string(config, "actor_id")?.unwrap_or(&config.type_name);
+    ActorId::new_checked(actor_id)
+        .map_err(|e| anyhow::anyhow!("invalid actor_id for plug-in '{}': {e}", config.type_name))
+}
+
+#[cfg(feature = "plugin")]
+fn plugin_strategy_config(config: &PluginConfig) -> anyhow::Result<StrategyConfig> {
+    let mut strategy_config = if let Some(value) = config.config.get("strategy_config") {
+        serde_json::from_value::<StrategyConfig>(value.clone()).with_context(|| {
+            format!(
+                "invalid strategy_config for plug-in strategy '{}'",
+                config.type_name
+            )
+        })?
+    } else {
+        StrategyConfig::default()
+    };
+
+    if strategy_config.strategy_id.is_none() {
+        let strategy_id = plugin_config_string(config, "strategy_id")?
+            .map_or_else(|| format!("{}-001", config.type_name), str::to_string);
+        strategy_config.strategy_id = Some(StrategyId::new_checked(&strategy_id).map_err(|e| {
+            anyhow::anyhow!(
+                "invalid strategy_id for plug-in strategy '{}': {e}",
+                config.type_name
+            )
+        })?);
+    }
+
+    if strategy_config.order_id_tag.is_none()
+        && let Some(order_id_tag) = plugin_config_string(config, "order_id_tag")?
+    {
+        strategy_config.order_id_tag = Some(order_id_tag.to_string());
+    }
+
+    Ok(strategy_config)
+}
+
+#[cfg(feature = "plugin")]
+fn plugin_config_string<'a>(
+    config: &'a PluginConfig,
+    key: &'static str,
+) -> anyhow::Result<Option<&'a str>> {
+    match config.config.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(value)) => Ok(Some(value.as_str())),
+        Some(_) => anyhow::bail!(
+            "plug-in '{}' config field '{key}' must be a string",
+            config.type_name
+        ),
+    }
+}
+
 /// Flushes data events and commands from both `pending` and the channel receivers
 /// into the cache, looping until no progress is made.
 ///
@@ -1721,6 +1938,8 @@ impl PendingEvents {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "plugin")]
+    use std::collections::HashMap;
     #[cfg(feature = "python")]
     use std::sync::Arc;
 
@@ -1906,6 +2125,72 @@ mod tests {
             .with_delay_shutdown_secs(10);
 
         assert_eq!(builder.name(), "TestNode");
+    }
+
+    #[cfg(feature = "plugin")]
+    #[rstest]
+    fn test_plugin_actor_id_rejects_non_string_actor_id() {
+        let config = PluginConfig {
+            path: "./libexample.so".to_string(),
+            type_name: "ExampleActor".to_string(),
+            config: HashMap::from([("actor_id".to_string(), serde_json::json!(42))]),
+            sha256: None,
+        };
+
+        let error = plugin_actor_id(&config).unwrap_err().to_string();
+
+        assert!(error.contains("actor_id"));
+        assert!(error.contains("must be a string"));
+    }
+
+    #[cfg(feature = "plugin")]
+    #[rstest]
+    fn test_plugin_strategy_config_accepts_nested_strategy_config() {
+        let config = PluginConfig {
+            path: "./libexample.so".to_string(),
+            type_name: "ExampleStrategy".to_string(),
+            config: HashMap::from([(
+                "strategy_config".to_string(),
+                serde_json::json!({
+                    "strategy_id": "NestedStrategy-001",
+                    "order_id_tag": "NEST",
+                }),
+            )]),
+            sha256: None,
+        };
+
+        let strategy_config = plugin_strategy_config(&config).unwrap();
+
+        assert_eq!(
+            strategy_config.strategy_id,
+            Some(StrategyId::from("NestedStrategy-001"))
+        );
+        assert_eq!(strategy_config.order_id_tag.as_deref(), Some("NEST"));
+    }
+
+    #[cfg(feature = "plugin")]
+    #[rstest]
+    fn test_plugin_strategy_config_uses_top_level_strategy_id_and_order_id_tag() {
+        let config = PluginConfig {
+            path: "./libexample.so".to_string(),
+            type_name: "ExampleStrategy".to_string(),
+            config: HashMap::from([
+                (
+                    "strategy_id".to_string(),
+                    serde_json::json!("TopLevelStrategy-001"),
+                ),
+                ("order_id_tag".to_string(), serde_json::json!("TOP")),
+            ]),
+            sha256: None,
+        };
+
+        let strategy_config = plugin_strategy_config(&config).unwrap();
+
+        assert_eq!(
+            strategy_config.strategy_id,
+            Some(StrategyId::from("TopLevelStrategy-001"))
+        );
+        assert_eq!(strategy_config.order_id_tag.as_deref(), Some("TOP"));
     }
 
     #[cfg(feature = "python")]

@@ -40,6 +40,38 @@ use serde::{Deserialize, Serialize};
 /// The default rate limit string used for order submission and modification.
 const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
 
+/// Configuration for one Rust-native plug-in instance loaded by a live node.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginConfig {
+    /// Path to the plug-in cdylib. Relative paths resolve from the process working directory.
+    pub path: String,
+    /// Type name from the plug-in manifest to instantiate.
+    pub type_name: String,
+    /// Per-instance JSON configuration passed to the plug-in `create` thunk.
+    #[builder(default)]
+    pub config: HashMap<String, serde_json::Value>,
+    /// Optional SHA-256 hex digest of the cdylib before loading.
+    pub sha256: Option<String>,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self::builder()
+            .path(String::new())
+            .type_name(String::new())
+            .build()
+    }
+}
+
 /// Configuration for live data engines.
 #[cfg_attr(
     feature = "python",
@@ -590,6 +622,9 @@ pub struct LiveNodeConfig {
     /// The execution client configurations.
     #[builder(default)]
     pub exec_clients: HashMap<String, LiveExecClientConfig>,
+    /// The Rust-native plug-in instances to load before startup.
+    #[builder(default)]
+    pub plugins: Vec<PluginConfig>,
 }
 
 impl Default for LiveNodeConfig {
@@ -628,6 +663,37 @@ impl LiveNodeConfig {
         self.data_engine.validate_runtime_support()?;
         self.risk_engine.validate_runtime_support()?;
         self.exec_engine.validate_runtime_support()?;
+        self.validate_plugin_configs()?;
+
+        Ok(())
+    }
+
+    fn validate_plugin_configs(&self) -> anyhow::Result<()> {
+        for (index, plugin) in self.plugins.iter().enumerate() {
+            plugin.validate_runtime_support(index)?;
+        }
+        Ok(())
+    }
+}
+
+impl PluginConfig {
+    fn validate_runtime_support(&self, index: usize) -> anyhow::Result<()> {
+        if self.path.trim().is_empty() {
+            anyhow::bail!("LiveNodeConfig.plugins[{index}].path must not be empty");
+        }
+
+        if self.type_name.trim().is_empty() {
+            anyhow::bail!("LiveNodeConfig.plugins[{index}].type_name must not be empty");
+        }
+
+        if let Some(sha256) = &self.sha256 {
+            let valid = sha256.len() == 64 && sha256.bytes().all(|b| b.is_ascii_hexdigit());
+            if !valid {
+                anyhow::bail!(
+                    "LiveNodeConfig.plugins[{index}].sha256 must be a 64-character hex digest"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -869,6 +935,7 @@ mod tests {
         assert!(!config.exec_engine.filter_unclaimed_external_orders);
         assert!(config.data_clients.is_empty());
         assert!(config.exec_clients.is_empty());
+        assert!(config.plugins.is_empty());
     }
 
     #[rstest]
@@ -1256,6 +1323,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_validate_runtime_support_rejects_empty_plugin_path() {
+        let config = LiveNodeConfig {
+            plugins: vec![PluginConfig {
+                type_name: "ExampleActor".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err().to_string();
+        assert!(error.contains("plugins[0].path"));
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_empty_plugin_type_name() {
+        let config = LiveNodeConfig {
+            plugins: vec![PluginConfig {
+                path: "./libexample.so".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err().to_string();
+        assert!(error.contains("plugins[0].type_name"));
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_invalid_plugin_sha256() {
+        let config = LiveNodeConfig {
+            plugins: vec![PluginConfig {
+                path: "./libexample.so".to_string(),
+                type_name: "ExampleActor".to_string(),
+                sha256: Some("not-a-digest".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err().to_string();
+        assert!(error.contains("sha256"));
+    }
+
+    #[rstest]
     fn test_live_exec_engine_config_defaults() {
         let config = LiveExecEngineConfig::default();
 
@@ -1390,6 +1501,11 @@ handle_revised_bars = true
 [exec_clients.hyperliquid]
 routing = { default = true, venues = ["HYPERLIQUID"] }
 instrument_provider = { load_all = true }
+
+[[plugins]]
+path = "./target/debug/examples/libcustom_data_plugin.so"
+type_name = "ExampleStrategy"
+config = { strategy_id = "ExampleStrategy-001", threshold = 10 }
 "#,
         )
         .unwrap();
@@ -1407,5 +1523,16 @@ instrument_provider = { load_all = true }
             Some(vec!["HYPERLIQUID".to_string()]),
         );
         assert!(exec_client.instrument_provider.load_all);
+        assert_eq!(config.plugins.len(), 1);
+        assert_eq!(
+            config.plugins[0].path,
+            "./target/debug/examples/libcustom_data_plugin.so"
+        );
+        assert_eq!(config.plugins[0].type_name, "ExampleStrategy");
+        assert_eq!(
+            config.plugins[0].config["strategy_id"],
+            serde_json::json!("ExampleStrategy-001")
+        );
+        assert_eq!(config.plugins[0].config["threshold"], serde_json::json!(10));
     }
 }
