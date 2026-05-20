@@ -146,6 +146,42 @@ InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
 The adapter models option combos as `OptionSpread`, priced in the base currency under Deribit's
 inverse-option convention.
 
+## Traded expirations
+
+Deribit exposes active traded expirations through the `public/get_expirations` HTTP endpoint.
+Option-chain loaders can use the high-level HTTP client to refresh active option series without
+scanning every instrument.
+
+<Tabs items={['Python', 'Rust']}>
+<Tab value="Python">
+
+```python
+from nautilus_trader.deribit import DeribitCurrency
+from nautilus_trader.deribit import DeribitHttpClient
+
+client = DeribitHttpClient()
+expirations = await client.request_option_expirations(DeribitCurrency.BTC)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+use nautilus_deribit::http::models::DeribitCurrency;
+
+let expirations = client
+    .request_option_expirations(DeribitCurrency::BTC)
+    .await?;
+```
+
+</Tab>
+</Tabs>
+
+The high-level method returns option expirations only. For lower-level Rust requests, call
+`client.inner().get_expirations(...)` with `GetExpirationsParams`. Deribit returns a
+currency-keyed result for concrete currencies such as `BTC`, and a direct kind-keyed result for
+`currency=any`; the adapter handles both shapes.
+
 ## Combo instruments
 
 The instrument provider loads combos when `product_types` includes

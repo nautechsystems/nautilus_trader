@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
+- Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
 
 ### Breaking Changes

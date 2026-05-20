@@ -51,15 +51,17 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency, DeribitInstrument,
-        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitPosition, DeribitProductType,
-        DeribitTicker, DeribitUserTradesResponse,
+        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency,
+        DeribitExpirationsResponse, DeribitInstrument, DeribitJsonRpcRequest,
+        DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitTicker,
+        DeribitUserTradesResponse,
     },
     query::{
-        GetAccountSummariesParams, GetBookSummaryByCurrencyParams, GetInstrumentParams,
-        GetInstrumentsParams, GetOpenOrdersByInstrumentParams, GetOpenOrdersParams,
-        GetOrderHistoryByCurrencyParams, GetOrderHistoryByInstrumentParams, GetOrderStateParams,
-        GetPositionsParams, GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
+        DeribitExpirationKind, GetAccountSummariesParams, GetBookSummaryByCurrencyParams,
+        GetExpirationsParams, GetInstrumentParams, GetInstrumentsParams,
+        GetOpenOrdersByInstrumentParams, GetOpenOrdersParams, GetOrderHistoryByCurrencyParams,
+        GetOrderHistoryByInstrumentParams, GetOrderStateParams, GetPositionsParams,
+        GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
         GetUserTradesByInstrumentAndTimeParams,
     },
 };
@@ -650,6 +652,19 @@ impl DeribitRawHttpClient {
         params: GetLastTradesByCurrencyParams,
     ) -> Result<DeribitJsonRpcResponse<DeribitTradesResponse>, DeribitHttpError> {
         self.send_request("public/get_last_trades_by_currency", params, false)
+            .await
+    }
+
+    /// Gets traded expirations by currency and instrument kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_expirations(
+        &self,
+        params: GetExpirationsParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitExpirationsResponse>, DeribitHttpError> {
+        self.send_request("public/get_expirations", params, false)
             .await
     }
 
@@ -1768,6 +1783,31 @@ impl DeribitHttpClient {
         full_response
             .result
             .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))
+    }
+
+    /// Requests traded option expirations for a settlement currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_expirations(
+        &self,
+        currency: DeribitCurrency,
+    ) -> anyhow::Result<Vec<String>> {
+        let params = GetExpirationsParams::new(currency.as_str(), DeribitExpirationKind::Option);
+        let full_response = self
+            .inner
+            .get_expirations(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let response = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in expirations response"))?;
+        let expirations = response
+            .expirations_for_currency(currency.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No option expirations for {currency}"))?;
+
+        Ok(expirations.option.clone())
     }
 
     /// Requests position status reports for reconciliation.

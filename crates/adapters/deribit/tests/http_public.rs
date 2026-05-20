@@ -28,12 +28,13 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_deribit::{
     common::enums::DeribitEnvironment,
     http::{
-        client::DeribitRawHttpClient,
+        client::{DeribitHttpClient, DeribitRawHttpClient},
         error::DeribitHttpError,
         models::{DeribitCurrency, DeribitProductType},
         query::{
-            GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
-            GetOrderBookParams, GetTradingViewChartDataParams,
+            DeribitExpirationKind, GetExpirationsParams, GetInstrumentParams, GetInstrumentsParams,
+            GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
+            GetTradingViewChartDataParams,
         },
     },
 };
@@ -113,6 +114,7 @@ async fn handle_jsonrpc_request(
     match method {
         "public/get_instrument" => handle_get_instrument(id, params).await,
         "public/get_instruments" => handle_get_instruments(id, params).await,
+        "public/get_expirations" => handle_get_expirations(id, params).await,
         "public/get_last_trades_by_instrument_and_time" => handle_get_last_trades(id, params).await,
         "public/get_tradingview_chart_data" => handle_get_tradingview_chart_data(id, params).await,
         "public/get_order_book" => handle_get_order_book(id, params).await,
@@ -211,6 +213,47 @@ async fn handle_get_instruments(id: u64, params: Option<Value>) -> axum::respons
             "id": id,
             "result": [],
             "testnet": true
+        }))
+        .into_response(),
+    }
+}
+
+async fn handle_get_expirations(id: u64, params: Option<Value>) -> axum::response::Response {
+    let currency = params
+        .as_ref()
+        .and_then(|p| p.get("currency"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string());
+
+    let kind = params
+        .as_ref()
+        .and_then(|p| p.get("kind"))
+        .and_then(|k| k.as_str())
+        .map(|s| s.to_string());
+
+    match (currency.as_deref(), kind.as_deref()) {
+        (Some("BTC"), Some("option")) => {
+            let mut data = load_test_data("http_get_expirations_btc_option.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
+        (Some("any"), Some("any")) => {
+            let mut data = load_test_data("http_get_expirations_any.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
+        _ => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": "Invalid params",
+                "data": {
+                    "param": "currency",
+                    "reason": "unsupported test parameters"
+                }
+            },
+            "testnet": false
         }))
         .into_response(),
     }
@@ -633,6 +676,135 @@ async fn test_get_instruments_empty_result() {
     let response = result.unwrap();
     let instruments = response.result.expect("Response should have result");
     assert_eq!(instruments.len(), 0);
+}
+
+#[tokio::test]
+async fn test_get_expirations_success() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
+    )
+    .unwrap();
+
+    let params = GetExpirationsParams::new("BTC", DeribitExpirationKind::Option);
+    let result = client.get_expirations(params).await;
+
+    assert!(result.is_ok(), "Request should succeed");
+    let response = result.unwrap();
+    let expirations_response = response.result.expect("Response should have result");
+    let expirations = expirations_response
+        .expirations_for_currency("BTC")
+        .expect("BTC expirations should exist");
+
+    assert_eq!(expirations.option.len(), 11);
+    assert_eq!(expirations.option[0], "20MAY26");
+    assert_eq!(expirations.option[10], "26MAR27");
+    assert!(expirations.future.is_empty());
+
+    assert_eq!(
+        *state
+            .request_counts
+            .get("public/get_expirations")
+            .expect("Request count should be tracked"),
+        1
+    );
+
+    let captured_params = state
+        .last_request_params
+        .get("public/get_expirations")
+        .expect("Params should be captured");
+    assert_eq!(
+        captured_params.get("currency").unwrap().as_str(),
+        Some("BTC")
+    );
+    assert_eq!(
+        captured_params.get("kind").unwrap().as_str(),
+        Some("option")
+    );
+}
+
+#[tokio::test]
+async fn test_get_expirations_any_currency_direct_shape() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
+    )
+    .unwrap();
+
+    let params = GetExpirationsParams::new("any", DeribitExpirationKind::Any);
+    let result = client.get_expirations(params).await;
+
+    assert!(result.is_ok(), "Request should succeed");
+    let response = result.unwrap();
+    let expirations_response = response.result.expect("Response should have result");
+    let expirations = expirations_response
+        .expirations_for_currency("any")
+        .expect("Direct expirations should exist");
+
+    assert_eq!(expirations.option.len(), 11);
+    assert_eq!(expirations.future.len(), 13);
+    assert_eq!(expirations.future[12], "PERPETUAL");
+}
+
+#[tokio::test]
+async fn test_request_option_expirations_success() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitHttpClient::new(
+        Some(base_url),
+        DeribitEnvironment::Mainnet,
+        5,
+        3,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
+
+    let expirations = client
+        .request_option_expirations(DeribitCurrency::BTC)
+        .await
+        .expect("Request should succeed");
+
+    assert_eq!(expirations.len(), 11);
+    assert_eq!(expirations[0], "20MAY26");
+    assert_eq!(expirations[10], "26MAR27");
+
+    let captured_params = state
+        .last_request_params
+        .get("public/get_expirations")
+        .expect("Params should be captured");
+    assert_eq!(
+        captured_params.get("currency").unwrap().as_str(),
+        Some("BTC")
+    );
+    assert_eq!(
+        captured_params.get("kind").unwrap().as_str(),
+        Some("option")
+    );
 }
 
 #[tokio::test]
