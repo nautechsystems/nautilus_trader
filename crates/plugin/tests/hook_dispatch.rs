@@ -697,6 +697,7 @@ fn order_canceled_value() -> OrderCanceled {
         reconciliation: 0,
         venue_order_id: Some(VenueOrderId::from("V-1")),
         account_id: Some(AccountId::from("BINANCE-001")),
+        causation_id: None,
     }
 }
 

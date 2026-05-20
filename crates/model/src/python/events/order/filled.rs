@@ -269,6 +269,11 @@ impl OrderFilled {
             Some(commission) => dict.set_item("commission", commission.to_string())?,
             None => dict.set_item("commission", py.None())?,
         }
+
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

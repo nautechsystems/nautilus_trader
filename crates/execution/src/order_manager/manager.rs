@@ -696,6 +696,7 @@ mod tests {
             event_id: UUID4::new(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         });
         let accepted = OrderEventAny::Accepted(OrderAccepted {
             trader_id: TraderId::from("TRADER-001"),
@@ -708,6 +709,7 @@ mod tests {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         });
 
         match submitted {

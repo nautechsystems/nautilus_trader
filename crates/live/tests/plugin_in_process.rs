@@ -539,6 +539,7 @@ fn make_order_filled() -> OrderFilled {
         ts_event: UnixNanos::from(1u64),
         ts_init: UnixNanos::from(1u64),
         reconciliation: false,
+        causation_id: None,
     }
 }
 
@@ -554,6 +555,7 @@ fn make_order_canceled() -> OrderCanceled {
         ts_event: UnixNanos::from(1u64),
         ts_init: UnixNanos::from(1u64),
         reconciliation: 0,
+        causation_id: None,
     }
 }
 

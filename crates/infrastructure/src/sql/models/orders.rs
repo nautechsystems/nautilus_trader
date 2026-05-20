@@ -766,6 +766,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             init_id,
             ts_init,
             ts_last,
+            causation_id: None,
         };
 
         Ok(Self(snapshot))

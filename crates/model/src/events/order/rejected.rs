@@ -70,6 +70,9 @@ pub struct OrderRejected {
     /// If the order was rejected because it was post-only and would execute immediately as a taker.
     #[serde(default, deserialize_with = "from_bool_as_u8")]
     pub due_post_only: u8, // TODO: Change to bool once Cython removed
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderRejected {
@@ -101,6 +104,7 @@ impl OrderRejected {
             ts_init,
             reconciliation: u8::from(reconciliation),
             due_post_only: u8::from(due_post_only),
+            causation_id: None,
         }
     }
 }

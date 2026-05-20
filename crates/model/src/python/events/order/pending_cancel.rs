@@ -157,6 +157,11 @@ impl OrderPendingCancel {
             Some(venue_order_id) => dict.set_item("venue_order_id", venue_order_id.to_string())?,
             None => dict.set_item("venue_order_id", py.None())?,
         }
+
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }
