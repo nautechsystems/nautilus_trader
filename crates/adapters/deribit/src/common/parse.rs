@@ -773,6 +773,36 @@ pub fn parse_portfolio_to_account_state(
     ))
 }
 
+/// Builds a [`TradeId`] for a Deribit public trade, prefixing the venue ID with
+/// the trade's provenance when applicable.
+///
+/// Strategies that need to distinguish RFQ-, block-, or combo-origin trades from
+/// plain trades can pattern-match the prefix on the resulting `TradeId`. The
+/// raw Deribit `trade_id` is preserved after the prefix so correlation back to
+/// the venue is straightforward via a prefix strip.
+///
+/// Precedence (most specific wins): `RFQ-` > `BLK-` > `COMBO-` > unprefixed.
+/// Block RFQs are themselves block trades on Deribit, so the `RFQ-` tag is the
+/// stronger signal; combo trades executed as blocks are tagged `BLK-` since
+/// the block flow is the more important reconciliation signal.
+#[must_use]
+pub fn build_public_trade_id(
+    trade_id: &str,
+    block_rfq_id: Option<i64>,
+    block_trade_id: Option<&str>,
+    combo_id: Option<&str>,
+) -> TradeId {
+    if block_rfq_id.is_some() {
+        TradeId::new(format!("RFQ-{trade_id}"))
+    } else if block_trade_id.is_some() {
+        TradeId::new(format!("BLK-{trade_id}"))
+    } else if combo_id.is_some() {
+        TradeId::new(format!("COMBO-{trade_id}"))
+    } else {
+        TradeId::new(trade_id)
+    }
+}
+
 // Parses a Deribit public trade into a Nautilus [`TradeTick`].
 ///
 /// # Errors
@@ -796,7 +826,12 @@ pub fn parse_trade_tick(
     let price = Price::from_decimal_dp(trade.price, price_precision)?;
     let size = Quantity::from_decimal_dp(trade.amount, size_precision)?;
     let ts_event = UnixNanos::from((trade.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
-    let trade_id = TradeId::new(&trade.trade_id);
+    let trade_id = build_public_trade_id(
+        &trade.trade_id,
+        trade.block_rfq_id,
+        trade.block_trade_id.as_deref(),
+        trade.combo_id.as_deref(),
+    );
 
     Ok(TradeTick::new(
         instrument_id,
@@ -1309,6 +1344,47 @@ mod tests {
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
     }
 
+    /// Builds a minimal [`DeribitPublicTrade`] via JSON to exercise the HTTP
+    /// trade-tick path. Mirrors the WS-side `make_trade_msg` helper.
+    fn make_public_trade(
+        trade_id: &str,
+        block_trade_id: Option<&str>,
+        block_rfq_id: Option<i64>,
+        combo_id: Option<&str>,
+    ) -> DeribitPublicTrade {
+        let raw = serde_json::json!({
+            "trade_id": trade_id,
+            "instrument_name": "BTC-PERPETUAL",
+            "price": 77000.0,
+            "amount": 10.0,
+            "direction": "buy",
+            "timestamp": 1_779_107_386_210_i64,
+            "trade_seq": 1,
+            "tick_direction": 0,
+            "block_trade_id": block_trade_id,
+            "block_rfq_id": block_rfq_id,
+            "combo_id": combo_id,
+        });
+        serde_json::from_value(raw).unwrap()
+    }
+
+    #[rstest]
+    #[case::block_rfq(None, Some(99_i64), None, "RFQ-244343055")]
+    #[case::block_trade(Some("12345"), None, None, "BLK-244343055")]
+    #[case::combo_leg(None, None, Some("BTC-FS-25DEC26_PERP"), "COMBO-244343055")]
+    fn test_parse_trade_tick_provenance_prefix(
+        #[case] block_trade_id: Option<&str>,
+        #[case] block_rfq_id: Option<i64>,
+        #[case] combo_id: Option<&str>,
+        #[case] expected_trade_id: &str,
+    ) {
+        let trade = make_public_trade("244343055", block_trade_id, block_rfq_id, combo_id);
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let tick = parse_trade_tick(&trade, instrument_id, 1, 0, UnixNanos::default())
+            .expect("Should parse trade tick");
+        assert_eq!(tick.trade_id, TradeId::new(expected_trade_id));
+    }
+
     #[rstest]
     fn test_parse_bars() {
         let json_data = load_test_json("http_get_tradingview_chart_data.json");
@@ -1788,6 +1864,54 @@ mod tests {
             spread.expiration_ns,
             UnixNanos::from(1779177600000_u64 * 1_000_000)
         );
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_plain() {
+        let id = build_public_trade_id("244343053", None, None, None);
+        assert_eq!(id.as_str(), "244343053");
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_combo_only() {
+        let id = build_public_trade_id("244365195", None, None, Some("BTC-CS-19MAY26-70000_75000"));
+        assert_eq!(id.as_str(), "COMBO-244365195");
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_block_only() {
+        let id = build_public_trade_id("244343053", None, Some("12345"), None);
+        assert_eq!(id.as_str(), "BLK-244343053");
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_rfq_only() {
+        let id = build_public_trade_id("244343053", Some(99), None, None);
+        assert_eq!(id.as_str(), "RFQ-244343053");
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_precedence_block_beats_combo() {
+        // A combo executed as a block carries both combo_id and block_trade_id.
+        // The block tag wins because it is the more important reconciliation signal.
+        let id = build_public_trade_id(
+            "244343053",
+            None,
+            Some("12345"),
+            Some("BTC-FS-25DEC26_PERP"),
+        );
+        assert_eq!(id.as_str(), "BLK-244343053");
+    }
+
+    #[rstest]
+    fn test_build_public_trade_id_precedence_rfq_beats_all() {
+        let id = build_public_trade_id(
+            "244343053",
+            Some(99),
+            Some("12345"),
+            Some("BTC-FS-25DEC26_PERP"),
+        );
+        assert_eq!(id.as_str(), "RFQ-244343053");
     }
 
     #[rstest]

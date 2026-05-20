@@ -168,9 +168,11 @@ trade stream, and a subscriber to the combo itself sees the combo-level trade. T
 does not fan out combo parent messages into extra leg ticks; it forwards the upstream parent
 and per-leg messages as separate `TradeTick`s against their respective `InstrumentId`s, so a
 subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
-that combo trade — not duplicate ticks against the same instrument.
+that combo trade, not duplicate ticks against the same instrument.
 
-Deribit already publishes block trades and Block RFQs per leg, so they need no special handling.
+Deribit already publishes block trades and Block RFQs per leg, so the adapter forwards
+them through the standard 1:1 trade path. See [Trade ID provenance](#trade-id-provenance)
+for how block- and RFQ-origin trades are tagged on the resulting `TradeTick`.
 
 ### Historical combo trades
 
@@ -195,6 +197,35 @@ let resp = client.inner().get_last_trades_by_currency(params).await?;
 
 Each returned `DeribitPublicTrade` carries `legs: Option<Vec<DeribitTradeLeg>>` plus the
 `combo_id` and `combo_trade_id` fields used to correlate per-leg trades.
+
+## Trade ID provenance
+
+Public `TradeTick`s emitted by the adapter prefix the venue trade ID when the trade
+originated from a Block RFQ, a block trade, or a combo. Strategies that need to
+distinguish these from plain trades can pattern-match the prefix on `TradeTick.trade_id`.
+The raw Deribit `trade_id` is preserved after the prefix, so reconciliation against
+Deribit's own IDs is a prefix strip.
+
+| Prefix       | Source field    | Meaning                                                        |
+|--------------|-----------------|----------------------------------------------------------------|
+| `RFQ-`       | `block_rfq_id`  | Trade originated from a Block RFQ.                             |
+| `BLK-`       | `block_trade_id`| Trade is a (non‑RFQ) block trade.                              |
+| `COMBO-`     | `combo_id`      | Per‑leg trade whose parent originated from a combo instrument. |
+| *unprefixed* | (none of above) | Standard trade.                                                |
+
+Precedence when multiple tags are present: `RFQ-` > `BLK-` > `COMBO-`. Block RFQs are
+themselves block trades on Deribit, so the RFQ tag wins; combos executed as block trades
+are tagged `BLK-` because the block flow is the more important reconciliation signal.
+
+This applies only to public trades (`TradeTick`). `FillReport.trade_id` is unchanged so
+reconciliation against `get_user_trades_*` keeps working.
+
+:::note
+This is a one-way convention. Replay data captured before this version lacks prefixes.
+Strategies that store and compare `trade_id` strings across versions should strip the
+prefix on the new-data side, or filter by prefix only on data they know was captured
+post-upgrade.
+:::
 
 ## Order book subscriptions
 

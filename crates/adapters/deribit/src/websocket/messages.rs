@@ -172,6 +172,9 @@ pub struct DeribitTradeMsg {
     pub combo_trade_id: Option<String>,
     /// Block trade ID.
     pub block_trade_id: Option<String>,
+    /// Block RFQ ID (if the trade originated from a Block RFQ).
+    #[serde(default)]
+    pub block_rfq_id: Option<i64>,
     /// Combo ID.
     pub combo_id: Option<String>,
     /// Per-leg trades when this is the parent combo trade.

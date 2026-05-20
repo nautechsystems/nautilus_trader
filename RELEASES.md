@@ -12,6 +12,10 @@ Released on TBD (UTC).
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
 - Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
 - Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
+- Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
+- Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
+- Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
+- Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -46,6 +50,7 @@ None
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
 - Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
+- Refined `OptionSpread`/`FuturesSpread` trait accessors to read `size_precision`/`size_increment` fields
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
 - Optimized Hyperliquid hot paths with benchmark report

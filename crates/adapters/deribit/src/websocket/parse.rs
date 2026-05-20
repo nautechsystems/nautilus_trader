@@ -48,7 +48,7 @@ use super::{
         DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
     },
 };
-use crate::http::models::DeribitPosition;
+use crate::{common::parse::build_public_trade_id, http::models::DeribitPosition};
 
 fn next_8_utc(from_ns: UnixNanos) -> anyhow::Result<UnixNanos> {
     let from_secs = from_ns.as_u64() / 1_000_000_000;
@@ -96,7 +96,12 @@ pub fn parse_trade_msg(
         _ => AggressorSide::NoAggressor,
     };
 
-    let trade_id = TradeId::new(&msg.trade_id);
+    let trade_id = build_public_trade_id(
+        &msg.trade_id,
+        msg.block_rfq_id,
+        msg.block_trade_id.as_deref(),
+        msg.combo_id.as_deref(),
+    );
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
     TradeTick::new_checked(
@@ -1263,6 +1268,64 @@ mod tests {
         assert_eq!(tick.size, instrument.make_qty(750.0, None));
         assert_eq!(tick.aggressor_side, AggressorSide::Seller);
         assert_eq!(tick.trade_id.to_string(), "403691825");
+    }
+
+    fn make_trade_msg(
+        instrument_name: &str,
+        trade_id: &str,
+        block_trade_id: Option<&str>,
+        block_rfq_id: Option<i64>,
+        combo_id: Option<&str>,
+    ) -> DeribitTradeMsg {
+        let raw = serde_json::json!({
+            "trade_id": trade_id,
+            "instrument_name": instrument_name,
+            "price": 92294.5,
+            "amount": 10.0,
+            "direction": "buy",
+            "timestamp": 1_765_531_356_452_u64,
+            "trade_seq": 1,
+            "tick_direction": 0,
+            "index_price": 92276.75,
+            "mark_price": 92287.11,
+            "block_trade_id": block_trade_id,
+            "block_rfq_id": block_rfq_id,
+            "combo_id": combo_id,
+        });
+        serde_json::from_value(raw).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_tags_block_trade() {
+        let instrument = test_perpetual_instrument();
+        let msg = make_trade_msg("BTC-PERPETUAL", "244343055", Some("12345"), None, None);
+        let tick = parse_trade_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+        assert_eq!(tick.trade_id.to_string(), "BLK-244343055");
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_tags_block_rfq() {
+        let instrument = test_perpetual_instrument();
+        let msg = make_trade_msg("BTC-PERPETUAL", "244343055", None, Some(99), None);
+        let tick = parse_trade_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+        assert_eq!(tick.trade_id.to_string(), "RFQ-244343055");
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_tags_combo_leg() {
+        // Per-leg trade originating from a combo: combo_id is set by Deribit
+        // even though the instrument is a plain perp / option, so downstream
+        // sees `COMBO-` and can detect combo-origin fills.
+        let instrument = test_perpetual_instrument();
+        let msg = make_trade_msg(
+            "BTC-PERPETUAL",
+            "244343055",
+            None,
+            None,
+            Some("BTC-FS-25DEC26_PERP"),
+        );
+        let tick = parse_trade_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+        assert_eq!(tick.trade_id.to_string(), "COMBO-244343055");
     }
 
     fn load_combo_option_instrument() -> InstrumentAny {
