@@ -63,6 +63,7 @@ macro_rules! define_switchboard {
             $(
                 $field: AHashMap<$key_ty, MStr<Topic>>,
             )*
+            pipeline_topics: AHashMap<MStr<Topic>, MStr<Topic>>,
             instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
             book_deltas_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             book_depth10_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
@@ -80,6 +81,7 @@ macro_rules! define_switchboard {
                     $(
                         $field: AHashMap::new(),
                     )*
+                    pipeline_topics: AHashMap::new(),
                     instruments_patterns: AHashMap::new(),
                     book_deltas_patterns: AHashMap::new(),
                     book_depth10_patterns: AHashMap::new(),
@@ -406,6 +408,89 @@ define_switchboard! {
 }
 
 impl MessagingSwitchboard {
+    #[inline]
+    fn pipeline_topic(&mut self, live: MStr<Topic>) -> MStr<Topic> {
+        *self.pipeline_topics.entry(live).or_insert_with(|| {
+            let live = live.as_ref();
+            let suffix = live
+                .strip_prefix("data.")
+                .expect("live data topic must start with data.");
+            MStr::<Topic>::from(format!("data.pipeline.{suffix}"))
+        })
+    }
+
+    #[must_use]
+    pub fn get_pipeline_custom_topic(&mut self, data_type: &DataType) -> MStr<Topic> {
+        let live = self.get_custom_topic(data_type);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_book_deltas_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_book_deltas_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_book_depth10_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_book_depth10_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_quotes_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_quotes_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_trades_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_trades_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_bars_topic(&mut self, bar_type: BarType) -> MStr<Topic> {
+        let live = self.get_bars_topic(bar_type);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_mark_price_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_mark_price_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_index_price_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_index_price_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_funding_rate_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_funding_rate_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_instrument_status_topic(
+        &mut self,
+        instrument_id: InstrumentId,
+    ) -> MStr<Topic> {
+        let live = self.get_instrument_status_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
+    pub fn get_pipeline_instrument_close_topic(
+        &mut self,
+        instrument_id: InstrumentId,
+    ) -> MStr<Topic> {
+        let live = self.get_instrument_close_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
     /// Returns the subscription pattern for order book deltas on `instrument_id`.
     #[must_use]
     pub fn get_book_deltas_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
@@ -491,6 +576,17 @@ define_wrappers! {
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
+    get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
+    get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_trades_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_bars_topic(bar_type: BarType) -> MStr<Topic>,
+    get_pipeline_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_cancels_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
@@ -693,6 +789,76 @@ mod tests {
         let result = switchboard.get_bars_topic(bar_type);
         assert_eq!(result, expected_topic);
         assert!(switchboard.bar_topics.contains_key(&bar_type));
+    }
+
+    #[rstest]
+    fn test_get_pipeline_custom_topic(mut switchboard: MessagingSwitchboard) {
+        let data_type = DataType::new("ExampleDataType", None, None);
+        let expected_topic = "data.pipeline.ExampleDataType".into();
+        let result = switchboard.get_pipeline_custom_topic(&data_type);
+        assert_eq!(result, expected_topic);
+        assert!(switchboard.custom_topics.contains_key(&data_type));
+        assert_eq!(switchboard.pipeline_topics.len(), 1);
+    }
+
+    type PipelineInstrumentIdTopicFn = fn(&mut MessagingSwitchboard, InstrumentId) -> MStr<Topic>;
+
+    #[rstest]
+    #[case::book_deltas(
+        MessagingSwitchboard::get_pipeline_book_deltas_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.book.deltas.XCME.ESZ24",
+    )]
+    #[case::book_depth10(
+        MessagingSwitchboard::get_pipeline_book_depth10_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.book.depth10.XCME.ESZ24",
+    )]
+    #[case::quotes(
+        MessagingSwitchboard::get_pipeline_quotes_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.quotes.XCME.ESZ24",
+    )]
+    #[case::trades(
+        MessagingSwitchboard::get_pipeline_trades_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.trades.XCME.ESZ24",
+    )]
+    #[case::mark_prices(
+        MessagingSwitchboard::get_pipeline_mark_price_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.mark_prices.XCME.ESZ24",
+    )]
+    #[case::index_prices(
+        MessagingSwitchboard::get_pipeline_index_price_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.index_prices.XCME.ESZ24",
+    )]
+    #[case::funding_rates(
+        MessagingSwitchboard::get_pipeline_funding_rate_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.funding_rates.XCME.ESZ24",
+    )]
+    #[case::status(
+        MessagingSwitchboard::get_pipeline_instrument_status_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.status.XCME.ESZ24",
+    )]
+    #[case::close(
+        MessagingSwitchboard::get_pipeline_instrument_close_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.close.XCME.ESZ24",
+    )]
+    fn test_get_pipeline_instrument_id_topic(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+        #[case] topic_fn: PipelineInstrumentIdTopicFn,
+        #[case] expected: &str,
+    ) {
+        let result = topic_fn(&mut switchboard, instrument_id);
+        assert_eq!(result.as_ref(), expected);
+        assert_eq!(switchboard.pipeline_topics.len(), 1);
+    }
+
+    #[rstest]
+    fn test_get_pipeline_bars_topic(mut switchboard: MessagingSwitchboard) {
+        let bar_type = BarType::from("ESZ24.XCME-1-MINUTE-LAST-INTERNAL");
+        let expected_topic = format!("data.pipeline.bars.{bar_type}").into();
+        let result = switchboard.get_pipeline_bars_topic(bar_type);
+        assert_eq!(result, expected_topic);
+        assert!(switchboard.bar_topics.contains_key(&bar_type));
+        assert_eq!(switchboard.pipeline_topics.len(), 1);
     }
 
     #[rstest]
