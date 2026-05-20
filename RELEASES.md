@@ -27,6 +27,7 @@ None
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
+- Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements

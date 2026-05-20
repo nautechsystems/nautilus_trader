@@ -447,7 +447,7 @@ impl BetfairDataClient {
                 }
                 StreamMessage::RaceChange(rcm) => {
                     if let Some(race_changes) = &rcm.rc {
-                        let fallback_ts = parse_millis_timestamp(rcm.pt);
+                        let ts_init = parse_millis_timestamp(rcm.pt);
 
                         for rc in race_changes {
                             let race_id = rc.id.as_deref().unwrap_or("");
@@ -455,11 +455,10 @@ impl BetfairDataClient {
 
                             if let Some(runners) = &rc.rrc {
                                 for rrc in runners {
-                                    let ts_event =
-                                        rrc.ft.map_or(fallback_ts, parse_millis_timestamp);
+                                    let ts_event = rrc.ft.map_or(ts_init, parse_millis_timestamp);
 
                                     if let Some(runner) = parse_race_runner_data(
-                                        race_id, market_id, rrc, ts_event, ts_event,
+                                        race_id, market_id, rrc, ts_event, ts_init,
                                     ) {
                                         let selection_id = rrc.id.unwrap_or(0);
                                         let mut metadata = Params::new();
@@ -482,10 +481,9 @@ impl BetfairDataClient {
                             }
 
                             if let Some(rpc) = &rc.rpc {
-                                let ts_event = rpc.ft.map_or(fallback_ts, parse_millis_timestamp);
-                                let progress = parse_race_progress(
-                                    race_id, market_id, rpc, ts_event, ts_event,
-                                );
+                                let ts_event = rpc.ft.map_or(ts_init, parse_millis_timestamp);
+                                let progress =
+                                    parse_race_progress(race_id, market_id, rpc, ts_event, ts_init);
                                 let mut metadata = Params::new();
                                 metadata.insert(
                                     "race_id".to_string(),
