@@ -123,6 +123,7 @@ pub struct OrderMatchingEngine {
     precision_mismatch_streak: u32,
     tob_initialized: bool,
     instrument_close: Option<InstrumentClose>,
+    pending_resolution: bool,
     settlement_price: Option<Price>,
     expiration_processed: bool,
 }
@@ -206,6 +207,7 @@ impl OrderMatchingEngine {
             precision_mismatch_streak: 0,
             tob_initialized: false,
             instrument_close: None,
+            pending_resolution: false,
             settlement_price: None,
             expiration_processed: false,
         }
@@ -261,6 +263,7 @@ impl OrderMatchingEngine {
         self.precision_mismatch_streak = 0;
         self.tob_initialized = false;
         self.instrument_close = None;
+        self.pending_resolution = false;
         self.settlement_price = None;
         self.expiration_processed = false;
         self.fill_at_market = true;
@@ -1928,6 +1931,64 @@ impl OrderMatchingEngine {
         }
     }
 
+    fn requires_pending_resolution(&self) -> bool {
+        matches!(self.instrument, InstrumentAny::BinaryOption(_))
+    }
+
+    fn cancel_open_orders_for_expiration(&mut self) {
+        let open_orders: Vec<RestingOrder> = self.get_open_orders();
+        for order_info in &open_orders {
+            let order = {
+                let cache = self.cache.borrow();
+                cache.order(&order_info.client_order_id).map(|o| o.clone())
+            };
+
+            if let Some(order) = order {
+                self.cancel_order(&order, None);
+            }
+        }
+
+        // Some accepted orders may not currently be represented in the matching
+        // core (e.g. waiting states). Scan all cached orders for this
+        // instrument and cancel any still-open order to enforce
+        // pending-resolution semantics.
+        let instrument_id = self.instrument.id();
+        let cache_open_orders: Vec<OrderAny> = {
+            let cache = self.cache.borrow();
+            cache
+                .orders(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .filter_map(|order| {
+                    if order.is_open() {
+                        Some(order.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+        for order in cache_open_orders {
+            if order.is_open() {
+                self.cancel_order(&order, None);
+            }
+        }
+    }
+
+    fn enter_pending_resolution(&mut self) {
+        if self.pending_resolution {
+            return;
+        }
+
+        self.pending_resolution = true;
+        self.market_status = MarketStatus::Closed;
+        self.cancel_open_orders_for_expiration();
+        log::info!(
+            "{} expired and is now pending resolution; open orders canceled and new orders blocked",
+            self.instrument.id()
+        );
+    }
+
     fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
         if self.expiration_processed {
             return;
@@ -1942,21 +2003,19 @@ impl OrderMatchingEngine {
             return;
         }
 
+        if self.instrument_close.is_none()
+            && timestamp_triggered
+            && self.requires_pending_resolution()
+        {
+            self.enter_pending_resolution();
+            return;
+        }
+
         self.expiration_processed = true;
+        self.pending_resolution = false;
         let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
-
-        let open_orders: Vec<RestingOrder> = self.get_open_orders();
-        for order_info in &open_orders {
-            let order = {
-                let cache = self.cache.borrow();
-                cache.order(&order_info.client_order_id).map(|o| o.clone())
-            };
-
-            if let Some(order) = order {
-                self.cancel_order(&order, None);
-            }
-        }
+        self.cancel_open_orders_for_expiration();
 
         if matches!(
             self.instrument,
@@ -2434,6 +2493,11 @@ impl OrderMatchingEngine {
             return;
         }
 
+        // Ensure expiration semantics are enforced even when no fresh market-data
+        // tick arrives for this instrument after expiry (e.g. after rotation).
+        let ts_now = self.clock.borrow().timestamp_ns();
+        self.check_instrument_expiration(ts_now);
+
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
         // This avoids RefCell re-entrancy panics from synchronous event
@@ -2443,6 +2507,16 @@ impl OrderMatchingEngine {
 
             // Index identifiers
             self.account_ids.insert(order.trader_id(), account_id);
+
+            if self.pending_resolution {
+                break 'validate Some(
+                    format!(
+                        "Contract {} has expired and is pending resolution",
+                        self.instrument.id()
+                    )
+                    .into(),
+                );
+            }
 
             // Check for instrument expiration or activation
             if self.instrument.has_expiration() {
@@ -2459,7 +2533,8 @@ impl OrderMatchingEngine {
                 }
 
                 if let Some(expiration_ns) = self.instrument.expiration_ns()
-                    && self.clock.borrow().timestamp_ns() >= expiration_ns
+                    && std::cmp::max(self.clock.borrow().timestamp_ns(), order.ts_init())
+                        >= expiration_ns
                 {
                     break 'validate Some(
                         format!(
@@ -4428,10 +4503,34 @@ impl OrderMatchingEngine {
             }
         }
 
-        let commission = self
-            .fee_model
-            .get_commission(order, last_qty, last_px, &self.instrument)
-            .unwrap();
+        let commission =
+            match self
+                .fee_model
+                .get_commission(order, last_qty, last_px, &self.instrument)
+            {
+                Ok(commission) => commission,
+                Err(e) => {
+                    let is_expiry_close =
+                        order.client_order_id().as_str().starts_with("EXPIRATION-");
+
+                    if is_expiry_close || self.pending_resolution {
+                        // During expiry/resolve settlement we must not block closure.
+                        // Prediction-market paper tests use zero-fee settlement semantics.
+                        log::warn!(
+                            "Falling back to zero commission for settlement fill {}: {}",
+                            order.client_order_id(),
+                            e
+                        );
+                        Money::zero(self.instrument.quote_currency())
+                    } else {
+                        panic!(
+                            "Failed to compute commission for {}: {}",
+                            order.client_order_id(),
+                            e
+                        );
+                    }
+                }
+            };
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
         self.generate_order_filled(

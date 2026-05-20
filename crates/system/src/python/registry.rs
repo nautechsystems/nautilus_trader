@@ -17,7 +17,9 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+use nautilus_common::factories::{
+    ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
+};
 use nautilus_core::{MUTEX_POISONED, python::to_pynotimplemented_err};
 use pyo3::prelude::*;
 
@@ -28,6 +30,10 @@ pub type FactoryExtractor =
 /// Function type for extracting a `Py<PyAny>` factory to a boxed `ExecutionClientFactory` trait object.
 pub type ExecFactoryExtractor =
     fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn ExecutionClientFactory>>;
+
+/// Function type for extracting a `Py<PyAny>` factory to a boxed `SimulatedExecutionClientFactory` trait object.
+pub type SimExecFactoryExtractor =
+    fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn SimulatedExecutionClientFactory>>;
 
 /// Function type for extracting a `Py<PyAny>` config to a boxed `ClientConfig` trait object.
 pub type ConfigExtractor = fn(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>>;
@@ -41,6 +47,7 @@ pub type ConfigExtractor = fn(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box
 pub struct FactoryRegistry {
     factory_extractors: Mutex<HashMap<String, FactoryExtractor>>,
     exec_factory_extractors: Mutex<HashMap<String, ExecFactoryExtractor>>,
+    sim_exec_factory_extractors: Mutex<HashMap<String, SimExecFactoryExtractor>>,
     config_extractors: Mutex<HashMap<String, ConfigExtractor>>,
 }
 
@@ -51,6 +58,7 @@ impl FactoryRegistry {
         Self {
             factory_extractors: Mutex::new(HashMap::new()),
             exec_factory_extractors: Mutex::new(HashMap::new()),
+            sim_exec_factory_extractors: Mutex::new(HashMap::new()),
             config_extractors: Mutex::new(HashMap::new()),
         }
     }
@@ -125,6 +133,32 @@ impl FactoryRegistry {
         Ok(())
     }
 
+    /// Registers a simulated execution factory extractor for a specific factory name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a factory with the same name is already registered.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn register_sim_exec_factory_extractor(
+        &self,
+        name: String,
+        extractor: SimExecFactoryExtractor,
+    ) -> anyhow::Result<()> {
+        let mut extractors = self
+            .sim_exec_factory_extractors
+            .lock()
+            .expect(MUTEX_POISONED);
+
+        if extractors.contains_key(&name) {
+            anyhow::bail!("Simulated execution factory extractor '{name}' is already registered");
+        }
+        extractors.insert(name, extractor);
+        Ok(())
+    }
+
     /// Extracts a `Py<PyAny>` factory to a boxed `DataClientFactory` trait object.
     ///
     /// # Errors
@@ -180,6 +214,39 @@ impl FactoryRegistry {
         } else {
             Err(to_pynotimplemented_err(format!(
                 "No execution factory extractor registered for '{factory_name}'"
+            )))
+        }
+    }
+
+    /// Extracts a `Py<PyAny>` factory to a boxed `SimulatedExecutionClientFactory` trait object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no extractor is registered for the factory type or extraction fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn extract_sim_exec_factory(
+        &self,
+        py: Python<'_>,
+        factory: Py<PyAny>,
+    ) -> PyResult<Box<dyn SimulatedExecutionClientFactory>> {
+        let factory_name = factory
+            .getattr(py, "name")?
+            .call0(py)?
+            .extract::<String>(py)?;
+
+        let extractors = self
+            .sim_exec_factory_extractors
+            .lock()
+            .expect(MUTEX_POISONED);
+
+        if let Some(extractor) = extractors.get(&factory_name) {
+            extractor(py, factory)
+        } else {
+            Err(to_pynotimplemented_err(format!(
+                "No simulated execution factory extractor registered for '{factory_name}'"
             )))
         }
     }
