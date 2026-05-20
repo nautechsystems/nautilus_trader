@@ -71,7 +71,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use nautilus_portfolio::portfolio::Portfolio;
+use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -1231,6 +1231,19 @@ impl PyStrategy {
         } else {
             Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing cache",
+            ))
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "portfolio")]
+    fn py_portfolio(&self) -> PyResult<PyPortfolio> {
+        let inner = self.inner();
+        if inner.core.actor.is_registered() {
+            Ok(PyPortfolio::from_rc(inner.core.portfolio().clone()))
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered with a trader before accessing portfolio",
             ))
         }
     }

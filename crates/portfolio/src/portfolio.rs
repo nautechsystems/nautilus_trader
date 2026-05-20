@@ -43,6 +43,11 @@ use rust_decimal::Decimal;
 
 use crate::{config::PortfolioConfig, manager::AccountsManager};
 
+// Sized for post-run backtest analysis (e.g. ~11 days at 1s cadence, or years
+// at per-minute cadence), long-lived live deployments should consume snapshots
+// via the message bus instead of relying on this buffer.
+const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
+
 struct PortfolioState {
     accounts: AccountsManager,
     analyzer: PortfolioAnalyzer,
@@ -63,11 +68,6 @@ struct PortfolioState {
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
     pre_position_fill_events: AHashSet<UUID4>,
 }
-
-// Sized for post-run backtest analysis (e.g. ~11 days at 1s cadence, or years
-// at per-minute cadence), long-lived live deployments should consume snapshots
-// via the message bus instead of relying on this buffer.
-const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
 
 #[derive(Clone, Copy)]
 enum OrderUpdateSource {
@@ -600,6 +600,19 @@ impl Portfolio {
 
     #[must_use]
     pub fn unrealized_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+        self.unrealized_pnl_for_account(instrument_id, None)
+    }
+
+    #[must_use]
+    pub fn unrealized_pnl_for_account(
+        &mut self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
+        if account_id.is_some() {
+            return self.calculate_unrealized_pnl(instrument_id, account_id);
+        }
+
         if let Some(pnl) = self
             .inner
             .borrow()
@@ -620,6 +633,19 @@ impl Portfolio {
 
     #[must_use]
     pub fn realized_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+        self.realized_pnl_for_account(instrument_id, None)
+    }
+
+    #[must_use]
+    pub fn realized_pnl_for_account(
+        &mut self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
+        if account_id.is_some() {
+            return self.calculate_realized_pnl(instrument_id, account_id);
+        }
+
         if let Some(pnl) = self
             .inner
             .borrow()
@@ -643,8 +669,17 @@ impl Portfolio {
     /// Total PnL = Realized PnL + Unrealized PnL
     #[must_use]
     pub fn total_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
-        let realized = self.realized_pnl(instrument_id)?;
-        let unrealized = self.unrealized_pnl(instrument_id)?;
+        self.total_pnl_for_account(instrument_id, None)
+    }
+
+    #[must_use]
+    pub fn total_pnl_for_account(
+        &mut self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<Money> {
+        let realized = self.realized_pnl_for_account(instrument_id, account_id)?;
+        let unrealized = self.unrealized_pnl_for_account(instrument_id, account_id)?;
 
         if realized.currency != unrealized.currency {
             log::error!(

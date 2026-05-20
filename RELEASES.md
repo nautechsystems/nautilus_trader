@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
 - Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
 - Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
+- Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill

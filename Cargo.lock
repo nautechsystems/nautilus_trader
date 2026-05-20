@@ -6519,6 +6519,7 @@ dependencies = [
  "nautilus-okx",
  "nautilus-persistence",
  "nautilus-polymarket",
+ "nautilus-portfolio",
  "nautilus-risk",
  "nautilus-sandbox",
  "nautilus-serialization",

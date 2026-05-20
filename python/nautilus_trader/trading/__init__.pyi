@@ -6,6 +6,7 @@ import typing
 
 from nautilus_trader import common
 from nautilus_trader import model
+from nautilus_trader import portfolio
 
 __all__ = [
     "ForexSession",
@@ -51,6 +52,8 @@ class Strategy:
     def clock(self) -> common.Clock: ...
     @property
     def cache(self) -> common.Cache: ...
+    @property
+    def portfolio(self) -> portfolio.Portfolio: ...
     @property
     def log(self) -> common.Logger: ...
     def state(self) -> common.ComponentState: ...

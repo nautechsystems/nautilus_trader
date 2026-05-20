@@ -19,12 +19,15 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import Signal
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
@@ -32,6 +35,7 @@ from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import Currency
 from nautilus_trader.model import DataType
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
@@ -43,6 +47,7 @@ from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarketStatusAction
 from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
 from nautilus_trader.model import OptionChainSlice
 from nautilus_trader.model import OptionGreeks
 from nautilus_trader.model import OptionSeriesId
@@ -80,8 +85,10 @@ from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import TradeTick
+from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
 from nautilus_trader.trading import ForexSession
+from nautilus_trader.trading import ImportableStrategyConfig
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading import StrategyConfig
 from nautilus_trader.trading import fx_local_from_utc
@@ -90,6 +97,8 @@ from nautilus_trader.trading import fx_next_start
 from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import PortfolioHedgedProbeStrategy
+from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
 
 
@@ -143,6 +152,172 @@ def test_strategy_cache_requires_registration():
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.cache
+
+
+def test_strategy_portfolio_requires_registration():
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError, match="registered with a trader"):
+        _ = strategy.portfolio
+
+
+def test_strategy_portfolio_returns_registered_kernel_portfolio():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    PortfolioProbeStrategy.observed_portfolio = None
+    PortfolioProbeStrategy.observed_account = None
+    PortfolioProbeStrategy.observed_equity_by_venue = None
+    PortfolioProbeStrategy.observed_equity_by_account = None
+    PortfolioProbeStrategy.observed_initialized = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioProbeStrategy.observed_portfolio
+        account = PortfolioProbeStrategy.observed_account
+        assert portfolio is not None
+        assert account is not None
+        assert PortfolioProbeStrategy.observed_initialized is False
+        assert account.id == AccountId("SIM-001")
+        assert PortfolioProbeStrategy.observed_equity_by_venue[usd] == Money(1_000_000.0, usd)
+        assert PortfolioProbeStrategy.observed_equity_by_account[usd] == Money(1_000_000.0, usd)
+
+        assert portfolio.account(account_id=account.id).id == account.id
+        assert portfolio.mark_values(account_id=account.id) == {}
+        assert portfolio.net_exposures(account_id=account.id) == {}
+        with pytest.raises(ValueError, match="venue or account_id must be provided"):
+            portfolio.account()
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_rejects_unsupported_query_arguments():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    PortfolioProbeStrategy.observed_portfolio = None
+    PortfolioProbeStrategy.observed_account = None
+    PortfolioProbeStrategy.observed_equity_by_venue = None
+    PortfolioProbeStrategy.observed_equity_by_account = None
+    PortfolioProbeStrategy.observed_initialized = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioProbeStrategy.observed_portfolio
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        assert portfolio is not None
+
+        with pytest.raises(NotImplementedError, match="target_currency conversion"):
+            portfolio.realized_pnls(venue=venue, target_currency=usd)
+        with pytest.raises(NotImplementedError, match="target_currency conversion"):
+            portfolio.realized_pnl(instrument_id, target_currency=usd)
+        with pytest.raises(NotImplementedError, match="price override"):
+            portfolio.unrealized_pnl(instrument_id, price=Price.from_str("1.00000"))
+        with pytest.raises(NotImplementedError, match="price override"):
+            portfolio.total_pnl(instrument_id, price=Price.from_str("1.00000"))
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_flat_methods_net_hedged_positions():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    instrument = TestInstrumentProvider.audusd_sim()
+    PortfolioHedgedProbeStrategy.observed_portfolio = None
+    PortfolioHedgedProbeStrategy.observed_account = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+    engine.add_instrument(instrument)
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.90000"),
+                ask_price=Price.from_str("0.90002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=1,
+                ts_init=1,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.90000"),
+                ask_price=Price.from_str("0.90002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=2,
+                ts_init=2,
+            ),
+        ],
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioHedgedProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioHedgedProbeStrategy.observed_portfolio
+        account = PortfolioHedgedProbeStrategy.observed_account
+        result = engine.get_result()
+
+        assert portfolio is not None
+        assert account is not None
+        assert result.total_orders == 2
+        assert result.total_positions == 2
+        assert portfolio.net_position(instrument.id) == Decimal(0)
+        assert portfolio.net_position(instrument.id, account_id=account.id) == Decimal(0)
+        assert portfolio.is_flat(instrument.id) is True
+        assert portfolio.is_flat(instrument.id, account_id=account.id) is True
+        assert portfolio.is_completely_flat() is True
+        assert portfolio.is_completely_flat(account_id=account.id) is True
+        assert portfolio.is_net_long(instrument.id) is False
+        assert portfolio.is_net_short(instrument.id) is False
+    finally:
+        engine.dispose()
 
 
 LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"]

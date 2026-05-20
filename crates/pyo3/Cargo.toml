@@ -55,6 +55,7 @@ extension-module = [
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-portfolio/extension-module",
   "nautilus-polymarket/extension-module",
   "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
@@ -114,6 +115,7 @@ nautilus-network = { workspace = true, features = [
   "transport-sockudo",
 ] }
 nautilus-persistence = { workspace = true, features = ["python"] }
+nautilus-portfolio = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 nautilus-testkit = { workspace = true, features = ["python"] }
