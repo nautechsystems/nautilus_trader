@@ -21,7 +21,7 @@ name = "nautilus_live"
 crate-type = ["rlib"]
 
 [features]
-default = ["node"]
+default = ["node", "plugin"]
 node = [
   "dep:nautilus-data",
   "dep:nautilus-portfolio",
@@ -29,6 +29,7 @@ node = [
   "dep:nautilus-system",
   "dep:nautilus-trading",
 ]
+plugin = ["node", "dep:nautilus-plugin"]
 examples = ["node", "nautilus-trading/examples"]
 streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
@@ -79,6 +80,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 nautilus-data = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
+nautilus-plugin = { workspace = true, features = ["host"], optional = true }
 nautilus-portfolio = { workspace = true, optional = true }
 nautilus-risk = { workspace = true, optional = true }
 nautilus-system = { workspace = true, features = ["live"], optional = true }
@@ -117,6 +119,16 @@ harness = false
 name = "manager"
 path = "tests/manager.rs"
 required-features = ["node"]
+
+[[test]]
+name = "plugin"
+path = "tests/plugin.rs"
+required-features = ["plugin"]
+
+[[test]]
+name = "plugin_in_process"
+path = "tests/plugin_in_process.rs"
+required-features = ["plugin"]
 
 [[test]]
 name = "node"

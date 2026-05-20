@@ -97,9 +97,14 @@ pub struct StrategyVTable {
     /// strategy stashes both pointers so it can route order commands
     /// (`submit_order`, `cancel_order`, `modify_order`) back through the
     /// host. The host uses the context to attribute each command.
+    ///
+    /// `config_json` carries the per-instance configuration the host
+    /// constructed from the user's TOML or builder API. Empty when the
+    /// host has no instance-specific configuration to pass.
     pub create: unsafe extern "C" fn(
         host: *const HostVTable,
         ctx: *const HostContext,
+        config_json: BorrowedStr<'_>,
     ) -> *mut PluginStrategyHandle,
 
     /// Drops the strategy instance and releases all of its resources.
@@ -253,7 +258,11 @@ pub trait PluginStrategy: 'static + Send + Sized {
     /// pointers in fields so that order-command callbacks (`submit_order`,
     /// `cancel_order`, `modify_order`) can be issued through
     /// `host.submit_order(ctx, ...)` etc.
-    fn new(host: *const HostVTable, ctx: *const HostContext) -> Self;
+    ///
+    /// `config_json` is the per-instance JSON configuration the host
+    /// constructed from the user's TOML or builder API. The string is
+    /// empty when no instance-specific configuration is supplied.
+    fn new(host: *const HostVTable, ctx: *const HostContext, config_json: &str) -> Self;
 
     #[allow(unused_variables)]
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -500,9 +509,13 @@ where
 unsafe extern "C" fn create_thunk<T: PluginStrategy>(
     host: *const HostVTable,
     ctx: *const HostContext,
+    config_json: BorrowedStr<'_>,
 ) -> *mut PluginStrategyHandle {
     guard_infallible("strategy::create", || {
-        Box::into_raw(Box::new(T::new(host, ctx))).cast::<PluginStrategyHandle>()
+        // SAFETY: host promises `config_json` borrows storage that is live
+        // for the duration of this call.
+        let cfg = unsafe { config_json.as_str() };
+        Box::into_raw(Box::new(T::new(host, ctx, cfg))).cast::<PluginStrategyHandle>()
     })
 }
 

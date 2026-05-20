@@ -87,9 +87,14 @@ pub struct PluginActorHandle {
 pub struct ActorVTable {
     /// Constructs a fresh actor instance bound to the supplied host vtable
     /// and instance context, and returns a non-null handle.
+    ///
+    /// `config_json` carries the per-instance configuration the host
+    /// constructed from the user's TOML or builder API. Empty when the
+    /// host has no instance-specific configuration to pass.
     pub create: unsafe extern "C" fn(
         host: *const HostVTable,
         ctx: *const HostContext,
+        config_json: BorrowedStr<'_>,
     ) -> *mut PluginActorHandle,
 
     /// Drops the actor instance and releases all of its resources.
@@ -168,7 +173,11 @@ pub trait PluginActor: 'static + Send + Sized {
 
     /// Constructs a fresh actor instance bound to the supplied host vtable
     /// and instance context.
-    fn new(host: *const HostVTable, ctx: *const HostContext) -> Self;
+    ///
+    /// `config_json` is the per-instance JSON configuration the host
+    /// constructed from the user's TOML or builder API. The string is
+    /// empty when no instance-specific configuration is supplied.
+    fn new(host: *const HostVTable, ctx: *const HostContext, config_json: &str) -> Self;
 
     #[allow(unused_variables)]
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -313,9 +322,13 @@ where
 unsafe extern "C" fn create_thunk<T: PluginActor>(
     host: *const HostVTable,
     ctx: *const HostContext,
+    config_json: BorrowedStr<'_>,
 ) -> *mut PluginActorHandle {
     guard_infallible("actor::create", || {
-        Box::into_raw(Box::new(T::new(host, ctx))).cast::<PluginActorHandle>()
+        // SAFETY: host promises `config_json` borrows storage that is live
+        // for the duration of this call.
+        let cfg = unsafe { config_json.as_str() };
+        Box::into_raw(Box::new(T::new(host, ctx, cfg))).cast::<PluginActorHandle>()
     })
 }
 

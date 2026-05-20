@@ -62,6 +62,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
+    boundary::BorrowedStr,
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
@@ -142,7 +143,7 @@ struct HookCountingActor;
 impl PluginActor for HookCountingActor {
     const TYPE_NAME: &'static str = "HookCountingActor";
 
-    fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
         Self
     }
 
@@ -320,7 +321,7 @@ unsafe impl Send for HookCountingStrategy {}
 impl PluginStrategy for HookCountingStrategy {
     const TYPE_NAME: &'static str = "HookCountingStrategy";
 
-    fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
         Self
     }
 
@@ -875,7 +876,7 @@ fn actor_lifecycle_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingActor never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx) };
+    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
 
     let r = match hook {
         // SAFETY: handle is live for each branch below.
@@ -918,7 +919,7 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingActor never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx) };
+    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
 
     // Each match arm constructs the typed event locally and passes a
     // borrowed pointer. The temporary lives until the end of the match
@@ -1016,7 +1017,7 @@ fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook)
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingStrategy never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx) };
+    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
 
     let r = match hook {
         // SAFETY: handle is live for each branch below.
@@ -1076,7 +1077,7 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingStrategy never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx) };
+    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
 
     // Each match arm constructs the typed event locally and passes a
     // borrowed pointer. The temporary lives until the end of the match

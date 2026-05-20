@@ -119,13 +119,41 @@ impl LoadedPlugin {
 #[derive(Default)]
 pub struct PluginLoader {
     loaded: Vec<LoadedPlugin>,
+    host: Option<*const HostVTable>,
 }
 
+/// SAFETY: `*const HostVTable` is a process-lifetime static pointer; the host
+/// commits to keeping the vtable live and the inner fn pointers are Sync by
+/// construction.
+unsafe impl Send for PluginLoader {}
+/// SAFETY: see above.
+unsafe impl Sync for PluginLoader {}
+
 impl PluginLoader {
-    /// Creates a new, empty loader.
+    /// Creates a new, empty loader that hands every plug-in the default
+    /// `nautilus-plugin` host vtable. The default vtable carries
+    /// `NotImplemented` stubs for the order command thunks; use
+    /// [`PluginLoader::with_host`] from the live node to install a vtable
+    /// whose order commands route through a strategy adapter.
     #[must_use]
     pub fn new() -> Self {
-        Self { loaded: Vec::new() }
+        Self {
+            loaded: Vec::new(),
+            host: None,
+        }
+    }
+
+    /// Creates a new, empty loader that will hand every loaded plug-in the
+    /// supplied `host` vtable instead of the default.
+    ///
+    /// `host` must remain live for the lifetime of every plug-in loaded
+    /// through this loader (typically the process lifetime).
+    #[must_use]
+    pub fn with_host(host: *const HostVTable) -> Self {
+        Self {
+            loaded: Vec::new(),
+            host: Some(host),
+        }
     }
 
     /// Loads every plug-in path in order. Stops on the first error.
@@ -158,10 +186,10 @@ impl PluginLoader {
                     path: path_buf.clone(),
                     source: e,
                 })?;
-            let host = host_vtable();
+            let host = self.host.unwrap_or_else(host_vtable);
             // SAFETY: calling the plug-in's published init symbol with our
-            // static host vtable. The plug-in promises to read the vtable and
-            // return a valid `*const PluginManifest` or null.
+            // host vtable. The plug-in promises to read the vtable and return
+            // a valid `*const PluginManifest` or null.
             unsafe { init(host) }
         };
 
@@ -246,14 +274,14 @@ fn validate_manifest_ptr(
 /// added by bumping [`NAUTILUS_PLUGIN_ABI_VERSION`].
 fn host_vtable() -> *const HostVTable {
     static HOST: OnceLock<HostVTable> = OnceLock::new();
-    HOST.get_or_init(|| HostVTable {
+    std::ptr::from_ref(HOST.get_or_init(|| HostVTable {
         abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
         clock_now_ns: host_clock_now_ns,
         log: host_log,
         submit_order: host_submit_order_unbound,
         cancel_order: host_cancel_order_unbound,
         modify_order: host_modify_order_unbound,
-    }) as *const _
+    }))
 }
 
 unsafe extern "C" fn host_clock_now_ns() -> u64 {
@@ -400,7 +428,7 @@ mod tests {
             strategies: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
-        let err = validate_manifest_ptr(&bad_manifest, path).unwrap_err();
+        let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
         match err {
             LoadError::AbiMismatch {
                 path: p,
@@ -428,7 +456,7 @@ mod tests {
             strategies: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
-        validate_manifest_ptr(&good_manifest, path).expect("matching manifest accepted");
+        validate_manifest_ptr(&raw const good_manifest, path).expect("matching manifest accepted");
     }
 
     #[rstest]

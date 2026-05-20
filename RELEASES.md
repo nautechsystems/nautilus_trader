@@ -12,6 +12,11 @@ Released on TBD (UTC).
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
 - Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
 - Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
+- Added `PluginActorAdapter` and `PluginStrategyAdapter` wrapping plug-in cdylibs as host `DataActor`/`Strategy` (Rust)
+- Added `PluginLoader::with_host` so the live node can install a custom `HostVTable` for order-command routing (Rust)
+- Added `host_vtable` and `plugin_loader` helpers binding submit/cancel/modify order to the strategy adapter (Rust)
+- Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
+- Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
@@ -58,7 +63,7 @@ None
 - Optimized OKX hot paths with benchmark report
 
 ### Documentation Updates
-None
+- Added `nautilus-plugin` README early-alpha warning declaring ABI and public API are not stable
 
 ### Deprecations
 None

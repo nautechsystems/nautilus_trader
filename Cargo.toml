@@ -81,6 +81,7 @@ nautilus-model = { path = "crates/model", version = "0.58.0" }
 nautilus-network = { path = "crates/network", version = "0.58.0" }
 nautilus-persistence = { path = "crates/persistence", version = "0.58.0" }
 nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.58.0" }
+nautilus-plugin = { path = "crates/plugin", version = "0.58.0", default-features = false }
 nautilus-portfolio = { path = "crates/portfolio", version = "0.58.0" }
 nautilus-pyo3 = { path = "crates/pyo3", version = "0.58.0" }
 nautilus-risk = { path = "crates/risk", version = "0.58.0" }

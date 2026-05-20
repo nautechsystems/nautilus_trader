@@ -36,7 +36,7 @@ pub struct ExampleActor {
 impl PluginActor for ExampleActor {
     const TYPE_NAME: &'static str = "ExampleActor";
 
-    fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
         Self::default()
     }
 
@@ -59,7 +59,7 @@ unsafe impl Send for ExampleStrategy {}
 impl PluginStrategy for ExampleStrategy {
     const TYPE_NAME: &'static str = "ExampleStrategy";
 
-    fn new(host: *const HostVTable, ctx: *const HostContext) -> Self {
+    fn new(host: *const HostVTable, ctx: *const HostContext, _config_json: &str) -> Self {
         Self {
             _host: host,
             _ctx: ctx,

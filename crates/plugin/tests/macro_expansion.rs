@@ -137,7 +137,7 @@ struct TestActor;
 impl PluginActor for TestActor {
     const TYPE_NAME: &'static str = "TestActor";
 
-    fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
         Self
     }
 
@@ -180,7 +180,7 @@ unsafe impl Send for TestStrategy {}
 impl PluginStrategy for TestStrategy {
     const TYPE_NAME: &'static str = "TestStrategy";
 
-    fn new(host: *const HostVTable, ctx: *const HostContext) -> Self {
+    fn new(host: *const HostVTable, ctx: *const HostContext, _config_json: &str) -> Self {
         TEST_STRATEGY_CONTEXT_PTR.store(ctx.cast_mut(), Ordering::SeqCst);
         Self { host, ctx }
     }
@@ -563,7 +563,7 @@ fn actor_lifecycle_callbacks_dispatch_to_trait() {
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: vtable produces a fresh, exclusively-owned handle.
-    let handle = unsafe { (vtable.create)(host, ctx) };
+    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
     assert!(!handle.is_null(), "create returned null");
 
     // SAFETY: handle is live.
@@ -614,7 +614,7 @@ fn actor_on_quote_dispatches_typed_pointer() {
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: vtable produces a fresh handle.
-    let handle = unsafe { (vtable.create)(host, ctx) };
+    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
     // SAFETY: handle is live and `quote` outlives the call.
     let r = unsafe { (vtable.on_quote)(handle, &raw const quote) };
     r.into_result().expect("on_quote");
@@ -663,7 +663,7 @@ fn strategy_lifecycle_dispatches_to_trait() {
     let ctx = sentinel_ctx();
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     // SAFETY: vtable produces a fresh, exclusively-owned handle.
-    let handle = unsafe { (vtable.create)(host, ctx) };
+    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
     assert!(!handle.is_null(), "create returned null");
 
     // The strategy must have stored the context pointer during `new`.
@@ -708,7 +708,7 @@ fn strategy_on_position_opened_invokes_host_submit() {
     let ctx = sentinel_ctx();
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     // SAFETY: vtable produces a fresh handle.
-    let handle = unsafe { (vtable.create)(host, ctx) };
+    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
 
     let event = PositionOpened {
         trader_id: TraderId::from("TESTER-001"),
@@ -776,7 +776,7 @@ fn each_actor_type_has_its_own_vtable() {
     impl PluginActor for OtherActor {
         const TYPE_NAME: &'static str = "OtherActor";
 
-        fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+        fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
             Self
         }
     }
@@ -816,7 +816,7 @@ fn each_strategy_type_has_its_own_vtable() {
     impl PluginStrategy for OtherStrategy {
         const TYPE_NAME: &'static str = "OtherStrategy";
 
-        fn new(_host: *const HostVTable, _ctx: *const HostContext) -> Self {
+        fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
             Self
         }
     }
