@@ -474,6 +474,8 @@ impl GreeksCalculator {
             0.0,
             None,
             None,
+            None,
+            None,
         );
         let mut greeks_data =
             GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
@@ -557,6 +559,11 @@ impl GreeksCalculator {
             .get_price(&instrument_id)
             .ok_or_else(|| anyhow::anyhow!("No price available for {instrument_id}"))?;
         let underlying_price = self.get_underlying_price(&underlying_instrument_id)?;
+
+        if let Some(vol_index_id) = vol_index_instrument_id {
+            self.get_price(&vol_index_id)
+                .ok_or_else(|| anyhow::anyhow!("No price available for {vol_index_id}"))?;
+        }
         let greeks = if update_vol {
             let cached_greeks = self.cache.borrow().greeks(&instrument_id);
             match cached_greeks {
@@ -607,6 +614,8 @@ impl GreeksCalculator {
             greeks.vol,
             vol_index_instrument_id,
             vol_beta_weights,
+            None,
+            None,
         );
         let greeks_data = GreeksData::new(
             utc_now_ns,
@@ -698,6 +707,8 @@ impl GreeksCalculator {
             greeks_data.vol,
             vol_index_instrument_id,
             vol_beta_weights,
+            None,
+            None,
         );
         GreeksData::new(
             greeks_data.ts_event,
@@ -789,17 +800,20 @@ impl GreeksCalculator {
         unshocked_vol: f64,
         vol_index_instrument_id: Option<InstrumentId>,
         vol_beta_weights: Option<&HashMap<InstrumentId, f64>>,
+        index_price: Option<f64>,
+        vol_index_price: Option<f64>,
     ) -> (f64, f64, f64) {
         let mut delta = delta_input;
         let mut gamma = gamma_input;
         let mut vega = vega_input;
 
-        let mut index_price = None;
-        let mut vol_index_price = None;
+        let mut used_index_price = index_price
+            .or_else(|| index_instrument_id.and_then(|index_id| self.get_price(&index_id)));
+        let mut used_index_vol = vol_index_price.or_else(|| {
+            vol_index_instrument_id.and_then(|vol_index_id| self.get_price(&vol_index_id))
+        });
 
-        if let Some(index_id) = index_instrument_id {
-            index_price = Some(self.get_price(&index_id).unwrap_or_default());
-
+        if used_index_price.is_some() {
             let mut beta = 1.0;
 
             if let Some(weights) = beta_weights
@@ -808,7 +822,7 @@ impl GreeksCalculator {
                 beta = weight;
             }
 
-            if let Some(ref mut idx_price) = index_price {
+            if let Some(ref mut idx_price) = used_index_price {
                 #[allow(clippy::float_cmp, reason = "exact-equality baseline check")]
                 if underlying_price != unshocked_underlying_price {
                     *idx_price += 1.0 / beta
@@ -822,10 +836,13 @@ impl GreeksCalculator {
             }
         }
 
-        if let Some(vol_index_id) = vol_index_instrument_id {
-            vol_index_price = Some(self.get_price(&vol_index_id).unwrap_or_default());
-
+        if used_index_vol.is_some() {
             let mut vega_beta = 1.0;
+            let used_vol = if unshocked_vol == 0.0 {
+                vol
+            } else {
+                unshocked_vol
+            };
 
             if let Some(weights) = vol_beta_weights
                 && let Some(&weight) = weights.get(&underlying_instrument_id)
@@ -833,19 +850,23 @@ impl GreeksCalculator {
                 vega_beta = weight;
             }
 
-            if let Some(ref mut idx_price) = vol_index_price {
+            if let Some(ref mut idx_vol) = used_index_vol {
+                *idx_vol *= 0.01;
+
                 #[allow(clippy::float_cmp, reason = "exact-equality baseline check")]
-                if vol != unshocked_vol {
-                    *idx_price +=
-                        1.0 / vega_beta * (*idx_price / unshocked_vol) * (vol - unshocked_vol);
+                if vol != used_vol && used_vol != 0.0 {
+                    *idx_vol += 1.0 / vega_beta * (*idx_vol / used_vol) * (vol - used_vol);
                 }
 
-                vega *= vega_beta * vol / *idx_price;
+                #[allow(clippy::float_cmp, reason = "zero price guard")]
+                if *idx_vol != 0.0 {
+                    vega *= vega_beta * vol / *idx_vol;
+                }
             }
         }
 
         if percent_greeks {
-            if let Some(idx_price) = index_price {
+            if let Some(idx_price) = used_index_price {
                 delta *= idx_price / 100.0;
                 gamma *= (idx_price / 100.0).powi(2);
             } else {
@@ -853,8 +874,8 @@ impl GreeksCalculator {
                 gamma *= (underlying_price / 100.0).powi(2);
             }
 
-            if let Some(idx_price) = vol_index_price {
-                vega *= idx_price / 100.0;
+            if let Some(idx_vol) = used_index_vol {
+                vega *= idx_vol / 100.0;
             } else {
                 vega *= vol / 100.0;
             }
@@ -1156,6 +1177,9 @@ impl GreeksCalculator {
 
     fn get_price_object(&self, instrument_id: &InstrumentId) -> Option<Price> {
         let cache = self.cache.borrow();
+        let price = cache
+            .price(instrument_id, PriceType::Mid)
+            .or_else(|| cache.price(instrument_id, PriceType::Last));
 
         // For index-class futures, prefer tradable quotes over the published index
         // price since index price is the spot level and may diverge from futures basis.
@@ -1163,14 +1187,8 @@ impl GreeksCalculator {
         if let Some(instrument) = cache.instrument(instrument_id)
             && instrument.asset_class() == AssetClass::Index
         {
-            if instrument.instrument_class() == InstrumentClass::Future {
-                let tradable = cache
-                    .price(instrument_id, PriceType::Mid)
-                    .or_else(|| cache.price(instrument_id, PriceType::Last));
-
-                if tradable.is_some() {
-                    return tradable;
-                }
+            if instrument.instrument_class() == InstrumentClass::Future && price.is_some() {
+                return price;
             }
 
             if let Some(index_price) = cache.index_price(instrument_id) {
@@ -1178,9 +1196,7 @@ impl GreeksCalculator {
             }
         }
 
-        cache
-            .price(instrument_id, PriceType::Mid)
-            .or_else(|| cache.price(instrument_id, PriceType::Last))
+        price
     }
 
     fn get_price(&self, instrument_id: &InstrumentId) -> Option<f64> {
@@ -2009,7 +2025,7 @@ mod tests {
             )
             .unwrap();
 
-        let expected_vega = greeks.vega * 0.75 * greeks.vol / 25.0;
+        let expected_vega = greeks.vega * 0.75 * (greeks.vol * 100.0) / 25.0;
         assert_eq!(
             (vol_weighted_greeks.delta * 1e12).round(),
             (greeks.delta * 1e12).round()
@@ -2022,6 +2038,104 @@ mod tests {
             (vol_weighted_greeks.vega * 1e12).round(),
             (expected_vega * 1e12).round()
         );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_errors_when_vol_index_price_missing() {
+        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
+        let expiry = now + chrono::Duration::days(30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let option_id = option.id();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let vol_index_id = InstrumentId::from("VIX.XCBF");
+        let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calculator = GreeksCalculator::new(cache, clock);
+        let error = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vol_index_id),
+                None,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "No price available for VIX.XCBF");
+    }
+
+    #[rstest]
+    fn test_modify_greeks_accepts_explicit_index_prices() {
+        let calculator = create_test_calculator();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let mut beta_weights = HashMap::new();
+        beta_weights.insert(underlying_id, 0.5);
+        let mut vol_beta_weights = HashMap::new();
+        vol_beta_weights.insert(underlying_id, 0.75);
+
+        let (delta, gamma, vega) = calculator.modify_greeks(
+            1.0,
+            2.0,
+            underlying_id,
+            150.0,
+            150.0,
+            false,
+            None,
+            Some(&beta_weights),
+            2.0,
+            0.30,
+            0,
+            None,
+            0.0,
+            None,
+            Some(&vol_beta_weights),
+            Some(200.0),
+            Some(25.0),
+        );
+
+        assert_eq!((delta * 1e12).round(), 375_000_000_000.0);
+        assert_eq!((gamma * 1e12).round(), 281_250_000_000.0);
+        assert_eq!((vega * 1e12).round(), 1_800_000_000_000.0);
+
+        let (delta, gamma, vega) = calculator.modify_greeks(
+            1.0,
+            2.0,
+            underlying_id,
+            150.0,
+            150.0,
+            true,
+            None,
+            Some(&beta_weights),
+            2.0,
+            0.30,
+            0,
+            None,
+            0.0,
+            None,
+            Some(&vol_beta_weights),
+            Some(200.0),
+            Some(25.0),
+        );
+
+        assert_eq!((delta * 1e12).round(), 750_000_000_000.0);
+        assert_eq!((gamma * 1e12).round(), 1_125_000_000_000.0);
+        assert_eq!((vega * 1e12).round(), 4_500_000_000.0);
     }
 
     #[rstest]

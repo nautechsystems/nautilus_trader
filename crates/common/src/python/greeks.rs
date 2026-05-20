@@ -137,7 +137,9 @@ impl PyGreeksCalculator {
             vega_time_weight_base=None,
             unshocked_vol=0.0,
             vol_index_instrument_id=None,
-            vol_beta_weights=None
+            vol_beta_weights=None,
+            index_price=None,
+            vol_index_price=None
         )
     )]
     fn py_modify_greeks(
@@ -157,6 +159,8 @@ impl PyGreeksCalculator {
         unshocked_vol: f64,
         vol_index_instrument_id: Option<InstrumentId>,
         vol_beta_weights: Option<HashMap<InstrumentId, f64>>,
+        index_price: Option<f64>,
+        vol_index_price: Option<f64>,
     ) -> (f64, f64, f64) {
         self.0.modify_greeks(
             delta_input,
@@ -174,6 +178,8 @@ impl PyGreeksCalculator {
             unshocked_vol,
             vol_index_instrument_id,
             vol_beta_weights.as_ref(),
+            index_price,
+            vol_index_price,
         )
     }
 
