@@ -40,7 +40,7 @@ use super::{
     parse::parse_order_response,
 };
 use crate::{
-    common::consts::KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION,
+    common::consts::{KRAKEN_RATE_LIMIT_KEY_ORDER, KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION},
     websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
 };
 
@@ -129,7 +129,7 @@ impl SpotFeedHandler {
                         }
                         SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
                             if let Some(client) = &self.inner {
-                                if let Err(e) = client.send_text(payload, None).await {
+                                if let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_ORDER.as_slice())).await {
                                     log::error!(
                                         "Kraken WS send_order_request failed req_id={req_id}: {e}"
                                     );

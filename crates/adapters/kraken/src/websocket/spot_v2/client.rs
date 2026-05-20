@@ -54,7 +54,10 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION, KRAKEN_SPOT_WS_SUBSCRIPTION_QUOTA},
+        consts::{
+            KRAKEN_RATE_LIMIT_KEY_ORDER, KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION,
+            KRAKEN_SPOT_WS_ORDER_QUOTA, KRAKEN_SPOT_WS_SUBSCRIPTION_QUOTA,
+        },
         parse::normalize_spot_symbol,
     },
     config::KrakenDataClientConfig,
@@ -257,10 +260,16 @@ impl KrakenSpotWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        let keyed_quotas = vec![(
-            KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
-            *KRAKEN_SPOT_WS_SUBSCRIPTION_QUOTA,
-        )];
+        let keyed_quotas = vec![
+            (
+                KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
+                *KRAKEN_SPOT_WS_SUBSCRIPTION_QUOTA,
+            ),
+            (
+                KRAKEN_RATE_LIMIT_KEY_ORDER[0].to_string(),
+                *KRAKEN_SPOT_WS_ORDER_QUOTA,
+            ),
+        ];
 
         let ws_client = WebSocketClient::connect(
             ws_config,

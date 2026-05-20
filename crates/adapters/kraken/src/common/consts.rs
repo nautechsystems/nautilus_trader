@@ -78,9 +78,26 @@ pub static KRAKEN_SPOT_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(||
         .allow_burst(NonZeroU32::new(10).expect("non-zero"))
 });
 
+/// Kraken Spot WebSocket order rate limit (conservative).
+///
+/// Shares the same dynamic connection-level message budget as subscriptions.
+/// The matching engine enforces additional per-pair rate limits with decay
+/// (thresholds: 60 Starter / 125 Intermediate / 180 Pro).
+///
+/// <https://docs.kraken.com/api/docs/guides/spot-ratelimits>
+pub static KRAKEN_SPOT_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero"))
+        .expect("valid constant")
+        .allow_burst(NonZeroU32::new(10).expect("non-zero"))
+});
+
 /// Pre-interned rate limit key for WebSocket subscription operations.
 pub static KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("subscription")]);
+
+/// Pre-interned rate limit key for WebSocket order operations.
+pub static KRAKEN_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("order")]);
 
 // Post-only rejection reason strings
 pub const KRAKEN_FUTURES_POST_ONLY_REJECT: &str = "post_order_failed_because_it_would_filled";
