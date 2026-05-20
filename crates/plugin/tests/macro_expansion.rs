@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use nautilus_model::{data::QuoteTick, events::PositionOpened};
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, PluginResult, Slice},
+    boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::PluginManifest,
     surfaces::{
@@ -224,6 +224,164 @@ unsafe extern "C" fn test_log(
 ) {
 }
 
+macro_rules! test_bytes_fn {
+    ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<OwnedBytes> {
+            $(let _ = $arg;)*
+            PluginResult::Ok(OwnedBytes::empty())
+        }
+    };
+}
+
+macro_rules! test_unit_fn {
+    ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
+            $(let _ = $arg;)*
+            PluginResult::Ok(())
+        }
+    };
+}
+
+test_bytes_fn!(test_cache_instrument, (ctx: *const HostContext, instrument_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_account, (ctx: *const HostContext, account_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_order, (ctx: *const HostContext, client_order_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_position, (ctx: *const HostContext, position_id: BorrowedStr<'_>));
+test_bytes_fn!(
+    test_cache_orders_for_strategy,
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+test_bytes_fn!(
+    test_cache_positions_for_strategy,
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+test_unit_fn!(
+    test_subscribe_quotes,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_quotes,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_trades,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_trades,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_bars,
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_bars,
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_book_deltas,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        client_id: BorrowedStr<'_>,
+        managed: u8,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_book_deltas,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_book_at_interval,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_book_at_interval,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_msgbus_publish,
+    (
+        ctx: *const HostContext,
+        topic: BorrowedStr<'_>,
+        payload: Slice<'_, u8>,
+    )
+);
+test_unit_fn!(
+    test_set_time_alert,
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        alert_time_ns: u64,
+        allow_past: u8,
+    )
+);
+test_unit_fn!(
+    test_set_timer,
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: u64,
+        allow_past: u8,
+        fire_immediately: u8,
+    )
+);
+test_unit_fn!(test_cancel_timer, (ctx: *const HostContext, name: BorrowedStr<'_>));
+
 static TEST_HOST_SUBMIT_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_HOST_CANCEL_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_HOST_MODIFY_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -267,6 +425,26 @@ static TEST_HOST: HostVTable = HostVTable {
     abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
     clock_now_ns: test_clock_now_ns,
     log: test_log,
+    cache_instrument: test_cache_instrument,
+    cache_account: test_cache_account,
+    cache_order: test_cache_order,
+    cache_position: test_cache_position,
+    cache_orders_for_strategy: test_cache_orders_for_strategy,
+    cache_positions_for_strategy: test_cache_positions_for_strategy,
+    subscribe_quotes: test_subscribe_quotes,
+    unsubscribe_quotes: test_unsubscribe_quotes,
+    subscribe_trades: test_subscribe_trades,
+    unsubscribe_trades: test_unsubscribe_trades,
+    subscribe_bars: test_subscribe_bars,
+    unsubscribe_bars: test_unsubscribe_bars,
+    subscribe_book_deltas: test_subscribe_book_deltas,
+    unsubscribe_book_deltas: test_unsubscribe_book_deltas,
+    subscribe_book_at_interval: test_subscribe_book_at_interval,
+    unsubscribe_book_at_interval: test_unsubscribe_book_at_interval,
+    msgbus_publish: test_msgbus_publish,
+    set_time_alert: test_set_time_alert,
+    set_timer: test_set_timer,
+    cancel_timer: test_cancel_timer,
     submit_order: test_submit_order,
     cancel_order: test_cancel_order,
     modify_order: test_modify_order,
@@ -372,6 +550,26 @@ fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
         abi_version: abi,
         clock_now_ns: test_clock_now_ns,
         log: test_log,
+        cache_instrument: test_cache_instrument,
+        cache_account: test_cache_account,
+        cache_order: test_cache_order,
+        cache_position: test_cache_position,
+        cache_orders_for_strategy: test_cache_orders_for_strategy,
+        cache_positions_for_strategy: test_cache_positions_for_strategy,
+        subscribe_quotes: test_subscribe_quotes,
+        unsubscribe_quotes: test_unsubscribe_quotes,
+        subscribe_trades: test_subscribe_trades,
+        unsubscribe_trades: test_unsubscribe_trades,
+        subscribe_bars: test_subscribe_bars,
+        unsubscribe_bars: test_unsubscribe_bars,
+        subscribe_book_deltas: test_subscribe_book_deltas,
+        unsubscribe_book_deltas: test_unsubscribe_book_deltas,
+        subscribe_book_at_interval: test_subscribe_book_at_interval,
+        unsubscribe_book_at_interval: test_unsubscribe_book_at_interval,
+        msgbus_publish: test_msgbus_publish,
+        set_time_alert: test_set_time_alert,
+        set_timer: test_set_timer,
+        cancel_timer: test_cancel_timer,
         submit_order: test_submit_order,
         cancel_order: test_cancel_order,
         modify_order: test_modify_order,

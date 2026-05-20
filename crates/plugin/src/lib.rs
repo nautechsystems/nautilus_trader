@@ -49,7 +49,7 @@
 /// [`PluginManifest::abi_version`] does not match this value.
 ///
 /// [`PluginManifest::abi_version`]: crate::manifest::PluginManifest::abi_version
-pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 4;
+pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 1;
 
 /// Name of the single `extern "C"` entry symbol every plug-in cdylib must export.
 ///

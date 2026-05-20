@@ -15,11 +15,11 @@
 
 //! Host-side glue between [`nautilus_plugin`] and the live node.
 //!
-//! Phase 1 of the [plug-in roadmap]: provides actor and strategy adapters that
-//! wrap a cdylib's vtable + handle as a `DataActor` / `Strategy` the live
-//! engine can register, plus the host-side [`HostVTable`](nautilus_plugin::HostVTable)
-//! that routes the plug-in's order commands through the production cache,
-//! risk, and event pipeline.
+//! Provides actor and strategy adapters that wrap a cdylib's vtable + handle
+//! as a `DataActor` / `Strategy` the live engine can register, plus the
+//! host-side [`HostVTable`](nautilus_plugin::HostVTable) that routes plug-in
+//! callbacks through the production cache, risk, event, msgbus, and timer
+//! paths.
 //!
 //! [plug-in roadmap]: https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/plugin/README.md
 //!
@@ -27,10 +27,10 @@
 //!
 //! - [`actor`]: [`PluginActorAdapter`] for plug-in actors.
 //! - [`strategy`]: [`PluginStrategyAdapter`] for plug-in strategies.
-//! - [`host`]: host-side `HostVTable` construction with order-command routing.
+//! - [`host`]: host-side `HostVTable` construction with live-node callback routing.
 //! - [`commands`]: JSON command envelopes the plug-in posts to the host.
 //! - [`registry`]: the per-instance opaque context the host attaches to each
-//!   plug-in instance so order commands can be attributed to the calling
+//!   plug-in instance so host callbacks can be attributed to the calling
 //!   adapter.
 
 #![allow(unsafe_code)]

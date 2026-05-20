@@ -15,16 +15,15 @@
 
 //! Host-side function table given to plug-ins for re-entrant callbacks.
 //!
-//! v1 surface is intentionally minimal (clock + logging). Methods get added as
-//! the first stateful plug points (strategy, actor) drive concrete need; the
-//! design avoids exposing `Arc<MessageBus>` or any `dyn Trait` across the
-//! boundary.
+//! The surface stays explicit and versioned: every host service is a concrete
+//! function pointer, and every added method requires an ABI bump. This avoids
+//! exposing `Arc<MessageBus>` or any `dyn Trait` across the boundary.
 
 #![allow(unsafe_code)]
 
 use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, PluginResult},
+    boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
 };
 
 /// Log levels mirrored from the host's `log` crate without dragging the
@@ -73,6 +72,183 @@ pub struct HostVTable {
         target: BorrowedStr<'_>,
         message: BorrowedStr<'_>,
     ),
+
+    /// Returns the JSON-encoded instrument snapshot for `instrument_id`.
+    ///
+    /// Empty bytes mean the cache had no matching instrument.
+    pub cache_instrument: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded account snapshot for `account_id`.
+    ///
+    /// Empty bytes mean the cache had no matching account.
+    pub cache_account: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        account_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded order snapshot for `client_order_id`.
+    ///
+    /// Empty bytes mean the cache had no matching order.
+    pub cache_order: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        client_order_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded position snapshot for `position_id`.
+    ///
+    /// Empty bytes mean the cache had no matching position.
+    pub cache_position: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        position_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns JSON-encoded order snapshots for the requested strategy.
+    ///
+    /// Passing an empty `strategy_id` uses the calling strategy's own ID.
+    pub cache_orders_for_strategy: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        strategy_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns JSON-encoded position snapshots for the requested strategy.
+    ///
+    /// Passing an empty `strategy_id` uses the calling strategy's own ID.
+    pub cache_positions_for_strategy: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        strategy_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Subscribes the calling actor or strategy to quote ticks.
+    pub subscribe_quotes: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from quote ticks.
+    pub unsubscribe_quotes: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to trade ticks.
+    pub subscribe_trades: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from trade ticks.
+    pub unsubscribe_trades: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to bars.
+    pub subscribe_bars: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from bars.
+    pub unsubscribe_bars: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to order book deltas.
+    ///
+    /// `book_type` uses the `BookType` discriminant. `depth == 0` means no
+    /// depth limit. `managed != 0` requests a managed book subscription.
+    pub subscribe_book_deltas: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        client_id: BorrowedStr<'_>,
+        managed: u8,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from order book deltas.
+    pub unsubscribe_book_deltas: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to periodic order book snapshots.
+    ///
+    /// `book_type` uses the `BookType` discriminant. `depth == 0` means no
+    /// depth limit. `interval_ms` must be greater than zero.
+    pub subscribe_book_at_interval: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from periodic order book snapshots.
+    ///
+    /// `interval_ms` must be greater than zero.
+    pub unsubscribe_book_at_interval: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Publishes an arbitrary byte payload on the host message bus.
+    ///
+    /// The payload is delivered as a `Vec<u8>` to subscribers of `topic`.
+    pub msgbus_publish: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        topic: BorrowedStr<'_>,
+        payload: Slice<'_, u8>,
+    ) -> PluginResult<()>,
+
+    /// Registers a one-shot time alert on the calling actor or strategy clock.
+    pub set_time_alert: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        alert_time_ns: u64,
+        allow_past: u8,
+    ) -> PluginResult<()>,
+
+    /// Registers an interval timer on the calling actor or strategy clock.
+    ///
+    /// `start_time_ns == 0` and `stop_time_ns == 0` mean no explicit bound.
+    pub set_timer: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: u64,
+        allow_past: u8,
+        fire_immediately: u8,
+    ) -> PluginResult<()>,
+
+    /// Cancels a timer on the calling actor or strategy clock.
+    pub cancel_timer:
+        unsafe extern "C" fn(ctx: *const HostContext, name: BorrowedStr<'_>) -> PluginResult<()>,
 
     /// Submits an order on behalf of the calling strategy.
     ///

@@ -10,8 +10,7 @@ Plug-in system for [NautilusTrader](https://nautilustrader.io).
 > [!WARNING]
 > **Early alpha**. The ABI and public API are not stable and may change between versions while
 > the host-side adapters, `HostVTable` surface, and `LiveNodeConfig` wiring land. Plug-in builds
-> must be pinned to the matching Nautilus version; `NAUTILUS_PLUGIN_ABI_VERSION` will be bumped
-> freely as the surface evolves and no back-compat shims are provided.
+> must be pinned to the matching Nautilus version.
 
 The `nautilus-plugin` crate defines the C-ABI boundary between a Nautilus host (the live node)
 and independently compiled Rust plug-in cdylibs. The host `dlopen`s a plug-in, calls a single

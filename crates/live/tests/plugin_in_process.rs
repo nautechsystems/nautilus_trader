@@ -48,41 +48,51 @@ fn lock_counters() -> MutexGuard<'static, ()> {
 use nautilus_common::{
     actor::{DataActor, registry::register_actor},
     cache::Cache,
-    clock::TestClock,
+    clock::{Clock, TestClock},
     component::Component,
-    messages::execution::TradingCommand,
-    msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
+    messages::{
+        data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
+        execution::TradingCommand,
+    },
+    msgbus::{
+        self, MessagingSwitchboard, ShareableMessageHandler, TypedIntoHandler,
+        switchboard::{get_bars_topic, get_quotes_topic, get_trades_topic},
+    },
     signal::Signal,
-    timer::TimeEvent,
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::plugin::{
     HostContextInner, PluginActorAdapter, PluginStrategyAdapter, SubmitOrderCommand, host_vtable,
 };
 use nautilus_model::{
+    accounts::{AccountAny, MarginAccount},
     data::{
         Bar, BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
     },
     enums::{
-        AggregationSource, AggressorSide, BarAggregation, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OrderSide, OrderType, PositionSide, PriceType,
+        AccountType, AggregationSource, AggressorSide, BarAggregation, BookType,
+        InstrumentCloseType, LiquiditySide, MarketStatusAction, OmsType, OrderSide, OrderType,
+        PositionSide, PriceType,
     },
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
         AccountId, ActorId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
-    orders::OrderAny,
-    types::{Currency, Money, Price, Quantity},
+    instruments::{Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
+    orders::{Order, OrderAny},
+    position::Position,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
-    boundary::BorrowedStr,
+    boundary::{BorrowedStr, Slice},
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
@@ -232,6 +242,8 @@ impl PluginActor for CountingActor {
 // the actor counters and exercise the macro override block.
 static S_START: AtomicU64 = AtomicU64::new(0);
 static S_QUOTE: AtomicU64 = AtomicU64::new(0);
+static S_TRADE: AtomicU64 = AtomicU64::new(0);
+static S_BAR: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_INITIALIZED: AtomicU64 = AtomicU64::new(0);
@@ -256,6 +268,8 @@ fn s_reset() {
     for c in [
         &S_START,
         &S_QUOTE,
+        &S_TRADE,
+        &S_BAR,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
         &S_ORDER_INITIALIZED,
@@ -298,6 +312,14 @@ impl PluginStrategy for CountingStrategy {
     }
     fn on_quote(&mut self, _: &QuoteTick) -> anyhow::Result<()> {
         S_QUOTE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_trade(&mut self, _: &TradeTick) -> anyhow::Result<()> {
+        S_TRADE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_bar(&mut self, _: &Bar) -> anyhow::Result<()> {
+        S_BAR.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_filled(&mut self, _: &OrderFilled) -> anyhow::Result<()> {
@@ -789,8 +811,22 @@ fn strategy_adapter_position_event_hooks_dispatch_to_plugin() {
 // ---- Strategy lifecycle composition ----
 
 fn register_strategy_adapter(adapter: &mut PluginStrategyAdapter) {
+    let _ = register_strategy_adapter_with_cache(adapter);
+}
+
+fn register_strategy_adapter_with_cache(adapter: &mut PluginStrategyAdapter) -> Rc<RefCell<Cache>> {
+    let (_, cache) = register_strategy_adapter_with_clock_and_cache(adapter);
+    cache
+}
+
+fn register_strategy_adapter_with_clock_and_cache(
+    adapter: &mut PluginStrategyAdapter,
+) -> (Rc<RefCell<TestClock>>, Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
     let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .register_default_handler(TimeEventCallback::from(|_event: TimeEvent| {}));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         cache.clone(),
@@ -799,9 +835,10 @@ fn register_strategy_adapter(adapter: &mut PluginStrategyAdapter) {
     )));
     adapter
         .core_mut()
-        .register(trader_id, clock, cache, portfolio)
+        .register(trader_id, clock.clone(), cache.clone(), portfolio)
         .expect("strategy register");
     adapter.initialize().expect("strategy initialize");
+    (clock, cache)
 }
 
 #[rstest]
@@ -912,6 +949,803 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cache_order_reads_registered_strategy_cache() {
+    let strategy_id = "PluginPhaseTwoCache-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    let cache = register_strategy_adapter_with_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+
+    let order = make_initialized_market_order("O-PHASE2-CACHE-1", strategy_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .expect("cache accepts order");
+
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    let order_id = BorrowedStr::from_str("O-PHASE2-CACHE-1");
+    // SAFETY: ctx + order_id are live for the call.
+    let encoded = unsafe { (v.cache_order)(ctx, order_id) }
+        .into_result()
+        .expect("cache_order succeeds");
+    // SAFETY: encoded is live until dropped.
+    let decoded: OrderAny = serde_json::from_slice(unsafe { encoded.as_bytes() }).unwrap();
+
+    assert_eq!(
+        decoded.client_order_id(),
+        ClientOrderId::from("O-PHASE2-CACHE-1")
+    );
+    assert_eq!(decoded.strategy_id(), StrategyId::from(strategy_id));
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cache_instrument_reads_registered_strategy_cache() {
+    let mut adapter = build_strategy_adapter("PluginPhaseTwoInstrument-001");
+    let cache = register_strategy_adapter_with_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+
+    let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+    let instrument_id = instrument.id();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument)
+        .expect("cache accepts instrument");
+
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + instrument id are live for the call.
+    let encoded =
+        unsafe { (v.cache_instrument)(ctx, BorrowedStr::from_str(&instrument_id.to_string())) }
+            .into_result()
+            .expect("cache_instrument succeeds");
+    // SAFETY: encoded is live until dropped.
+    let decoded: InstrumentAny = serde_json::from_slice(unsafe { encoded.as_bytes() }).unwrap();
+    // SAFETY: ctx + instrument id are live for the call.
+    let missing = unsafe { (v.cache_instrument)(ctx, BorrowedStr::from_str("MISSING.BINANCE")) }
+        .into_result()
+        .expect("cache_instrument miss succeeds");
+
+    assert_eq!(decoded.id(), instrument_id);
+    // SAFETY: missing is live until dropped.
+    assert!(unsafe { missing.as_bytes() }.is_empty());
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cache_account_reads_registered_strategy_cache() {
+    let mut adapter = build_strategy_adapter("PluginPhaseTwoAccount-001");
+    let cache = register_strategy_adapter_with_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let account_id = AccountId::from("BINANCE-001");
+    cache
+        .borrow_mut()
+        .add_account(make_margin_account(account_id))
+        .expect("cache accepts account");
+
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + account id are live for the call.
+    let encoded = unsafe { (v.cache_account)(ctx, BorrowedStr::from_str("BINANCE-001")) }
+        .into_result()
+        .expect("cache_account succeeds");
+    // SAFETY: encoded is live until dropped.
+    let decoded: AccountAny = serde_json::from_slice(unsafe { encoded.as_bytes() }).unwrap();
+    // SAFETY: ctx + account id are live for the call.
+    let missing = unsafe { (v.cache_account)(ctx, BorrowedStr::from_str("BINANCE-999")) }
+        .into_result()
+        .expect("cache_account miss succeeds");
+
+    assert_eq!(decoded.id(), account_id);
+    // SAFETY: missing is live until dropped.
+    assert!(unsafe { missing.as_bytes() }.is_empty());
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cache_position_reads_registered_strategy_cache() {
+    let strategy_id = "PluginPhaseTwoPosition-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    let cache = register_strategy_adapter_with_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let position = make_position_for_strategy("P-19700101-0000-000-000-2", strategy_id);
+    let position_id = position.id;
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .expect("cache accepts position");
+
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + position id are live for the call.
+    let encoded = unsafe { (v.cache_position)(ctx, BorrowedStr::from_str(position_id.as_ref())) }
+        .into_result()
+        .expect("cache_position succeeds");
+    // SAFETY: encoded is live until dropped.
+    let decoded: Position = serde_json::from_slice(unsafe { encoded.as_bytes() }).unwrap();
+    // SAFETY: ctx + position id are live for the call.
+    let missing =
+        unsafe { (v.cache_position)(ctx, BorrowedStr::from_str("P-19700101-0000-000-000-9")) }
+            .into_result()
+            .expect("cache_position miss succeeds");
+
+    assert_eq!(decoded.id, position_id);
+    assert_eq!(decoded.strategy_id, StrategyId::from(strategy_id));
+    // SAFETY: missing is live until dropped.
+    assert!(unsafe { missing.as_bytes() }.is_empty());
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cache_strategy_lists_default_to_calling_strategy() {
+    let strategy_id = "PluginPhaseTwoLists-001";
+    let other_strategy_id = "PluginPhaseTwoLists-Other";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    let cache = register_strategy_adapter_with_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let order = make_initialized_market_order("O-PHASE2-LIST-1", strategy_id);
+    let other_order = make_initialized_market_order("O-PHASE2-LIST-2", other_strategy_id);
+    let position = make_position_for_strategy("P-19700101-0000-000-000-3", strategy_id);
+    let other_position = make_position_for_strategy("P-19700101-0000-000-000-4", other_strategy_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .expect("cache accepts strategy order");
+    cache
+        .borrow_mut()
+        .add_order(other_order, None, None, false)
+        .expect("cache accepts other strategy order");
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .expect("cache accepts strategy position");
+    cache
+        .borrow_mut()
+        .add_position(&other_position, OmsType::Hedging)
+        .expect("cache accepts other strategy position");
+
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx is live for the call.
+    let orders = unsafe { (v.cache_orders_for_strategy)(ctx, BorrowedStr::empty()) }
+        .into_result()
+        .expect("cache_orders_for_strategy succeeds");
+    // SAFETY: ctx is live for the call.
+    let positions = unsafe { (v.cache_positions_for_strategy)(ctx, BorrowedStr::empty()) }
+        .into_result()
+        .expect("cache_positions_for_strategy succeeds");
+    // SAFETY: encoded buffers are live until dropped.
+    let decoded_orders: Vec<OrderAny> =
+        serde_json::from_slice(unsafe { orders.as_bytes() }).unwrap();
+    // SAFETY: encoded buffers are live until dropped.
+    let decoded_positions: Vec<Position> =
+        serde_json::from_slice(unsafe { positions.as_bytes() }).unwrap();
+
+    assert_eq!(decoded_orders.len(), 1);
+    assert_eq!(
+        decoded_orders[0].client_order_id(),
+        ClientOrderId::from("O-PHASE2-LIST-1")
+    );
+    assert_eq!(decoded_positions.len(), 1);
+    assert_eq!(decoded_positions[0].id, position.id);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_subscribe_quotes_routes_msgbus_events_to_registered_strategy_adapter() {
+    let _lock = lock_counters();
+    s_reset();
+
+    let strategy_id = "PluginPhaseTwoSub-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    Component::start(&mut adapter).expect("strategy starts");
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let instrument = instrument_id().to_string();
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.subscribe_quotes)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("subscribe_quotes succeeds");
+
+    msgbus::publish_quote(get_quotes_topic(instrument_id()), &make_quote());
+
+    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.unsubscribe_quotes)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("unsubscribe_quotes succeeds");
+
+    msgbus::publish_quote(get_quotes_topic(instrument_id()), &make_quote());
+
+    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_subscribe_trades_routes_msgbus_events_to_registered_strategy_adapter() {
+    let _lock = lock_counters();
+    s_reset();
+
+    let strategy_id = "PluginPhaseTwoTrades-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    Component::start(&mut adapter).expect("strategy starts");
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let instrument = instrument_id().to_string();
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.subscribe_trades)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("subscribe_trades succeeds");
+
+    msgbus::publish_trade(get_trades_topic(instrument_id()), &make_trade());
+
+    assert_eq!(S_TRADE.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.unsubscribe_trades)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("unsubscribe_trades succeeds");
+
+    msgbus::publish_trade(get_trades_topic(instrument_id()), &make_trade());
+
+    assert_eq!(S_TRADE.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_subscribe_bars_routes_msgbus_events_to_registered_strategy_adapter() {
+    let _lock = lock_counters();
+    s_reset();
+
+    let strategy_id = "PluginPhaseTwoBars-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    Component::start(&mut adapter).expect("strategy starts");
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let bar = make_bar();
+    let bar_type = bar.bar_type;
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.subscribe_bars)(
+            ctx,
+            BorrowedStr::from_str(&bar_type.to_string()),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("subscribe_bars succeeds");
+
+    msgbus::publish_bar(get_bars_topic(bar_type), &bar);
+
+    assert_eq!(S_BAR.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx + borrowed strings are live for the call.
+    let r = unsafe {
+        (v.unsubscribe_bars)(
+            ctx,
+            BorrowedStr::from_str(&bar_type.to_string()),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    };
+    r.into_result().expect("unsubscribe_bars succeeds");
+
+    msgbus::publish_bar(get_bars_topic(bar_type), &bar);
+
+    assert_eq!(S_BAR.load(Ordering::SeqCst), 1);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_book_subscription_callbacks_emit_data_commands() {
+    let strategy_id = "PluginPhaseTwoBookCmd-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let commands = Rc::new(RefCell::new(Vec::new()));
+    let commands_clone = commands.clone();
+    let handler = TypedIntoHandler::from(move |command: DataCommand| {
+        commands_clone.borrow_mut().push(command);
+    });
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+    let instrument = instrument_id().to_string();
+    let interval_ms = 1_000;
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+
+    // SAFETY: ctx + borrowed strings are live for the call.
+    unsafe {
+        (v.subscribe_book_deltas)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BookType::L2_MBP as u8,
+            5,
+            BorrowedStr::empty(),
+            1,
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_book_deltas succeeds");
+    // SAFETY: ctx + borrowed strings are live for the call.
+    unsafe {
+        (v.unsubscribe_book_deltas)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_book_deltas succeeds");
+    // SAFETY: ctx + borrowed strings are live for the call.
+    unsafe {
+        (v.subscribe_book_at_interval)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            BookType::L2_MBP as u8,
+            7,
+            interval_ms,
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_book_at_interval succeeds");
+    // SAFETY: ctx + borrowed strings are live for the call.
+    unsafe {
+        (v.unsubscribe_book_at_interval)(
+            ctx,
+            BorrowedStr::from_str(&instrument),
+            interval_ms,
+            BorrowedStr::empty(),
+            BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_book_at_interval succeeds");
+
+    let commands = commands.borrow();
+    assert_eq!(commands.len(), 4);
+    match &commands[0] {
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(command)) => {
+            assert_eq!(command.instrument_id, instrument_id());
+            assert_eq!(command.book_type, BookType::L2_MBP);
+            assert_eq!(command.depth.map(std::num::NonZeroUsize::get), Some(5));
+            assert!(command.managed);
+        }
+        other => panic!("expected SubscribeCommand::BookDeltas, was {other:?}"),
+    }
+
+    match &commands[1] {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(command)) => {
+            assert_eq!(command.instrument_id, instrument_id());
+        }
+        other => panic!("expected UnsubscribeCommand::BookDeltas, was {other:?}"),
+    }
+
+    match &commands[2] {
+        DataCommand::Subscribe(SubscribeCommand::BookSnapshots(command)) => {
+            assert_eq!(command.instrument_id, instrument_id());
+            assert_eq!(command.book_type, BookType::L2_MBP);
+            assert_eq!(command.depth.map(std::num::NonZeroUsize::get), Some(7));
+            assert_eq!(command.interval_ms.get(), interval_ms);
+        }
+        other => panic!("expected SubscribeCommand::BookSnapshots, was {other:?}"),
+    }
+
+    match &commands[3] {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(command)) => {
+            assert_eq!(command.instrument_id, instrument_id());
+            assert_eq!(command.interval_ms.get(), interval_ms);
+        }
+        other => panic!("expected UnsubscribeCommand::BookSnapshots, was {other:?}"),
+    }
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_msgbus_publish_routes_bytes_to_any_subscribers() {
+    let topic = "plugin.phase2.bytes";
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let received_clone = received.clone();
+    let handler = ShareableMessageHandler::from_typed(move |payload: &Vec<u8>| {
+        received_clone.borrow_mut().push(payload.clone());
+    });
+    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+
+    let mut adapter = build_strategy_adapter("PluginPhaseTwoMsgbus-001");
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+    let payload = [1_u8, 2, 3, 5, 8];
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx, topic, and payload are live for the call.
+    let r = unsafe {
+        (v.msgbus_publish)(
+            ctx,
+            BorrowedStr::from_str(topic),
+            Slice::from_slice(&payload),
+        )
+    };
+    r.into_result().expect("msgbus_publish succeeds");
+
+    msgbus::unsubscribe_any(topic.into(), &handler);
+
+    assert_eq!(received.borrow().as_slice(), &[payload.to_vec()]);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_msgbus_publish_rejects_unregistered_context() {
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from("PluginPhaseTwoMsgbus-Missing"),
+        is_strategy: true,
+    });
+    let payload = [1_u8];
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx, topic, and payload are live for the call.
+    let err = unsafe {
+        (v.msgbus_publish)(
+            ctx,
+            BorrowedStr::from_str("plugin.phase2.missing"),
+            Slice::from_slice(&payload),
+        )
+    }
+    .into_result()
+    .expect_err("msgbus_publish rejects missing adapter");
+
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
+    assert!(err.message_string().contains("could not resolve"));
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_timer_callbacks_register_on_strategy_clock() {
+    let strategy_id = "PluginPhaseTwoTimer-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    let (clock, _) = register_strategy_adapter_with_clock_and_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx and timer name are live for the call.
+    let r = unsafe { (v.set_timer)(ctx, BorrowedStr::from_str("PHASE2_TIMER"), 10, 0, 0, 1, 0) };
+    r.into_result().expect("set_timer succeeds");
+
+    assert!(
+        clock
+            .borrow()
+            .timer_exists(&ustr::Ustr::from("PHASE2_TIMER"))
+    );
+
+    // SAFETY: ctx and timer name are live for the call.
+    let r = unsafe { (v.cancel_timer)(ctx, BorrowedStr::from_str("PHASE2_TIMER")) };
+    r.into_result().expect("cancel_timer succeeds");
+
+    assert_eq!(clock.borrow().timer_count(), 0);
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_time_alert_callback_registers_on_strategy_clock() {
+    let strategy_id = "PluginPhaseTwoAlert-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    let (clock, _) = register_strategy_adapter_with_clock_and_cache(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx and timer name are live for the call.
+    let r = unsafe { (v.set_time_alert)(ctx, BorrowedStr::from_str("PHASE2_ALERT"), 10, 1) };
+    r.into_result().expect("set_time_alert succeeds");
+
+    assert!(
+        clock
+            .borrow()
+            .timer_exists(&ustr::Ustr::from("PHASE2_ALERT"))
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_subscription_callbacks_reject_invalid_boundary_inputs() {
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    let cases = [
+        (
+            "invalid instrument_id",
+            // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+            unsafe {
+                (v.subscribe_quotes)(
+                    std::ptr::null(),
+                    BorrowedStr::empty(),
+                    BorrowedStr::empty(),
+                    BorrowedStr::empty(),
+                )
+            },
+        ),
+        (
+            "invalid bar_type",
+            // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+            unsafe {
+                (v.subscribe_bars)(
+                    std::ptr::null(),
+                    BorrowedStr::from_str("not-a-bar-type"),
+                    BorrowedStr::empty(),
+                    BorrowedStr::empty(),
+                )
+            },
+        ),
+        (
+            "invalid book_type",
+            // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+            unsafe {
+                (v.subscribe_book_deltas)(
+                    std::ptr::null(),
+                    BorrowedStr::from_str("BTCUSDT.BINANCE"),
+                    255,
+                    0,
+                    BorrowedStr::empty(),
+                    0,
+                    BorrowedStr::empty(),
+                )
+            },
+        ),
+        (
+            "invalid params_json",
+            // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+            unsafe {
+                (v.subscribe_quotes)(
+                    std::ptr::null(),
+                    BorrowedStr::from_str("BTCUSDT.BINANCE"),
+                    BorrowedStr::empty(),
+                    BorrowedStr::from_str("{"),
+                )
+            },
+        ),
+    ];
+
+    for (expected_message, result) in cases {
+        let err = result
+            .into_result()
+            .expect_err("invalid input should be rejected before dispatch");
+
+        assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+        assert!(
+            err.message_string().contains(expected_message),
+            "expected message containing '{expected_message}', was: {}",
+            err.message_string(),
+        );
+    }
+}
+
+#[rstest]
+#[case::subscribe(true)]
+#[case::unsubscribe(false)]
+fn host_book_interval_callbacks_reject_zero_interval(#[case] subscribe: bool) {
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    let instrument = BorrowedStr::from_str("BTCUSDT.BINANCE");
+    let result = if subscribe {
+        // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+        unsafe {
+            (v.subscribe_book_at_interval)(
+                std::ptr::null(),
+                instrument,
+                BookType::L2_MBP as u8,
+                0,
+                0,
+                BorrowedStr::empty(),
+                BorrowedStr::empty(),
+            )
+        }
+    } else {
+        // SAFETY: borrowed strings are live for the call; the callback rejects before ctx dispatch.
+        unsafe {
+            (v.unsubscribe_book_at_interval)(
+                std::ptr::null(),
+                instrument,
+                0,
+                BorrowedStr::empty(),
+                BorrowedStr::empty(),
+            )
+        }
+    };
+    let err = result
+        .into_result()
+        .expect_err("zero interval should be rejected before dispatch");
+
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+    assert_eq!(
+        err.message_string(),
+        "interval_ms must be greater than zero"
+    );
+}
+
+fn make_margin_account(account_id: AccountId) -> AccountAny {
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USDT()),
+    );
+    AccountAny::Margin(MarginAccount::new(account_state, true))
+}
+
+fn make_position_for_strategy(position_id: &str, strategy_id: &str) -> Position {
+    let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+    let mut fill = make_order_filled();
+    fill.strategy_id = StrategyId::from(strategy_id);
+    fill.instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+    fill.position_id = Some(PositionId::from(position_id));
+    Position::new(&instrument, fill)
 }
 
 #[rstest]

@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
 - Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
 - Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
+- Added plug-in `HostVTable` callbacks for cache, subscriptions, msgbus, and timers (Rust)
 - Added `PluginActorAdapter` and `PluginStrategyAdapter` wrapping plug-in cdylibs as host `DataActor`/`Strategy` (Rust)
 - Added `PluginLoader::with_host` so the live node can install a custom `HostVTable` for order-command routing (Rust)
 - Added `host_vtable` and `plugin_loader` helpers binding submit/cancel/modify order to the strategy adapter (Rust)

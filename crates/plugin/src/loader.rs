@@ -132,9 +132,8 @@ unsafe impl Sync for PluginLoader {}
 impl PluginLoader {
     /// Creates a new, empty loader that hands every plug-in the default
     /// `nautilus-plugin` host vtable. The default vtable carries
-    /// `NotImplemented` stubs for the order command thunks; use
-    /// [`PluginLoader::with_host`] from the live node to install a vtable
-    /// whose order commands route through a strategy adapter.
+    /// `NotImplemented` stubs for stateful host callbacks; use
+    /// [`PluginLoader::with_host`] to install a live-node vtable.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -278,6 +277,26 @@ fn host_vtable() -> *const HostVTable {
         abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
         clock_now_ns: host_clock_now_ns,
         log: host_log,
+        cache_instrument: host_cache_instrument_unbound,
+        cache_account: host_cache_account_unbound,
+        cache_order: host_cache_order_unbound,
+        cache_position: host_cache_position_unbound,
+        cache_orders_for_strategy: host_cache_orders_for_strategy_unbound,
+        cache_positions_for_strategy: host_cache_positions_for_strategy_unbound,
+        subscribe_quotes: host_subscribe_quotes_unbound,
+        unsubscribe_quotes: host_unsubscribe_quotes_unbound,
+        subscribe_trades: host_subscribe_trades_unbound,
+        unsubscribe_trades: host_unsubscribe_trades_unbound,
+        subscribe_bars: host_subscribe_bars_unbound,
+        unsubscribe_bars: host_unsubscribe_bars_unbound,
+        subscribe_book_deltas: host_subscribe_book_deltas_unbound,
+        unsubscribe_book_deltas: host_unsubscribe_book_deltas_unbound,
+        subscribe_book_at_interval: host_subscribe_book_at_interval_unbound,
+        unsubscribe_book_at_interval: host_unsubscribe_book_at_interval_unbound,
+        msgbus_publish: host_msgbus_publish_unbound,
+        set_time_alert: host_set_time_alert_unbound,
+        set_timer: host_set_timer_unbound,
+        cancel_timer: host_cancel_timer_unbound,
         submit_order: host_submit_order_unbound,
         cancel_order: host_cancel_order_unbound,
         modify_order: host_modify_order_unbound,
@@ -292,13 +311,207 @@ unsafe extern "C" fn host_clock_now_ns() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
 }
 
+macro_rules! unbound_bytes_fn {
+    ($name:ident, $message:literal, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<crate::OwnedBytes> {
+            $(let _ = $arg;)*
+            PluginResult::Err(PluginError::new(PluginErrorCode::NotImplemented, $message))
+        }
+    };
+}
+
+macro_rules! unbound_unit_fn {
+    ($name:ident, $message:literal, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
+            $(let _ = $arg;)*
+            PluginResult::Err(PluginError::new(PluginErrorCode::NotImplemented, $message))
+        }
+    };
+}
+
+unbound_bytes_fn!(
+    host_cache_instrument_unbound,
+    "cache_instrument is not wired into this host vtable",
+    (ctx: *const HostContext, instrument_id: BorrowedStr<'_>)
+);
+unbound_bytes_fn!(
+    host_cache_account_unbound,
+    "cache_account is not wired into this host vtable",
+    (ctx: *const HostContext, account_id: BorrowedStr<'_>)
+);
+unbound_bytes_fn!(
+    host_cache_order_unbound,
+    "cache_order is not wired into this host vtable",
+    (ctx: *const HostContext, client_order_id: BorrowedStr<'_>)
+);
+unbound_bytes_fn!(
+    host_cache_position_unbound,
+    "cache_position is not wired into this host vtable",
+    (ctx: *const HostContext, position_id: BorrowedStr<'_>)
+);
+unbound_bytes_fn!(
+    host_cache_orders_for_strategy_unbound,
+    "cache_orders_for_strategy is not wired into this host vtable",
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+unbound_bytes_fn!(
+    host_cache_positions_for_strategy_unbound,
+    "cache_positions_for_strategy is not wired into this host vtable",
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+
+unbound_unit_fn!(
+    host_subscribe_quotes_unbound,
+    "subscribe_quotes is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_unsubscribe_quotes_unbound,
+    "unsubscribe_quotes is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_subscribe_trades_unbound,
+    "subscribe_trades is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_unsubscribe_trades_unbound,
+    "unsubscribe_trades is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_subscribe_bars_unbound,
+    "subscribe_bars is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_unsubscribe_bars_unbound,
+    "unsubscribe_bars is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_subscribe_book_deltas_unbound,
+    "subscribe_book_deltas is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        client_id: BorrowedStr<'_>,
+        managed: u8,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_unsubscribe_book_deltas_unbound,
+    "unsubscribe_book_deltas is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_subscribe_book_at_interval_unbound,
+    "subscribe_book_at_interval is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_unsubscribe_book_at_interval_unbound,
+    "unsubscribe_book_at_interval is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+unbound_unit_fn!(
+    host_msgbus_publish_unbound,
+    "msgbus_publish is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        topic: BorrowedStr<'_>,
+        payload: crate::Slice<'_, u8>,
+    )
+);
+unbound_unit_fn!(
+    host_set_time_alert_unbound,
+    "set_time_alert is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        alert_time_ns: u64,
+        allow_past: u8,
+    )
+);
+unbound_unit_fn!(
+    host_set_timer_unbound,
+    "set_timer is not wired into this host vtable",
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: u64,
+        allow_past: u8,
+        fire_immediately: u8,
+    )
+);
+unbound_unit_fn!(
+    host_cancel_timer_unbound,
+    "cancel_timer is not wired into this host vtable",
+    (ctx: *const HostContext, name: BorrowedStr<'_>)
+);
+
 unsafe extern "C" fn host_submit_order_unbound(
     _ctx: *const HostContext,
     _command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
-        "submit_order is not wired into the live node yet",
+        "submit_order is not wired into this host vtable",
     ))
 }
 
@@ -308,7 +521,7 @@ unsafe extern "C" fn host_cancel_order_unbound(
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
-        "cancel_order is not wired into the live node yet",
+        "cancel_order is not wired into this host vtable",
     ))
 }
 
@@ -318,7 +531,7 @@ unsafe extern "C" fn host_modify_order_unbound(
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
-        "modify_order is not wired into the live node yet",
+        "modify_order is not wired into this host vtable",
     ))
 }
 
@@ -460,14 +673,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case::submit("submit_order is not wired into the live node yet")]
-    #[case::cancel("cancel_order is not wired into the live node yet")]
-    #[case::modify("modify_order is not wired into the live node yet")]
+    #[case::submit("submit_order is not wired into this host vtable")]
+    #[case::cancel("cancel_order is not wired into this host vtable")]
+    #[case::modify("modify_order is not wired into this host vtable")]
     fn host_order_command_stubs_return_not_implemented(#[case] expected: &str) {
-        // The shipped loader's host vtable installs NotImplemented stubs
-        // for every order command until the live-node wiring lands.
-        // Regression test that locks the stub error code AND the message
-        // so a future wiring commit must explicitly replace each one.
+        // The default loader's host vtable installs NotImplemented stubs for
+        // callbacks that need live-node state.
         let p = host_vtable();
         // SAFETY: pointer is to a static `OnceLock`-backed HostVTable.
         let v = unsafe { &*p };
@@ -490,5 +701,119 @@ mod tests {
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::NotImplemented);
         assert_eq!(err.message_string(), expected);
+    }
+
+    #[rstest]
+    #[case::instrument("cache_instrument")]
+    #[case::account("cache_account")]
+    #[case::order("cache_order")]
+    #[case::position("cache_position")]
+    #[case::orders_for_strategy("cache_orders_for_strategy")]
+    #[case::positions_for_strategy("cache_positions_for_strategy")]
+    fn host_cache_stubs_return_not_implemented(#[case] method: &str) {
+        let p = host_vtable();
+        // SAFETY: pointer is to a static `OnceLock`-backed HostVTable.
+        let v = unsafe { &*p };
+        let ctx = std::ptr::null::<HostContext>();
+        let value = BorrowedStr::from_str("VALUE");
+
+        let r = match method {
+            // SAFETY: stubs do not dereference ctx or borrowed values.
+            "cache_instrument" => unsafe { (v.cache_instrument)(ctx, value) },
+            // SAFETY: see above.
+            "cache_account" => unsafe { (v.cache_account)(ctx, value) },
+            // SAFETY: see above.
+            "cache_order" => unsafe { (v.cache_order)(ctx, value) },
+            // SAFETY: see above.
+            "cache_position" => unsafe { (v.cache_position)(ctx, value) },
+            // SAFETY: see above.
+            "cache_orders_for_strategy" => unsafe { (v.cache_orders_for_strategy)(ctx, value) },
+            // SAFETY: see above.
+            "cache_positions_for_strategy" => unsafe {
+                (v.cache_positions_for_strategy)(ctx, value)
+            },
+            _ => unreachable!(),
+        };
+
+        let err = match r.into_result() {
+            Ok(_) => panic!("{method} unexpectedly succeeded"),
+            Err(e) => e,
+        };
+        assert_eq!(err.code, PluginErrorCode::NotImplemented);
+        assert_eq!(
+            err.message_string(),
+            format!("{method} is not wired into this host vtable")
+        );
+    }
+
+    #[rstest]
+    #[case::subscribe_quotes("subscribe_quotes")]
+    #[case::unsubscribe_quotes("unsubscribe_quotes")]
+    #[case::subscribe_trades("subscribe_trades")]
+    #[case::unsubscribe_trades("unsubscribe_trades")]
+    #[case::subscribe_bars("subscribe_bars")]
+    #[case::unsubscribe_bars("unsubscribe_bars")]
+    #[case::subscribe_book_deltas("subscribe_book_deltas")]
+    #[case::unsubscribe_book_deltas("unsubscribe_book_deltas")]
+    #[case::subscribe_book_at_interval("subscribe_book_at_interval")]
+    #[case::unsubscribe_book_at_interval("unsubscribe_book_at_interval")]
+    #[case::msgbus_publish("msgbus_publish")]
+    #[case::set_time_alert("set_time_alert")]
+    #[case::set_timer("set_timer")]
+    #[case::cancel_timer("cancel_timer")]
+    fn host_stateful_unit_stubs_return_not_implemented(#[case] method: &str) {
+        let p = host_vtable();
+        // SAFETY: pointer is to a static `OnceLock`-backed HostVTable.
+        let v = unsafe { &*p };
+        let ctx = std::ptr::null::<HostContext>();
+        let value = BorrowedStr::from_str("VALUE");
+        let empty = BorrowedStr::empty();
+
+        let r = match method {
+            // SAFETY: stubs do not dereference ctx or borrowed values.
+            "subscribe_quotes" => unsafe { (v.subscribe_quotes)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "unsubscribe_quotes" => unsafe { (v.unsubscribe_quotes)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "subscribe_trades" => unsafe { (v.subscribe_trades)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "unsubscribe_trades" => unsafe { (v.unsubscribe_trades)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "subscribe_bars" => unsafe { (v.subscribe_bars)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "unsubscribe_bars" => unsafe { (v.unsubscribe_bars)(ctx, value, empty, empty) },
+            // SAFETY: see above.
+            "subscribe_book_deltas" => unsafe {
+                (v.subscribe_book_deltas)(ctx, value, 0, 0, empty, 0, empty)
+            },
+            // SAFETY: see above.
+            "unsubscribe_book_deltas" => unsafe {
+                (v.unsubscribe_book_deltas)(ctx, value, empty, empty)
+            },
+            // SAFETY: see above.
+            "subscribe_book_at_interval" => unsafe {
+                (v.subscribe_book_at_interval)(ctx, value, 0, 0, 1, empty, empty)
+            },
+            // SAFETY: see above.
+            "unsubscribe_book_at_interval" => unsafe {
+                (v.unsubscribe_book_at_interval)(ctx, value, 1, empty, empty)
+            },
+            // SAFETY: see above.
+            "msgbus_publish" => unsafe { (v.msgbus_publish)(ctx, value, crate::Slice::empty()) },
+            // SAFETY: see above.
+            "set_time_alert" => unsafe { (v.set_time_alert)(ctx, value, 1, 0) },
+            // SAFETY: see above.
+            "set_timer" => unsafe { (v.set_timer)(ctx, value, 1, 0, 0, 0, 0) },
+            // SAFETY: see above.
+            "cancel_timer" => unsafe { (v.cancel_timer)(ctx, value) },
+            _ => unreachable!(),
+        };
+
+        let err = r.into_result().unwrap_err();
+        assert_eq!(err.code, PluginErrorCode::NotImplemented);
+        assert_eq!(
+            err.message_string(),
+            format!("{method} is not wired into this host vtable")
+        );
     }
 }
