@@ -141,7 +141,7 @@ flowchart TD
 
     Agg -->|adjusted bars| Chain[Chain aggregators]
     Agg2 -->|adjusted bars| MsgBus[(msgbus: data.bars.*)]
-    Chain -->|final bars| HistBus[(msgbus: historical.data.bars.*)]
+    Chain -->|final bars| PipelineBus[(msgbus: data.pipeline.bars.*)]
 ```
 
 The design has two entry points, one outer loop shape (walk the segments), two ways to fetch
@@ -179,7 +179,7 @@ sequenceDiagram
         Engine->>Agg: BarBuilder.set_adjustment(offset, mode)
         Engine->>Client: inner Request_ for segment contract
         Client-->>Engine: DataResponse
-        Engine->>Agg: process_historical (publishes to segment topic)
+        Engine->>Agg: process_pipeline (publishes to pipeline segment topic)
         Engine->>Engine: advance cursor
     end
     Engine->>User: parent.callback(final response)
@@ -196,7 +196,7 @@ next segment.
 If the caller sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation,
 the setup creates all aggregators keyed by `parent.id`. The primary (bottom of the chain)
 receives segment source data via a per-segment msgbus subscription. Its emitted bars publish to
-the historical topic that the next level subscribes to, so the chain walks up automatically.
+the pipeline topic that the next level subscribes to, so the chain walks up automatically.
 Only the primary builder has `set_adjustment` called on it. Higher levels re-aggregate already
 adjusted data.
 

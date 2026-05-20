@@ -8,6 +8,23 @@ Released on TBD (UTC).
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 - Added `correlation_id` field to Rust trading and system command structs for request tracing
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
+- Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
+- Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
+- Added actor plug point via `PluginActor` trait with lifecycle and data callbacks (Rust)
+- Added strategy plug point via `PluginStrategy` trait with `HostVTable` order-command surface (Rust)
+- Added plug-in `HostVTable` callbacks for cache, subscriptions, msgbus, and timers (Rust)
+- Added `PluginActorAdapter` and `PluginStrategyAdapter` wrapping plug-in cdylibs as host `DataActor`/`Strategy` (Rust)
+- Added `PluginLoader::with_host` so the live node can install a custom `HostVTable` for order-command routing (Rust)
+- Added `host_vtable` and `plugin_loader` helpers binding submit/cancel/modify order to the strategy adapter (Rust)
+- Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
+- Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
+- Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
+- Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
+- Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
+- Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
+- Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
+- Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
+- Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -21,29 +38,38 @@ None
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
-- Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
+- Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
+- Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
+- Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
+- Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
+- Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements
-- Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
-- Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
 - Added cargo conventions check for stale `[package.metadata.cargo-machete]` ignored entries
 - Added `try_liquidity_math_add` returning structured `LiquidityMathError` alongside the panicking variant
-- Added DEX event-signature/parser parity tests across all registered chains
 - Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
 - Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
+- Added DEX event-signature/parser parity tests across all registered chains
+- Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
+- Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
+- Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)
+- Added Polymarket Criterion bench groups for inbound pipeline, exec pipeline, and signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
-- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
-- Optimized Hyperliquid hot paths with benchmark report
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
+- Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
+- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
+- Refined `OptionSpread`/`FuturesSpread` trait accessors to read `size_precision`/`size_increment` fields
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
+- Optimized Hyperliquid hot paths with benchmark report
+- Optimized OKX hot paths with benchmark report
 
 ### Documentation Updates
-None
+- Added `nautilus-plugin` README early-alpha warning declaring ABI and public API are not stable
 
 ### Deprecations
 None

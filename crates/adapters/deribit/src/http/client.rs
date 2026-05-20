@@ -51,15 +51,17 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency, DeribitInstrument,
-        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitPosition, DeribitProductType,
-        DeribitTicker, DeribitUserTradesResponse,
+        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency,
+        DeribitExpirationsResponse, DeribitInstrument, DeribitJsonRpcRequest,
+        DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitTicker,
+        DeribitUserTradesResponse,
     },
     query::{
-        GetAccountSummariesParams, GetBookSummaryByCurrencyParams, GetInstrumentParams,
-        GetInstrumentsParams, GetOpenOrdersByInstrumentParams, GetOpenOrdersParams,
-        GetOrderHistoryByCurrencyParams, GetOrderHistoryByInstrumentParams, GetOrderStateParams,
-        GetPositionsParams, GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
+        DeribitExpirationKind, GetAccountSummariesParams, GetBookSummaryByCurrencyParams,
+        GetExpirationsParams, GetInstrumentParams, GetInstrumentsParams,
+        GetOpenOrdersByInstrumentParams, GetOpenOrdersParams, GetOrderHistoryByCurrencyParams,
+        GetOrderHistoryByInstrumentParams, GetOrderStateParams, GetPositionsParams,
+        GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
         GetUserTradesByInstrumentAndTimeParams,
     },
 };
@@ -81,8 +83,8 @@ use crate::{
     http::{
         models::{DeribitOrderBook, DeribitTradesResponse, DeribitTradingViewChartData},
         query::{
-            GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
-            GetTradingViewChartDataParams,
+            GetLastTradesByCurrencyParams, GetLastTradesByInstrumentAndTimeParams,
+            GetOrderBookParams, GetTradingViewChartDataParams,
         },
     },
     websocket::{
@@ -636,6 +638,36 @@ impl DeribitRawHttpClient {
         .await
     }
 
+    /// Gets recent trades for a currency, optionally filtered by product kind.
+    ///
+    /// The instrument-and-time variant accepts combo instrument names, but
+    /// this currency-scoped endpoint is the only way to sweep trades across
+    /// all combos of a given kind (e.g., every BTC future combo) in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_last_trades_by_currency(
+        &self,
+        params: GetLastTradesByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitTradesResponse>, DeribitHttpError> {
+        self.send_request("public/get_last_trades_by_currency", params, false)
+            .await
+    }
+
+    /// Gets traded expirations by currency and instrument kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_expirations(
+        &self,
+        params: GetExpirationsParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitExpirationsResponse>, DeribitHttpError> {
+        self.send_request("public/get_expirations", params, false)
+            .await
+    }
+
     /// Gets TradingView chart data (OHLCV) for an instrument.
     ///
     /// # Errors
@@ -875,6 +907,15 @@ impl Clone for DeribitHttpClient {
 }
 
 impl DeribitHttpClient {
+    /// Returns a reference to the underlying raw HTTP client.
+    ///
+    /// Exposes low-level endpoint methods (e.g., `get_last_trades_by_currency`)
+    /// that this wrapper does not yet adapt.
+    #[must_use]
+    pub fn inner(&self) -> &DeribitRawHttpClient {
+        &self.inner
+    }
+
     /// Creates a new [`DeribitHttpClient`] with default configuration.
     ///
     /// # Parameters
@@ -1742,6 +1783,31 @@ impl DeribitHttpClient {
         full_response
             .result
             .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))
+    }
+
+    /// Requests traded option expirations for a settlement currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_expirations(
+        &self,
+        currency: DeribitCurrency,
+    ) -> anyhow::Result<Vec<String>> {
+        let params = GetExpirationsParams::new(currency.as_str(), DeribitExpirationKind::Option);
+        let full_response = self
+            .inner
+            .get_expirations(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let response = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in expirations response"))?;
+        let expirations = response
+            .expirations_for_currency(currency.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No option expirations for {currency}"))?;
+
+        Ok(expirations.option.clone())
     }
 
     /// Requests position status reports for reconciliation.

@@ -34,6 +34,7 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_core::UnixNanos;
+use nautilus_execution::models::latency::StaticLatencyModel;
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -2634,6 +2635,454 @@ fn test_close_all_positions_in_on_stop_is_processed_streaming(
     assert_eq!(
         bt_result.total_orders, 2,
         "expected opening and closing orders in streaming mode",
+    );
+}
+
+#[rstest]
+fn test_close_all_positions_in_on_stop_is_processed_with_latency(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Regression for issue #4062 follow-up: with a LatencyModel, the close orders
+    // emitted in on_stop land in the venue's inflight queue with timestamps past
+    // the final tick. The shutdown path must advance the clock to those arrival
+    // timestamps so the commands settle before the engines stop.
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .latency_model(Box::new(StaticLatencyModel::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .build();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CloseOnStop::new(instrument_id, Quantity::from("1.000")))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open positions after on_stop close with latency, found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected one closed position after on_stop close with latency",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "expected opening and closing orders to both settle with latency",
+    );
+    // 1s base + 1s insert latency advances ts past the final 3s data tick
+    assert_eq!(
+        engine.backtest_end(),
+        Some(UnixNanos::from(4_000_000_000)),
+        "expected backtest_end to advance to the latency-deferred close arrival",
+    );
+}
+
+struct OpenOnEveryQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+}
+
+impl OpenOnEveryQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("OPEN-EVERY-QUOTE-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+        }
+    }
+}
+
+nautilus_strategy!(OpenOnEveryQuote);
+
+impl Debug for OpenOnEveryQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OpenOnEveryQuote)).finish()
+    }
+}
+
+impl DataActor for OpenOnEveryQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // The shutdown advance also covers commands emitted on the final data tick
+    // (not just on_stop). Without it, the order submitted at the last quote sits
+    // inflight past ts_now and never fills, leaving the position one fill short.
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .latency_model(Box::new(StaticLatencyModel::new(
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .build();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(OpenOnEveryQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        open.len(),
+        1,
+        "expected a single netting position to remain open",
+    );
+    assert_eq!(
+        open[0].quantity,
+        Quantity::from("3.000"),
+        "expected all three quotes (including the trailing one) to fill",
+    );
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 3,
+        "expected one order per quote tick",
+    );
+    assert_eq!(
+        engine.backtest_end(),
+        Some(UnixNanos::from(4_000_000_000)),
+        "expected backtest_end to advance to the trailing inflight arrival",
+    );
+}
+
+#[rstest]
+fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Sibling of the close-with-latency regression: cancels emitted in on_stop
+    // route through get_delete_latency() rather than get_insert_latency(), so
+    // the shutdown advance must cover the delete path too.
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .latency_model(Box::new(StaticLatencyModel::new(
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::from(1_500_000_000),
+        )))
+        .build();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(CancelOnStop::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("900.00"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    let open = cache.orders_open(None, Some(&instrument_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected no open orders after on_stop cancel with latency, found {}",
+        open.len(),
+    );
+
+    let closed = cache.orders_closed(None, Some(&instrument_id), None, None, None);
+    assert_eq!(
+        closed.len(),
+        1,
+        "expected the limit order to be closed after on_stop cancel",
+    );
+    assert!(
+        closed[0].is_canceled(),
+        "expected the closed order to be in CANCELED status",
+    );
+    assert_eq!(
+        engine.backtest_end(),
+        Some(UnixNanos::from(4_500_000_000)),
+        "expected backtest_end to advance by the delete latency past the final tick",
+    );
+}
+
+struct MultiInstrumentCloseOnStop {
+    core: StrategyCore,
+    instrument_ids: Vec<InstrumentId>,
+    trade_size: Quantity,
+    opened: Vec<bool>,
+}
+
+impl MultiInstrumentCloseOnStop {
+    fn new(instrument_ids: Vec<InstrumentId>, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("MULTI-CLOSE-ON-STOP-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        let opened = vec![false; instrument_ids.len()];
+        Self {
+            core: StrategyCore::new(config),
+            instrument_ids,
+            trade_size,
+            opened,
+        }
+    }
+}
+
+nautilus_strategy!(MultiInstrumentCloseOnStop);
+
+impl Debug for MultiInstrumentCloseOnStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(MultiInstrumentCloseOnStop))
+            .finish()
+    }
+}
+
+impl DataActor for MultiInstrumentCloseOnStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        for instrument_id in self.instrument_ids.clone() {
+            self.subscribe_quotes(instrument_id, None, None);
+        }
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        for instrument_id in self.instrument_ids.clone() {
+            self.close_all_positions(instrument_id, None, None, None, None, None, None)?;
+        }
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        let Some(idx) = self
+            .instrument_ids
+            .iter()
+            .position(|id| *id == quote.instrument_id)
+        else {
+            return Ok(());
+        };
+
+        if self.opened[idx] {
+            return Ok(());
+        }
+        self.opened[idx] = true;
+        let order = self.core.order_factory().market(
+            quote.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+fn perpetual_with_venue(base: &CryptoPerpetual, venue: Venue) -> CryptoPerpetual {
+    let mut copy = base.clone();
+    copy.id = InstrumentId::new(base.raw_symbol, venue);
+    copy
+}
+
+#[rstest]
+fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // The engine-level max across venues must pick the global maximum inflight
+    // arrival, otherwise a venue with the higher latency would be left with its
+    // on_stop close still deferred when the engines stop.
+    let perp_a = crypto_perpetual_ethusdt;
+    let perp_b = perpetual_with_venue(&perp_a, Venue::from("OKX"));
+
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BINANCE"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .latency_model(Box::new(StaticLatencyModel::new(
+                    UnixNanos::from(2_000_000_000),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                )))
+                .build(),
+        )
+        .unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("OKX"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .latency_model(Box::new(StaticLatencyModel::new(
+                    UnixNanos::from(1_000_000_000),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                )))
+                .build(),
+        )
+        .unwrap();
+
+    let instrument_a = InstrumentAny::CryptoPerpetual(perp_a);
+    let instrument_b = InstrumentAny::CryptoPerpetual(perp_b);
+    let id_a = instrument_a.id();
+    let id_b = instrument_b.id();
+    engine.add_instrument(&instrument_a).unwrap();
+    engine.add_instrument(&instrument_b).unwrap();
+
+    engine
+        .add_strategy(MultiInstrumentCloseOnStop::new(
+            vec![id_a, id_b],
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(id_a, "1000.00", "1001.00", 1_000_000_000),
+        quote(id_b, "1000.00", "1001.00", 1_000_000_000),
+        quote(id_a, "1000.00", "1001.00", 2_000_000_000),
+        quote(id_b, "1000.00", "1001.00", 2_000_000_000),
+        quote(id_a, "1000.00", "1001.00", 3_000_000_000),
+        quote(id_b, "1000.00", "1001.00", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+
+    for id in [id_a, id_b] {
+        let open = cache.positions_open(None, Some(&id), None, None, None);
+        assert!(
+            open.is_empty(),
+            "expected no open positions on {id} after multi-venue on_stop close, found {}",
+            open.len(),
+        );
+        let closed = cache.positions_closed(None, Some(&id), None, None, None);
+        assert_eq!(
+            closed.len(),
+            1,
+            "expected one closed position on {id} after multi-venue on_stop close",
+        );
+    }
+
+    // 2s BINANCE latency wins over OKX's 1s, so the global max advance lands at 5s
+    assert_eq!(
+        engine.backtest_end(),
+        Some(UnixNanos::from(5_000_000_000)),
+        "expected backtest_end to advance to the slowest venue's inflight arrival",
     );
 }
 

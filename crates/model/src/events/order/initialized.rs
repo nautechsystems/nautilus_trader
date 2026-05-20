@@ -119,6 +119,9 @@ pub struct OrderInitialized {
     pub exec_spawn_id: Option<ClientOrderId>,
     /// The custom user tags for the order.
     pub tags: Option<Vec<Ustr>>,
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderInitialized {
@@ -198,6 +201,7 @@ impl OrderInitialized {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
+            causation_id: None,
         }
     }
 }

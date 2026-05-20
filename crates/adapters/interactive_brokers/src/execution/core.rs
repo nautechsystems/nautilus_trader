@@ -738,6 +738,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             params: cmd.params.clone(),
             log_receipt_level: LogLevel::Info,
             correlation_id: cmd.correlation_id,
+            causation_id: cmd.causation_id,
         };
 
         let reports = self.generate_order_status_reports(&plural_cmd).await?;

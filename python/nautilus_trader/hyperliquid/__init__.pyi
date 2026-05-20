@@ -86,6 +86,7 @@ class HyperliquidExecClientConfig:
         retry_delay_max_ms: int | None = None,
         normalize_prices: bool | None = None,
         market_order_slippage_bps: int | None = None,
+        ws_post_timeout_secs: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -232,6 +233,53 @@ class HyperliquidWebSocketClient:
     def url(self) -> str: ...
     def is_active(self) -> bool: ...
     def is_closed(self) -> bool: ...
+    def set_post_timeout(self, timeout_secs: int) -> None: ...
+    def submit_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: model.InstrumentId,
+        client_order_id: model.ClientOrderId,
+        order_side: model.OrderSide,
+        order_type: model.OrderType,
+        quantity: model.Quantity,
+        time_in_force: model.TimeInForce,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+    ) -> typing.Any: ...
+    def submit_orders(
+        self, signer: HyperliquidHttpClient, orders: typing.Sequence[typing.Any]
+    ) -> typing.Any: ...
+    def cancel_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: model.InstrumentId,
+        client_order_id: model.ClientOrderId | None = None,
+        venue_order_id: model.VenueOrderId | None = None,
+    ) -> typing.Any: ...
+    def cancel_orders(
+        self,
+        signer: HyperliquidHttpClient,
+        cancels: typing.Sequence[
+            tuple[model.InstrumentId, model.ClientOrderId, model.VenueOrderId | None]
+        ] = ...,
+    ) -> typing.Any: ...
+    def modify_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: model.InstrumentId,
+        venue_order_id: model.VenueOrderId,
+        order_side: model.OrderSide,
+        order_type: model.OrderType,
+        price: model.Price,
+        quantity: model.Quantity,
+        trigger_price: model.Price | None,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: model.TimeInForce,
+        client_order_id: model.ClientOrderId | None = ...,
+    ) -> typing.Any: ...
     def cache_spot_fill_coins(self, mapping: typing.Mapping[str, str]) -> None: ...
     def cache_cloid_mapping(self, cloid: str, client_order_id: model.ClientOrderId) -> None: ...
     def remove_cloid_mapping(self, cloid: str) -> None: ...

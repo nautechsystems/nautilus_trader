@@ -162,6 +162,11 @@ impl OrderTriggered {
             Some(account_id) => dict.set_item("account_id", account_id.to_string())?,
             None => dict.set_item("account_id", "None")?,
         }
+
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

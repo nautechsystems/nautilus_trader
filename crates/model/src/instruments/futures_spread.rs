@@ -328,7 +328,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn size_precision(&self) -> u8 {
-        0
+        self.size_precision
     }
 
     fn price_increment(&self) -> Price {
@@ -336,7 +336,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn size_increment(&self) -> Quantity {
-        Quantity::from(1)
+        self.size_increment
     }
 
     fn multiplier(&self) -> Quantity {
@@ -493,5 +493,17 @@ mod tests {
         let json = serde_json::to_string(&futures_spread_es).unwrap();
         let deserialized: FuturesSpread = serde_json::from_str(&json).unwrap();
         assert_eq!(futures_spread_es, deserialized);
+    }
+
+    #[rstest]
+    fn test_trait_accessors_read_non_default_size_precision(mut futures_spread_es: FuturesSpread) {
+        // The `Instrument` trait methods must return the struct fields rather
+        // than hardcoded 0 / Quantity::from(1). Required so adapters that
+        // construct `FuturesSpread` with non-default sizing report the right
+        // precision/increment downstream.
+        futures_spread_es.size_precision = 3;
+        futures_spread_es.size_increment = Quantity::from("0.001");
+        assert_eq!(futures_spread_es.size_precision(), 3);
+        assert_eq!(futures_spread_es.size_increment(), Quantity::from("0.001"));
     }
 }

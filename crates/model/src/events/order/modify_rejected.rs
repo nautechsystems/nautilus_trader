@@ -70,6 +70,9 @@ pub struct OrderModifyRejected {
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
     pub account_id: Option<AccountId>,
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderModifyRejected {
@@ -101,6 +104,7 @@ impl OrderModifyRejected {
             reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
+            causation_id: None,
         }
     }
 }

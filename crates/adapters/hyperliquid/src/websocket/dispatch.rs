@@ -194,6 +194,9 @@ pub struct WsDispatchState {
     /// Bounded FIFO dedup to bound memory while keeping recent trade ids
     /// deduped across reconnects.
     pub emitted_trades: Mutex<BoundedDedup<TradeId>>,
+    /// Raw Hyperliquid CLOIDs that reached a terminal state through the post
+    /// response path before the matching `orderUpdates` event arrived.
+    pub terminal_cloids: Mutex<BoundedDedup<Ustr>>,
     /// Last venue order id observed for a tracked client order id.
     ///
     /// Populated on the first `OrderAccepted` and refreshed on every
@@ -231,6 +234,7 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             filled_orders: DashSet::default(),
             emitted_trades: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
+            terminal_cloids: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
             cached_venue_order_ids: DashMap::new(),
             pending_modify_keys: DashMap::new(),
             pending_modify_target_qty: DashMap::new(),
@@ -285,10 +289,13 @@ impl WsDispatchState {
         self.emitted_accepted.insert(cid);
     }
 
-    /// Marks an order as having reached the filled terminal state.
-    pub fn insert_filled(&self, cid: ClientOrderId) {
+    /// Marks an order as having reached a terminal state.
+    ///
+    /// Returns `true` when this call claimed the terminal state, and `false`
+    /// when another path had already claimed it.
+    pub fn insert_filled(&self, cid: ClientOrderId) -> bool {
         self.evict_if_full(&self.filled_orders);
-        self.filled_orders.insert(cid);
+        self.filled_orders.insert(cid)
     }
 
     /// Atomically inserts a trade id into the dedup set.
@@ -302,6 +309,33 @@ impl WsDispatchState {
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
         let mut set = self.emitted_trades.lock().expect(MUTEX_POISONED);
         set.insert(trade_id)
+    }
+
+    /// Records a terminal raw Hyperliquid CLOID.
+    ///
+    /// Used when the post response rejects an order before the WebSocket
+    /// `orderUpdates` message. The normal CLOID mapping can be removed while a
+    /// late unresolved order update still gets suppressed instead of forwarded
+    /// as an external report.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "terminal cloid mutex poisoning is not expected"
+    )]
+    pub fn insert_terminal_cloid(&self, cloid: Ustr) {
+        let mut set = self.terminal_cloids.lock().expect(MUTEX_POISONED);
+        set.insert(cloid);
+    }
+
+    /// Returns whether a raw Hyperliquid CLOID reached a terminal state through
+    /// the post response path.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "terminal cloid mutex poisoning is not expected"
+    )]
+    #[must_use]
+    pub fn terminal_cloid_seen(&self, cloid: &Ustr) -> bool {
+        let set = self.terminal_cloids.lock().expect(MUTEX_POISONED);
+        set.contains(cloid)
     }
 
     /// Caches the venue order id observed for a tracked client order id.
@@ -462,6 +496,17 @@ pub fn dispatch_order_event(
         return DispatchOutcome::Skip;
     }
 
+    let client_order_id_str = client_order_id.as_str();
+    if client_order_id_str.starts_with("0x")
+        && state.terminal_cloid_seen(&Ustr::from(client_order_id_str))
+    {
+        log::debug!(
+            "Skipping stale terminal report for raw cloid: cid={client_order_id}, status={:?}",
+            report.order_status,
+        );
+        return DispatchOutcome::Skip;
+    }
+
     let Some(identity) = state.lookup_identity(&client_order_id) else {
         return DispatchOutcome::External;
     };
@@ -555,6 +600,16 @@ pub fn dispatch_order_fill(
         return DispatchOutcome::Tracked;
     }
 
+    let previous = state
+        .previous_filled_qty(&client_order_id)
+        .unwrap_or_else(|| Quantity::zero(report.last_qty.precision));
+    let cumulative = previous + report.last_qty;
+
+    let is_terminal_fill = cumulative >= identity.quantity;
+    if is_terminal_fill && !claim_terminal_order(client_order_id, state, OrderStatus::Filled) {
+        return DispatchOutcome::Skip;
+    }
+
     ensure_accepted_emitted(
         client_order_id,
         report.venue_order_id,
@@ -589,14 +644,9 @@ pub fn dispatch_order_fill(
     );
     emitter.send_order_event(OrderEventAny::Filled(filled));
 
-    let previous = state
-        .previous_filled_qty(&client_order_id)
-        .unwrap_or_else(|| Quantity::zero(report.last_qty.precision));
-    let cumulative = previous + report.last_qty;
     state.record_filled_qty(client_order_id, cumulative);
 
-    if cumulative >= identity.quantity {
-        state.insert_filled(client_order_id);
+    if is_terminal_fill {
         state.cleanup_terminal(&client_order_id);
     }
 
@@ -780,6 +830,10 @@ fn handle_canceled(
         return DispatchOutcome::Skip;
     }
 
+    if !claim_terminal_order(client_order_id, state, report.order_status) {
+        return DispatchOutcome::Skip;
+    }
+
     ensure_accepted_emitted(
         client_order_id,
         venue_order_id,
@@ -805,9 +859,6 @@ fn handle_canceled(
     );
     emitter.send_order_event(OrderEventAny::Canceled(canceled));
 
-    // Retain the filled marker so any late replay of the cancel is
-    // suppressed even after the identity state has been cleaned up.
-    state.insert_filled(client_order_id);
     state.cleanup_terminal(&client_order_id);
     DispatchOutcome::Tracked
 }
@@ -820,6 +871,10 @@ fn handle_expired(
     emitter: &ExecutionEventEmitter,
     ts_init: UnixNanos,
 ) -> DispatchOutcome {
+    if !claim_terminal_order(client_order_id, state, report.order_status) {
+        return DispatchOutcome::Skip;
+    }
+
     ensure_accepted_emitted(
         client_order_id,
         report.venue_order_id,
@@ -844,7 +899,6 @@ fn handle_expired(
         Some(report.account_id),
     );
     emitter.send_order_event(OrderEventAny::Expired(expired));
-    state.insert_filled(client_order_id);
     state.cleanup_terminal(&client_order_id);
     DispatchOutcome::Tracked
 }
@@ -857,6 +911,10 @@ fn handle_rejected(
     emitter: &ExecutionEventEmitter,
     ts_init: UnixNanos,
 ) -> DispatchOutcome {
+    if !claim_terminal_order(client_order_id, state, report.order_status) {
+        return DispatchOutcome::Skip;
+    }
+
     let reason = report
         .cancel_reason
         .clone()
@@ -875,9 +933,21 @@ fn handle_rejected(
         false,
     );
     emitter.send_order_event(OrderEventAny::Rejected(rejected));
-    state.insert_filled(client_order_id);
     state.cleanup_terminal(&client_order_id);
     DispatchOutcome::Tracked
+}
+
+fn claim_terminal_order(
+    client_order_id: ClientOrderId,
+    state: &WsDispatchState,
+    status: OrderStatus,
+) -> bool {
+    let claimed = state.insert_filled(client_order_id);
+    if !claimed {
+        log::debug!("Skipping duplicate terminal event for {client_order_id}: status={status:?}",);
+    }
+
+    claimed
 }
 
 fn handle_filled_marker(

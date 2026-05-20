@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `Portfolio` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.portfolio",
+        from_py_object
+    )
 )]
 #[cfg_attr(
     feature = "python",

@@ -74,7 +74,7 @@ use nautilus_common::{
         UnsubscribeOptionGreeks, UnsubscribeQuotes, is_parent_subscription,
     },
     msgbus::{
-        self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
+        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -1145,14 +1145,13 @@ impl DataEngine {
         }
     }
 
-    /// Processes a `Data` instance through the historical pipeline.
+    /// Processes a `Data` instance through the pipeline bus path.
     ///
-    /// Pipeline mode publishes each item on the historical topic family
-    /// (prefixed with `historical.`) and gates cache writes on
-    /// `disable_historical_cache`. None of the live-only side effects
-    /// (synthetic republish, option-chain expiry, depth-derived quotes,
-    /// deferred-command drains) run in this path.
-    pub fn process_historical(&mut self, data: Data) {
+    /// Pipeline mode publishes each item on the `data.pipeline.` topic family and gates cache
+    /// writes on `disable_historical_cache`. None of the live-only side effects (synthetic
+    /// republish, option-chain expiry, depth-derived quotes, deferred-command drains) run in this
+    /// path.
+    pub fn process_pipeline(&mut self, data: Data) {
         self.data_count += 1;
 
         match data {
@@ -1635,17 +1634,17 @@ impl DataEngine {
     fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
         // Pipeline deltas are not buffered; replays arrive pre-batched
         let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
-        let topic = historical_topic_of(switchboard::get_book_deltas_topic(deltas.instrument_id));
+        let topic = switchboard::get_pipeline_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, &deltas);
     }
 
     fn handle_deltas_pipeline(&self, deltas: &OrderBookDeltas) {
-        let topic = historical_topic_of(switchboard::get_book_deltas_topic(deltas.instrument_id));
+        let topic = switchboard::get_pipeline_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, deltas);
     }
 
     fn handle_depth10_pipeline(&self, depth: OrderBookDepth10) {
-        let topic = historical_topic_of(switchboard::get_book_depth10_topic(depth.instrument_id));
+        let topic = switchboard::get_pipeline_book_depth10_topic(depth.instrument_id);
         msgbus::publish_depth10(topic, &depth);
     }
 
@@ -1656,7 +1655,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_quotes_topic(quote.instrument_id));
+        let topic = switchboard::get_pipeline_quotes_topic(quote.instrument_id);
         msgbus::publish_quote(topic, &quote);
     }
 
@@ -1667,7 +1666,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_trades_topic(trade.instrument_id));
+        let topic = switchboard::get_pipeline_trades_topic(trade.instrument_id);
         msgbus::publish_trade(topic, &trade);
     }
 
@@ -1682,7 +1681,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_bars_topic(bar.bar_type));
+        let topic = switchboard::get_pipeline_bars_topic(bar.bar_type);
         msgbus::publish_bar(topic, &bar);
     }
 
@@ -1693,8 +1692,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic =
-            historical_topic_of(switchboard::get_mark_price_topic(mark_price.instrument_id));
+        let topic = switchboard::get_pipeline_mark_price_topic(mark_price.instrument_id);
         msgbus::publish_mark_price(topic, &mark_price);
     }
 
@@ -1709,9 +1707,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_index_price_topic(
-            index_price.instrument_id,
-        ));
+        let topic = switchboard::get_pipeline_index_price_topic(index_price.instrument_id);
         msgbus::publish_index_price(topic, &index_price);
     }
 
@@ -1726,21 +1722,18 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_instrument_status_topic(
-            status.instrument_id,
-        ));
+        let topic = switchboard::get_pipeline_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
     }
 
     fn handle_instrument_close_pipeline(&self, close: InstrumentClose) {
-        let topic =
-            historical_topic_of(switchboard::get_instrument_close_topic(close.instrument_id));
+        let topic = switchboard::get_pipeline_instrument_close_topic(close.instrument_id);
         msgbus::publish_any(topic, &close);
     }
 
     fn handle_custom_data_pipeline(&self, custom: &CustomData) {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
-        let topic = historical_topic_of(switchboard::get_custom_topic(&custom.data_type));
+        let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }
 
@@ -3217,11 +3210,6 @@ fn parse_spread_leg_parts(
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
-}
-
-#[inline]
-fn historical_topic_of(live: MStr<Topic>) -> MStr<Topic> {
-    MStr::<Topic>::from(format!("historical.{}", live.as_ref()))
 }
 
 // Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for

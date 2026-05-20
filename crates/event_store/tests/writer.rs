@@ -115,33 +115,27 @@ fn writer_commits_drafts_durably_to_redb_file() {
     )
     .expect("spawn");
 
-    // Submit four drafts with sidecar index keys spanning every IndexKind variant.
+    // Submit three drafts with sidecar index keys spanning every IndexKind variant.
     writer
         .submit(entry_draft(
             10,
-            vec![IndexKey::new(IndexKind::IntentId, "intent-A".to_string())],
+            vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
         ))
         .expect("submit 1");
     writer
         .submit(entry_draft(
             11,
-            vec![IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string())],
+            vec![IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string())],
         ))
         .expect("submit 2");
     writer
-        .submit(entry_draft(
-            12,
-            vec![IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string())],
-        ))
+        .submit(entry_draft(12, Vec::new()))
         .expect("submit 3");
-    writer
-        .submit(entry_draft(13, Vec::new()))
-        .expect("submit 4");
 
     let final_hwm = writer.close(run_ended_draft()).expect("close");
 
-    // 4 drafts + RunEnded == 5 entries.
-    assert_eq!(final_hwm, 5);
+    // 3 drafts + RunEnded == 4 entries.
+    assert_eq!(final_hwm, 4);
     assert!(captured.lock().expect("captured").is_empty());
 
     // Reopening the same path with a fresh backend instance must surface the run as
@@ -276,11 +270,14 @@ fn writer_committed_entries_are_scannable_after_close() {
     )
     .expect("spawn");
 
-    let intent = "intent-Z".to_string();
+    let client_order_id = "O-Z".to_string();
 
     for ts in 10_u64..18_u64 {
         let keys = if ts == 11 {
-            vec![IndexKey::new(IndexKind::IntentId, intent.clone())]
+            vec![IndexKey::new(
+                IndexKind::ClientOrderId,
+                client_order_id.clone(),
+            )]
         } else {
             Vec::new()
         };
@@ -295,8 +292,8 @@ fn writer_committed_entries_are_scannable_after_close() {
     // run on open.
     let prior_path = tmp.path().join(INSTANCE_ID).join("run-scan.redb");
     let entries_table: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
-    let intent_table: redb::TableDefinition<&str, u64> =
-        redb::TableDefinition::new("intent_id_idx");
+    let client_order_table: redb::TableDefinition<&str, u64> =
+        redb::TableDefinition::new("client_order_id_idx");
     let db = redb::Database::create(&prior_path).expect("open prior");
     let txn = db.begin_read().expect("begin read");
 
@@ -309,12 +306,15 @@ fn writer_committed_entries_are_scannable_after_close() {
     }
     assert_eq!(seqs, (1_u64..=9_u64).collect::<Vec<_>>());
 
-    let idx = txn.open_table(intent_table).expect("open intent idx");
+    let idx = txn
+        .open_table(client_order_table)
+        .expect("open client_order idx");
     let recorded = idx
-        .get("intent-Z")
-        .expect("get intent")
-        .expect("intent recorded");
-    // The second submitted draft (ts_init=11) carried the intent key, so its seq is 2.
+        .get("O-Z")
+        .expect("get client_order_id")
+        .expect("client_order_id recorded");
+    // The second submitted draft (ts_init=11) carried the client_order_id key, so its
+    // seq is 2.
     assert_eq!(recorded.value(), 2);
 }
 

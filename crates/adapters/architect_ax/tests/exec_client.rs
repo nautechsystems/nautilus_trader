@@ -384,6 +384,7 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         ts_init: UnixNanos::default(),
         params: None,
         correlation_id: None,
+        causation_id: None,
     };
 
     client
@@ -943,6 +944,7 @@ async fn test_cancel_all_orders_http_failure_emits_cancel_rejected() {
         ts_init: UnixNanos::default(),
         params: None,
         correlation_id: None,
+        causation_id: None,
     };
 
     client
@@ -997,6 +999,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
             ts_init: UnixNanos::default(),
             params: None,
             correlation_id: None,
+            causation_id: None,
         },
         CancelOrder {
             trader_id: TraderId::from("TESTER-001"),
@@ -1009,6 +1012,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
             ts_init: UnixNanos::default(),
             params: None,
             correlation_id: None,
+            causation_id: None,
         },
     ];
 
@@ -1022,6 +1026,7 @@ async fn test_batch_cancel_orders_emits_one_ws_cancel_per_entry() {
         ts_init: UnixNanos::default(),
         params: None,
         correlation_id: None,
+        causation_id: None,
     };
 
     client

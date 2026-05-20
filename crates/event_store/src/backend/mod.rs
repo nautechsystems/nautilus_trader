@@ -40,8 +40,6 @@ use crate::{
 /// rows.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum IndexKind {
-    /// `intent_id -> seq`. Looks up the first entry for an agent or strategy intent.
-    IntentId,
     /// `client_order_id -> seq`. Looks up the first entry that mentions a client order id.
     ClientOrderId,
     /// `venue_order_id -> seq`. Looks up the first entry that mentions a venue order id.
@@ -64,8 +62,8 @@ pub enum ScanDirection {
 /// subsequent occurrences for the same `(kind, key)` are no-ops, so [`EventStore::lookup`]
 /// always returns the earliest `seq` that mentioned the key.
 ///
-/// Keys are stringified at the encoder boundary: `intent_id` from headers stringifies the
-/// UUID, `client_order_id` and `venue_order_id` are already strings on the wire types.
+/// Keys are stringified at the encoder boundary: `client_order_id` and `venue_order_id` are
+/// already strings on the wire types.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IndexKey {
     /// The secondary index this key belongs to.

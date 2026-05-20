@@ -65,6 +65,9 @@ pub struct OrderDenied {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderDenied {
@@ -90,6 +93,7 @@ impl OrderDenied {
             event_id,
             ts_event,
             ts_init,
+            causation_id: None,
         }
     }
 }
@@ -315,6 +319,22 @@ mod tests {
         let original = OrderDenied::default();
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderDenied = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_denied_serialization_with_causation_id() {
+        let causation_id = UUID4::new();
+        let original = OrderDenied {
+            causation_id: Some(causation_id),
+            ..OrderDenied::default()
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderDenied = serde_json::from_str(&json).unwrap();
+
+        assert!(json.contains("\"causation_id\""));
+        assert_eq!(deserialized.causation_id, Some(causation_id));
         assert_eq!(original, deserialized);
     }
 }

@@ -18,6 +18,11 @@
 //! Fixtures live as inline `&'static str` consts to keep benches deterministic
 //! and self-contained; real venue captures in `test_data/` are reserved for
 //! parser correctness tests.
+//!
+//! Each criterion bench is a separate compilation unit that pulls in this
+//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module-level `allow`, the unused subset in any given bench triggers
+//! per-crate dead-code warnings.
 
 #![allow(dead_code)]
 

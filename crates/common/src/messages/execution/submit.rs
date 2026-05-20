@@ -40,6 +40,8 @@ pub struct SubmitOrder {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl SubmitOrder {
@@ -73,6 +75,7 @@ impl SubmitOrder {
             command_id,
             ts_init,
             correlation_id,
+            causation_id: None,
         }
     }
 
@@ -99,6 +102,7 @@ impl SubmitOrder {
             command_id,
             ts_init,
             correlation_id: None,
+            causation_id: None,
         }
     }
 }
@@ -131,6 +135,8 @@ pub struct SubmitOrderList {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl SubmitOrderList {
@@ -186,6 +192,7 @@ impl SubmitOrderList {
             command_id,
             ts_init,
             correlation_id,
+            causation_id: None,
         }
     }
 }

@@ -1,0 +1,147 @@
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "trades": [
+            {
+                "timestamp": 1779107386210,
+                "price": 1320.0,
+                "amount": 10.0,
+                "direction": "sell",
+                "index_price": 77314.05,
+                "instrument_name": "BTC-FS-25DEC26_PERP",
+                "trade_seq": 2048,
+                "mark_price": 1304.34,
+                "tick_direction": 3,
+                "legs": [
+                    {
+                        "timestamp": 1779107386210,
+                        "price": 78624.0,
+                        "amount": 10.0,
+                        "direction": "sell",
+                        "index_price": 77314.05,
+                        "instrument_name": "BTC-25DEC26",
+                        "trade_seq": 1716330,
+                        "mark_price": 78615.6,
+                        "tick_direction": 0,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343055",
+                        "combo_trade_id": "244343053"
+                    },
+                    {
+                        "timestamp": 1779107386210,
+                        "price": 77304.0,
+                        "amount": 10.0,
+                        "direction": "buy",
+                        "index_price": 77314.05,
+                        "instrument_name": "BTC-PERPETUAL",
+                        "trade_seq": 133407047,
+                        "mark_price": 77311.26,
+                        "tick_direction": 0,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343054",
+                        "combo_trade_id": "244343053"
+                    }
+                ],
+                "contracts": 1.0,
+                "trade_id": "244343053"
+            },
+            {
+                "timestamp": 1779107385188,
+                "price": 1320.0,
+                "amount": 10.0,
+                "direction": "sell",
+                "index_price": 77313.41,
+                "instrument_name": "BTC-FS-25DEC26_PERP",
+                "trade_seq": 2047,
+                "mark_price": 1303.55,
+                "tick_direction": 3,
+                "legs": [
+                    {
+                        "timestamp": 1779107385189,
+                        "price": 77303.0,
+                        "amount": 10.0,
+                        "direction": "buy",
+                        "index_price": 77313.41,
+                        "instrument_name": "BTC-PERPETUAL",
+                        "trade_seq": 133407046,
+                        "mark_price": 77311.06,
+                        "tick_direction": 3,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343052",
+                        "combo_trade_id": "244343050"
+                    },
+                    {
+                        "timestamp": 1779107385189,
+                        "price": 78623.0,
+                        "amount": 10.0,
+                        "direction": "sell",
+                        "index_price": 77313.41,
+                        "instrument_name": "BTC-25DEC26",
+                        "trade_seq": 1716329,
+                        "mark_price": 78614.61,
+                        "tick_direction": 3,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343051",
+                        "combo_trade_id": "244343050"
+                    }
+                ],
+                "contracts": 1.0,
+                "trade_id": "244343050"
+            },
+            {
+                "timestamp": 1779107384136,
+                "price": 1320.0,
+                "amount": 10.0,
+                "direction": "sell",
+                "index_price": 77313.0,
+                "instrument_name": "BTC-FS-25DEC26_PERP",
+                "trade_seq": 2046,
+                "mark_price": 1302.71,
+                "tick_direction": 3,
+                "legs": [
+                    {
+                        "timestamp": 1779107384137,
+                        "price": 77303.0,
+                        "amount": 10.0,
+                        "direction": "buy",
+                        "index_price": 77313.0,
+                        "instrument_name": "BTC-PERPETUAL",
+                        "trade_seq": 133407045,
+                        "mark_price": 77311.09,
+                        "tick_direction": 3,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343048",
+                        "combo_trade_id": "244343046"
+                    },
+                    {
+                        "timestamp": 1779107384137,
+                        "price": 78623.0,
+                        "amount": 10.0,
+                        "direction": "sell",
+                        "index_price": 77313.0,
+                        "instrument_name": "BTC-25DEC26",
+                        "trade_seq": 1716328,
+                        "mark_price": 78613.8,
+                        "tick_direction": 3,
+                        "combo_id": "BTC-FS-25DEC26_PERP",
+                        "contracts": 1.0,
+                        "trade_id": "244343047",
+                        "combo_trade_id": "244343046"
+                    }
+                ],
+                "contracts": 1.0,
+                "trade_id": "244343046"
+            }
+        ],
+        "has_more": true
+    },
+    "usIn": 1779177080861599,
+    "usOut": 1779177080861925,
+    "usDiff": 326,
+    "testnet": true
+}

@@ -55,6 +55,7 @@ extension-module = [
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-portfolio/extension-module",
   "nautilus-polymarket/extension-module",
   "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
@@ -107,13 +108,18 @@ nautilus-data = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
-nautilus-live = { workspace = true, features = ["python", "examples"] }
+nautilus-live = { workspace = true, features = [
+  "python",
+  "examples",
+  "plugin",
+] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = [
   "python",
   "transport-sockudo",
 ] }
 nautilus-persistence = { workspace = true, features = ["python"] }
+nautilus-portfolio = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 nautilus-testkit = { workspace = true, features = ["python"] }

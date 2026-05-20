@@ -458,9 +458,9 @@ it emits (e.g. `close_all_positions`, `cancel_all_orders`), then stops the engin
   reacts to fills must run before `on_stop` returns.
 - Simulation modules do not re-run at shutdown. `SimulationModule::process` is once per timestamp;
   re-invoking would double-apply side effects like FX rollover interest.
-- A `LatencyModel` defers `on_stop` commands by its configured delay; the engine clock does not
-  advance past the final data point, so those commands stay pending. Close earlier (e.g. in the
-  last `on_bar`) for reliable closing fills with latency.
+- A `LatencyModel` adds its configured delay to trailing commands (those emitted on the final
+  data tick or in `on_stop`). The shutdown path advances the engine clock to the latest inflight
+  arrival timestamp so those commands still settle before the engines stop.
 
 ### Fill modeling philosophy
 

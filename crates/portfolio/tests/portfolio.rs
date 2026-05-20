@@ -3059,6 +3059,176 @@ fn test_net_exposure_filters_by_account_id(
 }
 
 #[rstest]
+fn test_unrealized_pnl_filters_by_account_id(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_a = AccountId::new("SIM-001");
+    let account_b = AccountId::new("SIM-002");
+
+    let state_a = get_cash_account(Some("SIM-001"));
+    let state_b = get_cash_account(Some("SIM-002"));
+    portfolio.update_account(&state_a);
+    portfolio.update_account(&state_b);
+
+    let last = get_quote_tick(&instrument_audusd, 0.9, 0.901, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(last).unwrap();
+    portfolio.update_quote_tick(&last);
+
+    let fill_a = make_fill_for_account(
+        &instrument_audusd,
+        account_a,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-A3"),
+    );
+    let pos_a = Position::new(&instrument_audusd, fill_a);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_a, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&pos_a)));
+
+    let fill_b = make_fill_for_account(
+        &instrument_audusd,
+        account_b,
+        OrderSide::Buy,
+        Quantity::from("50000"),
+        Price::new(0.8, instrument_audusd.price_precision()),
+        PositionId::new("P-B3"),
+    );
+    let pos_b = Position::new(&instrument_audusd, fill_b);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_b, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&pos_b)));
+
+    let instrument_id = instrument_audusd.id();
+    let all = portfolio.unrealized_pnl(&instrument_id).unwrap();
+    let a_only = portfolio
+        .unrealized_pnl_for_account(&instrument_id, Some(&account_a))
+        .unwrap();
+    let b_only = portfolio
+        .unrealized_pnl_for_account(&instrument_id, Some(&account_b))
+        .unwrap();
+    let total_all = portfolio.total_pnl(&instrument_id).unwrap();
+    let total_a = portfolio
+        .total_pnl_for_account(&instrument_id, Some(&account_a))
+        .unwrap();
+    let total_b = portfolio
+        .total_pnl_for_account(&instrument_id, Some(&account_b))
+        .unwrap();
+
+    assert_eq!(all.currency, Currency::USD());
+    assert_eq!(a_only.currency, Currency::USD());
+    assert_eq!(b_only.currency, Currency::USD());
+    assert_eq!(total_all.currency, Currency::USD());
+    assert_eq!(total_a.currency, Currency::USD());
+    assert_eq!(total_b.currency, Currency::USD());
+    assert!((a_only.as_f64() - (2.0 * b_only.as_f64())).abs() < 1e-6);
+    assert!((all.as_f64() - (a_only.as_f64() + b_only.as_f64())).abs() < 1e-6);
+    assert!((total_a.as_f64() - (2.0 * total_b.as_f64())).abs() < 1e-6);
+    assert!((total_all.as_f64() - (total_a.as_f64() + total_b.as_f64())).abs() < 1e-6);
+}
+
+#[rstest]
+fn test_realized_pnl_filters_by_account_id(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_a = AccountId::new("SIM-001");
+    let account_b = AccountId::new("SIM-002");
+
+    let state_a = get_cash_account(Some("SIM-001"));
+    let state_b = get_cash_account(Some("SIM-002"));
+    portfolio.update_account(&state_a);
+    portfolio.update_account(&state_b);
+
+    let position_id_a = PositionId::new("P-RA");
+    let fill_a_open = make_fill_for_account(
+        &instrument_audusd,
+        account_a,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.80000, instrument_audusd.price_precision()),
+        position_id_a,
+    );
+    let mut pos_a = Position::new(&instrument_audusd, fill_a_open);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_a, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&pos_a)));
+    let fill_a_close = make_fill_for_account(
+        &instrument_audusd,
+        account_a,
+        OrderSide::Sell,
+        Quantity::from("100000"),
+        Price::new(0.80100, instrument_audusd.price_precision()),
+        position_id_a,
+    );
+    pos_a.apply(&fill_a_close);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&pos_a)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_close_position(&pos_a)));
+
+    let position_id_b = PositionId::new("P-RB");
+    let fill_b_open = make_fill_for_account(
+        &instrument_audusd,
+        account_b,
+        OrderSide::Buy,
+        Quantity::from("50000"),
+        Price::new(0.80000, instrument_audusd.price_precision()),
+        position_id_b,
+    );
+    let mut pos_b = Position::new(&instrument_audusd, fill_b_open);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&pos_b, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&pos_b)));
+    let fill_b_close = make_fill_for_account(
+        &instrument_audusd,
+        account_b,
+        OrderSide::Sell,
+        Quantity::from("50000"),
+        Price::new(0.80100, instrument_audusd.price_precision()),
+        position_id_b,
+    );
+    pos_b.apply(&fill_b_close);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&pos_b)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_close_position(&pos_b)));
+
+    let instrument_id = instrument_audusd.id();
+    let all = portfolio.realized_pnl(&instrument_id).unwrap();
+    let a_only = portfolio
+        .realized_pnl_for_account(&instrument_id, Some(&account_a))
+        .unwrap();
+    let b_only = portfolio
+        .realized_pnl_for_account(&instrument_id, Some(&account_b))
+        .unwrap();
+
+    assert_eq!(all.currency, Currency::USD());
+    assert_eq!(a_only.currency, Currency::USD());
+    assert_eq!(b_only.currency, Currency::USD());
+    assert!((a_only.as_f64() - (2.0 * b_only.as_f64())).abs() < 1e-6);
+    assert!((all.as_f64() - (a_only.as_f64() + b_only.as_f64())).abs() < 1e-6);
+}
+
+#[rstest]
 fn test_net_exposures_with_nonexistent_account_returns_empty(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,

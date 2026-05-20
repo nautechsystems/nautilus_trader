@@ -256,6 +256,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             params: None,
             correlation_id: None,
+            causation_id: None,
         }
     }
 
@@ -331,6 +332,7 @@ mod tests {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             correlation_id: None,
+            causation_id: None,
         };
 
         let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
@@ -395,6 +397,7 @@ mod tests {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             correlation_id: None,
+            causation_id: None,
         };
 
         let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
@@ -459,6 +462,7 @@ mod tests {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             correlation_id: None,
+            causation_id: None,
         };
 
         let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
@@ -535,6 +539,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             params: None,
             correlation_id: None,
+            causation_id: None,
         };
 
         let params = build_amend_order_params(&cmd, "TOKEN".to_string());
@@ -564,6 +569,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             params: None,
             correlation_id: None,
+            causation_id: None,
         };
 
         let params = build_amend_order_params(&cmd, "TOKEN".to_string());

@@ -290,6 +290,23 @@ check-all-targets:  #-- Run clippy on all targets including bins and examples (n
 	@cargo clippy --workspace --all-targets --features "$(CARGO_FEATURES),examples" --profile nextest -- -D warnings
 	@printf "$(GREEN)All-targets check passed$(RESET)\n"
 
+# Time a block of make sub-targets. Use as:
+#   @$(timer_start) \
+#       $(MAKE) ... \
+#       && $(MAKE) ... \
+#   $(call timer_end,Success message,Time label)
+# Prints the success message when the block exits 0, always prints
+# "<Time label> time: H:MM:SS", and propagates the block's exit code.
+timer_start = _t_start=$$(date +%s); (
+
+define timer_end
+); _t_rc=$$?; \
+_t_elapsed=$$(( $$(date +%s) - _t_start )); \
+printf "$(2) time: %d:%02d:%02d\n" $$(( _t_elapsed / 3600 )) $$(( (_t_elapsed % 3600) / 60 )) $$(( _t_elapsed % 60 )); \
+if [ $$_t_rc -eq 0 ]; then printf "$(GREEN)$(1)$(RESET)\n"; fi; \
+exit $$_t_rc
+endef
+
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
 pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-debug, pytest)
@@ -299,14 +316,15 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
 		exit 1; \
 	fi
-	@$(MAKE) --no-print-directory install-deps
-	@$(MAKE) --no-print-directory format
-	@$(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync"
-	@$(MAKE) --no-print-directory cargo-test-extras
-	@$(MAKE) --no-print-directory build-debug
-	@$(MAKE) --no-print-directory pytest
-	@$(MAKE) --no-print-directory security-audit
-	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
+	@$(timer_start) \
+		$(MAKE) --no-print-directory install-deps \
+		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
+		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory build-debug \
+		&& $(MAKE) --no-print-directory pytest \
+		&& $(MAKE) --no-print-directory security-audit \
+	$(call timer_end,All pre-flight checks passed,Pre-flight)
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
@@ -379,19 +397,25 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 
 #== Security
 
+# Run an audit step: capture stdout+stderr, only display on failure.
+# Args: $(1) display name, $(2) command to run.
+define audit_step
+	printf "$(CYAN)Running $(1)...$(RESET) "; \
+	if _out=$$($(2) 2>&1); then \
+		printf "$(GREEN)ok$(RESET)\n"; \
+	else \
+		rc=$$?; printf "$(RED)failed$(RESET)\n%s\n" "$$_out"; exit $$rc; \
+	fi
+endef
+
 .PHONY: security-audit
 security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
 	$(info $(M) Running security audit...)
-	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
-	cargo audit --color never
-	@printf "\n$(CYAN)Running cargo deny (advisories, licenses, sources, bans)...$(RESET)\n"
-	cargo deny --all-features check advisories licenses sources bans
-	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
-	cargo vet --locked
-	@printf "\n$(CYAN)Running pip-audit (Python dependencies)...$(RESET)\n"
-	uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin
-	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock + python/uv.lock)...$(RESET)\n"
-	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock
+	@$(call audit_step,cargo audit,cargo audit --color never)
+	@$(call audit_step,cargo deny,cargo deny --all-features check advisories licenses sources bans)
+	@$(call audit_step,cargo vet,cargo vet --locked)
+	@$(call audit_step,pip-audit,uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin)
+	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock)
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -883,14 +907,15 @@ sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
-build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (fast incremental builds)
+build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
+	@$(MAKE) --no-print-directory py-stubs-v2
 	$(info $(M) Building v2 extension in debug mode...)
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=../target-v2 uv run --no-sync maturin develop
 
 .PHONY: py-stubs-v2
-py-stubs-v2:  #-- Regenerate v2 Python type stubs from Rust bindings
+py-stubs-v2: sync-v2  #-- Regenerate v2 Python type stubs from Rust bindings
 	$(info $(M) Generating v2 Python type stubs...)
-	$Q CARGO_TARGET_DIR=target-v2 python python/generate_stubs.py
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(CURDIR)/target-v2 uv run --no-sync python generate_stubs.py
 
 .PHONY: update-v2
 update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
@@ -912,14 +937,15 @@ pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, 
 		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
 		exit 1; \
 	fi
-	@$(MAKE) --no-print-directory install-deps
-	@$(MAKE) --no-print-directory format
-	@$(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync"
-	@$(MAKE) --no-print-directory cargo-test-extras
-	@$(MAKE) --no-print-directory build-debug-v2
-	@$(MAKE) --no-print-directory pytest-v2
-	@$(MAKE) --no-print-directory security-audit
-	@printf "$(GREEN)All v2 pre-flight checks passed$(RESET)\n"
+	@$(timer_start) \
+		$(MAKE) --no-print-directory install-deps \
+		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
+		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory build-debug-v2 \
+		&& $(MAKE) --no-print-directory pytest-v2 \
+		&& $(MAKE) --no-print-directory security-audit \
+	$(call timer_end,All v2 pre-flight checks passed,Pre-flight)
 
 #== CLI Tools
 

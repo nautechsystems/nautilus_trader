@@ -10462,12 +10462,13 @@ fn test_process_defi_data_increments_data_count(
     assert_eq!(data_engine.data_count(), 1);
 }
 
-fn historical_topic_of(live: &str) -> String {
-    format!("historical.{live}")
+fn pipeline_topic_of(live: &str) -> String {
+    let suffix = live.strip_prefix("data.").unwrap_or(live);
+    format!("data.pipeline.{suffix}")
 }
 
 #[rstest]
-fn test_process_historical_quote_publishes_on_historical_topic_only(
+fn test_process_pipeline_quote_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10478,30 +10479,30 @@ fn test_process_historical_quote_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache, None);
 
     let live_topic = switchboard::get_quotes_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("historical-test-hist")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-test-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-test-pipeline")));
     msgbus::subscribe_quotes(live_topic.into(), live_handler, None);
-    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_quotes(pipeline_topic.into(), pipeline_handler, None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical quote must not publish on the live topic",
+        "pipeline quote must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], quote);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], quote);
 }
 
 #[rstest]
-fn test_process_historical_quote_writes_cache_by_default(
+fn test_process_pipeline_quote_writes_cache_by_default(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10512,13 +10513,13 @@ fn test_process_historical_quote_writes_cache_by_default(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert_eq!(cache.borrow().quote(&instrument_id), Some(&quote));
 }
 
 #[rstest]
-fn test_process_historical_skips_cache_when_disabled(
+fn test_process_pipeline_skips_cache_when_disabled(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10532,31 +10533,31 @@ fn test_process_historical_skips_cache_when_disabled(
     };
     let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
 
-    let historical_topic_str =
-        historical_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-cache-disabled")));
-    msgbus::subscribe_quotes(historical_topic.into(), hist_handler, None);
+    let pipeline_topic_str =
+        pipeline_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-cache-disabled")));
+    msgbus::subscribe_quotes(pipeline_topic.into(), pipeline_handler, None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
-    data_engine.process_historical(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Quote(quote));
 
     assert_eq!(
         cache.borrow().quote(&instrument_id),
         None,
         "disable_historical_cache must suppress cache write",
     );
-    let hist_messages = hist_saver.get_messages();
+    let pipeline_messages = pipeline_saver.get_messages();
     assert_eq!(
-        hist_messages.len(),
+        pipeline_messages.len(),
         1,
-        "historical publish must still occur with cache disabled",
+        "pipeline publish must still occur with cache disabled",
     );
 }
 
 #[rstest]
-fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_bar_publishes_on_pipeline_topic(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10564,34 +10565,34 @@ fn test_process_historical_bar_publishes_on_historical_topic(stub_msgbus: Rc<Ref
 
     let bar = Bar::default();
     let live_topic = switchboard::get_bars_topic(bar.bar_type);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("hist-bar-hist")));
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("pipeline-bar-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("pipeline-bar-pipeline")));
     msgbus::subscribe_bars(live_topic.into(), live_handler, None);
-    msgbus::subscribe_bars(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_bars(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Bar(bar));
+    data_engine.process_pipeline(Data::Bar(bar));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical bar must not publish on the live topic",
+        "pipeline bar must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], bar);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], bar);
     assert_eq!(
         cache.borrow().bar(&bar.bar_type),
         Some(&bar),
-        "historical bar must populate the cache by default",
+        "pipeline bar must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_increments_data_count(
+fn test_process_pipeline_increments_data_count(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10604,17 +10605,17 @@ fn test_process_historical_increments_data_count(
     let bar = Bar::default();
 
     assert_eq!(data_engine.data_count(), 0);
-    data_engine.process_historical(Data::Quote(quote));
-    data_engine.process_historical(Data::Bar(bar));
+    data_engine.process_pipeline(Data::Quote(quote));
+    data_engine.process_pipeline(Data::Bar(bar));
     assert_eq!(
         data_engine.data_count(),
         2,
-        "process_historical must increment data_count like process_data",
+        "process_pipeline must increment data_count like process_data",
     );
 }
 
 #[rstest]
-fn test_process_historical_trade_publishes_on_historical_topic_only(
+fn test_process_pipeline_trade_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10625,35 +10626,35 @@ fn test_process_historical_trade_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_trades_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-trade-hist")));
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-trade-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-trade-pipeline")));
     msgbus::subscribe_trades(live_topic.into(), live_handler, None);
-    msgbus::subscribe_trades(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_trades(pipeline_topic.into(), pipeline_handler, None);
 
     let trade = trade_tick(instrument_id, "1.00000", "T-1", 1);
-    data_engine.process_historical(Data::Trade(trade));
+    data_engine.process_pipeline(Data::Trade(trade));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical trade must not publish on the live topic",
+        "pipeline trade must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], trade);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], trade);
     assert_eq!(
         cache.borrow().trade(&instrument_id),
         Some(&trade),
-        "historical trade must populate the cache by default",
+        "pipeline trade must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_mark_price_publishes_on_historical_topic_only(
+fn test_process_pipeline_mark_price_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10664,15 +10665,16 @@ fn test_process_historical_mark_price_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_mark_price_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("hist-mark-hist")));
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("pipeline-mark-live")));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<MarkPriceUpdate>(
+        Some(Ustr::from("pipeline-mark-pipeline")),
+    );
     msgbus::subscribe_mark_prices(live_topic.into(), live_handler, None);
-    msgbus::subscribe_mark_prices(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_mark_prices(pipeline_topic.into(), pipeline_handler, None);
 
     let mark_price = MarkPriceUpdate::new(
         instrument_id,
@@ -10680,24 +10682,24 @@ fn test_process_historical_mark_price_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::MarkPriceUpdate(mark_price));
+    data_engine.process_pipeline(Data::MarkPriceUpdate(mark_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical mark price must not publish on the live topic",
+        "pipeline mark price must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], mark_price);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], mark_price);
     assert_eq!(
         cache.borrow().mark_price(&instrument_id),
         Some(&mark_price),
-        "historical mark price must populate the cache by default",
+        "pipeline mark price must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_index_price_publishes_on_historical_topic_only(
+fn test_process_pipeline_index_price_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10708,15 +10710,17 @@ fn test_process_historical_index_price_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_index_price_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("hist-index-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<IndexPriceUpdate>(Some(
+        Ustr::from("pipeline-index-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<IndexPriceUpdate>(
+        Some(Ustr::from("pipeline-index-pipeline")),
+    );
     msgbus::subscribe_index_prices(live_topic.into(), live_handler, None);
-    msgbus::subscribe_index_prices(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_index_prices(pipeline_topic.into(), pipeline_handler, None);
 
     let index_price = IndexPriceUpdate::new(
         instrument_id,
@@ -10724,24 +10728,24 @@ fn test_process_historical_index_price_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::IndexPriceUpdate(index_price));
+    data_engine.process_pipeline(Data::IndexPriceUpdate(index_price));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical index price must not publish on the live topic",
+        "pipeline index price must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], index_price);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], index_price);
     assert_eq!(
         cache.borrow().index_price(&instrument_id),
         Some(&index_price),
-        "historical index price must populate the cache by default",
+        "pipeline index price must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
+fn test_process_pipeline_instrument_status_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10752,15 +10756,15 @@ fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache.clone(), None);
 
     let live_topic = switchboard::get_instrument_status_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("hist-status-hist")));
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("pipeline-status-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<InstrumentStatus>(Some(Ustr::from("pipeline-status-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
     let status = InstrumentStatus::new(
         instrument_id,
@@ -10773,24 +10777,24 @@ fn test_process_historical_instrument_status_publishes_on_historical_topic_only(
         Some(true),
         None,
     );
-    data_engine.process_historical(Data::InstrumentStatus(status));
+    data_engine.process_pipeline(Data::InstrumentStatus(status));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical instrument status must not publish on the live topic",
+        "pipeline instrument status must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], status);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], status);
     assert_eq!(
         cache.borrow().instrument_status(&instrument_id),
         Some(&status),
-        "historical instrument status must populate the cache by default",
+        "pipeline instrument status must populate the cache by default",
     );
 }
 
 #[rstest]
-fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
+fn test_process_pipeline_instrument_close_publishes_on_pipeline_topic_only(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -10801,15 +10805,15 @@ fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
     let mut data_engine = DataEngine::new(clock, cache, None);
 
     let live_topic = switchboard::get_instrument_close_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("hist-close-hist")));
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("pipeline-close-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<InstrumentClose>(Some(Ustr::from("pipeline-close-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
     let close = InstrumentClose::new(
         instrument_id,
@@ -10818,19 +10822,19 @@ fn test_process_historical_instrument_close_publishes_on_historical_topic_only(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    data_engine.process_historical(Data::InstrumentClose(close));
+    data_engine.process_pipeline(Data::InstrumentClose(close));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical instrument close must not publish on the live topic",
+        "pipeline instrument close must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], close);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], close);
 }
 
 #[rstest]
-fn test_process_historical_delta_publishes_on_historical_topic_only(
+fn test_process_pipeline_delta_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10841,31 +10845,33 @@ fn test_process_historical_delta_publishes_on_historical_topic_only(
     let delta = stub_delta();
     let instrument_id = delta.instrument_id;
     let live_topic = switchboard::get_book_deltas_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-delta-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(Some(
+        Ustr::from("pipeline-delta-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("pipeline-delta-pipeline")),
+    );
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Delta(delta));
+    data_engine.process_pipeline(Data::Delta(delta));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical delta must not publish on the live topic",
+        "pipeline delta must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0].instrument_id, instrument_id);
-    assert_eq!(hist_messages[0].deltas.len(), 1);
-    assert_eq!(hist_messages[0].deltas[0], delta);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0].instrument_id, instrument_id);
+    assert_eq!(pipeline_messages[0].deltas.len(), 1);
+    assert_eq!(pipeline_messages[0].deltas[0], delta);
 }
 
 #[rstest]
-fn test_process_historical_deltas_publishes_on_historical_topic_only(
+fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10876,29 +10882,31 @@ fn test_process_historical_deltas_publishes_on_historical_topic_only(
     let deltas = stub_deltas();
     let instrument_id = deltas.instrument_id;
     let live_topic = switchboard::get_book_deltas_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("hist-deltas-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(Some(
+        Ustr::from("pipeline-deltas-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("pipeline-deltas-pipeline")),
+    );
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_deltas(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+    data_engine.process_pipeline(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical deltas must not publish on the live topic",
+        "pipeline deltas must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], deltas);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], deltas);
 }
 
 #[rstest]
-fn test_process_historical_depth10_publishes_on_historical_topic_only(
+fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10909,29 +10917,31 @@ fn test_process_historical_depth10_publishes_on_historical_topic_only(
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
     let live_topic = switchboard::get_book_depth10_topic(instrument_id);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) =
-        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-live")));
-    let (hist_handler, hist_saver) =
-        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("hist-depth-hist")));
+    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(Some(
+        Ustr::from("pipeline-depth-live"),
+    ));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+        Some(Ustr::from("pipeline-depth-pipeline")),
+    );
     msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_depth10(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical depth10 must not publish on the live topic",
+        "pipeline depth10 must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], depth);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], depth);
 }
 
 #[rstest]
-fn test_process_historical_custom_data_publishes_on_historical_topic_only(
+fn test_process_pipeline_custom_data_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -10946,29 +10956,29 @@ fn test_process_historical_custom_data_publishes_on_historical_topic_only(
         Some("SIM//CUSTOM".to_string()),
     );
     let live_topic = switchboard::get_custom_topic(&custom.data_type);
-    let historical_topic_str = historical_topic_of(live_topic.as_ref());
-    let historical_topic: MStr<Topic> = historical_topic_str.as_str().into();
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
     let (live_handler, live_saver) =
-        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-live")));
-    let (hist_handler, hist_saver) =
-        get_any_saving_handler::<CustomData>(Some(Ustr::from("hist-custom-hist")));
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("pipeline-custom-live")));
+    let (pipeline_handler, pipeline_saver) =
+        get_any_saving_handler::<CustomData>(Some(Ustr::from("pipeline-custom-pipeline")));
     msgbus::subscribe_any(live_topic.into(), live_handler, None);
-    msgbus::subscribe_any(historical_topic.into(), hist_handler, None);
+    msgbus::subscribe_any(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_historical(Data::Custom(custom.clone()));
+    data_engine.process_pipeline(Data::Custom(custom.clone()));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "historical custom data must not publish on the live topic",
+        "pipeline custom data must not publish on the live topic",
     );
-    let hist_messages = hist_saver.get_messages();
-    assert_eq!(hist_messages.len(), 1);
-    assert_eq!(hist_messages[0], custom);
+    let pipeline_messages = pipeline_saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], custom);
 }
 
 #[rstest]
-fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -10997,8 +11007,8 @@ fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Mes
     let first = make_bar(2_000);
     let second = make_bar(1_000); // regresses on both ts_event and ts_init
 
-    data_engine.process_historical(Data::Bar(first));
-    data_engine.process_historical(Data::Bar(second));
+    data_engine.process_pipeline(Data::Bar(first));
+    data_engine.process_pipeline(Data::Bar(second));
 
     assert_eq!(
         cache.borrow().bar(&bar_type),
@@ -11008,7 +11018,7 @@ fn test_process_historical_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Mes
 }
 
 #[rstest]
-fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -11019,7 +11029,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-synth-quote")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-synth-quote")));
     let topic = switchboard::get_quotes_topic(synthetic_id);
     msgbus::subscribe_quotes(topic.into(), handler, None);
 
@@ -11032,7 +11042,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
             .contains(&synthetic_id),
     );
 
-    // Seed one component live so the synthetic calc could produce a quote.
+    // Seed one component live so the synthetic calc could produce a quote
     let quote_a = quote_tick(component_a, "100.00", "102.00", 1);
     data_engine.process_data(Data::Quote(quote_a));
     assert!(saver.get_messages().is_empty()); // both components required
@@ -11040,7 +11050,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
     // Now drive the other component through the pipeline path. The live path
     // would publish a synthetic quote here; the pipeline path must not.
     let quote_b = quote_tick(component_b, "200.00", "204.00", 2);
-    data_engine.process_historical(Data::Quote(quote_b));
+    data_engine.process_pipeline(Data::Quote(quote_b));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -11049,7 +11059,7 @@ fn test_process_historical_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCe
 }
 
 #[rstest]
-fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_process_pipeline_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -11060,7 +11070,7 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("hist-synth-trade")));
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("pipeline-synth-trade")));
     let topic = switchboard::get_trades_topic(synthetic_id);
     msgbus::subscribe_trades(topic.into(), handler, None);
 
@@ -11071,7 +11081,7 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
     assert!(saver.get_messages().is_empty()); // both components required
 
     let trade_b = trade_tick(component_b, "200.00", "T-b", 2);
-    data_engine.process_historical(Data::Trade(trade_b));
+    data_engine.process_pipeline(Data::Trade(trade_b));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -11080,14 +11090,14 @@ fn test_process_historical_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCe
 }
 
 #[rstest]
-fn test_process_historical_depth10_skips_derived_quote_emission(
+fn test_process_pipeline_depth10_skips_derived_quote_emission(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
 
-    // Live path would derive a quote from depth top-of-book with this flag.
+    // Live path would derive a quote from depth top-of-book with this flag
     let config = DataEngineConfig {
         emit_quotes_from_book_depths: true,
         ..DataEngineConfig::default()
@@ -11098,11 +11108,11 @@ fn test_process_historical_depth10_skips_derived_quote_emission(
     let instrument_id = depth.instrument_id;
 
     let (handler, saver) =
-        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("hist-depth-derived")));
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("pipeline-depth-derived")));
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_historical(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -11115,7 +11125,7 @@ fn test_process_historical_depth10_skips_derived_quote_emission(
 }
 
 #[rstest]
-fn test_process_historical_instrument_status_skips_option_chain_expiry(
+fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -11168,7 +11178,7 @@ fn test_process_historical_instrument_status_skips_option_chain_expiry(
     );
     data_engine
         .borrow_mut()
-        .process_historical(Data::InstrumentStatus(status));
+        .process_pipeline(Data::InstrumentStatus(status));
 
     let unsubs: Vec<_> = recorder
         .borrow()

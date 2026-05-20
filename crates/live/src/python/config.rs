@@ -25,12 +25,15 @@ use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
-use pyo3::{IntoPyObject, Py, PyAny, PyResult, Python, pymethods, types::PyAnyMethods};
+use pyo3::{
+    IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
+    types::{PyAnyMethods, PyDict, PyDictMethods},
+};
 use rust_decimal::Decimal;
 
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
-    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, RoutingConfig,
+    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
 };
 
 fn validate_rate_limit(value: &str, name: &str) -> PyResult<()> {
@@ -161,6 +164,12 @@ fn py_to_json_value(bound: &pyo3::Bound<'_, PyAny>) -> PyResult<serde_json::Valu
     } else if let Ok(f) = bound.extract::<f64>() {
         Ok(serde_json::Number::from_f64(f)
             .map_or(serde_json::Value::Null, serde_json::Value::Number))
+    } else if let Ok(dict) = bound.cast::<PyDict>() {
+        let mut obj = serde_json::Map::with_capacity(dict.len());
+        for (key, value) in dict.iter() {
+            obj.insert(key.extract::<String>()?, py_to_json_value(&value)?);
+        }
+        Ok(serde_json::Value::Object(obj))
     } else if let Ok(items) = bound.extract::<Vec<Py<PyAny>>>() {
         // Handle list/tuple/set
         let py = bound.py();
@@ -659,11 +668,61 @@ impl LiveExecClientConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
+impl PluginConfig {
+    /// Configuration for one Rust-native plug-in instance loaded by a live node.
+    #[new]
+    #[pyo3(signature = (path, type_name, config=None, sha256=None))]
+    fn py_new(
+        path: String,
+        type_name: String,
+        config: Option<HashMap<String, Py<PyAny>>>,
+        sha256: Option<String>,
+    ) -> PyResult<Self> {
+        let config = match config {
+            Some(config) => coerce_filters_to_json(config)?,
+            None => HashMap::new(),
+        };
+
+        Ok(Self {
+            path,
+            type_name,
+            config,
+            sha256,
+        })
+    }
+
+    #[getter]
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    #[getter]
+    fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    #[getter]
+    fn config(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        for (key, value) in &self.config {
+            dict.set_item(key, json_value_to_py(py, value)?)?;
+        }
+        Ok(dict.unbind())
+    }
+
+    #[getter]
+    fn sha256(&self) -> Option<&str> {
+        self.sha256.as_deref()
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -684,6 +743,7 @@ impl LiveNodeConfig {
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
         exec_engine: Option<LiveExecEngineConfig>,
+        plugins: Option<Vec<PluginConfig>>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -738,6 +798,7 @@ impl LiveNodeConfig {
             exec_engine: exec_engine.unwrap_or_default(),
             data_clients: HashMap::new(),
             exec_clients: HashMap::new(),
+            plugins: plugins.unwrap_or_default(),
         })
     }
 
@@ -797,5 +858,10 @@ impl LiveNodeConfig {
     #[getter]
     fn timeout_shutdown_secs(&self) -> f64 {
         self.timeout_shutdown.as_secs_f64()
+    }
+
+    #[getter]
+    fn plugins(&self) -> Vec<PluginConfig> {
+        self.plugins.clone()
     }
 }

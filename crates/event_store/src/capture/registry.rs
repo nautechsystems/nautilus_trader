@@ -30,19 +30,88 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     fmt::Debug,
+    marker::PhantomData,
     sync::Arc,
 };
 
 use crate::{
     capture::encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder},
     entry::PayloadType,
+    headers::Headers,
 };
 
-/// One allow-list entry: the canonical payload type tag and the encoder for the message.
+/// Extracts correlation [`Headers`] from a captured message at the dispatch boundary.
+///
+/// The encoder boundary deliberately omits headers ([`EncodedPayload`] documents this), so
+/// the bus tap consults the registry-registered extractor instead. Registration without an
+/// explicit extractor falls back to [`Headers::empty`]; that keeps capture working for
+/// allow-list types whose underlying struct has not yet grown `correlation_id` /
+/// `causation_id`
+/// fields (header propagation lands incrementally per the SPEC).
+pub trait HeadersExtractor: Send + Sync {
+    /// Returns the headers carried by `message`. Implementations downcast to the concrete
+    /// type they were registered for and read the relevant fields; mismatched types yield
+    /// [`Headers::empty`] so a stale registration cannot crash the tap.
+    fn extract(&self, message: &dyn Any) -> Headers;
+}
+
+/// Typed adapter that downcasts to `T` and forwards to a `Fn(&T) -> Headers` closure.
+pub struct TypedHeadersExtractor<T: 'static, F> {
+    func: F,
+    _phantom: PhantomData<fn(&T)>,
+}
+
+impl<T: 'static, F> TypedHeadersExtractor<T, F>
+where
+    F: Fn(&T) -> Headers + Send + Sync,
+{
+    /// Wraps `func` as a typed headers extractor for `T`.
+    #[must_use]
+    pub const fn new(func: F) -> Self {
+        Self {
+            func,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static, F> Debug for TypedHeadersExtractor<T, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TypedHeadersExtractor))
+            .field("type", &std::any::type_name::<T>())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: 'static, F> HeadersExtractor for TypedHeadersExtractor<T, F>
+where
+    F: Fn(&T) -> Headers + Send + Sync,
+{
+    fn extract(&self, message: &dyn Any) -> Headers {
+        message
+            .downcast_ref::<T>()
+            .map(&self.func)
+            .unwrap_or_default()
+    }
+}
+
+// Extractor that always returns `Headers::empty()`; the default for registrations that
+// have no explicit extractor.
+#[derive(Debug, Default)]
+struct EmptyHeadersExtractor;
+
+impl HeadersExtractor for EmptyHeadersExtractor {
+    fn extract(&self, _: &dyn Any) -> Headers {
+        Headers::empty()
+    }
+}
+
+// One allow-list entry: canonical payload tag, encoder, and header extractor.
 #[derive(Clone)]
 struct Registered {
     payload_type: PayloadType,
     encoder: Arc<dyn Encode>,
+    headers: Arc<dyn HeadersExtractor>,
 }
 
 impl Debug for Registered {
@@ -72,7 +141,8 @@ impl EncoderRegistry {
     }
 
     /// Registers `func` as the encoder for `T` and stamps every captured entry with
-    /// `payload_type`.
+    /// `payload_type`. Captures yield [`Headers::empty`] until [`Self::register_headers`]
+    /// records an extractor for `T`.
     ///
     /// Replaces any encoder previously registered for `T`; capture flows hold the
     /// registry as `Arc<EncoderRegistry>` so registration must happen before the adapter
@@ -83,16 +153,46 @@ impl EncoderRegistry {
         F: Fn(&T) -> Result<EncodedPayload, EncodeError> + Send + Sync + 'static,
     {
         let encoder: Arc<dyn Encode> = Arc::new(TypedEncoder::<T, F>::new(func));
+        let headers = self
+            .preserved_headers::<T>()
+            .unwrap_or_else(|| Arc::new(EmptyHeadersExtractor) as Arc<dyn HeadersExtractor>);
         self.by_type.insert(
             TypeId::of::<T>(),
             Registered {
                 payload_type,
                 encoder,
+                headers,
             },
         );
     }
 
-    /// Registers an already-built [`Encode`] implementer for `T`.
+    /// Registers `func` as the encoder for `T` and `headers_fn` as the matching headers
+    /// extractor in one call.
+    pub fn register_with_headers<T, F, H>(
+        &mut self,
+        payload_type: PayloadType,
+        func: F,
+        headers_fn: H,
+    ) where
+        T: 'static,
+        F: Fn(&T) -> Result<EncodedPayload, EncodeError> + Send + Sync + 'static,
+        H: Fn(&T) -> Headers + Send + Sync + 'static,
+    {
+        let encoder: Arc<dyn Encode> = Arc::new(TypedEncoder::<T, F>::new(func));
+        let headers: Arc<dyn HeadersExtractor> =
+            Arc::new(TypedHeadersExtractor::<T, H>::new(headers_fn));
+        self.by_type.insert(
+            TypeId::of::<T>(),
+            Registered {
+                payload_type,
+                encoder,
+                headers,
+            },
+        );
+    }
+
+    /// Registers an already-built [`Encode`] implementer for `T`. Captures yield
+    /// [`Headers::empty`] until [`Self::register_headers`] records an extractor.
     ///
     /// Useful when the encoder owns state (e.g., a schema cache) the closure form cannot
     /// express ergonomically.
@@ -101,13 +201,39 @@ impl EncoderRegistry {
         payload_type: PayloadType,
         encoder: Arc<dyn Encode>,
     ) {
+        let headers = self
+            .preserved_headers::<T>()
+            .unwrap_or_else(|| Arc::new(EmptyHeadersExtractor) as Arc<dyn HeadersExtractor>);
         self.by_type.insert(
             TypeId::of::<T>(),
             Registered {
                 payload_type,
                 encoder,
+                headers,
             },
         );
+    }
+
+    /// Registers `headers_fn` as the headers extractor for `T`.
+    ///
+    /// Call after [`Self::register`] when the encoder is preregistered through a shared
+    /// helper but the call site wants a typed headers extractor. Replaces any prior
+    /// extractor for `T`. Returns silently when `T` has no encoder registered: callers
+    /// that care about the contract should rely on [`Self::contains`].
+    pub fn register_headers<T, H>(&mut self, headers_fn: H)
+    where
+        T: 'static,
+        H: Fn(&T) -> Headers + Send + Sync + 'static,
+    {
+        if let Some(reg) = self.by_type.get_mut(&TypeId::of::<T>()) {
+            reg.headers = Arc::new(TypedHeadersExtractor::<T, H>::new(headers_fn));
+        }
+    }
+
+    fn preserved_headers<T: 'static>(&self) -> Option<Arc<dyn HeadersExtractor>> {
+        self.by_type
+            .get(&TypeId::of::<T>())
+            .map(|reg| Arc::clone(&reg.headers))
     }
 
     /// Returns the number of registered encoders.
@@ -173,6 +299,16 @@ impl EncoderRegistry {
         let encoded = reg.encoder.encode(message)?;
         let payload_type = encoded.payload_type.unwrap_or(reg.payload_type);
         Ok(Some((payload_type, encoded)))
+    }
+
+    /// Returns the headers carried by `message` if a registration exists for its concrete
+    /// type. Returns `None` when no encoder is registered: the adapter then drops the
+    /// message without further work.
+    #[must_use]
+    pub fn headers_for_any(&self, message: &dyn Any) -> Option<Headers> {
+        self.by_type
+            .get(&message.type_id())
+            .map(|reg| reg.headers.extract(message))
     }
 }
 
@@ -306,5 +442,119 @@ mod tests {
             .expect("encode_any")
             .expect("hit");
         assert_eq!(any_tag.as_str(), "Inner");
+    }
+
+    #[rstest]
+    fn registered_type_without_headers_extractor_returns_empty_headers() {
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Sample"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+
+        let headers = registry
+            .headers_for_any(&Sample(1) as &dyn Any)
+            .expect("hit");
+        assert_eq!(headers, Headers::empty());
+    }
+
+    #[rstest]
+    fn headers_for_any_returns_none_for_unregistered_type() {
+        let registry = EncoderRegistry::new();
+        let outcome = registry.headers_for_any(&Other as &dyn Any);
+
+        assert!(outcome.is_none());
+    }
+
+    #[rstest]
+    fn register_with_headers_uses_extractor() {
+        // The tap consults `headers_for_any` to populate the entry's Headers; the
+        // registered extractor must reach the captured message and produce the right
+        // values.
+        let mut registry = EncoderRegistry::new();
+        let causation = nautilus_core::UUID4::new();
+        let causation_captured = causation;
+        registry.register_with_headers::<Sample, _, _>(
+            Ustr::from("Sample"),
+            |s| {
+                Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                    s.0,
+                ])))
+            },
+            move |_| Headers {
+                correlation_id: None,
+                causation_id: Some(causation_captured),
+            },
+        );
+
+        let headers = registry
+            .headers_for_any(&Sample(1) as &dyn Any)
+            .expect("hit");
+        assert_eq!(headers.causation_id, Some(causation));
+    }
+
+    #[rstest]
+    fn register_headers_overrides_default_extractor_post_register() {
+        // Callers can attach a headers extractor after registering the encoder, which
+        // is how shared encoder helpers (default_registry) compose with site-specific
+        // header propagation.
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Sample"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+        let correlation = nautilus_core::UUID4::new();
+        let correlation_captured = correlation;
+        registry.register_headers::<Sample, _>(move |_| Headers {
+            correlation_id: Some(correlation_captured),
+            causation_id: None,
+        });
+
+        let headers = registry
+            .headers_for_any(&Sample(1) as &dyn Any)
+            .expect("hit");
+        assert_eq!(headers.correlation_id, Some(correlation));
+    }
+
+    #[rstest]
+    fn register_headers_for_unregistered_type_is_silent_noop() {
+        let mut registry = EncoderRegistry::new();
+        registry.register_headers::<Sample, _>(|_| Headers::empty());
+
+        assert!(!registry.contains::<Sample>());
+        assert!(registry.headers_for_any(&Sample(1) as &dyn Any).is_none());
+    }
+
+    #[rstest]
+    fn re_registering_preserves_existing_headers_extractor() {
+        // A subsequent `register` for the same type must keep the previously-attached
+        // headers extractor so callers that compose encoder + headers in two phases do
+        // not silently lose the extractor when the encoder is replaced.
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Old"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+        let causation = nautilus_core::UUID4::new();
+        let causation_captured = causation;
+        registry.register_headers::<Sample, _>(move |_| Headers {
+            correlation_id: None,
+            causation_id: Some(causation_captured),
+        });
+        registry.register::<Sample, _>(Ustr::from("New"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0, s.0,
+            ])))
+        });
+
+        let (tag, _) = registry.encode(&Sample(3)).expect("encode").expect("hit");
+        assert_eq!(tag.as_str(), "New");
+        let headers = registry
+            .headers_for_any(&Sample(3) as &dyn Any)
+            .expect("hit");
+        assert_eq!(headers.causation_id, Some(causation));
     }
 }

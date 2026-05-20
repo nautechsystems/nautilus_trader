@@ -35,6 +35,7 @@ members = [
   "crates/persistence/macros",
   "crates/network",
   "crates/persistence",
+  "crates/plugin",
   "crates/portfolio",
   "crates/pyo3",
   "crates/risk",
@@ -80,6 +81,7 @@ nautilus-model = { path = "crates/model", version = "0.58.0" }
 nautilus-network = { path = "crates/network", version = "0.58.0" }
 nautilus-persistence = { path = "crates/persistence", version = "0.58.0" }
 nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.58.0" }
+nautilus-plugin = { path = "crates/plugin", version = "0.58.0", default-features = false }
 nautilus-portfolio = { path = "crates/portfolio", version = "0.58.0" }
 nautilus-pyo3 = { path = "crates/pyo3", version = "0.58.0" }
 nautilus-risk = { path = "crates/risk", version = "0.58.0" }
@@ -175,6 +177,7 @@ implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
 itertools = "0.14.0"
+libloading = "0.9.0"
 log = { version = "0.4.29", features = [
   "std",
   "kv_unstable",
@@ -253,7 +256,7 @@ serde_json = { version = "1.0.149", default-features = false, features = [
   "std",
 ] }
 serde_urlencoded = "0.7.1"
-smallvec = "1.15.1"
+smallvec = { version = "1.15.1", features = ["serde"] }
 sockudo-ws = { version = "1.7.4", default-features = false, features = [
   "simd",
   "fastrand",

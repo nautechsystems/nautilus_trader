@@ -1,0 +1,60 @@
+[package]
+name = "nautilus-plugin"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Plug-in system for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io yet
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_plugin"
+crate-type = ["rlib"]
+
+[features]
+default = []
+# Enables host-side loading via `libloading`. Plug-in cdylibs should NOT enable this.
+host = ["dep:libloading"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+
+anyhow = { workspace = true }
+libloading = { workspace = true, optional = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+serde_json = { workspace = true }
+ustr = { workspace = true }
+
+[[example]]
+name = "custom_data_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "runtime_smoke_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false

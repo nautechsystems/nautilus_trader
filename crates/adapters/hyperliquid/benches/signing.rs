@@ -62,6 +62,7 @@ fn make_sign_request(action: &HyperliquidExecAction) -> SignRequest {
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: None,
+        expires_after: None,
     }
 }
 
@@ -111,6 +112,7 @@ fn bench_sign_l1_with_vault(c: &mut Criterion) {
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: Some("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01".to_string()),
+        expires_after: None,
     };
 
     c.bench_function("sign_l1_action_with_vault", |b| {

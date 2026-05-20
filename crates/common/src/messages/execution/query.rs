@@ -33,6 +33,9 @@ pub struct QueryAccount {
     pub params: Option<Params>,
     #[builder(default)]
     pub correlation_id: Option<UUID4>,
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl QueryAccount {
@@ -55,6 +58,7 @@ impl QueryAccount {
             ts_init,
             params,
             correlation_id,
+            causation_id: None,
         }
     }
 }
@@ -83,6 +87,9 @@ pub struct QueryOrder {
     pub params: Option<Params>,
     #[builder(default)]
     pub correlation_id: Option<UUID4>,
+    #[builder(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl QueryOrder {
@@ -112,6 +119,7 @@ impl QueryOrder {
             ts_init,
             params,
             correlation_id,
+            causation_id: None,
         }
     }
 }

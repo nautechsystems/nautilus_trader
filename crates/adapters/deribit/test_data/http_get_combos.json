@@ -1,0 +1,119 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "id": "BTC-BOX-25DEC26-58000_60000",
+      "state": "active",
+      "legs": [
+        {
+          "amount": 1,
+          "instrument_name": "BTC-25DEC26-58000-C"
+        },
+        {
+          "amount": -1,
+          "instrument_name": "BTC-25DEC26-58000-P"
+        },
+        {
+          "amount": -1,
+          "instrument_name": "BTC-25DEC26-60000-C"
+        },
+        {
+          "amount": 1,
+          "instrument_name": "BTC-25DEC26-60000-P"
+        }
+      ],
+      "creation_timestamp": 1779117660000,
+      "instrument_id": 584639,
+      "state_timestamp": 1779117660598
+    },
+    {
+      "id": "BTC-CS-19MAY26-70000_75000",
+      "state": "active",
+      "legs": [
+        {
+          "amount": 1,
+          "instrument_name": "BTC-19MAY26-70000-C"
+        },
+        {
+          "amount": -1,
+          "instrument_name": "BTC-19MAY26-75000-C"
+        }
+      ],
+      "creation_timestamp": 1779115098000,
+      "instrument_id": 584635,
+      "state_timestamp": 1779115098303
+    },
+    {
+      "id": "BTC-CS-25DEC26-54000_55000",
+      "state": "active",
+      "legs": [
+        {
+          "amount": 1,
+          "instrument_name": "BTC-25DEC26-54000-C"
+        },
+        {
+          "amount": -1,
+          "instrument_name": "BTC-25DEC26-55000-C"
+        }
+      ],
+      "creation_timestamp": 1779090648000,
+      "instrument_id": 584422,
+      "state_timestamp": 1779116380379
+    },
+    {
+      "id": "BTC-CS-25DEC26-58000_60000",
+      "state": "active",
+      "legs": [
+        {
+          "amount": 1,
+          "instrument_name": "BTC-25DEC26-58000-C"
+        },
+        {
+          "amount": -1,
+          "instrument_name": "BTC-25DEC26-60000-C"
+        }
+      ],
+      "creation_timestamp": 1779117695000,
+      "instrument_id": 584640,
+      "state_timestamp": 1779117695738
+    },
+    {
+      "id": "BTC-FS-19MAY26_PERP",
+      "state": "active",
+      "legs": [
+        {
+          "amount": -1,
+          "instrument_name": "BTC-PERPETUAL"
+        },
+        {
+          "amount": 1,
+          "instrument_name": "BTC-19MAY26"
+        }
+      ],
+      "creation_timestamp": 1778832499000,
+      "instrument_id": 583518,
+      "state_timestamp": 1778832499521
+    },
+    {
+      "id": "BTC-FS-20MAY26_19MAY26",
+      "state": "active",
+      "legs": [
+        {
+          "amount": -1,
+          "instrument_name": "BTC-19MAY26"
+        },
+        {
+          "amount": 1,
+          "instrument_name": "BTC-20MAY26"
+        }
+      ],
+      "creation_timestamp": 1778918909000,
+      "instrument_id": 583960,
+      "state_timestamp": 1778918909592
+    }
+  ],
+  "usIn": 1779177084721474,
+  "usOut": 1779177084722409,
+  "usDiff": 935,
+  "testnet": true
+}

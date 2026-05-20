@@ -150,6 +150,7 @@ fn test_batch_cancel_orders_builds_payload() {
                 ts_init: UnixNanos::default(),
                 params: None,
                 correlation_id: None,
+                causation_id: None,
             },
             CancelOrder {
                 trader_id,
@@ -162,12 +163,14 @@ fn test_batch_cancel_orders_builds_payload() {
                 ts_init: UnixNanos::default(),
                 params: None,
                 correlation_id: None,
+                causation_id: None,
             },
         ],
         command_id: UUID4::default(),
         ts_init: UnixNanos::default(),
         params: None,
         correlation_id: None,
+        causation_id: None,
     };
 
     let mut payload = Vec::with_capacity(cmd.cancels.len());
@@ -200,6 +203,7 @@ fn test_batch_cancel_orders_with_empty_cancels() {
         ts_init: UnixNanos::default(),
         params: None,
         correlation_id: None,
+        causation_id: None,
     };
 
     let payload: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)> =
@@ -537,6 +541,7 @@ fn test_submit_order_list_builds_individual_commands() {
             command_id: cmd.command_id,
             ts_init: cmd.ts_init,
             correlation_id: None,
+            causation_id: None,
         })
         .collect();
 
@@ -602,6 +607,7 @@ fn test_submit_order_list_single_order() {
             command_id: cmd.command_id,
             ts_init: cmd.ts_init,
             correlation_id: None,
+            causation_id: None,
         })
         .collect();
 

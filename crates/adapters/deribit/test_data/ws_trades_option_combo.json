@@ -1,0 +1,56 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "trades.BTC-CS-19MAY26-70000_75000.raw",
+    "data": [
+      {
+        "timestamp": 1779118041756,
+        "price": 0.0639,
+        "amount": 0.1,
+        "direction": "sell",
+        "index_price": 76185.14,
+        "instrument_name": "BTC-CS-19MAY26-70000_75000",
+        "trade_seq": 1,
+        "mark_price": 0.06380915,
+        "tick_direction": 1,
+        "legs": [
+          {
+            "timestamp": 1779118041757,
+            "iv": 41.01,
+            "price": 0.0174,
+            "amount": 0.1,
+            "direction": "buy",
+            "index_price": 76185.14,
+            "instrument_name": "BTC-19MAY26-75000-C",
+            "trade_seq": 8,
+            "mark_price": 0.01733488,
+            "tick_direction": 2,
+            "combo_id": "BTC-CS-19MAY26-70000_75000",
+            "contracts": 0.1,
+            "trade_id": "244365195",
+            "combo_trade_id": "244365193"
+          },
+          {
+            "timestamp": 1779118041757,
+            "iv": 83.39,
+            "price": 0.0813,
+            "amount": 0.1,
+            "direction": "sell",
+            "index_price": 76185.14,
+            "instrument_name": "BTC-19MAY26-70000-C",
+            "trade_seq": 20,
+            "mark_price": 0.08114403,
+            "tick_direction": 2,
+            "combo_id": "BTC-CS-19MAY26-70000_75000",
+            "contracts": 0.1,
+            "trade_id": "244365194",
+            "combo_trade_id": "244365193"
+          }
+        ],
+        "contracts": 0.1,
+        "trade_id": "244365193"
+      }
+    ]
+  }
+}

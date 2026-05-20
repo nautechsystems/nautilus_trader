@@ -49,7 +49,10 @@ use nautilus_deribit::{
         enums::DeribitUpdateInterval,
     },
 };
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, any::InstrumentAny},
+};
 use tokio::{pin, signal};
 
 #[tokio::main]
@@ -63,6 +66,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DeribitEnvironment::Mainnet
     };
     let use_raw = args.iter().any(|a| a == "--raw");
+    let instrument_override = args
+        .iter()
+        .position(|a| a == "--instrument")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let duration_secs = args
+        .iter()
+        .position(|a| a == "--duration")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<u64>().ok());
 
     log::info!(
         "Starting Deribit WebSocket data example ({environment}, {})",
@@ -79,11 +92,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         10_000,      // retry_delay_max_ms
         None,        // proxy_url
     )?;
+    // Resolve target instrument early so we can fetch it explicitly if it's
+    // outside the default BTC preload set (e.g., an ETH instrument, or a future
+    // combo not returned by the unfiltered BTC query on some venues).
+    let target_instrument_id = instrument_override
+        .as_deref()
+        .map(|s| {
+            let with_venue = if s.contains('.') {
+                s.to_string()
+            } else {
+                format!("{s}.DERIBIT")
+            };
+            InstrumentId::from(with_venue.as_str())
+        })
+        .unwrap_or_else(|| InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+
     log::info!("Fetching BTC instruments from Deribit...");
-    let instruments = http_client
+    let mut instruments = http_client
         .request_instruments(DeribitCurrency::BTC, None)
         .await?;
-    log::info!("Fetched {} instruments", instruments.len());
+    let (future_combos, option_combos) =
+        instruments
+            .iter()
+            .fold((0usize, 0usize), |(f, o), inst| match inst {
+                InstrumentAny::FuturesSpread(_) => (f + 1, o),
+                InstrumentAny::OptionSpread(_) => (f, o + 1),
+                _ => (f, o),
+            });
+    log::info!(
+        "Fetched {} BTC instruments ({} future combos, {} option combos)",
+        instruments.len(),
+        future_combos,
+        option_combos,
+    );
+
+    if !instruments.iter().any(|i| i.id() == target_instrument_id) {
+        log::info!(
+            "Target instrument {target_instrument_id} not in default preload; fetching directly..."
+        );
+        let extra = http_client.request_instrument(target_instrument_id).await?;
+        instruments.push(extra);
+    }
 
     // Create WebSocket client based on whether raw streams are requested
     let mut ws_client = if use_raw {
@@ -115,8 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None // Uses default 100ms
     };
 
-    // Subscribe to trades for BTC-PERPETUAL
-    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    let instrument_id = target_instrument_id;
     log::info!(
         "Subscribing to trades for {instrument_id} (interval: {})",
         interval.map_or("100ms", |i| i.as_str())
@@ -137,6 +185,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Listening for market data... Press Ctrl+C to exit");
 
+    let timeout: futures_util::future::BoxFuture<'_, ()> = match duration_secs {
+        Some(secs) => Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(secs))),
+        None => Box::pin(std::future::pending::<()>()),
+    };
+    pin!(timeout);
+
     loop {
         tokio::select! {
             Some(msg) = stream.next() => {
@@ -144,6 +198,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ = &mut sigint => {
                 log::info!("Received SIGINT, closing connection...");
+                ws_client.close().await?;
+                break;
+            }
+            _ = &mut timeout => {
+                log::info!("Duration elapsed, closing connection...");
                 ws_client.close().await?;
                 break;
             }

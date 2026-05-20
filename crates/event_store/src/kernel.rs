@@ -1029,12 +1029,18 @@ impl BusTap for EventStoreBusTap {
 
 impl EventStoreBusTap {
     fn capture(&self, topic: Topic, message: &dyn Any, ts_init: UnixNanos) {
+        // The registry both gates capture (no encoder -> no entry) and supplies headers
+        // for entries that do flow through. Looking the headers up here keeps the
+        // adapter encoder-only and lets header propagation light up per-type as the
+        // SPEC's workstream A lands fields on commands and events.
+        let headers = self
+            .adapter
+            .registry()
+            .headers_for_any(message)
+            .unwrap_or_else(Headers::empty);
         // Submit failures fire the adapter halt callback before returning; HaltSignal
         // is the observation path. Halted means the signal already fired.
-        match self
-            .adapter
-            .capture_any(topic, message, Headers::empty(), ts_init)
-        {
+        match self.adapter.capture_any(topic, message, headers, ts_init) {
             Ok(_) | Err(CaptureError::Halted) => {}
             Err(CaptureError::Submit(e)) => {
                 log::error!("Event store capture submit failed on {topic}: {e}");

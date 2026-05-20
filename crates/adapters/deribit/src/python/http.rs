@@ -154,6 +154,28 @@ impl DeribitHttpClient {
         })
     }
 
+    /// Requests traded option expirations for a settlement currency.
+    #[pyo3(name = "request_option_expirations")]
+    fn py_request_option_expirations<'py>(
+        &self,
+        py: Python<'py>,
+        currency: DeribitCurrency,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let expirations = client
+                .request_option_expirations(currency)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, expirations)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
     /// Requests a specific instrument by its Nautilus instrument ID.
     ///
     /// This is a high-level method that fetches the raw instrument data from Deribit

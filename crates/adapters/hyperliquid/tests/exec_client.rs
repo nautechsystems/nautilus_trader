@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Integration tests for Hyperliquid execution client HTTP endpoints.
+//! Integration tests for Hyperliquid execution client trading flows.
 //!
 //! These tests focus on order submission, cancellation, and modification flows
-//! using mock HTTP servers. WebSocket execution updates are tested in websocket.rs.
+//! using mock HTTP and WebSocket servers. WebSocket execution parsing is tested in websocket.rs.
 
 use std::{
     cell::RefCell,
@@ -57,8 +57,9 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_hyperliquid::{
+    HyperliquidHttpClient, HyperliquidWebSocketClient,
     common::{
-        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
         enums::HyperliquidEnvironment,
     },
     config::HyperliquidExecClientConfig,
@@ -84,7 +85,10 @@ use nautilus_model::{
     reports::OrderStatusReport,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
-use nautilus_network::http::{HttpClient, Method};
+use nautilus_network::{
+    http::{HttpClient, Method},
+    websocket::TransportBackend,
+};
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -104,7 +108,7 @@ struct TestServerState {
     /// Optional override for the `order` response payload on the next
     /// exchange call (e.g. to simulate per-order mixed status arrays).
     order_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
-    /// Fail the next exchange call with a transport error (503).
+    /// Fail the next exchange call with an upstream error.
     fail_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     /// Fail `frontendOpenOrders` info calls with a transport error (503) while
     /// positive, decrementing once per call. Use a large value to simulate a
@@ -127,7 +131,7 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     /// When set, `handle_exchange` awaits `pause_release` before returning.
     /// Lets a test hold the response so it can assert on synchronous state
-    /// established by the calling thread before the spawned HTTP task can
+    /// established by the calling thread before the spawned action task can
     /// observe the response.
     pause_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     pause_release: Arc<tokio::sync::Notify>,
@@ -475,14 +479,189 @@ async fn handle_health() -> impl IntoResponse {
     axum::http::StatusCode::OK
 }
 
-async fn handle_ws_upgrade(
-    ws: WebSocketUpgrade,
-    State(_state): State<TestServerState>,
-) -> Response {
-    ws.on_upgrade(handle_ws_socket)
+async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
 }
 
-async fn handle_ws_socket(mut socket: WebSocket) {
+async fn handle_ws_post(socket: &mut WebSocket, state: &TestServerState, payload: &Value) -> bool {
+    let id = payload.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let Some(action) = payload
+        .get("request")
+        .and_then(|v| v.get("payload"))
+        .and_then(|v| v.get("action"))
+    else {
+        let response = json!({
+            "channel": "post",
+            "data": {
+                "id": id,
+                "response": {
+                    "type": "error",
+                    "payload": "Missing signed action payload"
+                }
+            }
+        });
+        return socket
+            .send(Message::Text(response.to_string().into()))
+            .await
+            .is_ok();
+    };
+
+    let count_snapshot = {
+        let mut count = state.exchange_request_count.lock().await;
+        *count += 1;
+        *count
+    };
+
+    let limit_after = state.rate_limit_after.load(Ordering::Relaxed);
+    if count_snapshot > limit_after {
+        return send_ws_post_error_response(socket, id, "429 Too Many Requests").await;
+    }
+
+    *state.last_exchange_action.lock().await = Some(action.clone());
+
+    if state.fail_next_exchange.swap(false, Ordering::Relaxed) {
+        return send_ws_post_error_response(socket, id, "503 Service Unavailable").await;
+    }
+
+    if state.reject_next_order.swap(false, Ordering::Relaxed) {
+        let response = json!({
+            "status": "err",
+            "response": {
+                "type": "error",
+                "data": "Order rejected: insufficient margin"
+            }
+        });
+        return send_ws_post_action_response(socket, id, response).await;
+    }
+
+    let action_type = action.get("type").and_then(|t| t.as_str());
+
+    if state.inner_order_error_next.swap(false, Ordering::Relaxed) {
+        let response_type = match action_type {
+            Some("modify") => "modify",
+            Some("cancel" | "cancelByCloid") => "cancel",
+            _ => "order",
+        };
+        let response = json!({
+            "status": "ok",
+            "response": {
+                "type": response_type,
+                "data": {
+                    "statuses": [{
+                        "error": "Order rejected: insufficient margin"
+                    }]
+                }
+            }
+        });
+        return send_ws_post_action_response(socket, id, response).await;
+    }
+
+    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
+        state.pause_release.notified().await;
+    }
+
+    let response = match action_type {
+        Some("order") => {
+            if let Some(body) = state.order_response_override.lock().await.take() {
+                body
+            } else {
+                json!({
+                    "status": "ok",
+                    "response": {
+                        "type": "order",
+                        "data": {
+                            "statuses": [{
+                                "resting": {
+                                    "oid": 12345
+                                }
+                            }]
+                        }
+                    }
+                })
+            }
+        }
+        Some("cancel" | "cancelByCloid") => {
+            if let Some(body) = state.cancel_response_override.lock().await.take() {
+                body
+            } else {
+                json!({
+                    "status": "ok",
+                    "response": {
+                        "type": "cancel",
+                        "data": {
+                            "statuses": ["success"]
+                        }
+                    }
+                })
+            }
+        }
+        Some("modify") => json!({
+            "status": "ok",
+            "response": {
+                "type": "modify",
+                "data": {
+                    "statuses": [{
+                        "resting": {
+                            "oid": 12346
+                        }
+                    }]
+                }
+            }
+        }),
+        Some("updateLeverage") => json!({
+            "status": "ok",
+            "response": {
+                "type": "updateLeverage",
+                "data": {}
+            }
+        }),
+        _ => json!({
+            "status": "err",
+            "response": {
+                "type": "error",
+                "data": format!("Unknown action type: {action_type:?}")
+            }
+        }),
+    };
+
+    send_ws_post_action_response(socket, id, response).await
+}
+
+async fn send_ws_post_action_response(socket: &mut WebSocket, id: u64, payload: Value) -> bool {
+    let response = json!({
+        "channel": "post",
+        "data": {
+            "id": id,
+            "response": {
+                "type": "action",
+                "payload": payload
+            }
+        }
+    });
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
+async fn send_ws_post_error_response(socket: &mut WebSocket, id: u64, payload: &str) -> bool {
+    let response = json!({
+        "channel": "post",
+        "data": {
+            "id": id,
+            "response": {
+                "type": "error",
+                "payload": payload
+            }
+        }
+    });
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
+async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
 
@@ -506,6 +685,10 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                             // Acknowledge subscription silently
                         }
                         Some("unsubscribe") => {}
+                        Some("post") if !handle_ws_post(&mut socket, &state, &payload).await => {
+                            break;
+                        }
+                        Some("post") => {}
                         _ => {}
                     }
                 }
@@ -847,8 +1030,202 @@ fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         environment: HyperliquidEnvironment::Mainnet,
+        ws_post_timeout_secs: 1,
         ..HyperliquidExecClientConfig::default()
     }
+}
+
+async fn create_test_trade_signer(addr: SocketAddr) -> HyperliquidHttpClient {
+    let mut signer = HyperliquidHttpClient::from_credentials(
+        TEST_PRIVATE_KEY,
+        None,
+        HyperliquidEnvironment::Mainnet,
+        1,
+        None,
+    )
+    .unwrap();
+    signer.set_base_info_url(format!("http://{addr}/info"));
+    signer.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+    let instruments = signer.request_instruments().await.unwrap();
+    for instrument in instruments {
+        signer.cache_instrument(&instrument);
+    }
+
+    signer
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("O-WS-HIGH-LEVEL");
+    ws_client
+        .submit_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.0001"),
+            TimeInForce::Gtc,
+            Some(Price::from("56730.0")),
+            None,
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing WS action");
+    let order = &action["orders"][0];
+    let expected_cloid = Cloid::from_client_order_id(client_order_id).to_hex();
+
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
+    assert_eq!(
+        action
+            .get("builder")
+            .and_then(|v| v.get("b"))
+            .and_then(|v| v.as_str()),
+        Some(NAUTILUS_BUILDER_ADDRESS),
+    );
+    assert_eq!(
+        action
+            .get("builder")
+            .and_then(|v| v.get("f"))
+            .and_then(|v| v.as_u64()),
+        Some(0),
+    );
+    assert_eq!(
+        order.get("c").and_then(|v| v.as_str()),
+        Some(expected_cloid.as_str()),
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let cancel_coid = ClientOrderId::new("O-WS-CANCEL");
+    ws_client
+        .cancel_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            Some(cancel_coid),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let cancel_action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+    let cancel_cloid = Cloid::from_client_order_id(cancel_coid).to_hex();
+
+    assert_eq!(
+        cancel_action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid"),
+    );
+    assert_eq!(
+        cancel_action["cancels"][0]
+            .get("asset")
+            .and_then(|v| v.as_u64()),
+        Some(0),
+    );
+    assert_eq!(
+        cancel_action["cancels"][0]
+            .get("cloid")
+            .and_then(|v| v.as_str()),
+        Some(cancel_cloid.as_str()),
+    );
+
+    let modify_coid = ClientOrderId::new("O-WS-MODIFY");
+    ws_client
+        .modify_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            VenueOrderId::from("12345"),
+            OrderSide::Sell,
+            OrderType::Limit,
+            Price::from("56800.0"),
+            Quantity::from("0.0002"),
+            None,
+            true,
+            true,
+            TimeInForce::Gtc,
+            Some(modify_coid),
+        )
+        .await
+        .unwrap();
+
+    let modify_action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing modify action");
+    let modify_order = &modify_action["order"];
+    let modify_cloid = Cloid::from_client_order_id(modify_coid).to_hex();
+
+    assert_eq!(
+        modify_action.get("type").and_then(|v| v.as_str()),
+        Some("modify"),
+    );
+    assert_eq!(
+        modify_action.get("oid").and_then(|v| v.as_u64()),
+        Some(12345)
+    );
+    assert_eq!(modify_order.get("a").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(modify_order.get("b").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(
+        modify_order.get("p").and_then(|v| v.as_str()),
+        Some("56800")
+    );
+    assert_eq!(
+        modify_order.get("s").and_then(|v| v.as_str()),
+        Some("0.0002"),
+    );
+    assert_eq!(modify_order.get("r").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        modify_order.get("c").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str()),
+    );
+
+    ws_client.disconnect().await.unwrap();
 }
 
 fn create_test_execution_client(
@@ -1112,7 +1489,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     //
     // The top-level `status="err"` envelope (`reject_next_order`) is
     // intentionally NOT used: `post_action_exec` converts that shape into
-    // a transport-level `Err` which is left alone because the venue may
+    // a request-level `Err` which is left alone because the venue may
     // still have accepted the order (periodic reconciliation resolves it).
     let state = TestServerState::default();
     state.inner_order_error_next.store(true, Ordering::Relaxed);
@@ -1157,7 +1534,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
         "identity should be registered immediately on submit",
     );
 
-    // The spawn task runs the HTTP call and, on rejection, invokes
+    // The spawn task runs the action call and, on rejection, invokes
     // `cleanup_terminal`. Poll until the identity is gone.
     let dispatch = client.ws_dispatch_state().clone();
     let cid = order.client_order_id();
@@ -1175,15 +1552,73 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_marks_pending_modify_before_http_completes() {
-    // The pending-modify marker must be visible while the modify HTTP call
+async fn test_submit_order_ws_post_includes_builder_attribution() {
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-BUILDER-WS");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let cmd = SubmitOrder::from_order(
+        &order,
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    wait_until_async(
+        move || {
+            let exchange_count = exchange_count.clone();
+            async move { *exchange_count.lock().await >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action.lock().await.clone().expect("missing WS action");
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
+    assert_eq!(
+        action
+            .get("builder")
+            .and_then(|v| v.get("b"))
+            .and_then(|v| v.as_str()),
+        Some(NAUTILUS_BUILDER_ADDRESS),
+    );
+    assert_eq!(
+        action
+            .get("builder")
+            .and_then(|v| v.get("f"))
+            .and_then(|v| v.as_u64()),
+        Some(0),
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_marks_pending_modify_before_post_completes() {
+    // The pending-modify marker must be visible while the modify post call
     // is still in flight. Otherwise a `CANCELED(old_voi)` arriving via WS
-    // during the HTTP window slips past the cancel-before-accept
+    // during the post window slips past the cancel-before-accept
     // suppression and emits a spurious `OrderCanceled`.
     //
-    // Pause the mock server so the spawned HTTP task is held mid-await
+    // Pause the mock server so the spawned action task is held mid-await
     // when we assert. A regression that defers the marker until after the
-    // HTTP success path would leave the marker unset under that hold and
+    // post success path would leave the marker unset under that hold and
     // fail this test.
     let state = TestServerState::default();
     state.pause_next_exchange.store(true, Ordering::Relaxed);
@@ -1221,11 +1656,11 @@ async fn test_modify_order_marks_pending_modify_before_http_completes() {
     client.modify_order(cmd).unwrap();
 
     // Wait until the mock server has actually received the modify request,
-    // proving the spawned HTTP task is suspended in `post_action_exec`.
+    // proving the spawned action task is suspended in `post_action_exec`.
     // Polling state set synchronously by `modify_order` (such as
     // `pending_modify`) would not prove the marker is observable while the
-    // HTTP call is in flight: a regression that defers the marker until
-    // after the HTTP success path could still pass on a fast runtime.
+    // post call is in flight: a regression that defers the marker until
+    // after the post success path could still pass on a fast runtime.
     wait_until_async(
         move || {
             let count = exchange_request_count.clone();
@@ -1240,7 +1675,7 @@ async fn test_modify_order_marks_pending_modify_before_http_completes() {
             .ws_dispatch_state()
             .pending_modify(&order.client_order_id()),
         Some(old_voi),
-        "marker must be set while the HTTP modify is still in flight",
+        "marker must be set while the modify post is still in flight",
     );
 
     pause_release.notify_one();
@@ -1257,7 +1692,7 @@ async fn test_modify_order_marks_pending_modify_before_http_completes() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_success_marks_pending_modify() {
-    // After a successful modify HTTP round-trip, the dispatch state must
+    // After a successful modify action round-trip, the dispatch state must
     // carry a pending-modify marker keyed on `client_order_id` and pointing
     // at the OLD venue order id. The cancel-before-accept branch in dispatch
     // relies on this marker to suppress an early CANCELED(old_voi); a
@@ -1316,7 +1751,7 @@ async fn test_modify_order_success_marks_pending_modify() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_rejection_does_not_mark_pending_modify() {
-    // A rejected modify (HTTP error branch) must leave no marker, so that a
+    // A rejected modify (post error branch) must leave no marker, so that a
     // later legitimate CANCELED for the same `client_order_id` is not
     // wrongly suppressed by the cancel-before-accept branch.
     let state = TestServerState::default();
@@ -1352,7 +1787,7 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
 
     client.modify_order(cmd).unwrap();
 
-    // Wait for the spawn task to drain fully so we know the HTTP round-trip
+    // Wait for the spawn task to drain fully so we know the action round-trip
     // AND the client's response-handling continuation have both run. Only
     // then is a negative assertion on the marker meaningful: asserting
     // earlier could race past the rejection branch and silently accept a
@@ -1378,7 +1813,7 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_inner_error_clears_pending_modify() {
     // The exchange returned status="ok" but the inner statuses[0] carries an
-    // error object. The marker is set before the HTTP await, so the
+    // error object. The marker is set before the post await, so the
     // extract_inner_error branch must clear it; otherwise a later legitimate
     // CANCELED for the same client_order_id is wrongly suppressed.
     let state = TestServerState::default();
@@ -1433,9 +1868,9 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_transport_failure_clears_pending_modify() {
-    // The HTTP transport itself fails (503). The marker is set before the
-    // HTTP await, so the Err branch must clear it; otherwise a later
+async fn test_modify_order_post_error_clears_pending_modify() {
+    // The post request returns an upstream error. The marker is set before
+    // the post await, so the Err branch must clear it; otherwise a later
     // legitimate CANCELED for the same client_order_id is wrongly suppressed.
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
@@ -1499,6 +1934,7 @@ fn make_status_report_cmd(
         venue_order_id,
         params: None,
         correlation_id: None,
+        causation_id: None,
     }
 }
 
@@ -1861,8 +2297,67 @@ async fn test_batch_cancel_orders_per_item_error_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_http_error_rejects_all_sent() {
-    // Transport failure: every entry that was actually dispatched must have
+async fn test_batch_cancel_orders_short_statuses_rejects_all_sent() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": ["success"]
+            }
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let coid_a = ClientOrderId::new("O-BATCH-SHORT-A");
+    let coid_b = ClientOrderId::new("O-BATCH-SHORT-B");
+    let batch = BatchCancelOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        vec![
+            make_cancel_entry(coid_a, VenueOrderId::from("150")),
+            make_cancel_entry(coid_b, VenueOrderId::from("151")),
+        ],
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.batch_cancel_orders(batch).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().any(|(coid, _)| *coid == coid_a));
+    assert!(events.iter().any(|(coid, _)| *coid == coid_b));
+    assert!(
+        events
+            .iter()
+            .all(|(_, reason)| reason.contains("status count mismatch"))
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_batch_cancel_orders_post_error_rejects_all_sent() {
+    // Post error: every entry that was actually dispatched must have
     // a cancel_rejected event so the engine does not wait on ghost acks.
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
@@ -1902,7 +2397,7 @@ async fn test_batch_cancel_orders_http_error_rejects_all_sent() {
     assert_eq!(
         events.len(),
         2,
-        "every sent cancel must be rejected on transport failure"
+        "every sent cancel must be rejected on post error"
     );
     let coids: std::collections::HashSet<_> = events.iter().map(|(c, _)| *c).collect();
     assert!(coids.contains(&coid_a));
@@ -1914,7 +2409,7 @@ async fn test_batch_cancel_orders_http_error_rejects_all_sent() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
-    // No HTTP round-trip should happen for an entry whose instrument symbol
+    // No trading action should happen for an entry whose instrument symbol
     // is unknown; the helper must emit a cancel_rejected for the skipped
     // entry and still dispatch the remaining one.
     let state = TestServerState::default();
@@ -2099,8 +2594,66 @@ async fn test_cancel_all_orders_per_item_error_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_http_error_rejects_every_open_order() {
-    // Transport failure: every order that was dispatched in the batch must
+async fn test_cancel_all_orders_short_statuses_rejects_every_open_order() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": ["success"]
+            }
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order_a = open_limit_order_in_cache(&cache, "O-CA-SHORT-A", "750");
+    let order_b = open_limit_order_in_cache(&cache, "O-CA-SHORT-B", "751");
+
+    client
+        .cancel_all_orders(make_cancel_all_cmd(
+            HYPERLIQUID_TEST_INSTRUMENT,
+            OrderSide::Buy,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+
+    assert_eq!(events.len(), 2);
+    assert!(
+        events
+            .iter()
+            .any(|(coid, _)| *coid == order_a.client_order_id())
+    );
+    assert!(
+        events
+            .iter()
+            .any(|(coid, _)| *coid == order_b.client_order_id())
+    );
+    assert!(
+        events
+            .iter()
+            .all(|(_, reason)| reason.contains("status count mismatch"))
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_post_error_rejects_every_open_order() {
+    // Post error: every order that was dispatched in the batch must
     // get a cancel_rejected event so the engine does not wait for ghost acks.
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
@@ -2131,7 +2684,7 @@ async fn test_cancel_all_orders_http_error_rejects_every_open_order() {
     assert_eq!(
         events.len(),
         2,
-        "every open order must be rejected on transport failure",
+        "every open order must be rejected on post error",
     );
     let coids: std::collections::HashSet<_> = events.iter().map(|(c, _)| *c).collect();
     assert!(coids.contains(&a.client_order_id()));
@@ -2144,7 +2697,7 @@ async fn test_cancel_all_orders_http_error_rejects_every_open_order() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
     // Instrument symbol is not registered with the asset-index map, so
-    // no HTTP dispatch happens. Every open order must still receive a
+    // no trading action happens. Every open order must still receive a
     // cancel_rejected event with the "Asset index not found" reason.
     const UNKNOWN_INSTRUMENT: &str = "NOPE-USD-PERP.HYPERLIQUID";
     let state = TestServerState::default();
@@ -2746,7 +3299,7 @@ async fn test_submit_order_unsupported_symbol_emits_denied(
     #[case] reason_substr: &str,
 ) {
     // Symbol does not match -PERP, -SPOT, or HIP-4 outcome wire forms, so
-    // `validate_order_submission` bails before any HTTP work and the client
+    // `validate_order_submission` bails before any trading action and the client
     // emits OrderDenied. A regression that drops the suffix check would land
     // orders on a venue that cannot route them.
     let state = TestServerState::default();
@@ -2881,7 +3434,7 @@ async fn test_submit_order_list_denies_outcome_reduce_only() {
     assert_eq!(
         *exchange_count.lock().await,
         0,
-        "no HTTP request should reach the venue",
+        "no trading action should reach the venue",
     );
 
     client.disconnect().await.unwrap();
@@ -2890,7 +3443,7 @@ async fn test_submit_order_list_denies_outcome_reduce_only() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_closed_order_returns_silently() {
-    // Submitting an already-closed order is a no-op: no events, no HTTP. A
+    // Submitting an already-closed order is a no-op: no events, no trading action. A
     // regression that drops the `is_closed` early-return would re-submit
     // canceled or filled orders.
     let state = TestServerState::default();
@@ -3190,7 +3743,7 @@ fn open_limit_order_with_filled_qty(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
     // Modify command with `target_total <= filled` must be rejected without
-    // dispatching any HTTP. A regression that drops the guard would amend a
+    // dispatching any trading action. A regression that drops the guard would amend a
     // venue order to `quantity = 0`, which the venue interprets as a cancel
     // and would race the legitimate modify path.
     let state = TestServerState::default();
@@ -3926,7 +4479,7 @@ async fn test_get_account_address_uses_explicit_account_address() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stop_aborts_ws_stream_and_pending_tasks() {
     // stop() is the lifecycle counterpart to start(): it must abort the WS
-    // stream handle, drain pending HTTP tasks, mark the core disconnected and
+    // stream handle, drain pending action tasks, mark the core disconnected and
     // stopped. Hold a submit task open with `pause_next_exchange` so the
     // pending-tasks assertion has something concrete to observe; an empty
     // tasks vec would satisfy `pending_tasks_all_finished()` vacuously.
@@ -3950,7 +4503,7 @@ async fn test_stop_aborts_ws_stream_and_pending_tasks() {
     client.submit_order(make_submit_cmd(&order)).unwrap();
 
     // Wait until the mock has actually received the request, proving the
-    // spawned task is parked at the HTTP await before we call stop().
+    // spawned task is parked at the post await before we call stop().
     wait_until_async(
         move || {
             let count = exchange_count.clone();
@@ -3969,7 +4522,7 @@ async fn test_stop_aborts_ws_stream_and_pending_tasks() {
     assert!(!client.is_connected());
     assert!(
         client.pending_tasks_all_finished(),
-        "stop() must abort the pending HTTP task",
+        "stop() must abort the pending action task",
     );
 
     // Idempotent: a second stop() is a no-op.

@@ -328,7 +328,7 @@ impl Instrument for OptionSpread {
     }
 
     fn size_precision(&self) -> u8 {
-        0
+        self.size_precision
     }
 
     fn price_increment(&self) -> Price {
@@ -336,7 +336,7 @@ impl Instrument for OptionSpread {
     }
 
     fn size_increment(&self) -> Quantity {
-        Quantity::from(1)
+        self.size_increment
     }
 
     fn multiplier(&self) -> Quantity {
@@ -463,5 +463,18 @@ mod tests {
         let json = serde_json::to_string(&option_spread).unwrap();
         let deserialized: OptionSpread = serde_json::from_str(&json).unwrap();
         assert_eq!(option_spread, deserialized);
+    }
+
+    #[rstest]
+    fn test_trait_accessors_read_non_default_size_precision(mut option_spread: OptionSpread) {
+        // The `Instrument` trait methods must return the struct fields rather
+        // than hardcoded 0 / Quantity::from(1). Required so adapters that
+        // construct `OptionSpread` with fractional sizing (e.g., Deribit BTC
+        // option combos with min_trade_amount=0.1) report the right
+        // precision/increment downstream.
+        option_spread.size_precision = 2;
+        option_spread.size_increment = Quantity::from("0.01");
+        assert_eq!(option_spread.size_precision(), 2);
+        assert_eq!(option_spread.size_increment(), Quantity::from("0.01"));
     }
 }
