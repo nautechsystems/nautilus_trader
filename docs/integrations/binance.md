@@ -526,6 +526,10 @@ For instrument-specific subscriptions, `CustomData.data_type` includes
 `metadata={"instrument_id": "<instrument_id>"}`. For all-market subscriptions,
 the data type has no metadata.
 
+When both modes are subscribed concurrently, all-market takes precedence. The
+adapter suspends per-symbol liquidation streams while all-market is active, and
+restores active per-symbol streams after all-market is unsubscribed.
+
 ## Funding rates
 
 The Rust adapter emits `FundingRateUpdate` as a first-class data type through

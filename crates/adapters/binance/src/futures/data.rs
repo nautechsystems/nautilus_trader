@@ -289,6 +289,18 @@ impl BinanceFuturesDataClient {
         )
     }
 
+    fn liquidation_stream(instrument_id: &InstrumentId) -> String {
+        format!("{}@forceOrder", format_binance_stream_symbol(instrument_id))
+    }
+
+    fn tracked_liquidation_streams(&self) -> Vec<String> {
+        self.force_order_refs
+            .load()
+            .keys()
+            .map(Self::liquidation_stream)
+            .collect()
+    }
+
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: BinanceFuturesWsStreamsMessage,
@@ -433,22 +445,20 @@ impl BinanceFuturesDataClient {
                                 ts_init,
                             ));
 
-                            let has_specific_subscription =
-                                force_order_refs.load().contains_key(&instrument.id());
                             let has_all_market_subscription =
                                 force_order_all_market_refs.load(Ordering::Relaxed) > 0;
-
-                            if has_specific_subscription {
-                                let data_type = Self::liquidation_data_type(instrument.id());
-                                Self::send_data(
-                                    data_sender,
-                                    Data::Custom(CustomData::new(liquidation.clone(), data_type)),
-                                );
-                            }
+                            let has_specific_subscription =
+                                force_order_refs.load().contains_key(&instrument.id());
 
                             if has_all_market_subscription {
                                 let data_type =
                                     DataType::new("BinanceFuturesLiquidation", None, None);
+                                Self::send_data(
+                                    data_sender,
+                                    Data::Custom(CustomData::new(liquidation, data_type)),
+                                );
+                            } else if has_specific_subscription {
+                                let data_type = Self::liquidation_data_type(instrument.id());
                                 Self::send_data(
                                     data_sender,
                                     Data::Custom(CustomData::new(liquidation, data_type)),
@@ -1313,12 +1323,12 @@ impl DataClient for BinanceFuturesDataClient {
                 prev == 0
             };
 
-            if should_subscribe {
+            let has_all_market_subscription =
+                self.force_order_all_market_refs.load(Ordering::Relaxed) > 0;
+
+            if should_subscribe && !has_all_market_subscription {
                 let ws = self.ws_client.clone();
-                let stream = format!(
-                    "{}@forceOrder",
-                    format_binance_stream_symbol(&instrument_id)
-                );
+                let stream = Self::liquidation_stream(&instrument_id);
                 self.spawn_ws(
                     async move {
                         ws.subscribe(vec![stream])
@@ -1339,8 +1349,14 @@ impl DataClient for BinanceFuturesDataClient {
 
         if should_subscribe {
             let ws = self.ws_client.clone();
+            let specific_streams = self.tracked_liquidation_streams();
             self.spawn_ws(
                 async move {
+                    if !specific_streams.is_empty() {
+                        ws.unsubscribe(specific_streams)
+                            .await
+                            .context("specific forceOrder unsubscribe while enabling all-market")?;
+                    }
                     ws.subscribe(vec!["!forceOrder@arr".to_string()])
                         .await
                         .context("all-market forceOrder subscription")
@@ -1717,12 +1733,12 @@ impl DataClient for BinanceFuturesDataClient {
                 }
             };
 
-            if should_unsubscribe {
+            let has_all_market_subscription =
+                self.force_order_all_market_refs.load(Ordering::Relaxed) > 0;
+
+            if should_unsubscribe && !has_all_market_subscription {
                 let ws = self.ws_client.clone();
-                let stream = format!(
-                    "{}@forceOrder",
-                    format_binance_stream_symbol(&instrument_id)
-                );
+                let stream = Self::liquidation_stream(&instrument_id);
                 self.spawn_ws(
                     async move {
                         ws.unsubscribe(vec![stream])
@@ -1748,11 +1764,19 @@ impl DataClient for BinanceFuturesDataClient {
             .is_ok_and(|prev| prev == 1);
         if should_unsubscribe {
             let ws = self.ws_client.clone();
+            let specific_streams = self.tracked_liquidation_streams();
             self.spawn_ws(
                 async move {
                     ws.unsubscribe(vec!["!forceOrder@arr".to_string()])
                         .await
-                        .context("all-market forceOrder unsubscribe")
+                        .context("all-market forceOrder unsubscribe")?;
+
+                    if !specific_streams.is_empty() {
+                        ws.subscribe(specific_streams).await.context(
+                            "specific forceOrder resubscribe after all-market unsubscribe",
+                        )?;
+                    }
+                    Ok(())
                 },
                 "all-market forceOrder unsubscribe",
             );

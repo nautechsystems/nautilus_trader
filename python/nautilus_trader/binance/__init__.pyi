@@ -13,6 +13,7 @@ __all__ = [
     "BinanceEnvironment",
     "BinanceExecClientConfig",
     "BinanceExecutionClientFactory",
+    "BinanceFuturesLiquidation",
     "BinanceMarginType",
     "BinancePositionSide",
     "BinanceProductType",
@@ -94,6 +95,25 @@ class BinanceExecClientConfig:
 class BinanceExecutionClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
+
+@typing.final
+class BinanceFuturesLiquidation:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def side(self) -> model.OrderSide: ...
+    @property
+    def price(self) -> model.Price: ...
+    @property
+    def average_price(self) -> model.Price: ...
+    @property
+    def last_filled_qty(self) -> model.Quantity: ...
+    @property
+    def accumulated_qty(self) -> model.Quantity: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
 
 @typing.final
 class BinanceEnvironment(enum.Enum):
