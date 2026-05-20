@@ -276,6 +276,11 @@ impl SandboxInner {
     fn process_instrument_status(&mut self, status: &InstrumentStatus) {
         let instrument_id = status.instrument_id;
 
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            engine.get_engine_mut().process_status(status.action);
+            return;
+        }
+
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
             self.ensure_matching_engine(&instrument);
@@ -289,27 +294,11 @@ impl SandboxInner {
     fn process_instrument_close(&mut self, close: &InstrumentClose) {
         let instrument_id = close.instrument_id;
 
-        // Prefer an existing engine first: the cache instrument may already be purged
-        // by rotation/lifecycle logic while an open position is still awaiting resolve.
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             engine.get_engine_mut().process_instrument_close(*close);
-            return;
-        }
-
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.get_engine_mut().process_instrument_close(*close);
-            } else {
-                log::warn!(
-                    "Sandbox failed to route instrument close after engine ensure: {instrument_id}",
-                );
-            }
         } else {
             log::warn!(
-                "Ignoring instrument close for {instrument_id}: no matching engine and instrument missing from cache",
+                "Ignoring instrument close for {instrument_id}: no existing matching engine",
             );
         }
     }

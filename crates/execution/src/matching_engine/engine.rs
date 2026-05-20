@@ -2054,7 +2054,7 @@ impl OrderMatchingEngine {
         for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
                 ClientOrderId::from(format!("EXPIRATION-{}-{}", self.venue, UUID4::new()).as_str());
-            let order = OrderAny::Market(MarketOrder::new(
+            let mut order = OrderAny::Market(MarketOrder::new(
                 trader_id,
                 strategy_id,
                 instrument_id,
@@ -2078,6 +2078,7 @@ impl OrderMatchingEngine {
                     self.venue
                 ))]),
             ));
+            order.set_liquidity_side(LiquiditySide::Taker);
 
             let add_result =
                 self.cache
@@ -4503,34 +4504,16 @@ impl OrderMatchingEngine {
             }
         }
 
-        let commission =
-            match self
-                .fee_model
-                .get_commission(order, last_qty, last_px, &self.instrument)
-            {
-                Ok(commission) => commission,
-                Err(e) => {
-                    let is_expiry_close =
-                        order.client_order_id().as_str().starts_with("EXPIRATION-");
-
-                    if is_expiry_close || self.pending_resolution {
-                        // During expiry/resolve settlement we must not block closure.
-                        // Prediction-market paper tests use zero-fee settlement semantics.
-                        log::warn!(
-                            "Falling back to zero commission for settlement fill {}: {}",
-                            order.client_order_id(),
-                            e
-                        );
-                        Money::zero(self.instrument.quote_currency())
-                    } else {
-                        panic!(
-                            "Failed to compute commission for {}: {}",
-                            order.client_order_id(),
-                            e
-                        );
-                    }
-                }
-            };
+        let commission = self
+            .fee_model
+            .get_commission(order, last_qty, last_px, &self.instrument)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to compute commission for {}: {}",
+                    order.client_order_id(),
+                    e
+                );
+            });
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
         self.generate_order_filled(
