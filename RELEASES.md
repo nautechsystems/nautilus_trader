@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
 - Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
+- Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -40,6 +41,7 @@ None
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
+- Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements

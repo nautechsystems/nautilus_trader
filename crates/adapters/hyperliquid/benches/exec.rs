@@ -163,6 +163,7 @@ fn sign_action(signer: &HyperliquidEip712Signer, action: &HyperliquidExecAction)
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: None,
+        expires_after: None,
     };
     let _sig = signer.sign(&sign_request).unwrap();
     action_bytes

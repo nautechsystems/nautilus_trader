@@ -97,7 +97,7 @@ use crate::{
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
             RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,
-            info_base_weight, info_extra_weight,
+            exec_action_weight, info_base_weight, info_extra_weight,
         },
     },
     signing::{
@@ -592,6 +592,7 @@ impl HyperliquidRawHttpClient {
             action_type: HyperliquidActionType::L1,
             is_testnet: self.is_testnet(),
             vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
+            expires_after: None,
         };
 
         let sig = signer.sign(&sign_request)?.signature;
@@ -650,23 +651,12 @@ impl HyperliquidRawHttpClient {
         }
     }
 
-    /// Send a signed action to the exchange using the typed HyperliquidExecAction enum.
-    ///
-    /// This is the preferred method for placing orders as it uses properly typed
-    /// structures that match Hyperliquid's API expectations exactly.
-    pub async fn post_action_exec(
+    /// Build a signed exchange request using the typed HyperliquidExecAction enum.
+    pub fn sign_action_exec_request(
         &self,
         action: &HyperliquidExecAction,
-    ) -> Result<HyperliquidExchangeResponse> {
-        let w = match action {
-            HyperliquidExecAction::Order { orders, .. } => 1 + (orders.len() as u32 / 40),
-            HyperliquidExecAction::Cancel { cancels } => 1 + (cancels.len() as u32 / 40),
-            HyperliquidExecAction::CancelByCloid { cancels } => 1 + (cancels.len() as u32 / 40),
-            HyperliquidExecAction::BatchModify { modifies } => 1 + (modifies.len() as u32 / 40),
-            _ => 1,
-        };
-        self.rest_limiter.acquire(w).await;
-
+        expires_after: Option<u64>,
+    ) -> Result<HyperliquidExchangeRequest<HyperliquidExecAction>> {
         let signer = self
             .signer
             .as_ref()
@@ -694,10 +684,11 @@ impl HyperliquidRawHttpClient {
                 action_type: HyperliquidActionType::L1,
                 is_testnet: self.is_testnet(),
                 vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
+                expires_after,
             })?
             .signature;
 
-        let request = if let Some(vault) = self.vault_address {
+        let mut request = if let Some(vault) = self.vault_address {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 time_nonce.as_millis() as u64,
@@ -707,6 +698,22 @@ impl HyperliquidRawHttpClient {
         } else {
             HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
         };
+        request.expires_after = expires_after;
+        Ok(request)
+    }
+
+    /// Send a signed action to the exchange using the typed HyperliquidExecAction enum.
+    ///
+    /// This is the preferred method for placing orders as it uses properly typed
+    /// structures that match Hyperliquid's API expectations exactly.
+    pub async fn post_action_exec(
+        &self,
+        action: &HyperliquidExecAction,
+    ) -> Result<HyperliquidExchangeResponse> {
+        let w = exec_action_weight(action);
+        self.rest_limiter.acquire(w).await;
+
+        let request = self.sign_action_exec_request(action, None)?;
 
         let response = self.http_roundtrip_exchange(&request).await?;
 
@@ -1542,6 +1549,15 @@ impl HyperliquidHttpClient {
         self.inner.post_action_exec(action).await
     }
 
+    /// Build the signed exchange request used by both HTTP and WebSocket post transports.
+    pub fn sign_action_exec_request(
+        &self,
+        action: &HyperliquidExecAction,
+        expires_after: Option<u64>,
+    ) -> Result<HyperliquidExchangeRequest<HyperliquidExecAction>> {
+        self.inner.sign_action_exec_request(action, expires_after)
+    }
+
     /// Get metadata about available markets (low-level delegation).
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
         self.inner.info_meta().await
@@ -2013,6 +2029,8 @@ impl HyperliquidHttpClient {
             timestamp: entry.order.timestamp,
             orig_sz: entry.order.orig_sz,
             cloid: entry.order.cloid,
+            tif: None,
+            reduce_only: None,
             trigger_px: None,
             is_market: None,
             tpsl: None,

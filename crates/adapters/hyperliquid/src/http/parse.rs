@@ -37,9 +37,9 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         enums::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-            HyperliquidSide, HyperliquidTpSl,
+            HyperliquidSide, HyperliquidTimeInForce,
         },
-        parse::make_fill_trade_id,
+        parse::{is_conditional_order_data, make_fill_trade_id, parse_trigger_order_type},
         types::HyperliquidAssetId,
     },
     websocket::messages::{WsBasicOrderData, WsOrderData},
@@ -782,27 +782,22 @@ pub fn parse_order_status_report_from_basic(
     let venue_order_id = VenueOrderId::new(order.oid.to_string());
     let order_side = OrderSide::from(order.side);
 
-    // Determine order type based on trigger parameters
-    let order_type = if order.trigger_px.is_some() {
-        if order.is_market == Some(true) {
-            // Check if it's stop-loss or take-profit based on tpsl field
-            match order.tpsl.as_ref() {
-                Some(HyperliquidTpSl::Tp) => OrderType::MarketIfTouched,
-                Some(HyperliquidTpSl::Sl) => OrderType::StopMarket,
-                _ => OrderType::StopMarket,
-            }
-        } else {
-            match order.tpsl.as_ref() {
-                Some(HyperliquidTpSl::Tp) => OrderType::LimitIfTouched,
-                Some(HyperliquidTpSl::Sl) => OrderType::StopLimit,
-                _ => OrderType::StopLimit,
-            }
+    let is_conditional =
+        is_conditional_order_data(order.trigger_px.as_deref(), order.tpsl.as_ref());
+    let order_type = if is_conditional {
+        match (order.is_market, order.tpsl.as_ref()) {
+            (Some(is_market), Some(tpsl)) => parse_trigger_order_type(is_market, tpsl),
+            (None, Some(tpsl)) => parse_trigger_order_type(false, tpsl),
+            _ => OrderType::Limit,
         }
     } else {
         OrderType::Limit
     };
 
-    let time_in_force = TimeInForce::Gtc;
+    let time_in_force = match order.tif {
+        Some(HyperliquidTimeInForce::Ioc) => TimeInForce::Ioc,
+        _ => TimeInForce::Gtc,
+    };
     let order_status = OrderStatus::from(*status);
 
     let price_precision = instrument.price_precision();
@@ -849,6 +844,14 @@ pub fn parse_order_status_report_from_basic(
         report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
     }
 
+    if matches!(order.tif, Some(HyperliquidTimeInForce::Alo)) {
+        report = report.with_post_only(true);
+    }
+
+    if let Some(reduce_only) = order.reduce_only {
+        report = report.with_reduce_only(reduce_only);
+    }
+
     // Only set price for non-filled orders. For filled orders, the limit price is not
     // the execution price, and setting it would cause bogus inferred fills to be created
     // during reconciliation. Real fills arrive via the userEvents WebSocket channel.
@@ -865,8 +868,7 @@ pub fn parse_order_status_report_from_basic(
         report = report.with_price(price);
     }
 
-    // Add trigger price if present
-    if let Some(trigger_px) = &order.trigger_px {
+    if is_conditional && let Some(trigger_px) = &order.trigger_px {
         let trig_px: Decimal = trigger_px
             .parse()
             .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {e}"))?;

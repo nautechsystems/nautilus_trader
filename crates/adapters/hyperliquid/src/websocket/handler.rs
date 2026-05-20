@@ -48,13 +48,14 @@ use super::{
     error::HyperliquidWsError,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
-        SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
+        PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
         parse_ws_order_book_depth10, parse_ws_order_status_report, parse_ws_quote_tick,
         parse_ws_trade_tick,
     },
+    post::PostRouter,
 };
 use crate::data_types::HyperliquidAllMids;
 
@@ -78,6 +79,8 @@ pub enum HandlerCommand {
     Unsubscribe {
         subscriptions: Vec<SubscriptionRequest>,
     },
+    /// Send a WebSocket post request.
+    Post { id: u64, request: PostRequest },
     /// Initialize the instruments cache with the given instruments.
     InitializeInstruments(Vec<InstrumentAny>),
     /// Update a single instrument in the cache.
@@ -107,6 +110,7 @@ pub(super) struct FeedHandler {
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
+    post_router: Arc<PostRouter>,
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: VecDeque<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
@@ -123,6 +127,10 @@ pub(super) struct FeedHandler {
 
 impl FeedHandler {
     /// Creates a new [`FeedHandler`] instance.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "constructs the handler from independent runtime channels and caches"
+    )]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -131,6 +139,7 @@ impl FeedHandler {
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
         cloid_cache: CloidCache,
+        post_router: Arc<PostRouter>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -141,6 +150,7 @@ impl FeedHandler {
             out_tx,
             account_id,
             subscriptions,
+            post_router,
             retry_manager: create_websocket_retry_manager(),
             message_buffer: VecDeque::new(),
             instruments: AHashMap::new(),
@@ -253,6 +263,22 @@ impl FeedHandler {
                                 }
                             }
                         }
+                        HandlerCommand::Post { id, request } => {
+                            let request = HyperliquidWsRequest::Post { id, request };
+                            match serde_json::to_string(&request) {
+                                Ok(payload) => {
+                                    log::debug!("Sending post payload: id={id}");
+                                    if let Err(e) = self.send_with_retry(payload).await {
+                                        log::error!("Error sending post request id={id}: {e}");
+                                        self.post_router.cancel(id).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Error serializing post request id={id}: {e}");
+                                    self.post_router.cancel(id).await;
+                                }
+                            }
+                        }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
                                 let coin = inst.raw_symbol().inner();
@@ -300,6 +326,11 @@ impl FeedHandler {
 
                             match serde_json::from_str::<HyperliquidWsMessage>(&text) {
                                 Ok(msg) => {
+                                    if let HyperliquidWsMessage::Post { data } = msg {
+                                        self.post_router.complete(data).await;
+                                        continue;
+                                    }
+
                                     let ts_init = self.clock.get_time_ns();
                                     let all_mids_data_types =
                                         Self::all_mids_data_types(&self.subscriptions);
@@ -979,19 +1010,31 @@ pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsErro
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{Arc, Mutex, atomic::AtomicBool},
+        time::Duration,
+    };
+
     use ahash::{AHashMap, AHashSet};
+    use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol},
+        identifiers::{ClientOrderId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
+    use nautilus_network::websocket::SubscriptionState;
     use rstest::rstest;
+    use serde_json::json;
     use ustr::Ustr;
 
     use super::{
-        super::messages::{NautilusWsMessage, WsBookData, WsLevelData},
-        FeedHandler,
+        super::{
+            client::{CLOID_CACHE_CAPACITY, CloidCache},
+            messages::{NautilusWsMessage, PostRequest, WsBookData, WsLevelData},
+            post::PostRouter,
+        },
+        FeedHandler, HandlerCommand,
     };
     use crate::common::consts::HYPERLIQUID_VENUE;
 
@@ -1042,6 +1085,56 @@ mod tests {
             ],
             time: 1_700_000_000_000,
         }
+    }
+
+    #[tokio::test]
+    async fn post_send_failure_cancels_router_waiter() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let post_router = PostRouter::new();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            Arc::clone(&post_router),
+        );
+
+        let id = 99;
+        let rx = post_router.register(id).await.unwrap();
+
+        let task = tokio::spawn(async move { handler.next().await });
+
+        cmd_tx
+            .send(HandlerCommand::Post {
+                id,
+                request: PostRequest::Info {
+                    payload: json!({"type": "userRateLimit", "user": "0x123"}),
+                },
+            })
+            .unwrap();
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let closed = tokio::time::timeout(Duration::from_millis(100), rx)
+            .await
+            .expect("post waiter should close without waiting for post timeout");
+        assert!(closed.is_err(), "post router cancel must close the waiter");
+        let _rx = post_router
+            .register(id)
+            .await
+            .expect("post id should be reusable after cancellation");
+        assert!(task.await.unwrap().is_none());
     }
 
     #[rstest]

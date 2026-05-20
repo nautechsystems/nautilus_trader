@@ -46,7 +46,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    enums::{OrderStatus, PositionSideSpecified},
+    enums::{OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
     identifiers::{AccountId, ClientOrderId},
 };
 use nautilus_network::http::{HttpClient, Method};
@@ -1346,7 +1346,12 @@ async fn test_request_order_status_report_open_order() {
         "oid": 12345,
         "timestamp": 1700000000000u64,
         "origSz": "0.1",
-        "cloid": "0xaabbccdd00112233aabbccdd00112233"
+        "cloid": "0xaabbccdd00112233aabbccdd00112233",
+        "isTrigger": false,
+        "triggerCondition": "N/A",
+        "triggerPx": "0.0",
+        "tif": "Alo",
+        "reduceOnly": true
     }]));
 
     let addr = start_mock_server(state).await;
@@ -1362,7 +1367,16 @@ async fn test_request_order_status_report_open_order() {
     // Status stays Accepted (matching bulk path) because we lack avg_px
     // for safe PartiallyFilled reconciliation. Real fills arrive via WebSocket.
     assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.time_in_force, TimeInForce::Gtc);
+    assert!(report.post_only);
+    assert!(report.reduce_only);
     assert!(report.price.is_some(), "open order retains limit price");
+    assert!(
+        report.trigger_price.is_none(),
+        "non-conditional limit order must not carry Hyperliquid's placeholder trigger price"
+    );
+    assert!(report.trigger_type.is_none());
     assert_eq!(report.filled_qty.as_f64(), 0.05);
     assert_eq!(report.quantity.as_f64(), 0.1);
 }
