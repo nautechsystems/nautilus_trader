@@ -431,7 +431,7 @@ impl GreeksCalculator {
                 vega_time_weight_base,
                 vol_index_instrument_id,
                 vol_beta_weights,
-            );
+            )?;
         }
 
         if let Some(pos) = position {
@@ -476,7 +476,7 @@ impl GreeksCalculator {
             None,
             None,
             None,
-        );
+        )?;
         let mut greeks_data =
             GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
 
@@ -616,7 +616,7 @@ impl GreeksCalculator {
             vol_beta_weights,
             None,
             None,
-        );
+        )?;
         let greeks_data = GreeksData::new(
             utc_now_ns,
             utc_now_ns,
@@ -675,7 +675,7 @@ impl GreeksCalculator {
         vega_time_weight_base: Option<i32>,
         vol_index_instrument_id: Option<InstrumentId>,
         vol_beta_weights: Option<&HashMap<InstrumentId, f64>>,
-    ) -> GreeksData {
+    ) -> anyhow::Result<GreeksData> {
         let underlying_price = greeks_data.underlying_price;
         let shocked_underlying_price = underlying_price + spot_shock;
         let shocked_vol = greeks_data.vol + vol_shock;
@@ -709,8 +709,8 @@ impl GreeksCalculator {
             vol_beta_weights,
             None,
             None,
-        );
-        GreeksData::new(
+        )?;
+        Ok(GreeksData::new(
             greeks_data.ts_event,
             greeks_data.ts_event,
             greeks_data.instrument_id,
@@ -735,7 +735,7 @@ impl GreeksCalculator {
                 rho: 0.0,
             },
             greeks.itm_prob,
-        )
+        ))
     }
 
     fn get_underlying_price(&self, underlying_instrument_id: &InstrumentId) -> anyhow::Result<f64> {
@@ -782,6 +782,11 @@ impl GreeksCalculator {
     /// Also percent greeks assume a change of variable to percent returns by writing:
     /// V(x = x0 * (1 + `stock_percent_return` / 100))
     /// or V(I = I0 * (1 + `index_percent_return` / 100))
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `vol_index_instrument_id` is supplied and no explicit or cached
+    /// volatility index price is available.
     #[expect(clippy::too_many_arguments)]
     pub fn modify_greeks(
         &self,
@@ -802,16 +807,22 @@ impl GreeksCalculator {
         vol_beta_weights: Option<&HashMap<InstrumentId, f64>>,
         index_price: Option<f64>,
         vol_index_price: Option<f64>,
-    ) -> (f64, f64, f64) {
+    ) -> anyhow::Result<(f64, f64, f64)> {
         let mut delta = delta_input;
         let mut gamma = gamma_input;
         let mut vega = vega_input;
 
         let mut used_index_price = index_price
             .or_else(|| index_instrument_id.and_then(|index_id| self.get_price(&index_id)));
-        let mut used_index_vol = vol_index_price.or_else(|| {
-            vol_index_instrument_id.and_then(|vol_index_id| self.get_price(&vol_index_id))
-        });
+        let mut used_index_vol = vol_index_price;
+        if used_index_vol.is_none()
+            && let Some(vol_index_id) = vol_index_instrument_id
+        {
+            used_index_vol = Some(
+                self.get_price(&vol_index_id)
+                    .ok_or_else(|| anyhow::anyhow!("No price available for {vol_index_id}"))?,
+            );
+        }
 
         if used_index_price.is_some() {
             let mut beta = 1.0;
@@ -889,7 +900,7 @@ impl GreeksCalculator {
             vega *= time_weight;
         }
 
-        (delta, gamma, vega)
+        Ok((delta, gamma, vega))
     }
 
     /// Calculates the portfolio Greeks for a given set of positions.
@@ -2081,6 +2092,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_modify_greeks_errors_when_vol_index_price_missing() {
+        let calculator = create_test_calculator();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let vol_index_id = InstrumentId::from("VIX.XCBF");
+
+        let error = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                underlying_id,
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.30,
+                0,
+                None,
+                0.0,
+                Some(vol_index_id),
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "No price available for VIX.XCBF");
+    }
+
+    #[rstest]
     fn test_modify_greeks_accepts_explicit_index_prices() {
         let calculator = create_test_calculator();
         let underlying_id = InstrumentId::from("AAPL.OPRA");
@@ -2089,49 +2131,53 @@ mod tests {
         let mut vol_beta_weights = HashMap::new();
         vol_beta_weights.insert(underlying_id, 0.75);
 
-        let (delta, gamma, vega) = calculator.modify_greeks(
-            1.0,
-            2.0,
-            underlying_id,
-            150.0,
-            150.0,
-            false,
-            None,
-            Some(&beta_weights),
-            2.0,
-            0.30,
-            0,
-            None,
-            0.0,
-            None,
-            Some(&vol_beta_weights),
-            Some(200.0),
-            Some(25.0),
-        );
+        let (delta, gamma, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                underlying_id,
+                150.0,
+                150.0,
+                false,
+                None,
+                Some(&beta_weights),
+                2.0,
+                0.30,
+                0,
+                None,
+                0.0,
+                None,
+                Some(&vol_beta_weights),
+                Some(200.0),
+                Some(25.0),
+            )
+            .unwrap();
 
         assert_eq!((delta * 1e12).round(), 375_000_000_000.0);
         assert_eq!((gamma * 1e12).round(), 281_250_000_000.0);
         assert_eq!((vega * 1e12).round(), 1_800_000_000_000.0);
 
-        let (delta, gamma, vega) = calculator.modify_greeks(
-            1.0,
-            2.0,
-            underlying_id,
-            150.0,
-            150.0,
-            true,
-            None,
-            Some(&beta_weights),
-            2.0,
-            0.30,
-            0,
-            None,
-            0.0,
-            None,
-            Some(&vol_beta_weights),
-            Some(200.0),
-            Some(25.0),
-        );
+        let (delta, gamma, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                underlying_id,
+                150.0,
+                150.0,
+                true,
+                None,
+                Some(&beta_weights),
+                2.0,
+                0.30,
+                0,
+                None,
+                0.0,
+                None,
+                Some(&vol_beta_weights),
+                Some(200.0),
+                Some(25.0),
+            )
+            .unwrap();
 
         assert_eq!((delta * 1e12).round(), 750_000_000_000.0);
         assert_eq!((gamma * 1e12).round(), 1_125_000_000_000.0);

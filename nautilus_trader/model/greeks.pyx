@@ -508,6 +508,8 @@ cdef class GreeksCalculator:
 
         if used_index_vol is None and vol_index_instrument_id is not None:
             used_index_vol = self._get_price(vol_index_instrument_id)
+            if used_index_vol is None:
+                raise ValueError(f"No price available for {vol_index_instrument_id}")
 
         if used_index_vol is not None:
             used_index_vol = float(used_index_vol) * 0.01

@@ -17,6 +17,8 @@ from datetime import UTC
 from datetime import datetime
 from math import exp
 
+import pytest
+
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import IndexPriceUpdate
@@ -295,6 +297,25 @@ class TestGreeksCalculator:
         assert round(delta, 12) == 0.75
         assert round(gamma, 12) == 1.125
         assert round(vega, 12) == 0.0045
+
+    def test_modify_greeks_missing_vol_index_price_raises(self):
+        vol_index_id = InstrumentId(Symbol("VIX"), Venue("XCBF"))
+
+        with pytest.raises(ValueError, match=r"No price available for VIX\.XCBF"):
+            self.greeks_calculator.modify_greeks(
+                delta_input=1.0,
+                gamma_input=2.0,
+                underlying_instrument_id=self.underlying_id,
+                underlying_price=150.0,
+                unshocked_underlying_price=150.0,
+                percent_greeks=False,
+                index_instrument_id=None,
+                beta_weights=None,
+                vega_input=2.0,
+                vol=0.30,
+                vol_index_instrument_id=vol_index_id,
+                vol_beta_weights=None,
+            )
 
     def test_instrument_greeks_with_caching(self):
         # Test greeks calculation with caching

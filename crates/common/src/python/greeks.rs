@@ -161,26 +161,28 @@ impl PyGreeksCalculator {
         vol_beta_weights: Option<HashMap<InstrumentId, f64>>,
         index_price: Option<f64>,
         vol_index_price: Option<f64>,
-    ) -> (f64, f64, f64) {
-        self.0.modify_greeks(
-            delta_input,
-            gamma_input,
-            underlying_instrument_id,
-            underlying_price,
-            unshocked_underlying_price,
-            percent_greeks,
-            index_instrument_id,
-            beta_weights.as_ref(),
-            vega_input,
-            vol,
-            expiry_in_days,
-            vega_time_weight_base,
-            unshocked_vol,
-            vol_index_instrument_id,
-            vol_beta_weights.as_ref(),
-            index_price,
-            vol_index_price,
-        )
+    ) -> PyResult<(f64, f64, f64)> {
+        self.0
+            .modify_greeks(
+                delta_input,
+                gamma_input,
+                underlying_instrument_id,
+                underlying_price,
+                unshocked_underlying_price,
+                percent_greeks,
+                index_instrument_id,
+                beta_weights.as_ref(),
+                vega_input,
+                vol,
+                expiry_in_days,
+                vega_time_weight_base,
+                unshocked_vol,
+                vol_index_instrument_id,
+                vol_beta_weights.as_ref(),
+                index_price,
+                vol_index_price,
+            )
+            .map_err(to_pyvalue_err)
     }
 
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
