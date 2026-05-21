@@ -25,10 +25,20 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{
+    basic::CompareOp,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use rust_decimal::Decimal;
 
-use crate::{common::bar::BinanceBar, data_types::BinanceFuturesLiquidation};
+use crate::{
+    common::bar::BinanceBar,
+    data_types::{
+        BinanceFuturesLiquidation, BinanceFuturesOpenInterest, BinanceFuturesOpenInterestHist,
+        BinanceFuturesOpenInterestHistPoint,
+    },
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -215,6 +225,96 @@ impl BinanceFuturesLiquidation {
     #[pyo3(name = "accumulated_qty")]
     fn py_accumulated_qty(&self) -> Quantity {
         self.accumulated_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BinanceFuturesOpenInterest {
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "open_interest")]
+    fn py_open_interest(&self) -> String {
+        self.open_interest.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BinanceFuturesOpenInterestHistPoint {
+    #[getter]
+    #[pyo3(name = "sum_open_interest")]
+    fn py_sum_open_interest(&self) -> String {
+        self.sum_open_interest.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "sum_open_interest_value")]
+    fn py_sum_open_interest_value(&self) -> String {
+        self.sum_open_interest_value.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BinanceFuturesOpenInterestHist {
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "period")]
+    fn py_period(&self) -> String {
+        self.period.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "points")]
+    fn py_points(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let points = self
+            .points
+            .iter()
+            .cloned()
+            .map(|point| point.into_py_any_unwrap(py))
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, points)?.into_py_any_unwrap(py))
     }
 
     #[getter]

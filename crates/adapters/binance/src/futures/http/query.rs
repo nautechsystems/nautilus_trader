@@ -124,6 +124,32 @@ pub struct BinanceOpenInterestParams {
     pub symbol: String,
 }
 
+/// Query parameters for `GET /futures/data/openInterestHist`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option), default)]
+pub struct BinanceOpenInterestHistParams {
+    /// Trading symbol for USD-M requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Trading pair for COIN-M requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pair: Option<String>,
+    /// Contract type for COIN-M requests.
+    #[serde(rename = "contractType", skip_serializing_if = "Option::is_none")]
+    pub contract_type: Option<String>,
+    /// Aggregation period (e.g. "5m", "1h").
+    pub period: String,
+    /// Start time in milliseconds.
+    #[serde(rename = "startTime", skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<i64>,
+    /// End time in milliseconds.
+    #[serde(rename = "endTime", skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<i64>,
+    /// Number of results to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 /// Query parameters for `GET /fapi/v2/balance` or `GET /dapi/v1/balance`.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

@@ -14,6 +14,9 @@ __all__ = [
     "BinanceExecClientConfig",
     "BinanceExecutionClientFactory",
     "BinanceFuturesLiquidation",
+    "BinanceFuturesOpenInterest",
+    "BinanceFuturesOpenInterestHist",
+    "BinanceFuturesOpenInterestHistPoint",
     "BinanceMarginType",
     "BinancePositionSide",
     "BinanceProductType",
@@ -110,6 +113,39 @@ class BinanceFuturesLiquidation:
     def last_filled_qty(self) -> model.Quantity: ...
     @property
     def accumulated_qty(self) -> model.Quantity: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+@typing.final
+class BinanceFuturesOpenInterest:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def open_interest(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+@typing.final
+class BinanceFuturesOpenInterestHistPoint:
+    @property
+    def sum_open_interest(self) -> str: ...
+    @property
+    def sum_open_interest_value(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+
+@typing.final
+class BinanceFuturesOpenInterestHist:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def period(self) -> str: ...
+    @property
+    def points(self) -> list[BinanceFuturesOpenInterestHistPoint]: ...
     @property
     def ts_event(self) -> int: ...
     @property
