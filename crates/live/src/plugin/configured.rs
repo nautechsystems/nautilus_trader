@@ -177,6 +177,8 @@ fn find_strategy_entry(
 
 #[cfg(test)]
 mod tests {
+    use std::ptr::NonNull;
+
     use nautilus_plugin::{
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
@@ -188,19 +190,19 @@ mod tests {
 
     static ACTOR_REGISTRATIONS: [ActorRegistration; 1] = [ActorRegistration {
         type_name: BorrowedStr::from_str("ExampleActor"),
-        vtable: std::ptr::null(),
+        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
     }];
     static STRATEGY_REGISTRATIONS: [StrategyRegistration; 1] = [StrategyRegistration {
         type_name: BorrowedStr::from_str("ExampleStrategy"),
-        vtable: std::ptr::null(),
+        vtable: NonNull::<StrategyVTable>::dangling().as_ptr(),
     }];
     static AMBIGUOUS_ACTOR_REGISTRATIONS: [ActorRegistration; 1] = [ActorRegistration {
         type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: std::ptr::null(),
+        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
     }];
     static AMBIGUOUS_STRATEGY_REGISTRATIONS: [StrategyRegistration; 1] = [StrategyRegistration {
         type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: std::ptr::null(),
+        vtable: NonNull::<StrategyVTable>::dangling().as_ptr(),
     }];
 
     fn manifest(
@@ -225,6 +227,9 @@ mod tests {
             Slice::from_slice(&ACTOR_REGISTRATIONS),
             Slice::from_slice(&STRATEGY_REGISTRATIONS),
         );
+        manifest
+            .validate()
+            .expect("configured actor lookup uses a loader-valid manifest");
 
         let entry = configured_entry(&manifest, "./libexample.so", "ExampleActor").unwrap();
 
@@ -237,6 +242,9 @@ mod tests {
             Slice::from_slice(&ACTOR_REGISTRATIONS),
             Slice::from_slice(&STRATEGY_REGISTRATIONS),
         );
+        manifest
+            .validate()
+            .expect("configured strategy lookup uses a loader-valid manifest");
 
         let entry = configured_entry(&manifest, "./libexample.so", "ExampleStrategy").unwrap();
 
@@ -249,6 +257,9 @@ mod tests {
             Slice::from_slice(&ACTOR_REGISTRATIONS),
             Slice::from_slice(&STRATEGY_REGISTRATIONS),
         );
+        manifest
+            .validate()
+            .expect("missing configured type test uses a loader-valid manifest");
 
         let error = match configured_entry(&manifest, "./libexample.so", "MissingType") {
             Ok(_) => panic!("configured entry should reject missing type"),
@@ -264,6 +275,14 @@ mod tests {
         let manifest = manifest(
             Slice::from_slice(&AMBIGUOUS_ACTOR_REGISTRATIONS),
             Slice::from_slice(&AMBIGUOUS_STRATEGY_REGISTRATIONS),
+        );
+        let validation_error = manifest
+            .validate()
+            .expect_err("loader rejects ambiguous manifest type names");
+        assert!(
+            validation_error
+                .to_string()
+                .contains("type name 'DuplicateType' appears in both actors[0] and strategies[0]")
         );
 
         let error = match configured_entry(&manifest, "./libexample.so", "DuplicateType") {

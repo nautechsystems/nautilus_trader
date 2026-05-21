@@ -463,6 +463,9 @@ fn macro_emits_loadable_manifest() {
     // SAFETY: pointer is to a static `LazyLock`-backed manifest in this crate.
     let manifest = unsafe { &*manifest_ptr };
     assert_eq!(manifest.abi_version, NAUTILUS_PLUGIN_ABI_VERSION);
+    manifest
+        .validate()
+        .expect("macro-generated manifest passes validation");
     // SAFETY: name string lives in static storage.
     assert_eq!(
         unsafe { manifest.plugin_name.as_str() },

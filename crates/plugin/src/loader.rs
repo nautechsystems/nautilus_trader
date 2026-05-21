@@ -26,6 +26,7 @@ use std::{
     fmt::{Debug, Display},
     mem::ManuallyDrop,
     path::{Path, PathBuf},
+    slice,
     sync::OnceLock,
 };
 
@@ -35,7 +36,7 @@ use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL,
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
     host::{HostContext, HostLogLevel, HostVTable},
-    manifest::{PluginBuildId, PluginInitFn, PluginManifest},
+    manifest::{PluginBuildId, PluginInitFn, PluginManifest, PluginManifestValidationErrors},
 };
 
 /// Errors that can occur while loading a plug-in.
@@ -65,6 +66,14 @@ pub enum LoadError {
         actual: u32,
         diagnostics: Box<PluginManifestDiagnostics>,
     },
+
+    #[error("plug-in '{path}' manifest validation failed: {diagnostics}; {errors}")]
+    InvalidManifest {
+        path: PathBuf,
+        diagnostics: Box<PluginManifestDiagnostics>,
+        #[source]
+        errors: PluginManifestValidationErrors,
+    },
 }
 
 /// Owned manifest diagnostics captured before a rejected plug-in is unloaded.
@@ -80,14 +89,9 @@ pub struct PluginManifestDiagnostics {
 
 impl PluginManifestDiagnostics {
     fn from_manifest(manifest: &PluginManifest) -> Self {
-        // SAFETY: manifest strings live in static cdylib storage while the
-        // library is loaded.
-        let plugin_name = unsafe { manifest.plugin_name.as_str() }.to_string();
-        // SAFETY: see above.
-        let plugin_version = unsafe { manifest.plugin_version.as_str() }.to_string();
         Self {
-            plugin_name,
-            plugin_version,
+            plugin_name: borrowed_str_diagnostic(manifest.plugin_name),
+            plugin_version: borrowed_str_diagnostic(manifest.plugin_version),
             build_id: PluginBuildIdDiagnostics::from_build_id(&manifest.build_id),
         }
     }
@@ -122,22 +126,12 @@ pub struct PluginBuildIdDiagnostics {
 
 impl PluginBuildIdDiagnostics {
     fn from_build_id(build_id: &PluginBuildId) -> Self {
-        // SAFETY: build id strings live in static cdylib storage while the
-        // library is loaded.
-        let nautilus_plugin_version =
-            unsafe { build_id.nautilus_plugin_version.as_str() }.to_string();
-        // SAFETY: see above.
-        let rustc_version = unsafe { build_id.rustc_version.as_str() }.to_string();
-        // SAFETY: see above.
-        let target_triple = unsafe { build_id.target_triple.as_str() }.to_string();
-        // SAFETY: see above.
-        let build_profile = unsafe { build_id.build_profile.as_str() }.to_string();
         Self {
             schema_version: build_id.schema_version,
-            nautilus_plugin_version,
-            rustc_version,
-            target_triple,
-            build_profile,
+            nautilus_plugin_version: borrowed_str_diagnostic(build_id.nautilus_plugin_version),
+            rustc_version: borrowed_str_diagnostic(build_id.rustc_version),
+            target_triple: borrowed_str_diagnostic(build_id.target_triple),
+            build_profile: borrowed_str_diagnostic(build_id.build_profile),
         }
     }
 }
@@ -158,6 +152,17 @@ impl Display for PluginBuildIdDiagnostics {
 
 fn unknown_if_empty(value: &str) -> &str {
     if value.is_empty() { "<unknown>" } else { value }
+}
+
+fn borrowed_str_diagnostic(value: BorrowedStr<'_>) -> String {
+    if value.ptr.is_null() || value.len == 0 {
+        return String::new();
+    }
+
+    // SAFETY: manifest strings live in static cdylib storage while the
+    // library is loaded.
+    let bytes = unsafe { slice::from_raw_parts(value.ptr, value.len) };
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 /// One loaded plug-in. Holds the `Library` alive for the process lifetime so
@@ -288,7 +293,7 @@ impl PluginLoader {
 
         validate_manifest_ptr(manifest_ptr, &path_buf)?;
         // SAFETY: validate_manifest_ptr returns Ok only when the pointer is
-        // non-null and the ABI matches.
+        // non-null, the ABI matches, and the manifest passes validation.
         let abi = unsafe { (*manifest_ptr).abi_version };
 
         // SAFETY: pointer is non-null and the library is kept alive below.
@@ -360,6 +365,15 @@ fn validate_manifest_ptr(
             diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
         });
     }
+
+    if let Err(errors) = manifest.validate() {
+        return Err(LoadError::InvalidManifest {
+            path: path.to_path_buf(),
+            diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
+            errors,
+        });
+    }
+
     Ok(())
 }
 
@@ -655,7 +669,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{boundary::Slice, manifest::PluginBuildId};
+    use crate::{
+        boundary::Slice,
+        manifest::{CustomDataRegistration, PluginBuildId},
+    };
 
     #[rstest]
     fn empty_loader_is_empty() {
@@ -816,6 +833,67 @@ mod tests {
         };
         let path = std::path::Path::new("/test/plugin.so");
         validate_manifest_ptr(&raw const good_manifest, path).expect("matching manifest accepted");
+    }
+
+    #[rstest]
+    fn validate_manifest_ptr_rejects_invalid_manifest_with_diagnostics() {
+        static NULL_VTABLE_CUSTOM_DATA: [CustomDataRegistration; 1] = [CustomDataRegistration {
+            type_name: BorrowedStr::from_str("BadTick"),
+            vtable: std::ptr::null(),
+        }];
+
+        let bad_manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+            plugin_name: BorrowedStr::empty(),
+            plugin_vendor: BorrowedStr::from_str(""),
+            plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId {
+                schema_version: crate::PLUGIN_BUILD_ID_VERSION + 1,
+                ..PluginBuildId::current()
+            },
+            custom_data: Slice::from_slice(&NULL_VTABLE_CUSTOM_DATA),
+            actors: Slice::empty(),
+            strategies: Slice::empty(),
+        };
+        let path = std::path::Path::new("/test/plugin.so");
+        let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
+
+        match &err {
+            LoadError::InvalidManifest {
+                path: p,
+                diagnostics,
+                errors,
+            } => {
+                assert_eq!(p, path);
+                assert_eq!(diagnostics.plugin_name.as_str(), "");
+                assert_eq!(diagnostics.plugin_version.as_str(), "0.0.0");
+                assert!(
+                    errors
+                        .messages()
+                        .iter()
+                        .any(|message| message == "plugin_name must not be empty")
+                );
+                assert!(
+                    errors
+                        .messages()
+                        .iter()
+                        .any(|message| message == "custom_data[0].vtable must not be null")
+                );
+            }
+            other => panic!("expected InvalidManifest, was {other:?}"),
+        }
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("plug-in '/test/plugin.so' manifest validation failed"));
+        assert!(rendered.contains("manifest name='<unknown>'"));
+        assert!(rendered.contains("plugin_name must not be empty"));
+        let expected_schema_error = format!(
+            "build_id.schema_version {} does not match supported schema {}",
+            crate::PLUGIN_BUILD_ID_VERSION + 1,
+            crate::PLUGIN_BUILD_ID_VERSION
+        );
+        assert!(rendered.contains(&expected_schema_error));
+        assert!(rendered.contains("custom_data[0].vtable must not be null"));
     }
 
     #[rstest]

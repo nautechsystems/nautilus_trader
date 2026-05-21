@@ -15,9 +15,10 @@ Plug-in system for [NautilusTrader](https://nautilustrader.io).
 The `nautilus-plugin` crate defines the C-ABI boundary between a Nautilus host (the live node)
 and independently compiled Rust plug-in cdylibs. The host `dlopen`s a plug-in, calls a single
 `nautilus_plugin_init` entry symbol, and registers every plug point the returned manifest
-enumerates. The boundary is C ABI because Rust's `#[repr(Rust)]` layout is unstable across
-compilations, so cross-cdylib `Box<dyn Trait>` and `async fn` are unsound. C ABI is the layer
-of contract both halves can compile to without sharing a build.
+enumerates after validating that the manifest is structurally well-formed. The boundary is
+C ABI because Rust's `#[repr(Rust)]` layout is unstable across compilations, so cross-cdylib
+`Box<dyn Trait>` and `async fn` are unsound. C ABI is the layer of contract both halves can
+compile to without sharing a build.
 
 Authors write normal Rust. The `nautilus_plugin!` macro emits the `extern "C"` symbol, the
 `#[repr(C)]` manifest, and the per-type vtables; authors never type `extern "C"`,
@@ -81,6 +82,9 @@ pinned to the host's Rust toolchain version and Nautilus version. Each manifest 
 versioned `PluginBuildId` with the `nautilus-plugin` crate version, Rust compiler version when
 the build script can read it, target triple, and build profile. The loader includes that build
 identifier in ABI mismatch diagnostics so operators can spot stale or cross-built cdylibs.
+
+The build identifier remains diagnostic; the loader validates only the build-id schema version,
+not the specific crate version, compiler version, target triple, or build profile values.
 
 `NAUTILUS_PLUGIN_ABI_VERSION` stays pinned at `1` while this early-alpha surface is unreleased
 and unstable. During this phase, the value does not promise compatibility between Nautilus

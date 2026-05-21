@@ -100,6 +100,9 @@ fn loads_example_cdylib_and_walks_manifest() {
     let plugin = &loader.loaded()[0];
     let manifest = plugin.manifest();
     assert_eq!(manifest.abi_version, NAUTILUS_PLUGIN_ABI_VERSION);
+    manifest
+        .validate()
+        .expect("example cdylib manifest passes validation");
     // SAFETY: name string lives in the cdylib for the process lifetime.
     assert_eq!(
         unsafe { manifest.plugin_name.as_str() },

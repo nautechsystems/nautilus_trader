@@ -182,6 +182,9 @@ fn example_manifest() -> &'static PluginManifest {
 #[ignore]
 fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
     assert!(example_manifest.matches_compiled_abi());
+    example_manifest
+        .validate()
+        .expect("live example manifest passes validation");
     // SAFETY: name string lives in cdylib static storage.
     assert_eq!(
         unsafe { example_manifest.plugin_name.as_str() },
