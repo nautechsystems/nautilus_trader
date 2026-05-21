@@ -483,7 +483,7 @@ impl NautilusKernel {
                 && let Err(e) =
                     event_store.restore_parent_cache(self.instance_id, &mut self.cache.borrow_mut())
             {
-                log::error!("Failed to restore cache from event-store parent run: {e}");
+                log::error!("Failed to restore cache from event-store replay source: {e}");
                 return;
             }
 

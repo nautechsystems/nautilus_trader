@@ -65,14 +65,14 @@ pub struct RegisteredComponents {
 /// `nautilus-system`. Implementations are typically built by the caller and injected via
 /// [`crate::builder::NautilusKernelBuilder::with_event_store`].
 pub trait KernelEventStore: Debug {
-    /// Restores cache state from a recovered parent run, when one exists.
+    /// Restores cache state from a configured replay source or recovered parent run.
     ///
-    /// Implementations may open a sealed parent run, validate its snapshot anchor, and replay
-    /// the tail directly into `cache`. The kernel calls this once before [`Self::open`].
+    /// Implementations may open a sealed replay source, validate its snapshot anchor, and
+    /// replay the tail directly into `cache`. The kernel calls this once before [`Self::open`].
     ///
     /// # Errors
     ///
-    /// Returns an error when the parent reader, snapshot restore, decode, or cache apply
+    /// Returns an error when the source reader, snapshot restore, decode, or cache apply
     /// step fails.
     fn restore_parent_cache(&mut self, instance_id: UUID4, cache: &mut Cache)
     -> anyhow::Result<()>;
@@ -109,7 +109,7 @@ pub trait KernelEventStore: Debug {
     /// Returns the run id of the currently open run, when capture is active.
     fn run_id(&self) -> Option<&str>;
 
-    /// Returns the parent run id wired into the open run, when one was recovered.
+    /// Returns the configured replay source or recovered parent run id, when present.
     fn parent_run_id(&self) -> Option<&str>;
 
     /// Returns whether the implementation has signaled a fail-stop condition.

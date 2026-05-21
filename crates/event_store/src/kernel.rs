@@ -118,6 +118,11 @@ pub struct EventStoreConfig {
     pub identity: RunIdentity,
     /// How the supervisor reclaims sealed run files (out-of-scope in Phase 7).
     pub retention: RetentionMode,
+    /// Sealed run to restore cache state from before opening a fresh run.
+    ///
+    /// When set, this becomes the replay source and parent link for the fresh run.
+    /// Quarantined runs are rejected.
+    pub replay_from_run_id: Option<RunId>,
     /// Capacity of the writer's bounded submit channel.
     pub channel_capacity: usize,
     /// Maximum entries collected before the writer forces a commit.
@@ -137,6 +142,7 @@ impl Default for EventStoreConfig {
             base_dir: PathBuf::new(),
             identity: RunIdentity::default(),
             retention: RetentionMode::default(),
+            replay_from_run_id: None,
             channel_capacity: crate::DEFAULT_CHANNEL_CAPACITY,
             max_batch_entries: crate::DEFAULT_MAX_BATCH_ENTRIES,
             max_batch_latency: crate::DEFAULT_MAX_BATCH_LATENCY,
@@ -290,7 +296,7 @@ impl EventStoreSession {
         self.manifest.run_id.as_str()
     }
 
-    /// Returns the parent run id (the most-recently-recovered predecessor).
+    /// Returns the parent run id for the current run.
     #[must_use]
     pub fn parent_run_id(&self) -> Option<&str> {
         self.manifest.parent_run_id.as_deref()
@@ -488,11 +494,17 @@ impl EventStoreLifecycle {
         let clock = Self::clock_for(environment);
         let start_ts_init = self.clock.borrow().timestamp_ns();
         let run_id = build_run_id(start_ts_init);
+        let parent_run_id = if let Some(replay_run_id) = config.replay_from_run_id.as_deref() {
+            validate_configured_replay_source(&config, &instance_id.to_string(), replay_run_id)?;
+            Some(replay_run_id.to_string())
+        } else {
+            self.parent_run_id.clone()
+        };
         let session = open_run(
             &config,
             &instance_id.to_string(),
             run_id,
-            self.parent_run_id.clone(),
+            parent_run_id,
             start_ts_init,
             components,
             self.halt.clone(),
@@ -511,15 +523,15 @@ impl EventStoreLifecycle {
         Ok(())
     }
 
-    /// Restores cache state from the recovered parent run, when one exists.
+    /// Restores cache state from the configured replay run or recovered parent run.
     ///
-    /// This is a bootstrap-only reconstruction path. It opens the sealed parent run for
-    /// read-only replay, restores the cache-owned snapshot blob, then replays only the
-    /// entries after the snapshot anchor directly into [`Cache`].
+    /// This is a bootstrap-only reconstruction path. It opens the sealed replay source
+    /// for read-only replay, restores the cache-owned snapshot blob, then replays only
+    /// the entries after the snapshot anchor directly into [`Cache`].
     ///
     /// # Errors
     ///
-    /// Returns [`KernelError::CacheReplay`] when the parent reader, snapshot restore, decode,
+    /// Returns [`KernelError::CacheReplay`] when the source reader, snapshot restore, decode,
     /// or cache apply step fails.
     pub fn restore_parent_cache(
         &self,
@@ -529,21 +541,33 @@ impl EventStoreLifecycle {
         let Some(config) = self.config.as_ref() else {
             return Ok(None);
         };
-        let Some(parent_run_id) = self.parent_run_id.as_deref() else {
+        let replay_run_id = config
+            .replay_from_run_id
+            .as_deref()
+            .or(self.parent_run_id.as_deref());
+        let Some(replay_run_id) = replay_run_id else {
             return Ok(None);
+        };
+        let source = if config.replay_from_run_id.is_some() {
+            "configured replay run"
+        } else {
+            "parent run"
         };
 
         let backend = RedbBackend::open_sealed(
             config.base_dir.clone(),
             &instance_id.to_string(),
-            parent_run_id,
+            replay_run_id,
         )
         .map_err(CacheReplayError::from)?;
+        let manifest = backend.manifest().map_err(CacheReplayError::from)?;
+        reject_quarantined_replay_source(replay_run_id, manifest.status)?;
+
         let reader = EventStoreReader::new(backend);
         let report = restore_cache_snapshot_tail(cache, &reader)?;
 
         log::info!(
-            "Restored cache from event-store parent run {parent_run_id}: from_seq={}, to_seq={}, applied={}, ignored={}",
+            "Restored cache from event-store {source} {replay_run_id}: from_seq={}, to_seq={}, applied={}, ignored={}",
             report.plan.from_seq,
             report.plan.to_seq,
             report.applied_entries,
@@ -588,11 +612,13 @@ impl EventStoreLifecycle {
         &self.recovered
     }
 
-    /// Returns the parent run id wired into the open run's manifest, when one was
-    /// recovered.
+    /// Returns the configured replay source or recovered parent run id, when present.
     #[must_use]
     pub fn parent_run_id(&self) -> Option<&str> {
-        self.parent_run_id.as_deref()
+        self.config
+            .as_ref()
+            .and_then(|config| config.replay_from_run_id.as_deref())
+            .or(self.parent_run_id.as_deref())
     }
 
     /// Returns the run id of the open session, when capture is active.
@@ -655,6 +681,29 @@ impl Drop for EventStoreLifecycle {
             .unwrap_or_default();
         self.seal(ts);
     }
+}
+
+fn validate_configured_replay_source(
+    config: &EventStoreConfig,
+    instance_id: &str,
+    run_id: &str,
+) -> Result<(), CacheReplayError> {
+    let backend = RedbBackend::open_sealed(config.base_dir.clone(), instance_id, run_id)
+        .map_err(CacheReplayError::from)?;
+    let manifest = backend.manifest().map_err(CacheReplayError::from)?;
+    reject_quarantined_replay_source(run_id, manifest.status)
+}
+
+fn reject_quarantined_replay_source(
+    run_id: &str,
+    status: RunStatus,
+) -> Result<(), CacheReplayError> {
+    if matches!(status, RunStatus::Quarantined) {
+        let error = EventStoreError::Backend(format!("replay source {run_id} is quarantined"));
+        return Err(CacheReplayError::from(error));
+    }
+
+    Ok(())
 }
 
 fn restore_cache_snapshot_tail<B>(
@@ -1144,6 +1193,7 @@ mod tests {
                 seed: None,
             },
             retention: RetentionMode::Full,
+            replay_from_run_id: None,
             channel_capacity: 64,
             max_batch_entries: 1,
             max_batch_latency: Duration::from_millis(2),
