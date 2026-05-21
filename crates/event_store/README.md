@@ -466,13 +466,28 @@ Two consequences:
    trading. Wrapping only open is insufficient: a `zero-tail` corruption opens cleanly and
    panics on first read, so the verifier exercises a full integrity scan, not just the
    file header.
+
+   The first verifier surface is the `verify` binary:
+
+   ```fish
+   cargo run -p nautilus-event-store --bin verify -- /path/to/run.redb
+   ```
+
+   It opens sealed run files through a read-only redb handle, scans every entry through a
+   worker subprocess, recomputes entry hashes, checks manifest/high-watermark status, and
+   reports the result on stdout or stderr. Exit code `0` means clean, `1` means corrupt
+   findings or a worker abort/timeout, and `2` means the verifier could not open or run
+   against the requested file. The binary reports `quarantine=not-performed`; the
+   supervisor owns any manifest status change. `NAUTILUS_EVENT_STORE_VERIFY_TIMEOUT_SECS`
+   overrides the default 30-second worker timeout for large sealed runs.
 2. **Canonical entry hash on every captured entry.** Every captured entry carries a
    single canonical hash over its full content (`seq`, `ts_init`, `ts_publish`, `topic`,
    `payload_type`, `payload`, `headers`) computed at capture time and stored alongside the
    entry. Readers, replay, export, and the verifier process recompute and check it; a
-   mismatch quarantines the run. Sidecar indices (`client_order_id -> seq`,
-   `venue_order_id -> seq`) are rebuildable projections from the `seq -> entry` table, not
-   authoritative storage; the verifier cross-checks them. Corruption that `redb` misses is caught by hash mismatch on the next read of the
+   mismatch reports corruption for the supervisor to quarantine. Sidecar indices
+   (`client_order_id -> seq`, `venue_order_id -> seq`) are rebuildable projections from the
+   `seq -> entry` table, not authoritative storage; the verifier cross-checks them.
+   Corruption that `redb` misses is caught by hash mismatch on the next read of the
    affected entry, and the run never proceeds unaudited.
 
 Sealed runs may be exported to opt-in downstream sinks. An outage of any downstream sink

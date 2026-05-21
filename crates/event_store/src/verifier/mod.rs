@@ -49,9 +49,9 @@ use crate::{
 /// Verifier over a single open run.
 ///
 /// Constructed either by passing an already-open backend ([`Verifier::new`]) or by
-/// opening a sealed redb file directly ([`Verifier::open_redb`]). The verifier never
-/// mutates the backend; it walks the entry table and the secondary indices, then emits
-/// a typed [`VerifyReport`].
+/// opening a sealed redb file directly ([`Verifier::open_redb`] or
+/// [`Verifier::open_redb_file`]). The verifier never mutates the backend; it walks the
+/// entry table and the secondary indices, then emits a typed [`VerifyReport`].
 pub struct Verifier {
     backend: Box<dyn EventStore>,
 }
@@ -87,6 +87,23 @@ impl Verifier {
     ) -> Result<Self, VerifyError> {
         let backend =
             RedbBackend::open_sealed(base_dir.as_ref().to_path_buf(), instance_id, run_id)?;
+        Ok(Self {
+            backend: Box::new(backend),
+        })
+    }
+
+    /// Opens a sealed redb run file directly by path and wraps it for verification.
+    ///
+    /// The backend uses a read-only database handle for this path. The verifier
+    /// reports findings, but it never seals or quarantines the file; a supervisor or
+    /// operator process decides that policy from the returned [`VerifyReport`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerifyError::Backend`] when the underlying backend rejects the open
+    /// (file missing, run still `Running`, header corruption).
+    pub fn open_redb_file(path: impl AsRef<Path>) -> Result<Self, VerifyError> {
+        let backend = RedbBackend::open_sealed_file(path.as_ref().to_path_buf())?;
         Ok(Self {
             backend: Box::new(backend),
         })
