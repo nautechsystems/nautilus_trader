@@ -56,9 +56,9 @@ use ustr::Ustr;
 
 use crate::{
     BusCaptureAdapter, CacheReplayError, CacheReplayReport, CaptureError, EntryDraft, EventStore,
-    EventStoreError, EventStoreReader, EventStoreWriter, HaltCallback, HaltReason, Headers,
-    RedbBackend, RunId, RunManifest, RunStatus, ScanDirection, SnapshotAnchor, Topic, WriterConfig,
-    compute_snapshot_content_hash, default_registry, restore_cache_snapshot_and_replay_tail,
+    EventStoreError, EventStoreWriter, HaltCallback, HaltReason, Headers, RedbBackend, RunId,
+    RunManifest, RunStatus, ScanDirection, Topic, WriterConfig, compute_snapshot_content_hash,
+    default_registry, restore_cache_from_sealed_run, validate_event_store_replay_source,
 };
 
 const RUN_STARTED_TOPIC: &str = "run.lifecycle.RunStarted";
@@ -120,8 +120,9 @@ pub struct EventStoreConfig {
     pub retention: RetentionMode,
     /// Sealed run to restore cache state from before opening a fresh run.
     ///
-    /// When set, this becomes the replay source and parent link for the fresh run.
-    /// Quarantined runs are rejected.
+    /// When set, this enables event-store replay: the kernel restores cache state from this run,
+    /// records it as the parent link for the fresh child run, and then skips engines, clients,
+    /// trader startup, and live reconciliation. Quarantined runs are rejected.
     pub replay_from_run_id: Option<RunId>,
     /// Capacity of the writer's bounded submit channel.
     pub channel_capacity: usize,
@@ -495,7 +496,11 @@ impl EventStoreLifecycle {
         let start_ts_init = self.clock.borrow().timestamp_ns();
         let run_id = build_run_id(start_ts_init);
         let parent_run_id = if let Some(replay_run_id) = config.replay_from_run_id.as_deref() {
-            validate_configured_replay_source(&config, &instance_id.to_string(), replay_run_id)?;
+            validate_event_store_replay_source(
+                config.base_dir.clone(),
+                &instance_id.to_string(),
+                replay_run_id,
+            )?;
             Some(replay_run_id.to_string())
         } else {
             self.parent_run_id.clone()
@@ -554,27 +559,22 @@ impl EventStoreLifecycle {
             "parent run"
         };
 
-        let backend = RedbBackend::open_sealed(
+        let report = restore_cache_from_sealed_run(
+            cache,
             config.base_dir.clone(),
             &instance_id.to_string(),
             replay_run_id,
-        )
-        .map_err(CacheReplayError::from)?;
-        let manifest = backend.manifest().map_err(CacheReplayError::from)?;
-        reject_quarantined_replay_source(replay_run_id, manifest.status)?;
-
-        let reader = EventStoreReader::new(backend);
-        let report = restore_cache_snapshot_tail(cache, &reader)?;
+        )?;
 
         log::info!(
             "Restored cache from event-store {source} {replay_run_id}: from_seq={}, to_seq={}, applied={}, ignored={}",
-            report.plan.from_seq,
-            report.plan.to_seq,
-            report.applied_entries,
-            report.ignored_entries,
+            report.cache.plan.from_seq,
+            report.cache.plan.to_seq,
+            report.cache.applied_entries,
+            report.cache.ignored_entries,
         );
 
-        Ok(Some(report))
+        Ok(Some(report.cache))
     }
 
     /// Seals the open session by writing `RunEnded` and updating the manifest to
@@ -619,6 +619,14 @@ impl EventStoreLifecycle {
             .as_ref()
             .and_then(|config| config.replay_from_run_id.as_deref())
             .or(self.parent_run_id.as_deref())
+    }
+
+    /// Returns whether this lifecycle is configured for event-store-only replay.
+    #[must_use]
+    pub fn is_event_store_replay_configured(&self) -> bool {
+        self.config
+            .as_ref()
+            .is_some_and(|config| config.replay_from_run_id.is_some())
     }
 
     /// Returns the run id of the open session, when capture is active.
@@ -681,68 +689,6 @@ impl Drop for EventStoreLifecycle {
             .unwrap_or_default();
         self.seal(ts);
     }
-}
-
-fn validate_configured_replay_source(
-    config: &EventStoreConfig,
-    instance_id: &str,
-    run_id: &str,
-) -> Result<(), CacheReplayError> {
-    let backend = RedbBackend::open_sealed(config.base_dir.clone(), instance_id, run_id)
-        .map_err(CacheReplayError::from)?;
-    let manifest = backend.manifest().map_err(CacheReplayError::from)?;
-    reject_quarantined_replay_source(run_id, manifest.status)
-}
-
-fn reject_quarantined_replay_source(
-    run_id: &str,
-    status: RunStatus,
-) -> Result<(), CacheReplayError> {
-    if matches!(status, RunStatus::Quarantined) {
-        let error = EventStoreError::Backend(format!("replay source {run_id} is quarantined"));
-        return Err(CacheReplayError::from(error));
-    }
-
-    Ok(())
-}
-
-fn restore_cache_snapshot_tail<B>(
-    cache: &mut Cache,
-    reader: &EventStoreReader<B>,
-) -> Result<CacheReplayReport, CacheReplayError>
-where
-    B: EventStore,
-{
-    restore_cache_snapshot_and_replay_tail(cache, reader, restore_cache_snapshot_blob)
-}
-
-fn restore_cache_snapshot_blob(
-    cache: &mut Cache,
-    anchor: Option<&SnapshotAnchor>,
-) -> Result<(), CacheReplayError> {
-    let Some(anchor) = anchor else {
-        return Ok(());
-    };
-
-    let blob = cache
-        .load_snapshot_blob(&anchor.blob_ref)
-        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))?
-        .ok_or_else(|| CacheReplayError::snapshot_restore(anchor, "snapshot blob not found"))?;
-    let actual_hash = compute_snapshot_content_hash(blob.as_ref());
-
-    if actual_hash != anchor.content_hash {
-        return Err(CacheReplayError::snapshot_restore(
-            anchor,
-            format!(
-                "content_hash mismatch: expected {}, actual {actual_hash}",
-                anchor.content_hash
-            ),
-        ));
-    }
-
-    cache
-        .restore_snapshot_blob(&anchor.blob_ref, blob)
-        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))
 }
 
 /// Sweeps `<base_dir>/<instance_id>/` for crashed predecessor runs and seals each one.
@@ -1064,7 +1010,7 @@ impl BusTap for EventStoreBusTap {
     fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn Any) {
         let ts_init = self.clock.get_time_ns();
         // Reuse the endpoint string as the captured topic. The MStr markers differ but
-        // the underlying interned string is the same; forensics scans match either way.
+        // the underlying interned string is the same; offline scans match either way.
         let topic = Topic::from(*endpoint);
         self.capture(topic, message, ts_init);
     }
@@ -1143,6 +1089,10 @@ impl KernelEventStoreTrait for EventStoreLifecycle {
 
     fn parent_run_id(&self) -> Option<&str> {
         EventStoreLifecycle::parent_run_id(self)
+    }
+
+    fn is_event_store_replay_configured(&self) -> bool {
+        EventStoreLifecycle::is_event_store_replay_configured(self)
     }
 
     fn is_halted(&self) -> bool {
@@ -1229,12 +1179,14 @@ mod tests {
     fn restore_cache_snapshot_blob_rejects_hash_mismatch() {
         let mut cache = Cache::default();
         let blob = Bytes::from_static(b"snapshot");
-        let anchor = SnapshotAnchor::new(0, "cache://position-snapshots/P-1/0", "blake3:bad");
+        let anchor =
+            crate::SnapshotAnchor::new(0, "cache://position-snapshots/P-1/0", "blake3:bad");
 
         cache
             .add(&anchor.blob_ref, blob)
             .expect("seed snapshot blob");
-        let err = restore_cache_snapshot_blob(&mut cache, Some(&anchor)).expect_err("hash error");
+        let err =
+            crate::restore_cache_snapshot_blob(&mut cache, Some(&anchor)).expect_err("hash error");
 
         assert!(
             err.to_string().contains("content_hash mismatch"),

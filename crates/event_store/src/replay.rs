@@ -20,7 +20,7 @@
 //! does not publish to the live message bus, send commands, invoke adapters, or submit
 //! entries back into the event store.
 
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use nautilus_common::cache::Cache;
 use nautilus_model::{
@@ -32,6 +32,7 @@ use nautilus_model::{
 use serde::de::DeserializeOwned;
 
 use crate::{
+    RedbBackend,
     backend::EventStore,
     capture::builtins::{
         PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_ORDER_ACCEPTED,
@@ -44,8 +45,9 @@ use crate::{
     },
     entry::EventStoreEntry,
     error::EventStoreError,
+    manifest::{RunManifest, RunStatus},
     reader::{EventStoreReader, SnapshotReplayPlan},
-    snapshot::SnapshotAnchor,
+    snapshot::{SnapshotAnchor, compute_snapshot_content_hash},
 };
 
 /// Summary of a cache snapshot-tail replay.
@@ -57,6 +59,15 @@ pub struct CacheReplayReport {
     pub applied_entries: usize,
     /// Number of event-store entries that do not have a cache replay rule yet.
     pub ignored_entries: usize,
+}
+
+/// Summary of an event-store replay source and cache restore.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventStoreReplayReport {
+    /// Manifest of the sealed replay source.
+    pub manifest: RunManifest,
+    /// Cache snapshot-tail replay result.
+    pub cache: CacheReplayReport,
 }
 
 /// Errors surfaced while restoring a cache snapshot tail.
@@ -186,6 +197,103 @@ where
     B: EventStore,
 {
     restore_cache_snapshot_and_replay_tail(cache, reader, |_, _| Ok(()))
+}
+
+/// Restores cache state from a sealed run without publishing to the bus or touching live venues.
+///
+/// The loader opens `<base_dir>/<instance_id>/<run_id>.redb` through the sealed-run reader path,
+/// rejects quarantined sources, restores the cache-owned snapshot blob when an anchor exists, and
+/// applies the event-store tail in `seq` order. It does not open adapters, reconcile against a
+/// venue, submit new entries, or query the data catalog.
+///
+/// # Errors
+///
+/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
+/// unreadable; see [`restore_cache_snapshot_and_replay_tail`] for snapshot, decode, and apply
+/// failures.
+pub fn restore_cache_from_sealed_run(
+    cache: &mut Cache,
+    base_dir: impl Into<PathBuf>,
+    instance_id: &str,
+    run_id: &str,
+) -> Result<EventStoreReplayReport, CacheReplayError> {
+    let (manifest, reader) = open_event_store_replay_source(base_dir, instance_id, run_id)?;
+    let cache_report =
+        restore_cache_snapshot_and_replay_tail(cache, &reader, restore_cache_snapshot_blob)?;
+
+    Ok(EventStoreReplayReport {
+        manifest,
+        cache: cache_report,
+    })
+}
+
+/// Opens a sealed run for replay without touching live venues.
+///
+/// # Errors
+///
+/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
+/// unreadable.
+pub fn open_event_store_replay_source(
+    base_dir: impl Into<PathBuf>,
+    instance_id: &str,
+    run_id: &str,
+) -> Result<(RunManifest, EventStoreReader<RedbBackend>), CacheReplayError> {
+    let backend = RedbBackend::open_sealed(base_dir, instance_id, run_id)?;
+    let manifest = backend.manifest()?;
+    reject_quarantined_replay_source(run_id, manifest.status)?;
+    Ok((manifest, EventStoreReader::new(backend)))
+}
+
+/// Validates that a configured replay source exists, is sealed, and is not quarantined.
+///
+/// # Errors
+///
+/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
+/// unreadable.
+pub fn validate_event_store_replay_source(
+    base_dir: impl Into<PathBuf>,
+    instance_id: &str,
+    run_id: &str,
+) -> Result<RunManifest, CacheReplayError> {
+    let backend = RedbBackend::open_sealed(base_dir, instance_id, run_id)?;
+    let manifest = backend.manifest()?;
+    reject_quarantined_replay_source(run_id, manifest.status)?;
+    Ok(manifest)
+}
+
+/// Restores the cache-owned snapshot blob identified by `anchor`.
+///
+/// # Errors
+///
+/// Returns [`CacheReplayError::SnapshotRestore`] when the blob is missing, fails to load, fails its
+/// content hash check, or fails to restore into the cache.
+pub fn restore_cache_snapshot_blob(
+    cache: &mut Cache,
+    anchor: Option<&SnapshotAnchor>,
+) -> Result<(), CacheReplayError> {
+    let Some(anchor) = anchor else {
+        return Ok(());
+    };
+
+    let blob = cache
+        .load_snapshot_blob(&anchor.blob_ref)
+        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))?
+        .ok_or_else(|| CacheReplayError::snapshot_restore(anchor, "snapshot blob not found"))?;
+    let actual_hash = compute_snapshot_content_hash(blob.as_ref());
+
+    if actual_hash != anchor.content_hash {
+        return Err(CacheReplayError::snapshot_restore(
+            anchor,
+            format!(
+                "content_hash mismatch: expected {}, actual {actual_hash}",
+                anchor.content_hash
+            ),
+        ));
+    }
+
+    cache
+        .restore_snapshot_blob(&anchor.blob_ref, blob)
+        .map_err(|e| CacheReplayError::snapshot_restore(anchor, e))
 }
 
 /// Applies one event-store entry to cache state when a replay rule exists.
@@ -360,6 +468,18 @@ fn apply_error(entry: &EventStoreEntry, error: impl Display) -> CacheReplayError
     }
 }
 
+fn reject_quarantined_replay_source(
+    run_id: &str,
+    status: RunStatus,
+) -> Result<(), CacheReplayError> {
+    if matches!(status, RunStatus::Quarantined) {
+        let error = EventStoreError::Backend(format!("replay source {run_id} is quarantined"));
+        return Err(CacheReplayError::from(error));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{any::Any, cell::Cell, rc::Rc};
@@ -384,11 +504,12 @@ mod tests {
         types::{Currency, Money},
     };
     use rstest::rstest;
+    use tempfile::TempDir;
     use ustr::Ustr;
 
     use super::*;
     use crate::{
-        backend::{AppendEntry, MemoryBackend},
+        backend::{AppendEntry, MemoryBackend, RedbBackend},
         capture::{
             builtins::{encode_order_event_any, encode_position_event},
             encode_account_state,
@@ -794,5 +915,170 @@ mod tests {
             }
             other => panic!("expected Apply, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn restore_cache_from_sealed_run_restores_snapshot_and_tail() {
+        let tmp = TempDir::new().expect("tempdir");
+        let run_id = "sealed-replay";
+        let instance_id = "trader-001";
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-SEALED-REPLAY-1"))
+            .build();
+        let position = Position::new(&instrument, fill);
+        let mut snapshot_cache = Cache::default();
+        let snapshot_ref = snapshot_cache
+            .snapshot_position(&position)
+            .expect("snapshot position");
+        let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+        let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
+
+        {
+            let mut backend = RedbBackend::new(tmp.path().to_path_buf());
+            backend.open_run(manifest(run_id)).expect("open run");
+            backend
+                .append_batch(&[append_account_state(1, &anchored_state)])
+                .expect("append anchored state");
+            backend
+                .record_snapshot_anchor(SnapshotAnchor::new(
+                    1,
+                    snapshot_ref.blob_ref.clone(),
+                    compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+                ))
+                .expect("record snapshot anchor");
+            backend
+                .append_batch(&[append_account_state(2, &replayed_state)])
+                .expect("append replay tail");
+            backend.seal(RunStatus::Ended).expect("seal run");
+        }
+
+        let mut cache = Cache::default();
+        cache
+            .add(&snapshot_ref.blob_ref, snapshot_ref.blob.clone())
+            .expect("seed snapshot blob");
+
+        let report = restore_cache_from_sealed_run(
+            &mut cache,
+            tmp.path().to_path_buf(),
+            instance_id,
+            run_id,
+        )
+        .expect("restore sealed run");
+
+        let frames = cache
+            .position_snapshot_bytes(&position.id)
+            .expect("restored position snapshot");
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(report.manifest.run_id, run_id);
+        assert_eq!(report.manifest.status, RunStatus::Ended);
+        assert_eq!(report.cache.plan.from_seq, 2);
+        assert_eq!(report.cache.applied_entries, 1);
+        assert_eq!(report.cache.ignored_entries, 0);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].as_slice(), snapshot_ref.blob.as_ref());
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    #[rstest]
+    fn restore_cache_from_sealed_run_rejects_snapshot_hash_mismatch() {
+        let tmp = TempDir::new().expect("tempdir");
+        let run_id = "sealed-replay-bad-snapshot";
+        let instance_id = "trader-001";
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-SEALED-REPLAY-BAD-SNAPSHOT-1"))
+            .build();
+        let position = Position::new(&instrument, fill);
+        let mut snapshot_cache = Cache::default();
+        let snapshot_ref = snapshot_cache
+            .snapshot_position(&position)
+            .expect("snapshot position");
+
+        {
+            let mut backend = RedbBackend::new(tmp.path().to_path_buf());
+            backend.open_run(manifest(run_id)).expect("open run");
+            backend
+                .record_snapshot_anchor(SnapshotAnchor::new(
+                    0,
+                    snapshot_ref.blob_ref.clone(),
+                    compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+                ))
+                .expect("record snapshot anchor");
+            backend.seal(RunStatus::Ended).expect("seal run");
+        }
+
+        let mut cache = Cache::default();
+        cache
+            .add(
+                &snapshot_ref.blob_ref,
+                Bytes::from_static(b"tampered snapshot"),
+            )
+            .expect("seed tampered snapshot blob");
+
+        let err = restore_cache_from_sealed_run(
+            &mut cache,
+            tmp.path().to_path_buf(),
+            instance_id,
+            run_id,
+        )
+        .expect_err("hash mismatch");
+
+        match err {
+            CacheReplayError::SnapshotRestore { blob_ref, message } => {
+                assert_eq!(blob_ref, snapshot_ref.blob_ref);
+                assert!(
+                    message.contains("content_hash mismatch"),
+                    "message should explain hash mismatch: {message}",
+                );
+            }
+            other => panic!("expected SnapshotRestore, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn open_event_store_replay_source_rejects_running_run() {
+        let tmp = TempDir::new().expect("tempdir");
+        let run_id = "running-replay";
+        {
+            let mut backend = RedbBackend::new(tmp.path().to_path_buf());
+            backend.open_run(manifest(run_id)).expect("open run");
+        }
+
+        let err = open_event_store_replay_source(tmp.path().to_path_buf(), "trader-001", run_id)
+            .expect_err("running source must fail");
+
+        assert!(
+            err.to_string().contains("not sealed"),
+            "error should name sealed-run requirement: {err}",
+        );
+    }
+
+    #[rstest]
+    fn validate_event_store_replay_source_rejects_quarantined_run() {
+        let tmp = TempDir::new().expect("tempdir");
+        let run_id = "quarantined-replay";
+        {
+            let mut backend = RedbBackend::new(tmp.path().to_path_buf());
+            backend.open_run(manifest(run_id)).expect("open run");
+            backend
+                .append_batch(&[append_payload(1, "RunStarted", Bytes::new())])
+                .expect("append");
+            backend.seal(RunStatus::Quarantined).expect("seal run");
+        }
+
+        let err =
+            validate_event_store_replay_source(tmp.path().to_path_buf(), "trader-001", run_id)
+                .expect_err("quarantined source must fail");
+
+        assert!(
+            err.to_string().contains("quarantined"),
+            "error should reject quarantined replay sources: {err}",
+        );
     }
 }

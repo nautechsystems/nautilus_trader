@@ -88,6 +88,7 @@ pub struct NautilusKernel {
     pub ts_shutdown: Option<UnixNanos>,
     shutdown_requested: Rc<Cell<bool>>,
     event_store: Option<Box<dyn KernelEventStore>>,
+    event_store_replay: bool,
 }
 
 impl NautilusKernel {
@@ -234,6 +235,7 @@ impl NautilusKernel {
             ts_started: None,
             ts_shutdown: None,
             shutdown_requested,
+            event_store_replay: false,
         })
     }
 
@@ -473,11 +475,19 @@ impl NautilusKernel {
     pub fn start(&mut self) {
         log::info!("Starting");
 
+        self.event_store_replay = false;
+
         if let Some(event_store) = self.event_store.as_deref_mut() {
             self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
 
             let components = Self::collect_registered_components(&self.trader);
             let environment = self.config.environment();
+            let event_store_replay_configured = event_store.is_event_store_replay_configured();
+
+            if event_store_replay_configured && !self.config.load_state() {
+                log::error!("Event-store replay requires load_state=true");
+                return;
+            }
 
             if self.config.load_state()
                 && let Err(e) =
@@ -496,6 +506,16 @@ impl NautilusKernel {
             self.exec_engine
                 .borrow_mut()
                 .set_snapshot_anchorer(anchorer);
+            self.event_store_replay = event_store_replay_configured;
+        }
+
+        if self.event_store_replay {
+            log::info!(
+                "Event-store replay loaded; skipping engines, clients, trader startup, and live reconciliation",
+            );
+            self.ts_started = Some(self.clock.borrow().timestamp_ns());
+            log::info!("Started");
+            return;
         }
 
         self.start_engines();
@@ -604,6 +624,20 @@ impl NautilusKernel {
     #[must_use]
     pub fn event_store(&self) -> Option<&dyn KernelEventStore> {
         self.event_store.as_deref()
+    }
+
+    /// Returns whether the event-store integration is running an event-store replay start.
+    #[must_use]
+    pub fn is_event_store_replay(&self) -> bool {
+        self.event_store_replay
+    }
+
+    /// Returns whether the event-store integration is configured for an event-store replay start.
+    #[must_use]
+    pub fn is_event_store_replay_configured(&self) -> bool {
+        self.event_store
+            .as_deref()
+            .is_some_and(KernelEventStore::is_event_store_replay_configured)
     }
 
     /// Resets the Nautilus system kernel to its initial state.

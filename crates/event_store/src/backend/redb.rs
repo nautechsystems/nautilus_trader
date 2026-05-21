@@ -108,14 +108,13 @@ impl RedbBackend {
         Ok(self.state()?.file_path.as_path())
     }
 
-    /// Opens the sealed run file at `<base>/<instance_id>/<run_id>.redb` for read-only
-    /// forensics replay.
+    /// Opens the sealed run file at `<base>/<instance_id>/<run_id>.redb` for read-only replay.
     ///
     /// # Design
     ///
     /// The standard [`EventStore::open_run`] path rejects sealed files: that is the
     /// crash-recovery guard, a successor must not silently reopen a predecessor's log
-    /// without going through seal. Forensics replay is the legitimate case for touching
+    /// without going through seal. Event-store replay is the legitimate case for touching
     /// a sealed file, so the reader uses this constructor instead.
     ///
     /// The shared [`EventStore`] trait is held intentionally narrow and is locked by

@@ -112,6 +112,14 @@ pub trait KernelEventStore: Debug {
     /// Returns the configured replay source or recovered parent run id, when present.
     fn parent_run_id(&self) -> Option<&str>;
 
+    /// Returns whether the current config enables event-store replay.
+    ///
+    /// Event-store replay restores cache state and opens a child run for inspection. The kernel
+    /// promotes this config state to runtime state only after restore and open both succeed.
+    fn is_event_store_replay_configured(&self) -> bool {
+        false
+    }
+
     /// Returns whether the implementation has signaled a fail-stop condition.
     fn is_halted(&self) -> bool;
 }

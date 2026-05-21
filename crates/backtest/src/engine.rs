@@ -664,8 +664,16 @@ impl BacktestEngine {
             logging_clock_set_static_mode();
             logging_clock_set_static_time(start_ns.as_u64());
 
-            // Start kernel (engines + trader init + clients)
+            // Start kernel, then stop before trader startup for event-store replay
             self.kernel.start();
+            if self.kernel.is_event_store_replay() {
+                self.log_pre_run();
+                return Ok(());
+            }
+
+            if self.kernel.is_event_store_replay_configured() {
+                anyhow::bail!("event-store replay did not start");
+            }
             self.kernel.start_trader();
 
             self.log_pre_run();
@@ -1608,6 +1616,8 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::enums::Environment;
+    use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
         data::{Data, InstrumentStatus},
         enums::{AccountType, BookType, MarketStatus, MarketStatusAction, OmsType},
@@ -1617,9 +1627,60 @@ mod tests {
         },
         types::Money,
     };
+    use nautilus_system::{KernelEventStore, RegisteredComponents};
     use rstest::*;
 
     use super::*;
+
+    #[derive(Debug)]
+    struct BacktestReplayKernelEventStore {
+        fail_restore: bool,
+    }
+
+    impl KernelEventStore for BacktestReplayKernelEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            if self.fail_restore {
+                anyhow::bail!("replay restore failed");
+            }
+
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {}
+
+        fn run_id(&self) -> Option<&str> {
+            Some("replay-child")
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            Some("seed-run")
+        }
+
+        fn is_event_store_replay_configured(&self) -> bool {
+            true
+        }
+
+        fn is_halted(&self) -> bool {
+            false
+        }
+    }
 
     fn create_engine() -> BacktestEngine {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -1632,6 +1693,66 @@ mod tests {
             .build();
         engine.add_venue(venue_config).unwrap();
         engine
+    }
+
+    fn create_engine_with_replay_store(fail_restore: bool) -> BacktestEngine {
+        let config = BacktestEngineConfig {
+            load_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config.clone()).unwrap();
+        let event_store_factory = move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
+            Ok::<_, anyhow::Error>(Box::new(BacktestReplayKernelEventStore { fail_restore })
+                as Box<dyn KernelEventStore>)
+        };
+
+        engine.kernel = NautilusKernel::new_with(
+            "BacktestEngine".to_string(),
+            config,
+            None,
+            Some(Box::new(event_store_factory)),
+        )
+        .unwrap();
+        engine.instance_id = engine.kernel.instance_id;
+        engine
+    }
+
+    #[rstest]
+    fn test_run_impl_event_store_replay_skips_trader_start() {
+        let mut engine = create_engine_with_replay_store(false);
+
+        engine
+            .run_impl(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                true,
+            )
+            .unwrap();
+
+        assert!(engine.kernel.is_event_store_replay_configured());
+        assert!(engine.kernel.is_event_store_replay());
+        assert!(!engine.kernel.trader.borrow().is_running());
+    }
+
+    #[rstest]
+    fn test_run_impl_event_store_replay_config_failure_errors() {
+        let mut engine = create_engine_with_replay_store(true);
+
+        let error = engine
+            .run_impl(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                true,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "event-store replay did not start");
+        assert!(engine.kernel.is_event_store_replay_configured());
+        assert!(!engine.kernel.is_event_store_replay());
+        assert!(!engine.kernel.trader.borrow().is_running());
     }
 
     #[rstest]

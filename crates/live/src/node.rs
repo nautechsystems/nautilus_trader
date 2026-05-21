@@ -528,6 +528,20 @@ impl LiveNode {
         self.kernel.start_async().await;
         self.kernel.reset_shutdown_flag();
 
+        if self.kernel.is_event_store_replay() {
+            log::info!(
+                "Event-store replay loaded; skipping live client connection and reconciliation",
+            );
+            self.handle.set_state(NodeState::Running);
+            return Ok(());
+        }
+
+        if self.kernel.is_event_store_replay_configured() {
+            self.abort_startup("Event-store replay did not start")
+                .await?;
+            return Ok(());
+        }
+
         // Connect data clients first and flush instrument events into cache
         self.kernel.connect_data_clients().await;
 
@@ -865,6 +879,20 @@ impl LiveNode {
         self.handle.set_state(NodeState::Starting);
         self.kernel.start_async().await;
         self.kernel.reset_shutdown_flag();
+
+        if self.kernel.is_event_store_replay() {
+            log::info!(
+                "Event-store replay loaded; skipping live client connection and reconciliation",
+            );
+            self.handle.set_state(NodeState::Running);
+            return Ok(());
+        }
+
+        if self.kernel.is_event_store_replay_configured() {
+            self.abort_startup("Event-store replay did not start")
+                .await?;
+            return Ok(());
+        }
 
         let stop_handle = self.handle.clone();
         let shutdown_flag = self.kernel.shutdown_flag();
@@ -2019,16 +2047,105 @@ mod tests {
     use std::collections::HashMap;
     #[cfg(feature = "python")]
     use std::sync::Arc;
+    use std::{cell::RefCell, rc::Rc};
 
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
         replace_exec_cmd_sender,
     };
+    use nautilus_common::{cache::Cache, clock::Clock};
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::identifiers::TraderId;
+    use nautilus_system::{KernelEventStore, NautilusKernelBuilder, RegisteredComponents};
     use rstest::*;
 
     use super::*;
+
+    #[derive(Debug)]
+    struct ReplayKernelEventStore {
+        fail_restore: bool,
+    }
+
+    impl KernelEventStore for ReplayKernelEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            if self.fail_restore {
+                anyhow::bail!("replay restore failed");
+            }
+
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {}
+
+        fn run_id(&self) -> Option<&str> {
+            Some("replay-child")
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            Some("seed-run")
+        }
+
+        fn is_event_store_replay_configured(&self) -> bool {
+            true
+        }
+
+        fn is_halted(&self) -> bool {
+            false
+        }
+    }
+
+    fn live_node_with_replay_store(fail_restore: bool) -> LiveNode {
+        let config = LiveNodeConfig {
+            environment: Environment::Live,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let kernel = NautilusKernelBuilder::new(
+            "TestKernel".to_string(),
+            config.trader_id,
+            Environment::Live,
+        )
+        .with_event_store(
+            move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| -> anyhow::Result<_> {
+                Ok(Box::new(ReplayKernelEventStore { fail_restore }))
+            },
+        )
+        .build()
+        .expect("kernel");
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let exec_manager_config =
+            ExecutionManagerConfig::from(&config.exec_engine).with_trader_id(config.trader_id);
+        let exec_manager = ExecutionManager::new(
+            kernel.clock.clone(),
+            kernel.cache.clone(),
+            exec_manager_config,
+        );
+
+        LiveNode::new_from_builder(kernel, runner, config, exec_manager)
+    }
 
     #[rstest]
     #[case(0, NodeState::Idle)]
@@ -2116,6 +2233,64 @@ mod tests {
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(handle.should_stop());
         assert!(!handle.is_running());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_event_store_replay_skips_live_connections() {
+        let mut node = live_node_with_replay_store(false);
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+
+        assert_eq!(handle.state(), NodeState::Running);
+        assert!(handle.is_running());
+        assert!(node.kernel.is_event_store_replay());
+        assert!(node.runner.is_some());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_event_store_replay_config_failure_aborts_startup() {
+        let mut node = live_node_with_replay_store(true);
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(node.kernel.is_event_store_replay_configured());
+        assert!(!node.kernel.is_event_store_replay());
+        assert!(node.runner.is_some());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_run_event_store_replay_consumes_runner_and_stops_before_connections() {
+        let mut node = live_node_with_replay_store(false);
+        let handle = node.handle();
+
+        node.run().await.unwrap();
+
+        assert_eq!(handle.state(), NodeState::Running);
+        assert!(handle.is_running());
+        assert!(node.kernel.is_event_store_replay());
+        assert!(node.runner.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_run_event_store_replay_config_failure_aborts_startup() {
+        let mut node = live_node_with_replay_store(true);
+        let handle = node.handle();
+
+        node.run().await.unwrap();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(node.kernel.is_event_store_replay_configured());
+        assert!(!node.kernel.is_event_store_replay());
+        assert!(node.runner.is_none());
     }
 
     #[rstest]

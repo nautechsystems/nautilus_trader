@@ -80,8 +80,10 @@ pub use manifest::{RunId, RunManifest, RunStatus};
 pub use nautilus_system::RegisteredComponents;
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
 pub use replay::{
-    CacheReplayError, CacheReplayReport, apply_cache_replay_entry, replay_cache_snapshot_tail,
-    restore_cache_snapshot_and_replay_tail,
+    CacheReplayError, CacheReplayReport, EventStoreReplayReport, apply_cache_replay_entry,
+    open_event_store_replay_source, replay_cache_snapshot_tail, restore_cache_from_sealed_run,
+    restore_cache_snapshot_and_replay_tail, restore_cache_snapshot_blob,
+    validate_event_store_replay_source,
 };
 pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{
