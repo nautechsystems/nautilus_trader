@@ -36,7 +36,7 @@
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, OnceLock},
     time::Duration,
@@ -96,8 +96,7 @@ fn build_example_once() -> PathBuf {
                 .expect("cargo build of example cdylib");
             assert!(status.success(), "failed to build example cdylib");
 
-            let artifact = root
-                .join("target")
+            let artifact = cargo_target_dir(&root)
                 .join("debug")
                 .join("examples")
                 .join(cdylib_filename(EXAMPLE_NAME));
@@ -130,8 +129,7 @@ fn build_runtime_smoke_example_once() -> PathBuf {
                 .expect("cargo build of runtime smoke cdylib");
             assert!(status.success(), "failed to build runtime smoke cdylib");
 
-            let artifact = root
-                .join("target")
+            let artifact = cargo_target_dir(&root)
                 .join("debug")
                 .join("examples")
                 .join(cdylib_filename(RUNTIME_SMOKE_EXAMPLE_NAME));
@@ -143,6 +141,17 @@ fn build_runtime_smoke_example_once() -> PathBuf {
             artifact
         })
         .clone()
+}
+
+fn cargo_target_dir(root: &Path) -> PathBuf {
+    let target_dir =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
+
+    if target_dir.is_absolute() {
+        target_dir
+    } else {
+        root.join(target_dir)
+    }
 }
 
 // The PluginLoader keeps libraries alive for the process lifetime, so we

@@ -60,9 +60,16 @@ def _build_plugin_example(name: str) -> Path:
         cwd=root,
         check=True,
     )
-    artifact = root / "target" / "debug" / "examples" / _cdylib_filename(name)
+    artifact = _cargo_target_dir(root) / "debug" / "examples" / _cdylib_filename(name)
     assert artifact.exists()
     return artifact
+
+
+def _cargo_target_dir(root: Path) -> Path:
+    target_dir = Path(os.environ.get("CARGO_TARGET_DIR", "target"))
+    if target_dir.is_absolute():
+        return target_dir
+    return root / target_dir
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="cdylib smoke test is Unix-only today")

@@ -21,7 +21,11 @@
 #![cfg(feature = "host")]
 #![allow(unsafe_code)]
 
-use std::{env, path::PathBuf, process::Command};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use nautilus_plugin::{NAUTILUS_PLUGIN_ABI_VERSION, loader::PluginLoader};
 
@@ -59,7 +63,7 @@ fn build_example_cdylib() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.pop(); // crates/
     path.pop(); // workspace root
-    path.push("target");
+    path = cargo_target_dir(&path);
     path.push(if cfg!(debug_assertions) {
         "debug"
     } else {
@@ -73,6 +77,17 @@ fn build_example_cdylib() -> PathBuf {
     ));
     assert!(path.exists(), "expected cdylib at {}", path.display());
     path
+}
+
+fn cargo_target_dir(root: &Path) -> PathBuf {
+    let target_dir =
+        env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
+
+    if target_dir.is_absolute() {
+        target_dir
+    } else {
+        root.join(target_dir)
+    }
 }
 
 #[rstest::rstest]
