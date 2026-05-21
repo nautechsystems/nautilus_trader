@@ -760,21 +760,29 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #
 # Proptest cases are dialled down via `PROPTEST_CASES` since Miri is roughly
 # 10-100x slower than native execution. `MIRIFLAGS` enables disable-isolation
-# so tests that read environment variables (e.g. PATH probes) work.
+# so tests that read environment variables (e.g. PATH probes) work. Most runs
+# use strict provenance; the collections slice uses permissive provenance to
+# match arc-swap's Miri policy.
 # -----------------------------------------------------------------------------
 
 # Override these on the command line if needed, e.g.:
 #   make cargo-miri-core MIRI_TOOLCHAIN=nightly-2026-04-16
-#   make cargo-miri-core MIRI_CORE_FILTER=  (empty: run every test)
+#   make cargo-miri-core MIRI_CORE_FILTER=...
+#   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
 MIRI_TOOLCHAIN ?= nightly
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
+MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
 MIRI_PROPTEST_CASES ?= 4
 
 # Default test filters target modules with `unsafe` blocks or hand-rolled
 # pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
 # slower than native, so we narrow the default scope; pass the override above
 # (or `MIRI_CORE_FILTER=`) to widen it.
-MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime|collections)::/)'
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/)'
+# `collections::` covers AtomicMap/AtomicSet, which are backed by arc-swap.
+# arc-swap runs Miri with permissive provenance, so use the same provenance
+# policy for this slice while keeping strict provenance for in-tree pointer code.
+MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
 # `test_price_to_order_id_{comprehensive_collision_check,realistic_orderbook_prices}`
 # iterate over the full price space to verify hash uniqueness. They run for
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
@@ -791,12 +799,13 @@ check-miri-installed:
 
 .PHONY: cargo-miri-core
 cargo-miri-core: export RUST_BACKTRACE=1
-cargo-miri-core: export MIRIFLAGS=$(MIRI_FLAGS)
 cargo-miri-core: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
 cargo-miri-core: check-miri-installed check-nextest-installed
 cargo-miri-core:  #-- Run nautilus-core library tests under Miri to detect UB
-	$(info $(M) Running nautilus-core tests under Miri (filter: $(MIRI_CORE_FILTER))...)
-	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+	$(info $(M) Running nautilus-core tests under Miri with strict provenance (filter: $(MIRI_CORE_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+	$(info $(M) Running nautilus-core collections tests under Miri with permissive provenance (filter: $(MIRI_CORE_ARC_SWAP_FILTER))...)
+	MIRIFLAGS="$(MIRI_CORE_ARC_SWAP_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_ARC_SWAP_FILTER)
 
 .PHONY: cargo-miri-model
 cargo-miri-model: export RUST_BACKTRACE=1
