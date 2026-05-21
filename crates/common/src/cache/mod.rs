@@ -17,13 +17,13 @@
 //!
 //! Provides methods to load, query, and update cached data such as instruments, orders, and prices.
 
-pub mod bounded;
 pub mod config;
 pub mod database;
 pub mod fifo;
 pub mod quote;
 pub mod refs;
 
+mod bounded;
 mod index;
 
 #[cfg(test)]
@@ -281,12 +281,19 @@ impl Cache {
     /// # Note
     ///
     /// Uses provided `CacheConfig` or defaults, and optional `CacheDatabaseAdapter` for persistence.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache config has a zero tick or bar capacity.
     pub fn new(
         config: Option<CacheConfig>,
         database: Option<Box<dyn CacheDatabaseAdapter>>,
     ) -> Self {
+        let config = config.unwrap_or_default();
+        config.validate().expect("invalid `CacheConfig`");
+
         Self {
-            config: config.unwrap_or_default(),
+            config,
             index: CacheIndex::default(),
             database,
             general: AHashMap::new(),

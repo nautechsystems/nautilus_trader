@@ -15,14 +15,16 @@
 
 //! A bounded FIFO deque that automatically evicts the oldest entry when at capacity.
 
-use std::{collections::VecDeque, ops::Deref};
+use std::collections::VecDeque;
+
+use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
 
 /// A bounded deque that maintains at most `capacity` elements.
 ///
 /// Uses a `VecDeque` internally with runtime-configured capacity.
 /// When capacity is exceeded on `push_front`, the oldest entry (back) is automatically evicted.
 #[derive(Debug, Clone)]
-pub struct BoundedVecDeque<T> {
+pub(super) struct BoundedVecDeque<T> {
     inner: VecDeque<T>,
     capacity: usize,
 }
@@ -30,7 +32,9 @@ pub struct BoundedVecDeque<T> {
 impl<T> BoundedVecDeque<T> {
     /// Creates a new [`BoundedVecDeque`] with the given maximum capacity.
     #[must_use]
-    pub fn new(capacity: usize) -> Self {
+    pub(super) fn new(capacity: usize) -> Self {
+        check_positive_usize(capacity, stringify!(capacity)).expect_display(FAILED);
+
         Self {
             inner: VecDeque::with_capacity(capacity),
             capacity,
@@ -38,73 +42,40 @@ impl<T> BoundedVecDeque<T> {
     }
 
     /// Pushes an item to the front. If at capacity, the oldest item (back) is evicted.
-    pub fn push_front(&mut self, item: T) {
+    pub(super) fn push_front(&mut self, item: T) {
         if self.inner.len() >= self.capacity {
             self.inner.pop_back();
         }
         self.inner.push_front(item);
     }
 
-    /// Returns the maximum capacity.
-    #[must_use]
-    pub const fn capacity(&self) -> usize {
-        self.capacity
-    }
-
     /// Returns the number of elements.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.inner.len()
-    }
-
-    /// Returns whether the deque is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
     }
 
     /// Returns a reference to the front (newest) element.
     #[must_use]
-    pub fn front(&self) -> Option<&T> {
+    pub(super) fn front(&self) -> Option<&T> {
         self.inner.front()
     }
 
     /// Returns a reference to the element at the given index.
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<&T> {
+    pub(super) fn get(&self, index: usize) -> Option<&T> {
         self.inner.get(index)
     }
 
     /// Returns an iterator over the elements.
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, T> {
+    pub(super) fn iter(&self) -> std::collections::vec_deque::Iter<'_, T> {
         self.inner.iter()
-    }
-
-    /// Clears all elements from the deque.
-    pub fn clear(&mut self) {
-        self.inner.clear();
-    }
-}
-
-impl<T> Deref for BoundedVecDeque<T> {
-    type Target = VecDeque<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'a, T> IntoIterator for &'a BoundedVecDeque<T> {
-    type Item = &'a T;
-    type IntoIter = std::collections::vec_deque::Iter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -113,11 +84,15 @@ mod tests {
     fn test_new_deque_is_empty_with_correct_capacity() {
         let deque: BoundedVecDeque<i32> = BoundedVecDeque::new(100);
 
-        assert!(deque.is_empty());
         assert_eq!(deque.len(), 0);
-        assert_eq!(deque.capacity(), 100);
         assert_eq!(deque.front(), None);
         assert_eq!(deque.get(0), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid usize for 'capacity' not positive")]
+    fn test_new_rejects_zero_capacity() {
+        let _deque: BoundedVecDeque<i32> = BoundedVecDeque::new(0);
     }
 
     #[rstest]
@@ -198,50 +173,38 @@ mod tests {
         }
 
         assert_eq!(deque.len(), capacity);
-        // Most recent item is at front
         assert_eq!(deque.front(), Some(&9_999));
-        // Oldest surviving item is at back (via Deref)
-        assert_eq!(deque.back(), Some(&(10_000 - capacity as i32)));
+        assert_eq!(deque.iter().last(), Some(&(10_000 - capacity as i32)));
     }
 
-    #[rstest]
-    fn test_clear_resets_to_empty_but_preserves_capacity() {
-        let mut deque = BoundedVecDeque::new(5);
-        for i in 0..5 {
-            deque.push_front(i);
+    proptest! {
+        #[rstest]
+        fn prop_len_never_exceeds_capacity(
+            capacity in 1usize..64,
+            items in proptest::collection::vec(any::<u16>(), 0..256),
+        ) {
+            let mut deque = BoundedVecDeque::new(capacity);
+
+            for item in items {
+                deque.push_front(item);
+                prop_assert!(deque.len() <= capacity);
+            }
         }
-        assert_eq!(deque.len(), 5);
 
-        deque.clear();
-        assert!(deque.is_empty());
-        assert_eq!(deque.len(), 0);
-        assert_eq!(deque.capacity(), 5);
-        assert_eq!(deque.front(), None);
+        #[rstest]
+        fn prop_retains_latest_items_in_newest_first_order(
+            capacity in 1usize..64,
+            items in proptest::collection::vec(any::<u16>(), 0..256),
+        ) {
+            let mut deque = BoundedVecDeque::new(capacity);
+            for item in &items {
+                deque.push_front(*item);
+            }
 
-        // Verify usable after clear — capacity still enforced
-        for i in 0..10 {
-            deque.push_front(i);
+            let actual: Vec<_> = deque.iter().copied().collect();
+            let expected: Vec<_> = items.iter().rev().take(capacity).copied().collect();
+
+            prop_assert_eq!(actual, expected);
         }
-        assert_eq!(deque.len(), 5);
-        assert_eq!(deque.front(), Some(&9));
-    }
-
-    #[rstest]
-    fn test_deref_exposes_immutable_vecdeque_methods() {
-        let mut deque = BoundedVecDeque::new(4);
-        deque.push_front(10);
-        deque.push_front(20);
-        deque.push_front(30);
-
-        // back() — oldest element, available via Deref<Target=VecDeque>
-        assert_eq!(deque.back(), Some(&10));
-
-        // contains() — membership check via Deref
-        assert!(deque.contains(&20));
-        assert!(!deque.contains(&99));
-
-        // iter().copied().collect() — the pattern used by Cache getters
-        let snapshot: Vec<i32> = deque.iter().copied().collect();
-        assert_eq!(snapshot, vec![30, 20, 10]);
     }
 }
