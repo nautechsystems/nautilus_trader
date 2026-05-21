@@ -44,12 +44,17 @@
 
 /// ABI version of the plug-in contract.
 ///
-/// Bumped on every breaking change to a `#[repr(C)]` struct or vtable in this
-/// crate. The host refuses to load a plug-in whose
-/// [`PluginManifest::abi_version`] does not match this value.
+/// The host refuses to load a plug-in whose [`PluginManifest::abi_version`]
+/// does not match this value. The plug-in surface is unreleased and unstable,
+/// so this stays pinned at `1` during early hardening and does not promise
+/// compatibility between Nautilus versions. Once the surface is released, every
+/// breaking change to a `#[repr(C)]` struct or vtable must bump it.
 ///
 /// [`PluginManifest::abi_version`]: crate::manifest::PluginManifest::abi_version
 pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 1;
+
+/// Schema version for [`manifest::PluginBuildId`].
+pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;
 
 /// Name of the single `extern "C"` entry symbol every plug-in cdylib must export.
 ///
@@ -70,7 +75,8 @@ mod macros;
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
 pub use host::{HostContext, HostVTable};
 pub use manifest::{
-    ActorRegistration, CustomDataRegistration, PluginInitFn, PluginManifest, StrategyRegistration,
+    ActorRegistration, CustomDataRegistration, PluginBuildId, PluginInitFn, PluginManifest,
+    StrategyRegistration,
 };
 pub use surfaces::{actor::PluginActor, custom_data::PluginCustomData, strategy::PluginStrategy};
 
@@ -78,7 +84,7 @@ pub use surfaces::{actor::PluginActor, custom_data::PluginCustomData, strategy::
 pub mod prelude {
     pub use crate::{
         BorrowedStr, HostContext, HostVTable, NAUTILUS_PLUGIN_ABI_VERSION, PluginActor,
-        PluginCustomData, PluginError, PluginErrorCode, PluginManifest, PluginResult,
-        PluginStrategy, Slice,
+        PluginBuildId, PluginCustomData, PluginError, PluginErrorCode, PluginManifest,
+        PluginResult, PluginStrategy, Slice,
     };
 }

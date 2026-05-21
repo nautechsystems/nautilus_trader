@@ -23,7 +23,7 @@
 
 use std::{
     ffi::OsStr,
-    fmt::Debug,
+    fmt::{Debug, Display},
     mem::ManuallyDrop,
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -35,7 +35,7 @@ use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL,
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
     host::{HostContext, HostLogLevel, HostVTable},
-    manifest::{PluginInitFn, PluginManifest},
+    manifest::{PluginBuildId, PluginInitFn, PluginManifest},
 };
 
 /// Errors that can occur while loading a plug-in.
@@ -58,12 +58,106 @@ pub enum LoadError {
     #[error("plug-in '{path}' returned a null manifest from `nautilus_plugin_init`")]
     NullManifest { path: PathBuf },
 
-    #[error("plug-in '{path}' ABI mismatch: host = {expected}, plug-in = {actual}")]
+    #[error("plug-in '{path}' ABI mismatch: host = {expected}, plug-in = {actual}; {diagnostics}")]
     AbiMismatch {
         path: PathBuf,
         expected: u32,
         actual: u32,
+        diagnostics: Box<PluginManifestDiagnostics>,
     },
+}
+
+/// Owned manifest diagnostics captured before a rejected plug-in is unloaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginManifestDiagnostics {
+    /// Manifest plug-in name, or empty when the manifest published none.
+    pub plugin_name: String,
+    /// Manifest plug-in version, or empty when the manifest published none.
+    pub plugin_version: String,
+    /// Manifest build identifier captured as owned strings.
+    pub build_id: PluginBuildIdDiagnostics,
+}
+
+impl PluginManifestDiagnostics {
+    fn from_manifest(manifest: &PluginManifest) -> Self {
+        // SAFETY: manifest strings live in static cdylib storage while the
+        // library is loaded.
+        let plugin_name = unsafe { manifest.plugin_name.as_str() }.to_string();
+        // SAFETY: see above.
+        let plugin_version = unsafe { manifest.plugin_version.as_str() }.to_string();
+        Self {
+            plugin_name,
+            plugin_version,
+            build_id: PluginBuildIdDiagnostics::from_build_id(&manifest.build_id),
+        }
+    }
+}
+
+impl Display for PluginManifestDiagnostics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let plugin_name = unknown_if_empty(&self.plugin_name);
+        let plugin_version = unknown_if_empty(&self.plugin_version);
+        let build_id = &self.build_id;
+        write!(
+            f,
+            "manifest name='{plugin_name}', version='{plugin_version}', {build_id}"
+        )
+    }
+}
+
+/// Owned build identifier diagnostics for loader errors and logs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginBuildIdDiagnostics {
+    /// Build identifier schema version published by the manifest.
+    pub schema_version: u32,
+    /// `nautilus-plugin` crate version, or empty when unavailable.
+    pub nautilus_plugin_version: String,
+    /// Rust compiler version, or empty when unavailable.
+    pub rustc_version: String,
+    /// Cargo target triple, or empty when unavailable.
+    pub target_triple: String,
+    /// Cargo build profile, or empty when unavailable.
+    pub build_profile: String,
+}
+
+impl PluginBuildIdDiagnostics {
+    fn from_build_id(build_id: &PluginBuildId) -> Self {
+        // SAFETY: build id strings live in static cdylib storage while the
+        // library is loaded.
+        let nautilus_plugin_version =
+            unsafe { build_id.nautilus_plugin_version.as_str() }.to_string();
+        // SAFETY: see above.
+        let rustc_version = unsafe { build_id.rustc_version.as_str() }.to_string();
+        // SAFETY: see above.
+        let target_triple = unsafe { build_id.target_triple.as_str() }.to_string();
+        // SAFETY: see above.
+        let build_profile = unsafe { build_id.build_profile.as_str() }.to_string();
+        Self {
+            schema_version: build_id.schema_version,
+            nautilus_plugin_version,
+            rustc_version,
+            target_triple,
+            build_profile,
+        }
+    }
+}
+
+impl Display for PluginBuildIdDiagnostics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let schema_version = self.schema_version;
+        let nautilus_plugin_version = unknown_if_empty(&self.nautilus_plugin_version);
+        let rustc_version = unknown_if_empty(&self.rustc_version);
+        let target_triple = unknown_if_empty(&self.target_triple);
+        let build_profile = unknown_if_empty(&self.build_profile);
+        write!(
+            f,
+            "build_id(schema={schema_version}, nautilus_plugin_version='{nautilus_plugin_version}', rustc='{rustc_version}', target='{target_triple}', profile='{build_profile}')"
+        )
+    }
+}
+
+fn unknown_if_empty(value: &str) -> &str {
+    if value.is_empty() { "<unknown>" } else { value }
 }
 
 /// One loaded plug-in. Holds the `Library` alive for the process lifetime so
@@ -205,9 +299,10 @@ impl PluginLoader {
         let actor_count = unsafe { manifest_ref.actors.as_slice() }.len();
         // SAFETY: see above.
         let strategy_count = unsafe { manifest_ref.strategies.as_slice() }.len();
+        let build_id = PluginBuildIdDiagnostics::from_build_id(&manifest_ref.build_id);
         log::info!(
             target: "nautilus_plugin",
-            "Loaded plug-in '{}' (abi={abi}, custom_data={custom_data_count}, actors={actor_count}, strategies={strategy_count}) from {}",
+            "Loaded plug-in '{}' (abi={abi}, {build_id}, custom_data={custom_data_count}, actors={actor_count}, strategies={strategy_count}) from {}",
             // SAFETY: name string lives in the cdylib for the process lifetime.
             unsafe { manifest_ref.plugin_name.as_str() },
             path_buf.display(),
@@ -255,12 +350,14 @@ fn validate_manifest_ptr(
         });
     }
     // SAFETY: pointer is non-null per the check above.
-    let abi = unsafe { (*manifest_ptr).abi_version };
+    let manifest = unsafe { &*manifest_ptr };
+    let abi = manifest.abi_version;
     if abi != NAUTILUS_PLUGIN_ABI_VERSION {
         return Err(LoadError::AbiMismatch {
             path: path.to_path_buf(),
             expected: NAUTILUS_PLUGIN_ABI_VERSION,
             actual: abi,
+            diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
         });
     }
     Ok(())
@@ -558,6 +655,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::{boundary::Slice, manifest::PluginBuildId};
 
     #[rstest]
     fn empty_loader_is_empty() {
@@ -630,40 +728,88 @@ mod tests {
 
     #[rstest]
     fn validate_manifest_ptr_rejects_abi_mismatch() {
-        use crate::boundary::{BorrowedStr, Slice};
         let bad_manifest = PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1),
             plugin_name: BorrowedStr::from_str("bad"),
             plugin_vendor: BorrowedStr::from_str(""),
             plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
-        match err {
+        match &err {
             LoadError::AbiMismatch {
                 path: p,
                 expected,
                 actual,
+                diagnostics,
             } => {
                 assert_eq!(p, path);
-                assert_eq!(expected, NAUTILUS_PLUGIN_ABI_VERSION);
-                assert_eq!(actual, NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1));
+                assert_eq!(*expected, NAUTILUS_PLUGIN_ABI_VERSION);
+                assert_eq!(*actual, NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1));
+                assert_eq!(diagnostics.plugin_name.as_str(), "bad");
+                assert_eq!(diagnostics.plugin_version.as_str(), "0.0.0");
+                assert_eq!(
+                    diagnostics.build_id.nautilus_plugin_version.as_str(),
+                    env!("CARGO_PKG_VERSION")
+                );
             }
             other => panic!("expected AbiMismatch, was {other:?}"),
         }
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("manifest name='bad'"));
+        assert!(rendered.contains("nautilus_plugin_version='"));
+        assert!(rendered.contains("rustc='"));
+        assert!(rendered.contains("target='"));
+        assert!(rendered.contains("profile='"));
+    }
+
+    #[rstest]
+    fn abi_mismatch_diagnostics_mark_unavailable_build_id_fields() {
+        let bad_manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1),
+            plugin_name: BorrowedStr::empty(),
+            plugin_vendor: BorrowedStr::empty(),
+            plugin_version: BorrowedStr::empty(),
+            build_id: PluginBuildId {
+                schema_version: 7,
+                nautilus_plugin_version: BorrowedStr::empty(),
+                rustc_version: BorrowedStr::empty(),
+                target_triple: BorrowedStr::empty(),
+                build_profile: BorrowedStr::empty(),
+            },
+            custom_data: Slice::empty(),
+            actors: Slice::empty(),
+            strategies: Slice::empty(),
+        };
+        let path = std::path::Path::new("/test/plugin.so");
+        let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
+        let rendered = format!("{err}");
+
+        assert!(rendered.contains("plug-in '/test/plugin.so' ABI mismatch"));
+        assert!(rendered.contains("host = 1"));
+        assert!(rendered.contains("plug-in = 2"));
+        assert!(rendered.contains("manifest name='<unknown>'"));
+        assert!(rendered.contains("version='<unknown>'"));
+        assert!(rendered.contains("build_id(schema=7"));
+        assert!(rendered.contains("nautilus_plugin_version='<unknown>'"));
+        assert!(rendered.contains("rustc='<unknown>'"));
+        assert!(rendered.contains("target='<unknown>'"));
+        assert!(rendered.contains("profile='<unknown>'"));
     }
 
     #[rstest]
     fn validate_manifest_ptr_accepts_matching_manifest() {
-        use crate::boundary::{BorrowedStr, Slice};
         let good_manifest = PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
             plugin_name: BorrowedStr::from_str("good"),
             plugin_vendor: BorrowedStr::from_str(""),
             plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),

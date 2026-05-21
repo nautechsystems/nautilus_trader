@@ -57,7 +57,7 @@ use nautilus_model::{
     data::{Data, registry::deserialize_custom_from_json},
     identifiers::{ActorId, StrategyId},
 };
-use nautilus_plugin::manifest::PluginManifest;
+use nautilus_plugin::{PLUGIN_BUILD_ID_VERSION, manifest::PluginManifest};
 use nautilus_trading::strategy::StrategyConfig;
 use rstest::{fixture, rstest};
 
@@ -187,6 +187,14 @@ fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
         unsafe { example_manifest.plugin_name.as_str() },
         "example-custom-data-plugin"
     );
+    assert_eq!(
+        example_manifest.build_id.schema_version,
+        PLUGIN_BUILD_ID_VERSION
+    );
+    // SAFETY: build id strings live in cdylib static storage.
+    assert!(!unsafe { example_manifest.build_id.target_triple.as_str() }.is_empty());
+    // SAFETY: build id strings live in cdylib static storage.
+    assert!(!unsafe { example_manifest.build_id.build_profile.as_str() }.is_empty());
     // SAFETY: slice points at static storage owned by the manifest.
     let cd = unsafe { example_manifest.custom_data.as_slice() };
     assert_eq!(

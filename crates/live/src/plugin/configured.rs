@@ -180,7 +180,7 @@ mod tests {
     use nautilus_plugin::{
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
-        manifest::{ActorRegistration, PluginManifest, StrategyRegistration},
+        manifest::{ActorRegistration, PluginBuildId, PluginManifest, StrategyRegistration},
     };
     use rstest::rstest;
 
@@ -212,6 +212,7 @@ mod tests {
             plugin_name: BorrowedStr::from_str("test-plugin"),
             plugin_vendor: BorrowedStr::from_str("nautech"),
             plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
             custom_data: Slice::empty(),
             actors,
             strategies,

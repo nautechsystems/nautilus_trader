@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use nautilus_model::{data::QuoteTick, events::PositionOpened};
 use nautilus_plugin::{
-    NAUTILUS_PLUGIN_ABI_VERSION,
+    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::PluginManifest,
@@ -470,6 +470,16 @@ fn macro_emits_loadable_manifest() {
     );
     // SAFETY: vendor string lives in static storage.
     assert_eq!(unsafe { manifest.plugin_vendor.as_str() }, "Nautech");
+    assert_eq!(manifest.build_id.schema_version, PLUGIN_BUILD_ID_VERSION);
+    // SAFETY: build id strings live in static storage.
+    assert_eq!(
+        unsafe { manifest.build_id.nautilus_plugin_version.as_str() },
+        env!("CARGO_PKG_VERSION")
+    );
+    // SAFETY: build id strings live in static storage.
+    assert!(!unsafe { manifest.build_id.target_triple.as_str() }.is_empty());
+    // SAFETY: build id strings live in static storage.
+    assert!(!unsafe { manifest.build_id.build_profile.as_str() }.is_empty());
 
     // SAFETY: slice points at static storage owned by the manifest.
     let cd = unsafe { manifest.custom_data.as_slice() };

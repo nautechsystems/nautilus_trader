@@ -27,7 +27,7 @@ use std::{
     process::Command,
 };
 
-use nautilus_plugin::{NAUTILUS_PLUGIN_ABI_VERSION, loader::PluginLoader};
+use nautilus_plugin::{NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION, loader::PluginLoader};
 
 fn cdylib_extension() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -105,6 +105,16 @@ fn loads_example_cdylib_and_walks_manifest() {
         unsafe { manifest.plugin_name.as_str() },
         "example-custom-data-plugin"
     );
+    assert_eq!(manifest.build_id.schema_version, PLUGIN_BUILD_ID_VERSION);
+    // SAFETY: build id strings live in the cdylib for the process lifetime.
+    assert_eq!(
+        unsafe { manifest.build_id.nautilus_plugin_version.as_str() },
+        env!("CARGO_PKG_VERSION")
+    );
+    // SAFETY: build id strings live in the cdylib for the process lifetime.
+    assert!(!unsafe { manifest.build_id.target_triple.as_str() }.is_empty());
+    // SAFETY: build id strings live in the cdylib for the process lifetime.
+    assert!(!unsafe { manifest.build_id.build_profile.as_str() }.is_empty());
 
     // SAFETY: slice points at storage inside the loaded cdylib.
     let cd = unsafe { manifest.custom_data.as_slice() };

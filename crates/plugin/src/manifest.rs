@@ -16,13 +16,13 @@
 //! Static manifest a plug-in returns from `nautilus_plugin_init`.
 //!
 //! The manifest enumerates every plug-point contribution the cdylib provides
-//! and points at the per-type vtables. v1 ships with one plug-point family
-//! ([`CustomDataRegistration`]); subsequent plug points add new `Slice`
-//! fields to [`PluginManifest`] without removing existing ones (additive
-//! ABI bumps only).
+//! and points at the per-type vtables. The current unreleased v1 surface ships
+//! custom-data, actor, and strategy plug-point families. Future released
+//! revisions should add new `Slice` fields to [`PluginManifest`] without
+//! removing existing ones.
 
 use crate::{
-    NAUTILUS_PLUGIN_ABI_VERSION,
+    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, Slice},
     host::HostVTable,
     surfaces::{actor::ActorVTable, custom_data::CustomDataVTable, strategy::StrategyVTable},
@@ -33,10 +33,49 @@ use crate::{
 ///
 /// The host calls this once at load time with a pointer to its `HostVTable`.
 /// The plug-in returns a pointer to its `'static` [`PluginManifest`], or null
-/// to signal load failure (in which case the host should fall back to
-/// `nautilus_plugin_last_error` if defined; v1 only treats null as a load
-/// error and logs the path).
+/// to signal load failure. v1 reports null as `LoadError::NullManifest` with
+/// the plug-in path.
 pub type PluginInitFn = unsafe extern "C" fn(host: *const HostVTable) -> *const PluginManifest;
+
+/// Versioned build identifier carried by [`PluginManifest`].
+///
+/// The fields identify the Nautilus plug-in crate and build environment that
+/// produced the manifest. They are diagnostic only: ABI compatibility is still
+/// enforced by [`PluginManifest::abi_version`].
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PluginBuildId {
+    /// Build identifier schema version. Must equal
+    /// [`PLUGIN_BUILD_ID_VERSION`] for the fields below.
+    pub schema_version: u32,
+
+    /// Version of the `nautilus-plugin` crate used to build the plug-in.
+    pub nautilus_plugin_version: BorrowedStr<'static>,
+
+    /// Rust compiler version reported by `rustc --version`, or empty when it
+    /// was unavailable to the build script.
+    pub rustc_version: BorrowedStr<'static>,
+
+    /// Cargo target triple, or empty when Cargo did not expose one.
+    pub target_triple: BorrowedStr<'static>,
+
+    /// Cargo build profile, or empty when Cargo did not expose one.
+    pub build_profile: BorrowedStr<'static>,
+}
+
+impl PluginBuildId {
+    /// Returns the build identifier for the compiled `nautilus-plugin` crate.
+    #[must_use]
+    pub const fn current() -> Self {
+        Self {
+            schema_version: PLUGIN_BUILD_ID_VERSION,
+            nautilus_plugin_version: BorrowedStr::from_str(env!("CARGO_PKG_VERSION")),
+            rustc_version: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_RUSTC_VERSION")),
+            target_triple: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_TARGET")),
+            build_profile: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_PROFILE")),
+        }
+    }
+}
 
 /// The static, process-lifetime manifest a plug-in returns from
 /// `nautilus_plugin_init`.
@@ -57,6 +96,9 @@ pub struct PluginManifest {
 
     /// Plug-in version (typically the crate's `CARGO_PKG_VERSION`).
     pub plugin_version: BorrowedStr<'static>,
+
+    /// Versioned build identifier for diagnostics.
+    pub build_id: PluginBuildId,
 
     /// Custom-data registrations contributed by this plug-in.
     pub custom_data: Slice<'static, CustomDataRegistration>,
@@ -129,12 +171,29 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn current_build_id_carries_compile_time_metadata() {
+        let id = PluginBuildId::current();
+
+        assert_eq!(id.schema_version, PLUGIN_BUILD_ID_VERSION);
+        // SAFETY: build id strings are baked into static crate storage.
+        assert_eq!(
+            unsafe { id.nautilus_plugin_version.as_str() },
+            env!("CARGO_PKG_VERSION")
+        );
+        // SAFETY: see above.
+        assert!(!unsafe { id.target_triple.as_str() }.is_empty());
+        // SAFETY: see above.
+        assert!(!unsafe { id.build_profile.as_str() }.is_empty());
+    }
+
+    #[rstest]
     fn empty_manifest_matches_compiled_abi() {
         let m = PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
             plugin_name: BorrowedStr::from_str("test"),
             plugin_vendor: BorrowedStr::from_str("nautech"),
             plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),
@@ -152,6 +211,7 @@ mod tests {
             plugin_name: BorrowedStr::from_str("test"),
             plugin_vendor: BorrowedStr::from_str("nautech"),
             plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),

@@ -161,6 +161,7 @@ macro_rules! __nautilus_plugin_impl {
                         $crate::__nautilus_plugin_impl!(@opt $($vendor)?),
                     ),
                     plugin_version: $crate::boundary::BorrowedStr::from_str($version),
+                    build_id: $crate::manifest::PluginBuildId::current(),
                     custom_data: $crate::boundary::Slice::from_slice(&*CUSTOM_DATA),
                     actors: $crate::boundary::Slice::from_slice(&*ACTORS),
                     strategies: $crate::boundary::Slice::from_slice(&*STRATEGIES),
