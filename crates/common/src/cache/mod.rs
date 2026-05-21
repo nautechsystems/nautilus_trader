@@ -1938,7 +1938,7 @@ impl Cache {
         let bars_deque = self
             .bars
             .entry(bar_type)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
 
         for bar in bars {
             bars_deque.push_front(*bar);
