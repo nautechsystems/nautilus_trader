@@ -1928,6 +1928,17 @@ impl OrderMatchingEngine {
         }
     }
 
+    /// Processes instrument expiration at the given timestamp.
+    pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+        self.check_instrument_expiration(timestamp_ns);
+    }
+
+    /// Returns whether instrument expiration has already been processed.
+    #[must_use]
+    pub const fn is_expiration_processed(&self) -> bool {
+        self.expiration_processed
+    }
+
     fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
         if self.expiration_processed {
             return;

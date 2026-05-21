@@ -48,6 +48,7 @@ None
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
+- Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies

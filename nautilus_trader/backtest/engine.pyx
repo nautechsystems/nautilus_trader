@@ -1530,6 +1530,9 @@ cdef class BacktestEngine:
             clock.set_time(start_ns)
 
         if self._iteration == 0:
+            for exchange in self._venues.values():
+                exchange._set_instrument_expiration_timers()
+
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
             self._run_id = UUID4()
@@ -3005,6 +3008,7 @@ cdef class SimulatedExchange:
         self._matching_engines[instrument.id] = matching_engine
 
         self._update_next_instrument_expiration(matching_engine)
+        self._set_instrument_expiration_timer(matching_engine)
 
         self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
@@ -3284,6 +3288,8 @@ cdef class SimulatedExchange:
             return
 
         matching_engine.update_instrument(instrument)
+        self._update_next_instrument_expiration(matching_engine)
+        self._set_instrument_expiration_timer(matching_engine)
 
     cdef bint _has_pending_commands(self, uint64_t ts_now):
         if self._message_queue:
@@ -3622,6 +3628,9 @@ cdef class SimulatedExchange:
         if found:
             self._next_instrument_expiration_ns = earliest
 
+    cpdef void _process_instrument_expiration_time_event(self, TimeEvent event):
+        self._process_instrument_expirations(event.ts_event)
+
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine):
         cdef uint64_t expiration_ns
         if matching_engine._instrument_has_expiration and not matching_engine._expiration_processed:
@@ -3630,6 +3639,32 @@ cdef class SimulatedExchange:
                 if not self._has_next_instrument_expiration or expiration_ns < self._next_instrument_expiration_ns:
                     self._has_next_instrument_expiration = True
                     self._next_instrument_expiration_ns = expiration_ns
+
+    cdef void _set_instrument_expiration_timer(self, OrderMatchingEngine matching_engine):
+        if not matching_engine._instrument_has_expiration or matching_engine._expiration_processed:
+            return
+
+        cdef uint64_t expiration_ns = matching_engine.instrument.expiration_ns
+        if expiration_ns == 0:
+            return
+
+        cdef str timer_name = self._instrument_expiration_timer_name(matching_engine.instrument.id)
+        if timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(timer_name)
+
+        self._clock.set_time_alert_ns(
+            name=timer_name,
+            alert_time_ns=expiration_ns,
+            callback=self._process_instrument_expiration_time_event,
+        )
+
+    cdef void _set_instrument_expiration_timers(self):
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in self._matching_engines.values():
+            self._set_instrument_expiration_timer(matching_engine)
+
+    cdef str _instrument_expiration_timer_name(self, InstrumentId instrument_id):
+        return f"INSTRUMENT-EXPIRATION:{instrument_id.value}"
 
     cpdef void reset(self):
         """

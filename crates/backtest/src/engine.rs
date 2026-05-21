@@ -15,7 +15,13 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+use std::{
+    any::Any,
+    cell::RefCell,
+    fmt::Debug,
+    rc::{Rc, Weak},
+    sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
@@ -35,6 +41,7 @@ use nautilus_common::{
         drain_data_cmd_queue, drain_trading_cmd_queue, replace_data_cmd_sender,
         replace_exec_cmd_sender, trading_cmd_queue_is_empty,
     },
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable,
@@ -318,7 +325,7 @@ impl BacktestEngine {
     ///
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
-        if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
+        if let Some(exchange) = self.venues.get(&instrument.id().venue) {
             if matches!(
                 instrument,
                 InstrumentAny::CurrencyPair(_) | InstrumentAny::TokenizedAsset(_)
@@ -330,6 +337,9 @@ impl BacktestEngine {
                 )
             }
             exchange.borrow_mut().add_instrument(instrument.clone())?;
+            if let Some(expiration_ns) = instrument.expiration_ns() {
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
+            }
         } else {
             anyhow::bail!(
                 "Cannot add an `Instrument` object without first adding its associated venue {}",
@@ -627,6 +637,8 @@ impl BacktestEngine {
 
         // First-iteration initialization
         if self.iteration == 0 {
+            self.set_instrument_expiration_timers()?;
+
             self.run_config_id = run_config_id;
             self.run_id = Some(UUID4::new());
             self.run_started = Some(UnixNanos::from(std::time::SystemTime::now()));
@@ -1203,6 +1215,56 @@ impl BacktestEngine {
                 false
             }
         }
+    }
+
+    fn set_instrument_expiration_timers(&self) -> anyhow::Result<()> {
+        for exchange in self.venues.values() {
+            let expirations = exchange.borrow().instrument_expirations();
+            for (instrument_id, expiration_ns) in expirations {
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_instrument_expiration_timer(
+        &self,
+        exchange: &Rc<RefCell<SimulatedExchange>>,
+        instrument_id: InstrumentId,
+        expiration_ns: UnixNanos,
+    ) -> anyhow::Result<()> {
+        if expiration_ns == UnixNanos::default() {
+            return Ok(());
+        }
+
+        let timer_name = Self::instrument_expiration_timer_name(instrument_id);
+        let exchange: Weak<RefCell<SimulatedExchange>> = Rc::downgrade(exchange);
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event: TimeEvent| {
+            if let Some(exchange) = exchange.upgrade() {
+                exchange
+                    .borrow_mut()
+                    .process_instrument_expirations(event.ts_event);
+            }
+        });
+        let timer_key = ustr::Ustr::from(timer_name.as_str());
+        let mut clock = self.kernel.clock.borrow_mut();
+        if clock.timer_exists(&timer_key) {
+            clock.cancel_timer(&timer_name);
+        }
+
+        clock.set_time_alert_ns(
+            &timer_name,
+            expiration_ns,
+            Some(TimeEventCallback::from(callback)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    fn instrument_expiration_timer_name(instrument_id: InstrumentId) -> String {
+        format!("INSTRUMENT-EXPIRATION:{instrument_id}")
     }
 
     fn collect_all_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
