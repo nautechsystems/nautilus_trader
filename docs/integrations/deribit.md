@@ -206,6 +206,11 @@ and per-leg messages as separate `TradeTick`s against their respective `Instrume
 subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
 that combo trade, not duplicate ticks against the same instrument.
 
+To have the Deribit data client open the real leg trade channels alongside a combo trade
+subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trade_ticks`. When
+unsubscribing that combo trade stream, Nautilus also closes the leg subscriptions opened by
+this opt-in.
+
 Deribit already publishes block trades and Block RFQs per leg, so the adapter forwards
 them through the standard 1:1 trade path. See [Trade ID provenance](#trade-id-provenance)
 for how block- and RFQ-origin trades are tagged on the resulting `TradeTick`.

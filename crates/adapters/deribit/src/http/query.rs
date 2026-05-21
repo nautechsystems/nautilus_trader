@@ -119,6 +119,28 @@ pub struct GetInstrumentParams {
     pub instrument_name: String,
 }
 
+/// Query parameters for `/public/get_combos` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetCombosParams {
+    /// Currency to query.
+    pub currency: DeribitCurrency,
+}
+
+impl GetCombosParams {
+    /// Creates a new builder for [`GetCombosParams`].
+    #[must_use]
+    pub fn builder() -> GetCombosParamsBuilder {
+        GetCombosParamsBuilder::default()
+    }
+
+    /// Creates parameters for a specific currency.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency) -> Self {
+        Self { currency }
+    }
+}
+
 /// Query parameters for `/private/get_account_summaries` endpoint.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct GetAccountSummariesParams {
@@ -650,6 +672,13 @@ mod tests {
         let params = GetExpirationsParams::new("BTC", DeribitExpirationKind::OptionCombo);
         let value: Value = serde_json::to_value(&params).unwrap();
         assert_eq!(value, json!({"currency": "BTC", "kind": "option_combo"}));
+    }
+
+    #[rstest]
+    fn test_get_combos_params_serialization() {
+        let params = GetCombosParams::new(DeribitCurrency::BTC);
+        let value: Value = serde_json::to_value(params).unwrap();
+        assert_eq!(value, json!({"currency": "BTC"}));
     }
 
     #[rstest]

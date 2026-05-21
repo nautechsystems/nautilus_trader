@@ -117,6 +117,33 @@ pub struct DeribitTickSizeStep {
     pub tick_size: Decimal,
 }
 
+/// Deribit combo definition from `public/get_combos`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitCombo {
+    /// Unique combo identifier, matching the combo instrument name.
+    pub id: Ustr,
+    /// Combo state, e.g. `active`.
+    pub state: String,
+    /// Combo leg makeup.
+    pub legs: Vec<DeribitComboLeg>,
+    /// Combo creation timestamp in milliseconds since UNIX epoch.
+    pub creation_timestamp: i64,
+    /// Numeric Deribit instrument ID.
+    pub instrument_id: i64,
+    /// State timestamp in milliseconds since UNIX epoch.
+    pub state_timestamp: i64,
+}
+
+/// A single leg entry of a Deribit combo definition.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitComboLeg {
+    /// Signed leg amount. Positive is long, negative is short.
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub amount: Decimal,
+    /// Leg instrument name.
+    pub instrument_name: Ustr,
+}
+
 /// Wrapper for the account summaries response.
 ///
 /// The API returns an object with a `summaries` field containing the array of account summaries,

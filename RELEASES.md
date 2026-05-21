@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
 - Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
+- Added Deribit `subscribe_combo_legs` opt-in for combo leg trade streams
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 
