@@ -157,27 +157,27 @@ mod tests {
     use super::*;
 
     fn make_fill(instrument_id: &str, commission: Option<Money>, ts: u64) -> OrderFilled {
-        OrderFilled {
-            trader_id: TraderId::from("TESTER-001"),
-            strategy_id: StrategyId::from("S-001"),
-            instrument_id: InstrumentId::from(instrument_id),
-            client_order_id: ClientOrderId::from("O-001"),
-            venue_order_id: VenueOrderId::from("V-001"),
-            account_id: AccountId::from("SIM-001"),
-            trade_id: TradeId::new("T-001"),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Limit,
-            last_qty: Quantity::from(100),
-            last_px: Price::from("50.25"),
-            currency: Currency::USD(),
-            liquidity_side: LiquiditySide::Maker,
-            event_id: UUID4::default(),
-            ts_event: ts.into(),
-            ts_init: (ts + 1).into(),
-            reconciliation: false,
-            position_id: Some(PositionId::from("P-001")),
+        OrderFilled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from("O-001"),
+            VenueOrderId::from("V-001"),
+            AccountId::from("SIM-001"),
+            TradeId::new("T-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from(100),
+            Price::from("50.25"),
+            Currency::USD(),
+            LiquiditySide::Maker,
+            UUID4::default(),
+            ts.into(),
+            (ts + 1).into(),
+            false,
+            Some(PositionId::from("P-001")),
             commission,
-        }
+        )
     }
 
     #[rstest]
