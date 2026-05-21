@@ -33,6 +33,7 @@ pub mod book;
 mod commands;
 pub mod config;
 mod handlers;
+mod requests;
 
 #[cfg(feature = "defi")]
 pub mod pool;
@@ -59,7 +60,9 @@ use book::{
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
 use futures::future::join_all;
-use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler};
+use handlers::{
+    BAR_AGGREGATOR_PRIORITY, BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler,
+};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -105,6 +108,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
+use requests::{RequestBarAggregation, request_bar_aggregation_from_params, request_params};
 #[cfg(feature = "streaming")]
 use streaming::CatalogMap;
 use ustr::Ustr;
@@ -125,10 +129,6 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
-// Between built-in handlers (10) and default user handlers (0)
-const BAR_AGGREGATOR_PRIORITY: u32 = 5;
-const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
-
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -137,8 +137,6 @@ pub struct DataEngine {
     pub(crate) external_clients: AHashSet<ClientId>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
-    #[cfg(feature = "streaming")]
-    catalogs: CatalogMap,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
@@ -150,6 +148,7 @@ pub struct DataEngine {
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
+    request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
     spread_quote_aggregators: AHashMap<InstrumentId, Rc<RefCell<SpreadQuoteAggregator>>>,
     spread_quote_handlers: AHashMap<InstrumentId, Vec<(InstrumentId, TypedHandler<QuoteTick>)>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
@@ -167,6 +166,8 @@ pub struct DataEngine {
     response_count: u64,
     pub(crate) msgbus_priority: u32,
     pub(crate) config: DataEngineConfig,
+    #[cfg(feature = "streaming")]
+    catalogs: CatalogMap,
     #[cfg(feature = "defi")]
     pub(crate) pool_updaters: AHashMap<InstrumentId, Rc<PoolUpdater>>,
     #[cfg(feature = "defi")]
@@ -200,8 +201,6 @@ impl DataEngine {
             external_clients,
             clients: IndexMap::new(),
             default_client: None,
-            #[cfg(feature = "streaming")]
-            catalogs: CatalogMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
@@ -213,6 +212,7 @@ impl DataEngine {
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
+            request_bar_aggregations: AHashMap::new(),
             spread_quote_aggregators: AHashMap::new(),
             spread_quote_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
@@ -230,6 +230,8 @@ impl DataEngine {
             response_count: 0,
             msgbus_priority: 10, // High-priority for built-in component
             config,
+            #[cfg(feature = "streaming")]
+            catalogs: CatalogMap::new(),
             #[cfg(feature = "defi")]
             pool_updaters: AHashMap::new(),
             #[cfg(feature = "defi")]
@@ -492,6 +494,8 @@ impl DataEngine {
             }
         }
 
+        self.request_bar_aggregations.clear();
+
         let spread_ids: Vec<InstrumentId> = self.spread_quote_aggregators.keys().copied().collect();
         for spread_id in spread_ids {
             self.stop_spread_quote_aggregator(spread_id);
@@ -502,6 +506,7 @@ impl DataEngine {
         for (_, manager) in managers {
             manager.borrow_mut().teardown(&self.clock);
         }
+
         self.option_chain_instrument_index.clear();
         self.pending_option_chain_requests.clear();
 
@@ -519,6 +524,7 @@ impl DataEngine {
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
             msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
         }
+
         self.book_deltas_parent_expansions.clear();
         self.book_depth10_parent_expansions.clear();
 
@@ -1067,7 +1073,10 @@ impl DataEngine {
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(req.client_id(), req.venue()) {
+        let request_id = *req.request_id();
+        self.prepare_request_bar_aggregators(&req)?;
+
+        let result = if let Some(client) = self.get_client(req.client_id(), req.venue()) {
             match req {
                 RequestCommand::Data(req) => client.request_data(req),
                 RequestCommand::Instrument(req) => client.request_instrument(req),
@@ -1081,12 +1090,113 @@ impl DataEngine {
                 RequestCommand::Bars(req) => client.request_bars(req),
             }
         } else {
-            anyhow::bail!(
+            Err(anyhow::anyhow!(
                 "Cannot handle request: no client found for {:?} {:?}",
                 req.client_id(),
                 req.venue()
+            ))
+        };
+
+        if result.is_err() {
+            self.cleanup_request_bar_aggregators(&request_id);
+        }
+
+        result
+    }
+
+    fn prepare_request_bar_aggregators(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
+        let request_id = *req.request_id();
+        let Some(state) = request_bar_aggregation_from_params(request_params(req))? else {
+            return Ok(());
+        };
+
+        if !self.can_start_request_bar_aggregators(request_id, &state) {
+            anyhow::bail!(
+                "Cannot request aggregated bars: one of the aggregators in `bar_types` is already running"
             );
         }
+
+        self.request_bar_aggregations
+            .insert(request_id, state.clone());
+
+        if let Err(e) = self.init_request_bar_aggregators(request_id, &state) {
+            self.cleanup_request_bar_aggregators(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn can_start_request_bar_aggregators(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> bool {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+        state.bar_types.iter().all(|bar_type| {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            self.bar_aggregators
+                .get(&key)
+                .is_none_or(|aggregator| !aggregator.borrow().is_running())
+        })
+    }
+
+    fn init_request_bar_aggregators(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            self.create_bar_aggregator_for_key(*bar_type, aggregator_request_id)?;
+            self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
+
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                aggregator.borrow_mut().set_is_running(true);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn cleanup_request_bar_aggregators(&mut self, request_id: &UUID4) -> bool {
+        let Some(state) = self.request_bar_aggregations.remove(request_id) else {
+            return false;
+        };
+        let aggregator_request_id = state.aggregator_request_id(*request_id);
+
+        for bar_type in state.bar_types {
+            let key = bar_aggregator_key(bar_type, aggregator_request_id);
+            let has_live_handlers =
+                state.update_subscriptions && self.bar_aggregator_handlers.contains_key(&key);
+            let keep_running = if has_live_handlers {
+                match self.setup_bar_aggregator(bar_type, false, aggregator_request_id) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::error!(
+                            "Error starting live request bar aggregator for {bar_type}: {e}"
+                        );
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                aggregator.borrow_mut().set_is_running(keep_running);
+            }
+
+            if !state.update_subscriptions
+                && let Err(e) = self.stop_bar_aggregator(bar_type, aggregator_request_id)
+            {
+                log::error!("Error stopping request bar aggregator for {bar_type}: {e}");
+            }
+        }
+
+        true
     }
 
     /// Processes a dynamically-typed data message.
@@ -1219,12 +1329,125 @@ impl DataEngine {
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
             DataResponse::ForwardPrices(r) => {
+                self.process_request_bar_aggregation_response(&resp);
                 return self.handle_forward_prices_response(&correlation_id, r);
             }
             DataResponse::Data(_) => {}
         }
 
+        self.process_request_bar_aggregation_response(&resp);
+
         msgbus::send_response(&correlation_id, &resp);
+    }
+
+    fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
+        let correlation_id = *resp.correlation_id();
+        let Some(state) = self.request_bar_aggregations.get(&correlation_id).cloned() else {
+            return;
+        };
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                for quote in &r.data {
+                    self.update_request_bar_aggregators_from_quote(&state, correlation_id, *quote);
+                }
+            }
+            DataResponse::Trades(r) => {
+                for trade in &r.data {
+                    self.update_request_bar_aggregators_from_trade(&state, correlation_id, *trade);
+                }
+            }
+            DataResponse::Bars(r) => {
+                for bar in &r.data {
+                    self.update_request_bar_aggregators_from_bar(&state, correlation_id, *bar);
+                }
+            }
+            _ => {}
+        }
+
+        self.cleanup_request_bar_aggregators(&correlation_id);
+    }
+
+    fn update_request_bar_aggregators_from_quote(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        quote: QuoteTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != quote.instrument_id
+                || bar_type.spec().price_type == PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_quote(quote);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregators_from_trade(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        trade: TradeTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != trade.instrument_id
+                || bar_type.spec().price_type != PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_trade(trade);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregators_from_bar(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        bar: Bar,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if !bar_type.is_composite()
+                || bar_type.composite().standard() != bar.bar_type.standard()
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_bar(bar);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregator<F>(
+        &self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+        update: F,
+    ) where
+        F: FnOnce(&mut dyn BarAggregator),
+    {
+        let key = bar_aggregator_key(bar_type, request_id);
+        let Some(aggregator) = self.bar_aggregators.get(&key) else {
+            log::error!("Cannot update request bar aggregator: no aggregator found for {bar_type}");
+            return;
+        };
+
+        update(aggregator.borrow_mut().as_mut());
     }
 
     #[inline]
@@ -1905,9 +2128,13 @@ impl DataEngine {
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         match cmd.bar_type.aggregation_source() {
             AggregationSource::Internal => {
-                if !self
+                let key = bar_aggregator_key(cmd.bar_type, None);
+
+                if self
                     .bar_aggregators
-                    .contains_key(&bar_aggregator_key(cmd.bar_type, None))
+                    .get(&key)
+                    .is_none_or(|aggregator| !aggregator.borrow().is_running())
+                    || !self.bar_aggregator_handlers.contains_key(&key)
                 {
                     self.start_bar_aggregator(cmd.bar_type, None)?;
                 }
@@ -2966,15 +3193,16 @@ impl DataEngine {
         }
     }
 
-    // Live-only path: callers must pass `request_id = None`. Handler IDs key
-    // on `bar_type.standard()`; request-scoped aggregators (#5) will consume
-    // response data directly without subscribing to the msgbus
-    fn start_bar_aggregator(
+    fn create_bar_aggregator_for_key(
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
     ) -> anyhow::Result<()> {
-        // Get the instrument for this bar type
+        let key = bar_aggregator_key(bar_type, request_id);
+        if self.bar_aggregators.contains_key(&key) {
+            return Ok(());
+        }
+
         let instrument = {
             let cache = self.cache.borrow();
             cache
@@ -2987,58 +3215,83 @@ impl DataEngine {
                 })?
                 .clone()
         };
+        let aggregator = self.create_bar_aggregator(&instrument, bar_type);
+        self.bar_aggregators
+            .insert(key, Rc::new(RefCell::new(aggregator)));
 
+        Ok(())
+    }
+
+    fn start_bar_aggregator(
+        &mut self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         let bar_type_std = bar_type.standard();
 
-        // Create or retrieve aggregator in Rc<RefCell>
-        let aggregator = if let Some(rc) = self.bar_aggregators.get(&key) {
-            rc.clone()
-        } else {
-            let agg = self.create_bar_aggregator(&instrument, bar_type);
-            let rc = Rc::new(RefCell::new(agg));
-            self.bar_aggregators.insert(key, rc.clone());
-            rc
-        };
+        self.create_bar_aggregator_for_key(bar_type, request_id)?;
+        let aggregator = self
+            .bar_aggregators
+            .get(&key)
+            .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?
+            .clone();
+        let defer_live_activation = request_id.is_none()
+            && aggregator.borrow().is_running()
+            && !self.bar_aggregator_handlers.contains_key(&key);
 
-        // Subscribe to underlying data topics
-        let mut subscriptions = Vec::new();
+        if !self.bar_aggregator_handlers.contains_key(&key) {
+            // Subscribe to underlying data topics
+            let mut subscriptions = Vec::new();
 
-        if bar_type.is_composite() {
-            let topic = switchboard::get_bars_topic(bar_type.composite());
-            let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_bars(topic.into(), handler.clone(), None);
-            subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
-        } else if bar_type.spec().price_type == PriceType::Last {
-            let topic = switchboard::get_trades_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_trades(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
-            subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
-        } else {
-            // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
-            if matches!(
-                bar_type.spec().aggregation,
-                BarAggregation::TickImbalance
-                    | BarAggregation::VolumeImbalance
-                    | BarAggregation::ValueImbalance
-                    | BarAggregation::TickRuns
-                    | BarAggregation::VolumeRuns
-                    | BarAggregation::ValueRuns
-            ) {
-                log::warn!(
-                    "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
-                     data with `aggressor_side`, but `price_type` is not LAST so it will receive \
-                     quote data: bars will not emit correctly",
+            if bar_type.is_composite() {
+                let topic = switchboard::get_bars_topic(bar_type.composite());
+                let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+                subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
+            } else if bar_type.spec().price_type == PriceType::Last {
+                let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_trades(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
                 );
+                subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
+            } else {
+                // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
+                if matches!(
+                    bar_type.spec().aggregation,
+                    BarAggregation::TickImbalance
+                        | BarAggregation::VolumeImbalance
+                        | BarAggregation::ValueImbalance
+                        | BarAggregation::TickRuns
+                        | BarAggregation::VolumeRuns
+                        | BarAggregation::ValueRuns
+                ) {
+                    log::warn!(
+                        "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
+                         data with `aggressor_side`, but `price_type` is not LAST so it will receive \
+                         quote data: bars will not emit correctly",
+                    );
+                }
+
+                let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_quotes(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
+                );
+                subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
             }
 
-            let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
-            subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
+            self.bar_aggregator_handlers.insert(key, subscriptions);
         }
 
-        self.bar_aggregator_handlers.insert(key, subscriptions);
+        if defer_live_activation {
+            return Ok(());
+        }
 
         // Setup time bar aggregator if needed (matches Cython _setup_bar_aggregator)
         self.setup_bar_aggregator(bar_type, false, request_id)?;
@@ -3160,6 +3413,8 @@ fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> 
         None => Some(1),
     }
 }
+
+const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
 
 fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentId, i64)>> {
     if !instrument.is_spread() {
