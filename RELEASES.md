@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
+- Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
 - Added `correlation_id` field to Rust trading and system command structs for request tracing
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
 - Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
@@ -19,12 +20,14 @@ Released on TBD (UTC).
 - Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
 - Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
+- Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
 - Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
+- Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -41,6 +44,7 @@ None
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
+- Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
@@ -57,6 +61,7 @@ None
 - Added Polymarket Criterion bench groups for inbound pipeline, exec pipeline, and signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
+- Improved Binance Spot SBE missing credentials error message (#4092), thanks @filipmacek
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
 - Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature

@@ -28,8 +28,7 @@ use nautilus_model::{
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
-use crate::common::bar::BinanceBar;
-use crate::data_types::BinanceFuturesLiquidation;
+use crate::{common::bar::BinanceBar, data_types::BinanceFuturesLiquidation};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]

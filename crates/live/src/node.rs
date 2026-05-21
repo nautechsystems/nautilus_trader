@@ -424,7 +424,7 @@ impl LiveNode {
     ///
     /// Returns an error when plug-ins are configured without plug-in support.
     #[cfg(not(feature = "plugin"))]
-    pub(crate) fn load_configured_plugins(&mut self) -> anyhow::Result<()> {
+    pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
             return Ok(());
         }

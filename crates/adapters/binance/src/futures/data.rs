@@ -15,10 +15,12 @@
 
 //! Live market data client implementation for the Binance Futures adapter.
 
-use std::str::FromStr;
-use std::sync::{
-    Arc, RwLock,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+use std::{
+    str::FromStr,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
 };
 
 use ahash::AHashMap;
@@ -130,6 +132,8 @@ pub struct BinanceFuturesDataClient {
     mark_price_refs: Arc<AtomicMap<InstrumentId, u32>>,
     force_order_refs: Arc<AtomicMap<InstrumentId, u32>>,
     force_order_all_market_refs: Arc<AtomicU32>,
+    force_order_all_market_stream_active: Arc<AtomicBool>,
+    force_order_ws_lock: Arc<tokio::sync::Mutex<()>>,
     book_epoch: Arc<RwLock<u64>>,
 }
 
@@ -231,6 +235,8 @@ impl BinanceFuturesDataClient {
             mark_price_refs: Arc::new(AtomicMap::new()),
             force_order_refs: Arc::new(AtomicMap::new()),
             force_order_all_market_refs: Arc::new(AtomicU32::new(0)),
+            force_order_all_market_stream_active: Arc::new(AtomicBool::new(false)),
+            force_order_ws_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_epoch: Arc::new(RwLock::new(0)),
         })
     }
@@ -293,12 +299,89 @@ impl BinanceFuturesDataClient {
         format!("{}@forceOrder", format_binance_stream_symbol(instrument_id))
     }
 
-    fn tracked_liquidation_streams(&self) -> Vec<String> {
-        self.force_order_refs
-            .load()
-            .keys()
-            .map(Self::liquidation_stream)
-            .collect()
+    fn spawn_liquidation_stream_reconcile(&self, context: &'static str) {
+        let ws = self.ws_client.clone();
+        let refs = self.force_order_refs.clone();
+        let all_market_refs = self.force_order_all_market_refs.clone();
+        let all_market_stream_active = self.force_order_all_market_stream_active.clone();
+        let ws_lock = self.force_order_ws_lock.clone();
+
+        self.spawn_ws(
+            async move {
+                let _guard = ws_lock.lock().await;
+                let wants_all_market = all_market_refs.load(Ordering::Relaxed) > 0;
+                let all_market_active = all_market_stream_active.load(Ordering::Acquire);
+
+                if wants_all_market {
+                    if all_market_active {
+                        return Ok(());
+                    }
+
+                    let specific_streams = refs
+                        .load()
+                        .keys()
+                        .map(Self::liquidation_stream)
+                        .collect::<Vec<_>>();
+
+                    if !specific_streams.is_empty() {
+                        ws.unsubscribe(specific_streams).await.context(
+                            "specific forceOrder unsubscribe while enabling all-market",
+                        )?;
+                    }
+
+                    if all_market_refs.load(Ordering::Relaxed) == 0 {
+                        let restored_streams = refs
+                            .load()
+                            .keys()
+                            .map(Self::liquidation_stream)
+                            .collect::<Vec<_>>();
+
+                        if !restored_streams.is_empty() {
+                            ws.subscribe(restored_streams).await.context(
+                                "specific forceOrder restore after canceled all-market subscription",
+                            )?;
+                        }
+                        all_market_stream_active.store(false, Ordering::Release);
+                        return Ok(());
+                    }
+
+                    all_market_stream_active.store(true, Ordering::Release);
+
+                    if let Err(e) = ws
+                        .subscribe(vec!["!forceOrder@arr".to_string()])
+                        .await
+                        .context("all-market forceOrder subscription")
+                    {
+                        all_market_stream_active.store(false, Ordering::Release);
+                        return Err(e);
+                    }
+                } else {
+                    if !all_market_active {
+                        return Ok(());
+                    }
+
+                    ws.unsubscribe(vec!["!forceOrder@arr".to_string()])
+                        .await
+                        .context("all-market forceOrder unsubscribe")?;
+
+                    let specific_streams = refs
+                        .load()
+                        .keys()
+                        .map(Self::liquidation_stream)
+                        .collect::<Vec<_>>();
+
+                    if !specific_streams.is_empty() {
+                        ws.subscribe(specific_streams).await.context(
+                            "specific forceOrder resubscribe after all-market unsubscribe",
+                        )?;
+                    }
+                    all_market_stream_active.store(false, Ordering::Release);
+                }
+
+                Ok(())
+            },
+            context,
+        );
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -311,6 +394,7 @@ impl BinanceFuturesDataClient {
         book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
         force_order_refs: &Arc<AtomicMap<InstrumentId, u32>>,
         force_order_all_market_refs: &Arc<AtomicU32>,
+        force_order_all_market_stream_active: &Arc<AtomicBool>,
         book_epoch: &Arc<RwLock<u64>>,
         http_client: &BinanceFuturesHttpClient,
         clock: &'static AtomicTime,
@@ -447,10 +531,12 @@ impl BinanceFuturesDataClient {
 
                             let has_all_market_subscription =
                                 force_order_all_market_refs.load(Ordering::Relaxed) > 0;
+                            let has_all_market_stream =
+                                force_order_all_market_stream_active.load(Ordering::Acquire);
                             let has_specific_subscription =
                                 force_order_refs.load().contains_key(&instrument.id());
 
-                            if has_all_market_subscription {
+                            if has_all_market_subscription || has_all_market_stream {
                                 let data_type =
                                     DataType::new("BinanceFuturesLiquidation", None, None);
                                 Self::send_data(
@@ -1022,6 +1108,8 @@ impl DataClient for BinanceFuturesDataClient {
         self.mark_price_refs.store(AHashMap::new());
         self.force_order_refs.store(AHashMap::new());
         self.force_order_all_market_refs.store(0, Ordering::Relaxed);
+        self.force_order_all_market_stream_active
+            .store(false, Ordering::Release);
         self.book_subscriptions.store(AHashMap::new());
         self.book_buffers.store(AHashMap::new());
 
@@ -1116,6 +1204,8 @@ impl DataClient for BinanceFuturesDataClient {
         let book_subs = self.book_subscriptions.clone();
         let force_order_refs = self.force_order_refs.clone();
         let force_order_all_market_refs = self.force_order_all_market_refs.clone();
+        let force_order_all_market_stream_active =
+            self.force_order_all_market_stream_active.clone();
         let book_epoch = self.book_epoch.clone();
         let http = self.http_client.clone();
         let clock = self.clock;
@@ -1136,6 +1226,7 @@ impl DataClient for BinanceFuturesDataClient {
                             &book_subs,
                             &force_order_refs,
                             &force_order_all_market_refs,
+                            &force_order_all_market_stream_active,
                             &book_epoch,
                             &http,
                             clock,
@@ -1159,6 +1250,8 @@ impl DataClient for BinanceFuturesDataClient {
         let pub_book_subs = self.book_subscriptions.clone();
         let pub_force_order_refs = self.force_order_refs.clone();
         let pub_force_order_all_market_refs = self.force_order_all_market_refs.clone();
+        let pub_force_order_all_market_stream_active =
+            self.force_order_all_market_stream_active.clone();
         let pub_book_epoch = self.book_epoch.clone();
         let pub_http = self.http_client.clone();
         let pub_cancel = self.cancellation_token.clone();
@@ -1178,6 +1271,7 @@ impl DataClient for BinanceFuturesDataClient {
                             &pub_book_subs,
                             &pub_force_order_refs,
                             &pub_force_order_all_market_refs,
+                            &pub_force_order_all_market_stream_active,
                             &pub_book_epoch,
                             &pub_http,
                             clock,
@@ -1278,6 +1372,8 @@ impl DataClient for BinanceFuturesDataClient {
         self.mark_price_refs.store(AHashMap::new());
         self.force_order_refs.store(AHashMap::new());
         self.force_order_all_market_refs.store(0, Ordering::Relaxed);
+        self.force_order_all_market_stream_active
+            .store(false, Ordering::Release);
         self.book_subscriptions.store(AHashMap::new());
         self.book_buffers.store(AHashMap::new());
 
@@ -1325,8 +1421,11 @@ impl DataClient for BinanceFuturesDataClient {
 
             let has_all_market_subscription =
                 self.force_order_all_market_refs.load(Ordering::Relaxed) > 0;
+            let has_all_market_stream = self
+                .force_order_all_market_stream_active
+                .load(Ordering::Acquire);
 
-            if should_subscribe && !has_all_market_subscription {
+            if should_subscribe && !has_all_market_subscription && !has_all_market_stream {
                 let ws = self.ws_client.clone();
                 let stream = Self::liquidation_stream(&instrument_id);
                 self.spawn_ws(
@@ -1337,6 +1436,8 @@ impl DataClient for BinanceFuturesDataClient {
                     },
                     "forceOrder subscription",
                 );
+            } else if should_subscribe && !has_all_market_subscription {
+                self.spawn_liquidation_stream_reconcile("forceOrder subscription restore");
             }
 
             return Ok(());
@@ -1348,21 +1449,7 @@ impl DataClient for BinanceFuturesDataClient {
             == 0;
 
         if should_subscribe {
-            let ws = self.ws_client.clone();
-            let specific_streams = self.tracked_liquidation_streams();
-            self.spawn_ws(
-                async move {
-                    if !specific_streams.is_empty() {
-                        ws.unsubscribe(specific_streams)
-                            .await
-                            .context("specific forceOrder unsubscribe while enabling all-market")?;
-                    }
-                    ws.subscribe(vec!["!forceOrder@arr".to_string()])
-                        .await
-                        .context("all-market forceOrder subscription")
-                },
-                "all-market forceOrder subscription",
-            );
+            self.spawn_liquidation_stream_reconcile("all-market forceOrder subscription");
         }
 
         Ok(())
@@ -1735,12 +1822,21 @@ impl DataClient for BinanceFuturesDataClient {
 
             let has_all_market_subscription =
                 self.force_order_all_market_refs.load(Ordering::Relaxed) > 0;
+            let has_all_market_stream = self
+                .force_order_all_market_stream_active
+                .load(Ordering::Acquire);
 
             if should_unsubscribe && !has_all_market_subscription {
                 let ws = self.ws_client.clone();
                 let stream = Self::liquidation_stream(&instrument_id);
+                let ws_lock = self.force_order_ws_lock.clone();
                 self.spawn_ws(
                     async move {
+                        let _guard = if has_all_market_stream {
+                            Some(ws_lock.lock().await)
+                        } else {
+                            None
+                        };
                         ws.unsubscribe(vec![stream])
                             .await
                             .context("forceOrder unsubscribe")
@@ -1763,23 +1859,7 @@ impl DataClient for BinanceFuturesDataClient {
             })
             .is_ok_and(|prev| prev == 1);
         if should_unsubscribe {
-            let ws = self.ws_client.clone();
-            let specific_streams = self.tracked_liquidation_streams();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe(vec!["!forceOrder@arr".to_string()])
-                        .await
-                        .context("all-market forceOrder unsubscribe")?;
-
-                    if !specific_streams.is_empty() {
-                        ws.subscribe(specific_streams).await.context(
-                            "specific forceOrder resubscribe after all-market unsubscribe",
-                        )?;
-                    }
-                    Ok(())
-                },
-                "all-market forceOrder unsubscribe",
-            );
+            self.spawn_liquidation_stream_reconcile("all-market forceOrder unsubscribe");
         }
 
         Ok(())

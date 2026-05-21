@@ -164,6 +164,11 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                             } else if stream.contains("@forceOrder")
                                 || stream.contains("!forceOrder@arr")
                             {
+                                let last_filled_qty = if stream.contains("!forceOrder@arr") {
+                                    "0.002"
+                                } else {
+                                    "0.001"
+                                };
                                 let liquidation = json!({
                                     "e": "forceOrder",
                                     "E": 1700000000000_i64,
@@ -176,7 +181,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                         "p": "50000.10",
                                         "ap": "50000.20",
                                         "X": "FILLED",
-                                        "l": "0.001",
+                                        "l": last_filled_qty,
                                         "z": "0.003",
                                         "T": 1700000000000_i64
                                     }
@@ -877,6 +882,136 @@ async fn test_unsubscribe_all_market_restores_specific_liquidation_streams() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rapid_all_market_unsubscribe_does_not_route_all_market_as_specific() {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let specific_data_type = liquidation_data_type_for_instrument(instrument_id);
+    let all_market_data_type = DataType::new("BinanceFuturesLiquidation", None, None);
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            specific_data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Data(Data::Custom(custom)) = event else {
+                    return false;
+                };
+                custom.data_type == specific_data_type
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            all_market_data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Data(Data::Custom(custom)) = event else {
+                    return false;
+                };
+
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesLiquidation>()
+                    .is_some_and(|liq| {
+                        custom.data_type == all_market_data_type
+                            && liq.last_filled_qty.to_string() == "0.002"
+                    })
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .unsubscribe(&UnsubscribeCustomData::new(
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            all_market_data_type,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let mut routed_all_market_as_specific = false;
+
+    while let Ok(event) = rx.try_recv() {
+        let DataEvent::Data(Data::Custom(custom)) = event else {
+            continue;
+        };
+        let Some(liq) = custom
+            .data
+            .as_any()
+            .downcast_ref::<BinanceFuturesLiquidation>()
+        else {
+            continue;
+        };
+
+        if custom.data_type == specific_data_type && liq.last_filled_qty.to_string() == "0.002" {
+            routed_all_market_as_specific = true;
+        }
+    }
+
+    assert!(
+        !routed_all_market_as_specific,
+        "expected transient all-market frames to keep the all-market data type",
+    );
 }
 
 #[rstest]
