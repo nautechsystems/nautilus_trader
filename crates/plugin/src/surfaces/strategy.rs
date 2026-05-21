@@ -90,6 +90,10 @@ pub struct PluginStrategyHandle {
 /// embedding an `ActorVTable` so dispatch stays a single function-pointer
 /// call per event and so the layout is independent of any future actor
 /// vtable changes.
+///
+/// Slots are nullable at the ABI type level so the host can reject malformed
+/// manifests with null callbacks before constructing a strategy. Macro-generated
+/// vtables fill every required slot.
 #[repr(C)]
 pub struct StrategyVTable {
     /// Constructs a fresh strategy instance bound to the supplied host
@@ -101,145 +105,212 @@ pub struct StrategyVTable {
     /// `config_json` carries the per-instance configuration the host
     /// constructed from the user's TOML or builder API. Empty when the
     /// host has no instance-specific configuration to pass.
-    pub create: unsafe extern "C" fn(
-        host: *const HostVTable,
-        ctx: *const HostContext,
-        config_json: BorrowedStr<'_>,
-    ) -> *mut PluginStrategyHandle,
+    pub create: Option<
+        unsafe extern "C" fn(
+            host: *const HostVTable,
+            ctx: *const HostContext,
+            config_json: BorrowedStr<'_>,
+        ) -> *mut PluginStrategyHandle,
+    >,
 
     /// Drops the strategy instance and releases all of its resources.
-    pub drop_handle: unsafe extern "C" fn(handle: *mut PluginStrategyHandle),
+    pub drop_handle: Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle)>,
 
     /// Returns the canonical type name for this strategy.
-    pub type_name: unsafe extern "C" fn() -> BorrowedStr<'static>,
+    pub type_name: Option<unsafe extern "C" fn() -> BorrowedStr<'static>>,
 
-    pub on_start: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_stop: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_resume: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_reset: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_dispose: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_degrade: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
-    pub on_fault: unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>,
+    pub on_start:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_stop:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_resume:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_reset:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_dispose:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_degrade:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+    pub on_fault:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
 
-    pub on_time_event: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const TimeEvent,
-    ) -> PluginResult<()>,
+    pub on_time_event: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const TimeEvent,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_quote: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        quote: *const QuoteTick,
-    ) -> PluginResult<()>,
-    pub on_trade: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        trade: *const TradeTick,
-    ) -> PluginResult<()>,
-    pub on_bar: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        bar: *const Bar,
-    ) -> PluginResult<()>,
-    pub on_mark_price: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        mark_price: *const MarkPriceUpdate,
-    ) -> PluginResult<()>,
-    pub on_index_price: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        index_price: *const IndexPriceUpdate,
-    ) -> PluginResult<()>,
-    pub on_funding_rate: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        funding_rate: *const FundingRateUpdate,
-    ) -> PluginResult<()>,
-    pub on_instrument_status: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        status: *const InstrumentStatus,
-    ) -> PluginResult<()>,
-    pub on_instrument_close: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        close: *const InstrumentClose,
-    ) -> PluginResult<()>,
-    pub on_signal: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        signal: *const Signal,
-    ) -> PluginResult<()>,
+    pub on_quote: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            quote: *const QuoteTick,
+        ) -> PluginResult<()>,
+    >,
+    pub on_trade: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            trade: *const TradeTick,
+        ) -> PluginResult<()>,
+    >,
+    pub on_bar: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            bar: *const Bar,
+        ) -> PluginResult<()>,
+    >,
+    pub on_mark_price: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            mark_price: *const MarkPriceUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_index_price: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            index_price: *const IndexPriceUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_funding_rate: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            funding_rate: *const FundingRateUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_instrument_status: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            status: *const InstrumentStatus,
+        ) -> PluginResult<()>,
+    >,
+    pub on_instrument_close: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            close: *const InstrumentClose,
+        ) -> PluginResult<()>,
+    >,
+    pub on_signal: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            signal: *const Signal,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_order_initialized: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderInitialized,
-    ) -> PluginResult<()>,
-    pub on_order_submitted: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderSubmitted,
-    ) -> PluginResult<()>,
-    pub on_order_accepted: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderAccepted,
-    ) -> PluginResult<()>,
-    pub on_order_rejected: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderRejected,
-    ) -> PluginResult<()>,
-    pub on_order_filled: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderFilled,
-    ) -> PluginResult<()>,
-    pub on_order_canceled: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderCanceled,
-    ) -> PluginResult<()>,
-    pub on_order_expired: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderExpired,
-    ) -> PluginResult<()>,
-    pub on_order_triggered: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderTriggered,
-    ) -> PluginResult<()>,
-    pub on_order_denied: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderDenied,
-    ) -> PluginResult<()>,
-    pub on_order_emulated: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderEmulated,
-    ) -> PluginResult<()>,
-    pub on_order_released: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderReleased,
-    ) -> PluginResult<()>,
-    pub on_order_pending_update: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderPendingUpdate,
-    ) -> PluginResult<()>,
-    pub on_order_pending_cancel: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderPendingCancel,
-    ) -> PluginResult<()>,
-    pub on_order_modify_rejected: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderModifyRejected,
-    ) -> PluginResult<()>,
-    pub on_order_cancel_rejected: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderCancelRejected,
-    ) -> PluginResult<()>,
-    pub on_order_updated: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const OrderUpdated,
-    ) -> PluginResult<()>,
+    pub on_order_initialized: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderInitialized,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_submitted: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderSubmitted,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_accepted: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderAccepted,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_rejected: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderRejected,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_filled: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderFilled,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_canceled: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderCanceled,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_expired: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderExpired,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_triggered: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderTriggered,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_denied: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderDenied,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_emulated: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderEmulated,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_released: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderReleased,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_pending_update: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderPendingUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_pending_cancel: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderPendingCancel,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_modify_rejected: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderModifyRejected,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_cancel_rejected: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderCancelRejected,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_updated: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const OrderUpdated,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_position_opened: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const PositionOpened,
-    ) -> PluginResult<()>,
-    pub on_position_changed: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const PositionChanged,
-    ) -> PluginResult<()>,
-    pub on_position_closed: unsafe extern "C" fn(
-        handle: *mut PluginStrategyHandle,
-        event: *const PositionClosed,
-    ) -> PluginResult<()>,
+    pub on_position_opened: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const PositionOpened,
+        ) -> PluginResult<()>,
+    >,
+    pub on_position_changed: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const PositionChanged,
+        ) -> PluginResult<()>,
+    >,
+    pub on_position_closed: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            event: *const PositionClosed,
+        ) -> PluginResult<()>,
+    >,
 }
 
 /// Author-facing trait for a plug-in strategy.
@@ -464,45 +535,45 @@ where
     T: PluginStrategy,
 {
     const VTABLE: StrategyVTable = StrategyVTable {
-        create: create_thunk::<T>,
-        drop_handle: drop_handle_thunk::<T>,
-        type_name: type_name_thunk::<T>,
-        on_start: on_start_thunk::<T>,
-        on_stop: on_stop_thunk::<T>,
-        on_resume: on_resume_thunk::<T>,
-        on_reset: on_reset_thunk::<T>,
-        on_dispose: on_dispose_thunk::<T>,
-        on_degrade: on_degrade_thunk::<T>,
-        on_fault: on_fault_thunk::<T>,
-        on_time_event: on_time_event_thunk::<T>,
-        on_quote: on_quote_thunk::<T>,
-        on_trade: on_trade_thunk::<T>,
-        on_bar: on_bar_thunk::<T>,
-        on_mark_price: on_mark_price_thunk::<T>,
-        on_index_price: on_index_price_thunk::<T>,
-        on_funding_rate: on_funding_rate_thunk::<T>,
-        on_instrument_status: on_instrument_status_thunk::<T>,
-        on_instrument_close: on_instrument_close_thunk::<T>,
-        on_signal: on_signal_thunk::<T>,
-        on_order_initialized: on_order_initialized_thunk::<T>,
-        on_order_submitted: on_order_submitted_thunk::<T>,
-        on_order_accepted: on_order_accepted_thunk::<T>,
-        on_order_rejected: on_order_rejected_thunk::<T>,
-        on_order_filled: on_order_filled_thunk::<T>,
-        on_order_canceled: on_order_canceled_thunk::<T>,
-        on_order_expired: on_order_expired_thunk::<T>,
-        on_order_triggered: on_order_triggered_thunk::<T>,
-        on_order_denied: on_order_denied_thunk::<T>,
-        on_order_emulated: on_order_emulated_thunk::<T>,
-        on_order_released: on_order_released_thunk::<T>,
-        on_order_pending_update: on_order_pending_update_thunk::<T>,
-        on_order_pending_cancel: on_order_pending_cancel_thunk::<T>,
-        on_order_modify_rejected: on_order_modify_rejected_thunk::<T>,
-        on_order_cancel_rejected: on_order_cancel_rejected_thunk::<T>,
-        on_order_updated: on_order_updated_thunk::<T>,
-        on_position_opened: on_position_opened_thunk::<T>,
-        on_position_changed: on_position_changed_thunk::<T>,
-        on_position_closed: on_position_closed_thunk::<T>,
+        create: Some(create_thunk::<T>),
+        drop_handle: Some(drop_handle_thunk::<T>),
+        type_name: Some(type_name_thunk::<T>),
+        on_start: Some(on_start_thunk::<T>),
+        on_stop: Some(on_stop_thunk::<T>),
+        on_resume: Some(on_resume_thunk::<T>),
+        on_reset: Some(on_reset_thunk::<T>),
+        on_dispose: Some(on_dispose_thunk::<T>),
+        on_degrade: Some(on_degrade_thunk::<T>),
+        on_fault: Some(on_fault_thunk::<T>),
+        on_time_event: Some(on_time_event_thunk::<T>),
+        on_quote: Some(on_quote_thunk::<T>),
+        on_trade: Some(on_trade_thunk::<T>),
+        on_bar: Some(on_bar_thunk::<T>),
+        on_mark_price: Some(on_mark_price_thunk::<T>),
+        on_index_price: Some(on_index_price_thunk::<T>),
+        on_funding_rate: Some(on_funding_rate_thunk::<T>),
+        on_instrument_status: Some(on_instrument_status_thunk::<T>),
+        on_instrument_close: Some(on_instrument_close_thunk::<T>),
+        on_signal: Some(on_signal_thunk::<T>),
+        on_order_initialized: Some(on_order_initialized_thunk::<T>),
+        on_order_submitted: Some(on_order_submitted_thunk::<T>),
+        on_order_accepted: Some(on_order_accepted_thunk::<T>),
+        on_order_rejected: Some(on_order_rejected_thunk::<T>),
+        on_order_filled: Some(on_order_filled_thunk::<T>),
+        on_order_canceled: Some(on_order_canceled_thunk::<T>),
+        on_order_expired: Some(on_order_expired_thunk::<T>),
+        on_order_triggered: Some(on_order_triggered_thunk::<T>),
+        on_order_denied: Some(on_order_denied_thunk::<T>),
+        on_order_emulated: Some(on_order_emulated_thunk::<T>),
+        on_order_released: Some(on_order_released_thunk::<T>),
+        on_order_pending_update: Some(on_order_pending_update_thunk::<T>),
+        on_order_pending_cancel: Some(on_order_pending_cancel_thunk::<T>),
+        on_order_modify_rejected: Some(on_order_modify_rejected_thunk::<T>),
+        on_order_cancel_rejected: Some(on_order_cancel_rejected_thunk::<T>),
+        on_order_updated: Some(on_order_updated_thunk::<T>),
+        on_position_opened: Some(on_position_opened_thunk::<T>),
+        on_position_changed: Some(on_position_changed_thunk::<T>),
+        on_position_closed: Some(on_position_closed_thunk::<T>),
     };
 }
 

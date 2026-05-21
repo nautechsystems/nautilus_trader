@@ -177,33 +177,67 @@ fn find_strategy_entry(
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::NonNull;
+    use std::sync::LazyLock;
 
     use nautilus_plugin::{
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
+        host::{HostContext, HostVTable},
         manifest::{ActorRegistration, PluginBuildId, PluginManifest, StrategyRegistration},
+        surfaces::{
+            actor::{PluginActor, actor_vtable},
+            strategy::{PluginStrategy, strategy_vtable},
+        },
     };
     use rstest::rstest;
 
     use super::*;
 
-    static ACTOR_REGISTRATIONS: [ActorRegistration; 1] = [ActorRegistration {
-        type_name: BorrowedStr::from_str("ExampleActor"),
-        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-    }];
-    static STRATEGY_REGISTRATIONS: [StrategyRegistration; 1] = [StrategyRegistration {
-        type_name: BorrowedStr::from_str("ExampleStrategy"),
-        vtable: NonNull::<StrategyVTable>::dangling().as_ptr(),
-    }];
-    static AMBIGUOUS_ACTOR_REGISTRATIONS: [ActorRegistration; 1] = [ActorRegistration {
-        type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-    }];
-    static AMBIGUOUS_STRATEGY_REGISTRATIONS: [StrategyRegistration; 1] = [StrategyRegistration {
-        type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: NonNull::<StrategyVTable>::dangling().as_ptr(),
-    }];
+    struct ExampleActor;
+
+    impl PluginActor for ExampleActor {
+        const TYPE_NAME: &'static str = "ExampleActor";
+
+        fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
+            Self
+        }
+    }
+
+    struct ExampleStrategy;
+
+    impl PluginStrategy for ExampleStrategy {
+        const TYPE_NAME: &'static str = "ExampleStrategy";
+
+        fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
+            Self
+        }
+    }
+
+    static ACTOR_REGISTRATIONS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
+        [ActorRegistration {
+            type_name: BorrowedStr::from_str("ExampleActor"),
+            vtable: actor_vtable::<ExampleActor>(),
+        }]
+    });
+    static STRATEGY_REGISTRATIONS: LazyLock<[StrategyRegistration; 1]> = LazyLock::new(|| {
+        [StrategyRegistration {
+            type_name: BorrowedStr::from_str("ExampleStrategy"),
+            vtable: strategy_vtable::<ExampleStrategy>(),
+        }]
+    });
+    static AMBIGUOUS_ACTOR_REGISTRATIONS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
+        [ActorRegistration {
+            type_name: BorrowedStr::from_str("DuplicateType"),
+            vtable: actor_vtable::<ExampleActor>(),
+        }]
+    });
+    static AMBIGUOUS_STRATEGY_REGISTRATIONS: LazyLock<[StrategyRegistration; 1]> =
+        LazyLock::new(|| {
+            [StrategyRegistration {
+                type_name: BorrowedStr::from_str("DuplicateType"),
+                vtable: strategy_vtable::<ExampleStrategy>(),
+            }]
+        });
 
     fn manifest(
         actors: Slice<'static, ActorRegistration>,
@@ -224,8 +258,8 @@ mod tests {
     #[rstest]
     fn configured_entry_resolves_actor_by_type_name() {
         let manifest = manifest(
-            Slice::from_slice(&ACTOR_REGISTRATIONS),
-            Slice::from_slice(&STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*ACTOR_REGISTRATIONS),
+            Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
         manifest
             .validate()
@@ -239,8 +273,8 @@ mod tests {
     #[rstest]
     fn configured_entry_resolves_strategy_by_type_name() {
         let manifest = manifest(
-            Slice::from_slice(&ACTOR_REGISTRATIONS),
-            Slice::from_slice(&STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*ACTOR_REGISTRATIONS),
+            Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
         manifest
             .validate()
@@ -254,8 +288,8 @@ mod tests {
     #[rstest]
     fn configured_entry_rejects_missing_type_name() {
         let manifest = manifest(
-            Slice::from_slice(&ACTOR_REGISTRATIONS),
-            Slice::from_slice(&STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*ACTOR_REGISTRATIONS),
+            Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
         manifest
             .validate()
@@ -273,8 +307,8 @@ mod tests {
     #[rstest]
     fn configured_entry_rejects_ambiguous_type_name() {
         let manifest = manifest(
-            Slice::from_slice(&AMBIGUOUS_ACTOR_REGISTRATIONS),
-            Slice::from_slice(&AMBIGUOUS_STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*AMBIGUOUS_ACTOR_REGISTRATIONS),
+            Slice::from_slice(&*AMBIGUOUS_STRATEGY_REGISTRATIONS),
         );
         let validation_error = manifest
             .validate()

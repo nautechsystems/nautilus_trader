@@ -72,6 +72,14 @@ use nautilus_plugin::{
 use rstest::rstest;
 use ustr::Ustr;
 
+macro_rules! generated_slot {
+    ($vtable:expr, $slot:ident) => {{
+        ($vtable)
+            .$slot
+            .expect(concat!("generated vtable includes ", stringify!($slot)))
+    }};
+}
+
 // The `On` prefix mirrors the trait method names; clippy's
 // `enum_variant_names` would otherwise object to the shared prefix.
 #[allow(clippy::enum_variant_names)]
@@ -877,24 +885,26 @@ fn actor_lifecycle_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingActor never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
 
     let r = match hook {
         // SAFETY: handle is live for each branch below.
-        ActorHook::OnStart => unsafe { (vt.on_start)(handle) },
-        ActorHook::OnStop => unsafe { (vt.on_stop)(handle) },
-        ActorHook::OnResume => unsafe { (vt.on_resume)(handle) },
-        ActorHook::OnReset => unsafe { (vt.on_reset)(handle) },
-        ActorHook::OnDispose => unsafe { (vt.on_dispose)(handle) },
-        ActorHook::OnDegrade => unsafe { (vt.on_degrade)(handle) },
-        ActorHook::OnFault => unsafe { (vt.on_fault)(handle) },
+        ActorHook::OnStart => unsafe { generated_slot!(vt, on_start)(handle) },
+        ActorHook::OnStop => unsafe { generated_slot!(vt, on_stop)(handle) },
+        ActorHook::OnResume => unsafe { generated_slot!(vt, on_resume)(handle) },
+        ActorHook::OnReset => unsafe { generated_slot!(vt, on_reset)(handle) },
+        ActorHook::OnDispose => unsafe { generated_slot!(vt, on_dispose)(handle) },
+        ActorHook::OnDegrade => unsafe { generated_slot!(vt, on_degrade)(handle) },
+        ActorHook::OnFault => unsafe { generated_slot!(vt, on_fault)(handle) },
         _ => panic!("non-lifecycle hook"),
     };
     r.into_result().expect("lifecycle thunk failed");
     assert_only_actor_hook(hook);
 
     // SAFETY: handle is live.
-    unsafe { (vt.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -920,7 +930,7 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingActor never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
 
     // Each match arm constructs the typed event locally and passes a
     // borrowed pointer. The temporary lives until the end of the match
@@ -934,62 +944,62 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
                 UnixNanos::from(2u64),
             );
             // SAFETY: v outlives the call.
-            unsafe { (vt.on_time_event)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_time_event)(handle, &raw const v) }
         }
         ActorHook::OnQuote => {
             let v = quote_tick_value();
             // SAFETY: v outlives the call.
-            unsafe { (vt.on_quote)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_quote)(handle, &raw const v) }
         }
         ActorHook::OnTrade => {
             let v = stub_trade_ethusdt_buyer();
             // SAFETY: see above.
-            unsafe { (vt.on_trade)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_trade)(handle, &raw const v) }
         }
         ActorHook::OnBar => {
             let v = stub_bar();
             // SAFETY: see above.
-            unsafe { (vt.on_bar)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
         }
         ActorHook::OnMarkPrice => {
             let v = mark_price_value();
             // SAFETY: see above.
-            unsafe { (vt.on_mark_price)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_mark_price)(handle, &raw const v) }
         }
         ActorHook::OnIndexPrice => {
             let v = index_price_value();
             // SAFETY: see above.
-            unsafe { (vt.on_index_price)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_index_price)(handle, &raw const v) }
         }
         ActorHook::OnFundingRate => {
             let v = funding_rate_value();
             // SAFETY: see above.
-            unsafe { (vt.on_funding_rate)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
         }
         ActorHook::OnInstrumentStatus => {
             let v = instrument_status_value();
             // SAFETY: see above.
-            unsafe { (vt.on_instrument_status)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_instrument_status)(handle, &raw const v) }
         }
         ActorHook::OnInstrumentClose => {
             let v = stub_instrument_close();
             // SAFETY: see above.
-            unsafe { (vt.on_instrument_close)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_instrument_close)(handle, &raw const v) }
         }
         ActorHook::OnOrderFilled => {
             let v = order_filled_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_filled)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_filled)(handle, &raw const v) }
         }
         ActorHook::OnOrderCanceled => {
             let v = order_canceled_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_canceled)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_canceled)(handle, &raw const v) }
         }
         ActorHook::OnSignal => {
             let v = signal_value();
             // SAFETY: see above.
-            unsafe { (vt.on_signal)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_signal)(handle, &raw const v) }
         }
         _ => panic!("non-event hook"),
     };
@@ -997,7 +1007,9 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     assert_only_actor_hook(hook);
 
     // SAFETY: handle is live.
-    unsafe { (vt.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -1018,24 +1030,26 @@ fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook)
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingStrategy never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
 
     let r = match hook {
         // SAFETY: handle is live for each branch below.
-        StrategyHook::OnStart => unsafe { (vt.on_start)(handle) },
-        StrategyHook::OnStop => unsafe { (vt.on_stop)(handle) },
-        StrategyHook::OnResume => unsafe { (vt.on_resume)(handle) },
-        StrategyHook::OnReset => unsafe { (vt.on_reset)(handle) },
-        StrategyHook::OnDispose => unsafe { (vt.on_dispose)(handle) },
-        StrategyHook::OnDegrade => unsafe { (vt.on_degrade)(handle) },
-        StrategyHook::OnFault => unsafe { (vt.on_fault)(handle) },
+        StrategyHook::OnStart => unsafe { generated_slot!(vt, on_start)(handle) },
+        StrategyHook::OnStop => unsafe { generated_slot!(vt, on_stop)(handle) },
+        StrategyHook::OnResume => unsafe { generated_slot!(vt, on_resume)(handle) },
+        StrategyHook::OnReset => unsafe { generated_slot!(vt, on_reset)(handle) },
+        StrategyHook::OnDispose => unsafe { generated_slot!(vt, on_dispose)(handle) },
+        StrategyHook::OnDegrade => unsafe { generated_slot!(vt, on_degrade)(handle) },
+        StrategyHook::OnFault => unsafe { generated_slot!(vt, on_fault)(handle) },
         _ => panic!("non-lifecycle hook"),
     };
     r.into_result().expect("lifecycle thunk failed");
     assert_only_strategy_hook(hook);
 
     // SAFETY: handle is live.
-    unsafe { (vt.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -1078,7 +1092,7 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: create returns a fresh handle; null pointers are fine since
     // HookCountingStrategy never deref's them.
-    let handle = unsafe { (vt.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
 
     // Each match arm constructs the typed event locally and passes a
     // borrowed pointer. The temporary lives until the end of the match
@@ -1092,147 +1106,147 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
                 UnixNanos::from(2u64),
             );
             // SAFETY: v outlives the call.
-            unsafe { (vt.on_time_event)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_time_event)(handle, &raw const v) }
         }
         StrategyHook::OnQuote => {
             let v = quote_tick_value();
             // SAFETY: v outlives the call.
-            unsafe { (vt.on_quote)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_quote)(handle, &raw const v) }
         }
         StrategyHook::OnTrade => {
             let v = stub_trade_ethusdt_buyer();
             // SAFETY: see above.
-            unsafe { (vt.on_trade)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_trade)(handle, &raw const v) }
         }
         StrategyHook::OnBar => {
             let v = stub_bar();
             // SAFETY: see above.
-            unsafe { (vt.on_bar)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
         }
         StrategyHook::OnMarkPrice => {
             let v = mark_price_value();
             // SAFETY: see above.
-            unsafe { (vt.on_mark_price)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_mark_price)(handle, &raw const v) }
         }
         StrategyHook::OnIndexPrice => {
             let v = index_price_value();
             // SAFETY: see above.
-            unsafe { (vt.on_index_price)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_index_price)(handle, &raw const v) }
         }
         StrategyHook::OnFundingRate => {
             let v = funding_rate_value();
             // SAFETY: see above.
-            unsafe { (vt.on_funding_rate)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
         }
         StrategyHook::OnInstrumentStatus => {
             let v = instrument_status_value();
             // SAFETY: see above.
-            unsafe { (vt.on_instrument_status)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_instrument_status)(handle, &raw const v) }
         }
         StrategyHook::OnInstrumentClose => {
             let v = stub_instrument_close();
             // SAFETY: see above.
-            unsafe { (vt.on_instrument_close)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_instrument_close)(handle, &raw const v) }
         }
         StrategyHook::OnSignal => {
             let v = signal_value();
             // SAFETY: see above.
-            unsafe { (vt.on_signal)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_signal)(handle, &raw const v) }
         }
         StrategyHook::OnOrderInitialized => {
             let v = order_initialized_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_initialized)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_initialized)(handle, &raw const v) }
         }
         StrategyHook::OnOrderSubmitted => {
             let v = order_submitted_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_submitted)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_submitted)(handle, &raw const v) }
         }
         StrategyHook::OnOrderAccepted => {
             let v = order_accepted_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_accepted)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_accepted)(handle, &raw const v) }
         }
         StrategyHook::OnOrderRejected => {
             let v = order_rejected_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_rejected)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_rejected)(handle, &raw const v) }
         }
         StrategyHook::OnOrderFilled => {
             let v = order_filled_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_filled)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_filled)(handle, &raw const v) }
         }
         StrategyHook::OnOrderCanceled => {
             let v = order_canceled_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_canceled)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_canceled)(handle, &raw const v) }
         }
         StrategyHook::OnOrderExpired => {
             let v = order_expired_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_expired)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_expired)(handle, &raw const v) }
         }
         StrategyHook::OnOrderTriggered => {
             let v = order_triggered_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_triggered)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_triggered)(handle, &raw const v) }
         }
         StrategyHook::OnOrderDenied => {
             let v = order_denied_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_denied)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_denied)(handle, &raw const v) }
         }
         StrategyHook::OnOrderEmulated => {
             let v = order_emulated_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_emulated)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_emulated)(handle, &raw const v) }
         }
         StrategyHook::OnOrderReleased => {
             let v = order_released_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_released)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_released)(handle, &raw const v) }
         }
         StrategyHook::OnOrderPendingUpdate => {
             let v = order_pending_update_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_pending_update)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_pending_update)(handle, &raw const v) }
         }
         StrategyHook::OnOrderPendingCancel => {
             let v = order_pending_cancel_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_pending_cancel)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_pending_cancel)(handle, &raw const v) }
         }
         StrategyHook::OnOrderModifyRejected => {
             let v = order_modify_rejected_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_modify_rejected)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_modify_rejected)(handle, &raw const v) }
         }
         StrategyHook::OnOrderCancelRejected => {
             let v = order_cancel_rejected_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_cancel_rejected)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_cancel_rejected)(handle, &raw const v) }
         }
         StrategyHook::OnOrderUpdated => {
             let v = order_updated_value();
             // SAFETY: see above.
-            unsafe { (vt.on_order_updated)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_order_updated)(handle, &raw const v) }
         }
         StrategyHook::OnPositionOpened => {
             let v = position_opened_value();
             // SAFETY: see above.
-            unsafe { (vt.on_position_opened)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_position_opened)(handle, &raw const v) }
         }
         StrategyHook::OnPositionChanged => {
             let v = position_changed_value();
             // SAFETY: see above.
-            unsafe { (vt.on_position_changed)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_position_changed)(handle, &raw const v) }
         }
         StrategyHook::OnPositionClosed => {
             let v = position_closed_value();
             // SAFETY: see above.
-            unsafe { (vt.on_position_closed)(handle, &raw const v) }
+            unsafe { generated_slot!(vt, on_position_closed)(handle, &raw const v) }
         }
         _ => panic!("non-event hook"),
     };
@@ -1240,5 +1254,7 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     assert_only_strategy_hook(hook);
 
     // SAFETY: handle is live.
-    unsafe { (vt.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
 }

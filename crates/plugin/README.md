@@ -24,6 +24,10 @@ Authors write normal Rust. The `nautilus_plugin!` macro emits the `extern "C"` s
 `#[repr(C)]` manifest, and the per-type vtables; authors never type `extern "C"`,
 `#[repr(C)]`, or `unsafe` themselves.
 
+Vtable slots are nullable in the ABI structs so the host can report malformed
+manifests with missing callbacks. Macro-generated vtables fill every required
+slot, and the loader rejects null slots before registration or instantiation.
+
 The plug-in system supports the following sync trait surfaces. Each lives in its
 own module under `src/` and follows the same pattern: a `#[repr(C)]` vtable, a
 matching author-facing trait, `extern "C"` thunks wired through `panic::guard`,

@@ -205,6 +205,20 @@ fn validate_build_id(build_id: &PluginBuildId, errors: &mut PluginManifestValida
     validate_optional_str("build_id.build_profile", build_id.build_profile, errors);
 }
 
+macro_rules! validate_vtable_slots {
+    ($location:expr, $type_name:expr, $vtable:expr, $errors:expr, [$($slot:ident),+ $(,)?]) => {
+        $(
+            validate_vtable_slot(
+                $location,
+                $type_name,
+                stringify!($slot),
+                $vtable.$slot.is_some(),
+                $errors,
+            );
+        )+
+    };
+}
+
 fn validate_registrations(manifest: &PluginManifest, errors: &mut PluginManifestValidationErrors) {
     let mut seen_type_names = BTreeMap::<String, String>::new();
 
@@ -215,6 +229,8 @@ fn validate_registrations(manifest: &PluginManifest, errors: &mut PluginManifest
             validate_unique_type_name(&mut seen_type_names, &location, type_name, errors);
             if entry.vtable.is_null() {
                 errors.push(format!("{location}.vtable must not be null"));
+            } else {
+                validate_custom_data_vtable(&location, type_name, entry.vtable, errors);
             }
         }
     }
@@ -226,6 +242,8 @@ fn validate_registrations(manifest: &PluginManifest, errors: &mut PluginManifest
             validate_unique_type_name(&mut seen_type_names, &location, type_name, errors);
             if entry.vtable.is_null() {
                 errors.push(format!("{location}.vtable must not be null"));
+            } else {
+                validate_actor_vtable(&location, type_name, entry.vtable, errors);
             }
         }
     }
@@ -237,9 +255,160 @@ fn validate_registrations(manifest: &PluginManifest, errors: &mut PluginManifest
             validate_unique_type_name(&mut seen_type_names, &location, type_name, errors);
             if entry.vtable.is_null() {
                 errors.push(format!("{location}.vtable must not be null"));
+            } else {
+                validate_strategy_vtable(&location, type_name, entry.vtable, errors);
             }
         }
     }
+}
+
+fn validate_custom_data_vtable(
+    location: &str,
+    type_name: Option<&str>,
+    vtable: *const CustomDataVTable,
+    errors: &mut PluginManifestValidationErrors,
+) {
+    // SAFETY: caller checked the vtable pointer is non-null. Validation only
+    // reads nullable function-pointer slots and never invokes plug-in code.
+    let vtable = unsafe { &*vtable };
+    validate_vtable_slots!(
+        location,
+        type_name,
+        vtable,
+        errors,
+        [
+            type_name,
+            schema_ipc,
+            from_json,
+            encode_batch,
+            decode_batch,
+            ts_event,
+            ts_init,
+            to_json,
+            clone_handle,
+            drop_handle,
+            eq_handles,
+        ]
+    );
+}
+
+fn validate_actor_vtable(
+    location: &str,
+    type_name: Option<&str>,
+    vtable: *const ActorVTable,
+    errors: &mut PluginManifestValidationErrors,
+) {
+    // SAFETY: caller checked the vtable pointer is non-null. Validation only
+    // reads nullable function-pointer slots and never invokes plug-in code.
+    let vtable = unsafe { &*vtable };
+    validate_vtable_slots!(
+        location,
+        type_name,
+        vtable,
+        errors,
+        [
+            create,
+            drop_handle,
+            type_name,
+            on_start,
+            on_stop,
+            on_resume,
+            on_reset,
+            on_dispose,
+            on_degrade,
+            on_fault,
+            on_time_event,
+            on_quote,
+            on_trade,
+            on_bar,
+            on_mark_price,
+            on_index_price,
+            on_funding_rate,
+            on_instrument_status,
+            on_instrument_close,
+            on_order_filled,
+            on_order_canceled,
+            on_signal,
+        ]
+    );
+}
+
+fn validate_strategy_vtable(
+    location: &str,
+    type_name: Option<&str>,
+    vtable: *const StrategyVTable,
+    errors: &mut PluginManifestValidationErrors,
+) {
+    // SAFETY: caller checked the vtable pointer is non-null. Validation only
+    // reads nullable function-pointer slots and never invokes plug-in code.
+    let vtable = unsafe { &*vtable };
+    validate_vtable_slots!(
+        location,
+        type_name,
+        vtable,
+        errors,
+        [
+            create,
+            drop_handle,
+            type_name,
+            on_start,
+            on_stop,
+            on_resume,
+            on_reset,
+            on_dispose,
+            on_degrade,
+            on_fault,
+            on_time_event,
+            on_quote,
+            on_trade,
+            on_bar,
+            on_mark_price,
+            on_index_price,
+            on_funding_rate,
+            on_instrument_status,
+            on_instrument_close,
+            on_signal,
+            on_order_initialized,
+            on_order_submitted,
+            on_order_accepted,
+            on_order_rejected,
+            on_order_filled,
+            on_order_canceled,
+            on_order_expired,
+            on_order_triggered,
+            on_order_denied,
+            on_order_emulated,
+            on_order_released,
+            on_order_pending_update,
+            on_order_pending_cancel,
+            on_order_modify_rejected,
+            on_order_cancel_rejected,
+            on_order_updated,
+            on_position_opened,
+            on_position_changed,
+            on_position_closed,
+        ]
+    );
+}
+
+fn validate_vtable_slot(
+    location: &str,
+    type_name: Option<&str>,
+    slot: &str,
+    is_present: bool,
+    errors: &mut PluginManifestValidationErrors,
+) {
+    if is_present {
+        return;
+    }
+
+    let type_name = match type_name {
+        Some("") | None => "<unknown>",
+        Some(value) => value,
+    };
+    errors.push(format!(
+        "{location} type '{type_name}' vtable.{slot} must not be null"
+    ));
 }
 
 fn validate_type_name<'a>(
@@ -380,51 +549,362 @@ unsafe impl Sync for StrategyRegistration {}
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::NonNull;
+    use std::sync::LazyLock;
 
     use rstest::rstest;
 
     use super::*;
 
-    static VALID_CUSTOM_DATA: [CustomDataRegistration; 1] = [CustomDataRegistration {
-        type_name: BorrowedStr::from_str("TestTick"),
-        vtable: NonNull::<CustomDataVTable>::dangling().as_ptr(),
-    }];
-    static VALID_ACTORS: [ActorRegistration; 1] = [ActorRegistration {
-        type_name: BorrowedStr::from_str("TestActor"),
-        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-    }];
-    static VALID_STRATEGIES: [StrategyRegistration; 1] = [StrategyRegistration {
-        type_name: BorrowedStr::from_str("TestStrategy"),
-        vtable: NonNull::<StrategyVTable>::dangling().as_ptr(),
-    }];
-    static DUPLICATE_CUSTOM_DATA: [CustomDataRegistration; 1] = [CustomDataRegistration {
-        type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: NonNull::<CustomDataVTable>::dangling().as_ptr(),
-    }];
-    static DUPLICATE_ACTORS: [ActorRegistration; 1] = [ActorRegistration {
-        type_name: BorrowedStr::from_str("DuplicateType"),
-        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-    }];
-    static DUPLICATE_ACTORS_SAME_SLICE: [ActorRegistration; 2] = [
-        ActorRegistration {
-            type_name: BorrowedStr::from_str("DuplicateActor"),
-            vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-        },
-        ActorRegistration {
-            type_name: BorrowedStr::from_str("DuplicateActor"),
-            vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-        },
-    ];
-    static EMPTY_TYPE_NAME_ACTORS: [ActorRegistration; 1] = [ActorRegistration {
-        type_name: BorrowedStr::empty(),
-        vtable: NonNull::<ActorVTable>::dangling().as_ptr(),
-    }];
+    #[derive(Clone, PartialEq)]
+    struct ManifestTestTick;
+
+    impl crate::surfaces::custom_data::PluginCustomData for ManifestTestTick {
+        const TYPE_NAME: &'static str = "ManifestTestTick";
+
+        fn ts_event(&self) -> u64 {
+            0
+        }
+
+        fn ts_init(&self) -> u64 {
+            0
+        }
+
+        fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn from_json(_payload: &[u8]) -> anyhow::Result<Self> {
+            Ok(Self)
+        }
+
+        fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn decode_batch(
+            _ipc_bytes: &[u8],
+            _metadata: &[(String, String)],
+        ) -> anyhow::Result<Vec<Self>> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct ManifestTestActor;
+
+    impl crate::surfaces::actor::PluginActor for ManifestTestActor {
+        const TYPE_NAME: &'static str = "ManifestTestActor";
+
+        fn new(
+            _host: *const HostVTable,
+            _ctx: *const crate::host::HostContext,
+            _config_json: &str,
+        ) -> Self {
+            Self
+        }
+    }
+
+    struct ManifestTestStrategy;
+
+    impl crate::surfaces::strategy::PluginStrategy for ManifestTestStrategy {
+        const TYPE_NAME: &'static str = "ManifestTestStrategy";
+
+        fn new(
+            _host: *const HostVTable,
+            _ctx: *const crate::host::HostContext,
+            _config_json: &str,
+        ) -> Self {
+            Self
+        }
+    }
+
+    static VALID_CUSTOM_DATA: LazyLock<[CustomDataRegistration; 1]> = LazyLock::new(|| {
+        [CustomDataRegistration {
+            type_name: BorrowedStr::from_str("TestTick"),
+            vtable: crate::surfaces::custom_data::custom_data_vtable::<ManifestTestTick>(),
+        }]
+    });
+    static VALID_ACTORS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
+        [ActorRegistration {
+            type_name: BorrowedStr::from_str("TestActor"),
+            vtable: crate::surfaces::actor::actor_vtable::<ManifestTestActor>(),
+        }]
+    });
+    static VALID_STRATEGIES: LazyLock<[StrategyRegistration; 1]> = LazyLock::new(|| {
+        [StrategyRegistration {
+            type_name: BorrowedStr::from_str("TestStrategy"),
+            vtable: crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>(),
+        }]
+    });
+    static DUPLICATE_CUSTOM_DATA: LazyLock<[CustomDataRegistration; 1]> = LazyLock::new(|| {
+        [CustomDataRegistration {
+            type_name: BorrowedStr::from_str("DuplicateType"),
+            vtable: crate::surfaces::custom_data::custom_data_vtable::<ManifestTestTick>(),
+        }]
+    });
+    static DUPLICATE_ACTORS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
+        [ActorRegistration {
+            type_name: BorrowedStr::from_str("DuplicateType"),
+            vtable: crate::surfaces::actor::actor_vtable::<ManifestTestActor>(),
+        }]
+    });
+    static DUPLICATE_ACTORS_SAME_SLICE: LazyLock<[ActorRegistration; 2]> = LazyLock::new(|| {
+        [
+            ActorRegistration {
+                type_name: BorrowedStr::from_str("DuplicateActor"),
+                vtable: crate::surfaces::actor::actor_vtable::<ManifestTestActor>(),
+            },
+            ActorRegistration {
+                type_name: BorrowedStr::from_str("DuplicateActor"),
+                vtable: crate::surfaces::actor::actor_vtable::<ManifestTestActor>(),
+            },
+        ]
+    });
+    static EMPTY_TYPE_NAME_ACTORS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
+        [ActorRegistration {
+            type_name: BorrowedStr::empty(),
+            vtable: crate::surfaces::actor::actor_vtable::<ManifestTestActor>(),
+        }]
+    });
     static NULL_VTABLE_CUSTOM_DATA: [CustomDataRegistration; 1] = [CustomDataRegistration {
         type_name: BorrowedStr::from_str("NullVTableType"),
         vtable: std::ptr::null(),
     }];
     static INVALID_UTF8: [u8; 1] = [0xff];
+
+    fn custom_data_registration(
+        type_name: &'static str,
+        vtable: *const CustomDataVTable,
+    ) -> Slice<'static, CustomDataRegistration> {
+        let entries = Box::leak(Box::new([CustomDataRegistration {
+            type_name: BorrowedStr::from_str(type_name),
+            vtable,
+        }]));
+        Slice::from_slice(entries)
+    }
+
+    fn actor_registration(
+        type_name: &'static str,
+        vtable: *const ActorVTable,
+    ) -> Slice<'static, ActorRegistration> {
+        let entries = Box::leak(Box::new([ActorRegistration {
+            type_name: BorrowedStr::from_str(type_name),
+            vtable,
+        }]));
+        Slice::from_slice(entries)
+    }
+
+    fn strategy_registration(
+        type_name: &'static str,
+        vtable: *const StrategyVTable,
+    ) -> Slice<'static, StrategyRegistration> {
+        let entries = Box::leak(Box::new([StrategyRegistration {
+            type_name: BorrowedStr::from_str(type_name),
+            vtable,
+        }]));
+        Slice::from_slice(entries)
+    }
+
+    fn custom_data_vtable_missing_schema_ipc() -> *const CustomDataVTable {
+        let valid = crate::surfaces::custom_data::custom_data_vtable::<ManifestTestTick>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(CustomDataVTable {
+            type_name: valid.type_name,
+            schema_ipc: None,
+            from_json: valid.from_json,
+            encode_batch: valid.encode_batch,
+            decode_batch: valid.decode_batch,
+            ts_event: valid.ts_event,
+            ts_init: valid.ts_init,
+            to_json: valid.to_json,
+            clone_handle: valid.clone_handle,
+            drop_handle: valid.drop_handle,
+            eq_handles: valid.eq_handles,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
+    fn custom_data_vtable_missing_type_name() -> *const CustomDataVTable {
+        let valid = crate::surfaces::custom_data::custom_data_vtable::<ManifestTestTick>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(CustomDataVTable {
+            type_name: None,
+            schema_ipc: valid.schema_ipc,
+            from_json: valid.from_json,
+            encode_batch: valid.encode_batch,
+            decode_batch: valid.decode_batch,
+            ts_event: valid.ts_event,
+            ts_init: valid.ts_init,
+            to_json: valid.to_json,
+            clone_handle: valid.clone_handle,
+            drop_handle: valid.drop_handle,
+            eq_handles: valid.eq_handles,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
+    fn actor_vtable_missing_on_quote() -> *const ActorVTable {
+        let valid = crate::surfaces::actor::actor_vtable::<ManifestTestActor>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(ActorVTable {
+            create: valid.create,
+            drop_handle: valid.drop_handle,
+            type_name: valid.type_name,
+            on_start: valid.on_start,
+            on_stop: valid.on_stop,
+            on_resume: valid.on_resume,
+            on_reset: valid.on_reset,
+            on_dispose: valid.on_dispose,
+            on_degrade: valid.on_degrade,
+            on_fault: valid.on_fault,
+            on_time_event: valid.on_time_event,
+            on_quote: None,
+            on_trade: valid.on_trade,
+            on_bar: valid.on_bar,
+            on_mark_price: valid.on_mark_price,
+            on_index_price: valid.on_index_price,
+            on_funding_rate: valid.on_funding_rate,
+            on_instrument_status: valid.on_instrument_status,
+            on_instrument_close: valid.on_instrument_close,
+            on_order_filled: valid.on_order_filled,
+            on_order_canceled: valid.on_order_canceled,
+            on_signal: valid.on_signal,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
+    fn actor_vtable_missing_create() -> *const ActorVTable {
+        let valid = crate::surfaces::actor::actor_vtable::<ManifestTestActor>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(ActorVTable {
+            create: None,
+            drop_handle: valid.drop_handle,
+            type_name: valid.type_name,
+            on_start: valid.on_start,
+            on_stop: valid.on_stop,
+            on_resume: valid.on_resume,
+            on_reset: valid.on_reset,
+            on_dispose: valid.on_dispose,
+            on_degrade: valid.on_degrade,
+            on_fault: valid.on_fault,
+            on_time_event: valid.on_time_event,
+            on_quote: valid.on_quote,
+            on_trade: valid.on_trade,
+            on_bar: valid.on_bar,
+            on_mark_price: valid.on_mark_price,
+            on_index_price: valid.on_index_price,
+            on_funding_rate: valid.on_funding_rate,
+            on_instrument_status: valid.on_instrument_status,
+            on_instrument_close: valid.on_instrument_close,
+            on_order_filled: valid.on_order_filled,
+            on_order_canceled: valid.on_order_canceled,
+            on_signal: valid.on_signal,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
+    fn strategy_vtable_missing_on_position_closed() -> *const StrategyVTable {
+        let valid = crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(StrategyVTable {
+            create: valid.create,
+            drop_handle: valid.drop_handle,
+            type_name: valid.type_name,
+            on_start: valid.on_start,
+            on_stop: valid.on_stop,
+            on_resume: valid.on_resume,
+            on_reset: valid.on_reset,
+            on_dispose: valid.on_dispose,
+            on_degrade: valid.on_degrade,
+            on_fault: valid.on_fault,
+            on_time_event: valid.on_time_event,
+            on_quote: valid.on_quote,
+            on_trade: valid.on_trade,
+            on_bar: valid.on_bar,
+            on_mark_price: valid.on_mark_price,
+            on_index_price: valid.on_index_price,
+            on_funding_rate: valid.on_funding_rate,
+            on_instrument_status: valid.on_instrument_status,
+            on_instrument_close: valid.on_instrument_close,
+            on_signal: valid.on_signal,
+            on_order_initialized: valid.on_order_initialized,
+            on_order_submitted: valid.on_order_submitted,
+            on_order_accepted: valid.on_order_accepted,
+            on_order_rejected: valid.on_order_rejected,
+            on_order_filled: valid.on_order_filled,
+            on_order_canceled: valid.on_order_canceled,
+            on_order_expired: valid.on_order_expired,
+            on_order_triggered: valid.on_order_triggered,
+            on_order_denied: valid.on_order_denied,
+            on_order_emulated: valid.on_order_emulated,
+            on_order_released: valid.on_order_released,
+            on_order_pending_update: valid.on_order_pending_update,
+            on_order_pending_cancel: valid.on_order_pending_cancel,
+            on_order_modify_rejected: valid.on_order_modify_rejected,
+            on_order_cancel_rejected: valid.on_order_cancel_rejected,
+            on_order_updated: valid.on_order_updated,
+            on_position_opened: valid.on_position_opened,
+            on_position_changed: valid.on_position_changed,
+            on_position_closed: None,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
+    fn strategy_vtable_missing_drop_handle() -> *const StrategyVTable {
+        let valid = crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(StrategyVTable {
+            create: valid.create,
+            drop_handle: None,
+            type_name: valid.type_name,
+            on_start: valid.on_start,
+            on_stop: valid.on_stop,
+            on_resume: valid.on_resume,
+            on_reset: valid.on_reset,
+            on_dispose: valid.on_dispose,
+            on_degrade: valid.on_degrade,
+            on_fault: valid.on_fault,
+            on_time_event: valid.on_time_event,
+            on_quote: valid.on_quote,
+            on_trade: valid.on_trade,
+            on_bar: valid.on_bar,
+            on_mark_price: valid.on_mark_price,
+            on_index_price: valid.on_index_price,
+            on_funding_rate: valid.on_funding_rate,
+            on_instrument_status: valid.on_instrument_status,
+            on_instrument_close: valid.on_instrument_close,
+            on_signal: valid.on_signal,
+            on_order_initialized: valid.on_order_initialized,
+            on_order_submitted: valid.on_order_submitted,
+            on_order_accepted: valid.on_order_accepted,
+            on_order_rejected: valid.on_order_rejected,
+            on_order_filled: valid.on_order_filled,
+            on_order_canceled: valid.on_order_canceled,
+            on_order_expired: valid.on_order_expired,
+            on_order_triggered: valid.on_order_triggered,
+            on_order_denied: valid.on_order_denied,
+            on_order_emulated: valid.on_order_emulated,
+            on_order_released: valid.on_order_released,
+            on_order_pending_update: valid.on_order_pending_update,
+            on_order_pending_cancel: valid.on_order_pending_cancel,
+            on_order_modify_rejected: valid.on_order_modify_rejected,
+            on_order_cancel_rejected: valid.on_order_cancel_rejected,
+            on_order_updated: valid.on_order_updated,
+            on_position_opened: valid.on_position_opened,
+            on_position_changed: valid.on_position_changed,
+            on_position_closed: valid.on_position_closed,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
 
     fn valid_manifest() -> PluginManifest {
         PluginManifest {
@@ -477,9 +957,9 @@ mod tests {
     #[rstest]
     fn validate_accepts_manifest_with_all_plug_point_families() {
         let m = PluginManifest {
-            custom_data: Slice::from_slice(&VALID_CUSTOM_DATA),
-            actors: Slice::from_slice(&VALID_ACTORS),
-            strategies: Slice::from_slice(&VALID_STRATEGIES),
+            custom_data: Slice::from_slice(&*VALID_CUSTOM_DATA),
+            actors: Slice::from_slice(&*VALID_ACTORS),
+            strategies: Slice::from_slice(&*VALID_STRATEGIES),
             ..valid_manifest()
         };
 
@@ -536,9 +1016,9 @@ mod tests {
     #[rstest]
     fn validate_rejects_empty_type_name_duplicate_type_name_and_null_vtable() {
         let m = PluginManifest {
-            custom_data: Slice::from_slice(&DUPLICATE_CUSTOM_DATA),
-            actors: Slice::from_slice(&DUPLICATE_ACTORS),
-            strategies: Slice::from_slice(&VALID_STRATEGIES),
+            custom_data: Slice::from_slice(&*DUPLICATE_CUSTOM_DATA),
+            actors: Slice::from_slice(&*DUPLICATE_ACTORS),
+            strategies: Slice::from_slice(&*VALID_STRATEGIES),
             ..valid_manifest()
         };
 
@@ -550,7 +1030,7 @@ mod tests {
         );
 
         let m = PluginManifest {
-            actors: Slice::from_slice(&EMPTY_TYPE_NAME_ACTORS),
+            actors: Slice::from_slice(&*EMPTY_TYPE_NAME_ACTORS),
             ..valid_manifest()
         };
         let errors = m.validate().expect_err("empty type name is invalid");
@@ -575,9 +1055,69 @@ mod tests {
     }
 
     #[rstest]
+    fn validate_rejects_null_required_vtable_slots() {
+        let m = PluginManifest {
+            custom_data: custom_data_registration(
+                "BadTick",
+                custom_data_vtable_missing_schema_ipc(),
+            ),
+            actors: actor_registration("BadActor", actor_vtable_missing_on_quote()),
+            strategies: strategy_registration(
+                "BadStrategy",
+                strategy_vtable_missing_on_position_closed(),
+            ),
+            ..valid_manifest()
+        };
+
+        let errors = m
+            .validate()
+            .expect_err("null required vtable slots are invalid");
+        let rendered = errors.to_string();
+
+        assert!(
+            rendered.contains("custom_data[0] type 'BadTick' vtable.schema_ipc must not be null")
+        );
+        assert!(rendered.contains("actors[0] type 'BadActor' vtable.on_quote must not be null"));
+        assert!(rendered.contains(
+            "strategies[0] type 'BadStrategy' vtable.on_position_closed must not be null"
+        ));
+    }
+
+    #[rstest]
+    fn validate_rejects_null_identity_constructor_and_drop_vtable_slots() {
+        let m = PluginManifest {
+            custom_data: custom_data_registration(
+                "MissingTypeNameTick",
+                custom_data_vtable_missing_type_name(),
+            ),
+            actors: actor_registration("MissingCreateActor", actor_vtable_missing_create()),
+            strategies: strategy_registration(
+                "MissingDropStrategy",
+                strategy_vtable_missing_drop_handle(),
+            ),
+            ..valid_manifest()
+        };
+
+        let errors = m
+            .validate()
+            .expect_err("identity, constructor, and drop slots are required");
+        let rendered = errors.to_string();
+
+        assert!(rendered.contains(
+            "custom_data[0] type 'MissingTypeNameTick' vtable.type_name must not be null"
+        ));
+        assert!(
+            rendered.contains("actors[0] type 'MissingCreateActor' vtable.create must not be null")
+        );
+        assert!(rendered.contains(
+            "strategies[0] type 'MissingDropStrategy' vtable.drop_handle must not be null"
+        ));
+    }
+
+    #[rstest]
     fn validate_rejects_duplicate_type_names_within_one_plug_point_slice() {
         let m = PluginManifest {
-            actors: Slice::from_slice(&DUPLICATE_ACTORS_SAME_SLICE),
+            actors: Slice::from_slice(&*DUPLICATE_ACTORS_SAME_SLICE),
             ..valid_manifest()
         };
 

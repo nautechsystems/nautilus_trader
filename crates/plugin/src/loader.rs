@@ -672,7 +672,66 @@ mod tests {
     use crate::{
         boundary::Slice,
         manifest::{CustomDataRegistration, PluginBuildId},
+        surfaces::custom_data::{CustomDataVTable, PluginCustomData, custom_data_vtable},
     };
+
+    #[derive(Clone, PartialEq)]
+    struct LoaderTestTick;
+
+    impl PluginCustomData for LoaderTestTick {
+        const TYPE_NAME: &'static str = "LoaderTestTick";
+
+        fn ts_event(&self) -> u64 {
+            0
+        }
+
+        fn ts_init(&self) -> u64 {
+            0
+        }
+
+        fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn from_json(_payload: &[u8]) -> anyhow::Result<Self> {
+            Ok(Self)
+        }
+
+        fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn decode_batch(
+            _ipc_bytes: &[u8],
+            _metadata: &[(String, String)],
+        ) -> anyhow::Result<Vec<Self>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn custom_data_vtable_missing_to_json() -> *const CustomDataVTable {
+        let valid = custom_data_vtable::<LoaderTestTick>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(CustomDataVTable {
+            type_name: valid.type_name,
+            schema_ipc: valid.schema_ipc,
+            from_json: valid.from_json,
+            encode_batch: valid.encode_batch,
+            decode_batch: valid.decode_batch,
+            ts_event: valid.ts_event,
+            ts_init: valid.ts_init,
+            to_json: None,
+            clone_handle: valid.clone_handle,
+            drop_handle: valid.drop_handle,
+            eq_handles: valid.eq_handles,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
 
     #[rstest]
     fn empty_loader_is_empty() {
@@ -894,6 +953,44 @@ mod tests {
         );
         assert!(rendered.contains(&expected_schema_error));
         assert!(rendered.contains("custom_data[0].vtable must not be null"));
+    }
+
+    #[rstest]
+    fn validate_manifest_ptr_rejects_malformed_vtable_with_diagnostics() {
+        let registrations = Box::leak(Box::new([CustomDataRegistration {
+            type_name: BorrowedStr::from_str("BadTick"),
+            vtable: custom_data_vtable_missing_to_json(),
+        }]));
+        let bad_manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+            plugin_name: BorrowedStr::from_str("bad-vtable"),
+            plugin_vendor: BorrowedStr::from_str(""),
+            plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
+            custom_data: Slice::from_slice(registrations),
+            actors: Slice::empty(),
+            strategies: Slice::empty(),
+        };
+        let path = std::path::Path::new("/test/plugin.so");
+        let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
+
+        match &err {
+            LoadError::InvalidManifest {
+                path: p,
+                diagnostics,
+                errors,
+            } => {
+                assert_eq!(p, path);
+                assert_eq!(diagnostics.plugin_name.as_str(), "bad-vtable");
+                assert!(errors.messages().iter().any(|message| message
+                    == "custom_data[0] type 'BadTick' vtable.to_json must not be null"));
+            }
+            other => panic!("expected InvalidManifest, was {other:?}"),
+        }
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("manifest name='bad-vtable'"));
+        assert!(rendered.contains("custom_data[0] type 'BadTick' vtable.to_json must not be null"));
     }
 
     #[rstest]

@@ -35,6 +35,17 @@
 
 #![allow(unsafe_code)]
 
+macro_rules! validated_slot {
+    ($vtable_ty:ident, $vtable:expr, $slot:ident) => {{
+        (*($vtable)).$slot.expect(concat!(
+            "loader validates ",
+            stringify!($vtable_ty),
+            "::",
+            stringify!($slot),
+        ))
+    }};
+}
+
 pub mod actor;
 pub mod commands;
 pub mod custom_data;

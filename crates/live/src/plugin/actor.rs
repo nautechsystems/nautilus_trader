@@ -92,8 +92,8 @@ impl PluginActorAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if `vtable` is null or if the plug-in's `create`
-    /// thunk returns a null handle.
+    /// Returns an error if `vtable` is null, if `vtable.create` is null, or if
+    /// the plug-in's `create` thunk returns a null handle.
     ///
     /// # Safety
     ///
@@ -114,6 +114,9 @@ impl PluginActorAdapter {
 
         let plugin_name = plugin_name.into();
         let type_name = type_name.into();
+        // SAFETY: vtable is non-null and comes from a validated manifest entry.
+        let create = unsafe { (*vtable).create }
+            .ok_or_else(|| anyhow::anyhow!("plug-in actor '{type_name}' has a null create slot"))?;
 
         let ctx = leak_host_context(HostContextInner {
             actor_id,
@@ -124,7 +127,7 @@ impl PluginActorAdapter {
         // SAFETY: vtable is non-null, host outlives the adapter, ctx + cfg
         // are live across the call.
         let handle = guard_call(&plugin_name, &type_name, "create", || unsafe {
-            ((*vtable).create)(host, ctx, cfg)
+            create(host, ctx, cfg)
         })
         .ok_or_else(|| {
             // SAFETY: ctx came from leak_host_context above.
@@ -172,7 +175,9 @@ impl Drop for PluginActorAdapter {
         if !self.handle.is_null() {
             let _ = catch_unwind(AssertUnwindSafe(|| {
                 // SAFETY: vtable + handle are live; drop_handle ignores null.
-                unsafe { ((*self.vtable).drop_handle)(self.handle) };
+                unsafe {
+                    validated_slot!(ActorVTable, self.vtable, drop_handle)(self.handle);
+                };
             }));
             self.handle = std::ptr::null_mut();
         }
@@ -187,115 +192,115 @@ nautilus_actor!(PluginActorAdapter);
 impl DataActor for PluginActorAdapter {
     fn on_start(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_start", |adapter| unsafe {
-            ((*adapter.vtable).on_start)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_start)(adapter.handle)
         })
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_stop", |adapter| unsafe {
-            ((*adapter.vtable).on_stop)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_stop)(adapter.handle)
         })
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_resume", |adapter| unsafe {
-            ((*adapter.vtable).on_resume)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_resume)(adapter.handle)
         })
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_reset", |adapter| unsafe {
-            ((*adapter.vtable).on_reset)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_reset)(adapter.handle)
         })
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_dispose", |adapter| unsafe {
-            ((*adapter.vtable).on_dispose)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_dispose)(adapter.handle)
         })
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_degrade", |adapter| unsafe {
-            ((*adapter.vtable).on_degrade)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_degrade)(adapter.handle)
         })
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_fault", |adapter| unsafe {
-            ((*adapter.vtable).on_fault)(adapter.handle)
+            validated_slot!(ActorVTable, adapter.vtable, on_fault)(adapter.handle)
         })
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         invoke_event(self, "on_time_event", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_time_event)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_time_event)(adapter.handle, p)
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         invoke_event(self, "on_quote", quote, |adapter, p| unsafe {
-            ((*adapter.vtable).on_quote)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_quote)(adapter.handle, p)
         })
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         invoke_event(self, "on_trade", trade, |adapter, p| unsafe {
-            ((*adapter.vtable).on_trade)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_trade)(adapter.handle, p)
         })
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         invoke_event(self, "on_bar", bar, |adapter, p| unsafe {
-            ((*adapter.vtable).on_bar)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_bar)(adapter.handle, p)
         })
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_mark_price", mark_price, |adapter, p| unsafe {
-            ((*adapter.vtable).on_mark_price)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_mark_price)(adapter.handle, p)
         })
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_index_price", index_price, |adapter, p| unsafe {
-            ((*adapter.vtable).on_index_price)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_index_price)(adapter.handle, p)
         })
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_funding_rate", funding_rate, |adapter, p| unsafe {
-            ((*adapter.vtable).on_funding_rate)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_funding_rate)(adapter.handle, p)
         })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         invoke_event(self, "on_instrument_status", data, |adapter, p| unsafe {
-            ((*adapter.vtable).on_instrument_status)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_instrument_status)(adapter.handle, p)
         })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         invoke_event(self, "on_instrument_close", update, |adapter, p| unsafe {
-            ((*adapter.vtable).on_instrument_close)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_instrument_close)(adapter.handle, p)
         })
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
         invoke_event(self, "on_order_filled", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_filled)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_order_filled)(adapter.handle, p)
         })
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
         invoke_event(self, "on_order_canceled", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_canceled)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_order_canceled)(adapter.handle, p)
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         invoke_event(self, "on_signal", signal, |adapter, p| unsafe {
-            ((*adapter.vtable).on_signal)(adapter.handle, p)
+            validated_slot!(ActorVTable, adapter.vtable, on_signal)(adapter.handle, p)
         })
     }
 }

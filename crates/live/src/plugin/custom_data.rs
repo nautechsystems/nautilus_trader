@@ -76,7 +76,8 @@ pub unsafe fn register_custom_data_from_manifest(
 ///
 /// # Errors
 ///
-/// Returns an error if [`ensure_json_deserializer_registered`] fails.
+/// Returns an error if the registration vtable is malformed or
+/// [`ensure_json_deserializer_registered`] fails.
 ///
 /// # Safety
 ///
@@ -89,6 +90,11 @@ pub unsafe fn register_custom_data_entry(entry: &CustomDataRegistration) -> anyh
         anyhow::bail!("custom data registration '{type_name}' has a null vtable");
     }
 
+    // SAFETY: vtable is non-null and comes from a validated manifest entry.
+    let from_json = unsafe { (*vtable_ptr).from_json }.ok_or_else(|| {
+        anyhow::anyhow!("custom data registration '{type_name}' has a null from_json slot")
+    })?;
+
     // Address-only capture so the closure stays `Send + Sync`. The vtable
     // pointer is process-lifetime static and re-cast on each invocation.
     let vtable_addr = vtable_ptr as usize;
@@ -100,7 +106,7 @@ pub unsafe fn register_custom_data_entry(entry: &CustomDataRegistration) -> anyh
         let payload = serde_json::to_vec(&value)?;
         let payload_str = std::str::from_utf8(&payload)?;
         // SAFETY: vtable is non-null and live; payload_str outlives the call.
-        let handle_result = unsafe { ((*vtable).from_json)(BorrowedStr::from_str(payload_str)) };
+        let handle_result = unsafe { from_json(BorrowedStr::from_str(payload_str)) };
         let handle = handle_result.into_result().map_err(|e| {
             anyhow::anyhow!(
                 "plug-in '{type_name}' from_json returned error: {}",
@@ -153,7 +159,9 @@ impl Drop for PluginCustomDataValue {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             // SAFETY: vtable + handle are live; drop_handle ignores null.
-            unsafe { ((*self.vtable).drop_handle)(self.handle) };
+            unsafe {
+                validated_slot!(CustomDataVTable, self.vtable, drop_handle)(self.handle);
+            };
             self.handle = std::ptr::null_mut();
         }
     }
@@ -162,7 +170,7 @@ impl Drop for PluginCustomDataValue {
 impl HasTsInit for PluginCustomDataValue {
     fn ts_init(&self) -> UnixNanos {
         // SAFETY: vtable + handle are live.
-        let raw = unsafe { ((*self.vtable).ts_init)(self.handle) };
+        let raw = unsafe { validated_slot!(CustomDataVTable, self.vtable, ts_init)(self.handle) };
         UnixNanos::from(raw)
     }
 }
@@ -178,13 +186,14 @@ impl CustomDataTrait for PluginCustomDataValue {
 
     fn ts_event(&self) -> UnixNanos {
         // SAFETY: vtable + handle are live.
-        let raw = unsafe { ((*self.vtable).ts_event)(self.handle) };
+        let raw = unsafe { validated_slot!(CustomDataVTable, self.vtable, ts_event)(self.handle) };
         UnixNanos::from(raw)
     }
 
     fn to_json(&self) -> anyhow::Result<String> {
         // SAFETY: vtable + handle are live.
-        let result = unsafe { ((*self.vtable).to_json)(self.handle) };
+        let result =
+            unsafe { validated_slot!(CustomDataVTable, self.vtable, to_json)(self.handle) };
         let bytes = result.into_result().map_err(|e| {
             anyhow::anyhow!(
                 "plug-in '{}' to_json returned error: {}",
@@ -200,7 +209,8 @@ impl CustomDataTrait for PluginCustomDataValue {
 
     fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
         // SAFETY: vtable + handle are live.
-        let cloned = unsafe { ((*self.vtable).clone_handle)(self.handle) };
+        let cloned =
+            unsafe { validated_slot!(CustomDataVTable, self.vtable, clone_handle)(self.handle) };
         Arc::new(Self {
             vtable: self.vtable,
             handle: cloned,
@@ -217,7 +227,9 @@ impl CustomDataTrait for PluginCustomDataValue {
             return false;
         }
         // SAFETY: vtable + handles are live for both sides.
-        unsafe { ((*self.vtable).eq_handles)(self.handle, rhs.handle) }
+        unsafe {
+            validated_slot!(CustomDataVTable, self.vtable, eq_handles)(self.handle, rhs.handle)
+        }
     }
 }
 
