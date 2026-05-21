@@ -18,9 +18,9 @@
 #![allow(unsafe_code)]
 
 use nautilus_model::identifiers::ActorId;
-use nautilus_plugin::{
-    manifest::PluginManifest,
-    surfaces::{actor::ActorVTable, strategy::StrategyVTable},
+use nautilus_plugin::manifest::{
+    ValidatedActorRegistration, ValidatedActorVTable, ValidatedPluginManifest,
+    ValidatedStrategyRegistration, ValidatedStrategyVTable,
 };
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -38,14 +38,14 @@ pub(crate) enum ConfiguredPluginEntry {
 pub(crate) struct ConfiguredActorEntry {
     plugin_name: String,
     type_name: String,
-    vtable: *const ActorVTable,
+    vtable: ValidatedActorVTable,
 }
 
 /// Strategy entry copied from a loaded manifest.
 pub(crate) struct ConfiguredStrategyEntry {
     plugin_name: String,
     type_name: String,
-    vtable: *const StrategyVTable,
+    vtable: ValidatedStrategyVTable,
 }
 
 impl ConfiguredActorEntry {
@@ -105,10 +105,10 @@ impl ConfiguredStrategyEntry {
 /// # Errors
 ///
 /// Returns an error if the host-side custom-data registry rejects an entry.
-pub(crate) fn register_manifest_custom_data(manifest: &PluginManifest) -> anyhow::Result<usize> {
-    // SAFETY: the manifest originates from `PluginLoader`, which keeps the
-    // owning cdylib live for the process lifetime.
-    unsafe { register_custom_data_from_manifest(manifest) }
+pub(crate) fn register_manifest_custom_data(
+    manifest: ValidatedPluginManifest<'_>,
+) -> anyhow::Result<usize> {
+    register_custom_data_from_manifest(manifest)
 }
 
 /// Resolves an actor or strategy entry from a loaded manifest by type name.
@@ -117,24 +117,24 @@ pub(crate) fn register_manifest_custom_data(manifest: &PluginManifest) -> anyhow
 ///
 /// Returns an error when the type is missing or ambiguous.
 pub(crate) fn configured_entry(
-    manifest: &PluginManifest,
+    manifest: ValidatedPluginManifest<'_>,
     path: &str,
     type_name: &str,
 ) -> anyhow::Result<ConfiguredPluginEntry> {
-    let plugin_name = manifest_plugin_name(manifest);
+    let plugin_name = manifest.plugin_name().to_string();
     let actor_entry = find_actor_entry(manifest, type_name);
     let strategy_entry = find_strategy_entry(manifest, type_name);
 
     match (actor_entry, strategy_entry) {
-        (Some(vtable), None) => Ok(ConfiguredPluginEntry::Actor(ConfiguredActorEntry {
+        (Some(entry), None) => Ok(ConfiguredPluginEntry::Actor(ConfiguredActorEntry {
             plugin_name,
-            type_name: type_name.to_string(),
-            vtable,
+            type_name: entry.type_name().to_string(),
+            vtable: entry.vtable(),
         })),
-        (None, Some(vtable)) => Ok(ConfiguredPluginEntry::Strategy(ConfiguredStrategyEntry {
+        (None, Some(entry)) => Ok(ConfiguredPluginEntry::Strategy(ConfiguredStrategyEntry {
             plugin_name,
-            type_name: type_name.to_string(),
-            vtable,
+            type_name: entry.type_name().to_string(),
+            vtable: entry.vtable(),
         })),
         (None, None) => {
             anyhow::bail!("plug-in '{path}' does not expose actor or strategy type '{type_name}'")
@@ -145,34 +145,22 @@ pub(crate) fn configured_entry(
     }
 }
 
-fn manifest_plugin_name(manifest: &PluginManifest) -> String {
-    // SAFETY: manifest strings live in static cdylib storage.
-    unsafe { manifest.plugin_name.as_str() }.to_string()
-}
-
-fn find_actor_entry(manifest: &PluginManifest, type_name: &str) -> Option<*const ActorVTable> {
-    // SAFETY: manifest slices live in static cdylib storage.
-    for entry in unsafe { manifest.actors.as_slice() } {
-        // SAFETY: entry strings live in static cdylib storage.
-        if unsafe { entry.type_name.as_str() } == type_name {
-            return Some(entry.vtable);
-        }
-    }
-    None
+fn find_actor_entry(
+    manifest: ValidatedPluginManifest<'_>,
+    type_name: &str,
+) -> Option<ValidatedActorRegistration> {
+    manifest
+        .actors()
+        .find(|entry| entry.type_name() == type_name)
 }
 
 fn find_strategy_entry(
-    manifest: &PluginManifest,
+    manifest: ValidatedPluginManifest<'_>,
     type_name: &str,
-) -> Option<*const StrategyVTable> {
-    // SAFETY: manifest slices live in static cdylib storage.
-    for entry in unsafe { manifest.strategies.as_slice() } {
-        // SAFETY: entry strings live in static cdylib storage.
-        if unsafe { entry.type_name.as_str() } == type_name {
-            return Some(entry.vtable);
-        }
-    }
-    None
+) -> Option<ValidatedStrategyRegistration> {
+    manifest
+        .strategies()
+        .find(|entry| entry.type_name() == type_name)
 }
 
 #[cfg(test)]
@@ -261,13 +249,17 @@ mod tests {
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
-        manifest
-            .validate()
+        let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("configured actor lookup uses a loader-valid manifest");
 
-        let entry = configured_entry(&manifest, "./libexample.so", "ExampleActor").unwrap();
+        let entry = configured_entry(manifest, "./libexample.so", "ExampleActor").unwrap();
 
-        assert!(matches!(entry, ConfiguredPluginEntry::Actor(_)));
+        let ConfiguredPluginEntry::Actor(entry) = entry else {
+            panic!("expected actor entry");
+        };
+        assert_eq!(entry.plugin_name, "test-plugin");
+        assert_eq!(entry.type_name, "ExampleActor");
+        assert_eq!(entry.vtable.as_ptr(), ACTOR_REGISTRATIONS[0].vtable);
     }
 
     #[rstest]
@@ -276,13 +268,17 @@ mod tests {
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
-        manifest
-            .validate()
+        let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("configured strategy lookup uses a loader-valid manifest");
 
-        let entry = configured_entry(&manifest, "./libexample.so", "ExampleStrategy").unwrap();
+        let entry = configured_entry(manifest, "./libexample.so", "ExampleStrategy").unwrap();
 
-        assert!(matches!(entry, ConfiguredPluginEntry::Strategy(_)));
+        let ConfiguredPluginEntry::Strategy(entry) = entry else {
+            panic!("expected strategy entry");
+        };
+        assert_eq!(entry.plugin_name, "test-plugin");
+        assert_eq!(entry.type_name, "ExampleStrategy");
+        assert_eq!(entry.vtable.as_ptr(), STRATEGY_REGISTRATIONS[0].vtable);
     }
 
     #[rstest]
@@ -291,11 +287,10 @@ mod tests {
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
         );
-        manifest
-            .validate()
+        let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("missing configured type test uses a loader-valid manifest");
 
-        let error = match configured_entry(&manifest, "./libexample.so", "MissingType") {
+        let error = match configured_entry(manifest, "./libexample.so", "MissingType") {
             Ok(_) => panic!("configured entry should reject missing type"),
             Err(e) => e.to_string(),
         };
@@ -305,25 +300,17 @@ mod tests {
     }
 
     #[rstest]
-    fn configured_entry_rejects_ambiguous_type_name() {
+    fn validated_manifest_rejects_ambiguous_type_name() {
         let manifest = manifest(
             Slice::from_slice(&*AMBIGUOUS_ACTOR_REGISTRATIONS),
             Slice::from_slice(&*AMBIGUOUS_STRATEGY_REGISTRATIONS),
         );
-        let validation_error = manifest
-            .validate()
+        let validation_error = ValidatedPluginManifest::new(&manifest)
             .expect_err("loader rejects ambiguous manifest type names");
         assert!(
             validation_error
                 .to_string()
                 .contains("type name 'DuplicateType' appears in both actors[0] and strategies[0]")
         );
-
-        let error = match configured_entry(&manifest, "./libexample.so", "DuplicateType") {
-            Ok(_) => panic!("configured entry should reject ambiguous type"),
-            Err(e) => e.to_string(),
-        };
-
-        assert!(error.contains("exposes type 'DuplicateType' as both actor and strategy"));
     }
 }

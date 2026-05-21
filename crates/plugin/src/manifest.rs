@@ -21,7 +21,11 @@
 //! revisions should add new `Slice` fields to [`PluginManifest`] without
 //! removing existing ones.
 
-use std::{collections::BTreeMap, fmt::Display, slice};
+use std::{
+    collections::BTreeMap,
+    fmt::{Debug, Display},
+    slice,
+};
 
 use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
@@ -547,6 +551,298 @@ unsafe impl Send for StrategyRegistration {}
 /// SAFETY: see above.
 unsafe impl Sync for StrategyRegistration {}
 
+/// Host-side view of a manifest that passed structural validation.
+///
+/// This wrapper is not part of the ABI. Hosts use it after loader validation
+/// so registration code can carry the manifest invariants in the type system.
+#[cfg(feature = "host")]
+#[derive(Clone, Copy)]
+pub struct ValidatedPluginManifest<'a> {
+    manifest: &'a PluginManifest,
+}
+
+#[cfg(feature = "host")]
+impl Debug for ValidatedPluginManifest<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ValidatedPluginManifest))
+            .field("plugin_name", &self.plugin_name())
+            .finish()
+    }
+}
+
+#[cfg(feature = "host")]
+impl<'a> ValidatedPluginManifest<'a> {
+    /// Validates `manifest` and returns a typed host-side view.
+    ///
+    /// # Errors
+    ///
+    /// Returns every structural problem found in the manifest.
+    pub fn new(manifest: &'a PluginManifest) -> Result<Self, PluginManifestValidationErrors> {
+        manifest.validate()?;
+        Ok(Self { manifest })
+    }
+
+    /// Returns the raw ABI manifest behind this validated view.
+    #[must_use]
+    pub fn manifest(self) -> &'a PluginManifest {
+        self.manifest
+    }
+
+    /// Returns the validated plug-in name.
+    #[must_use]
+    pub fn plugin_name(self) -> &'static str {
+        // SAFETY: validation checked the descriptor and manifest strings live
+        // in static plug-in storage.
+        unsafe { self.manifest.plugin_name.as_str() }
+    }
+
+    /// Returns validated custom-data registrations in manifest order.
+    #[must_use]
+    pub fn custom_data(self) -> impl ExactSizeIterator<Item = ValidatedCustomDataRegistration> {
+        // SAFETY: validation checked the slice descriptor.
+        unsafe { self.manifest.custom_data.as_slice() }
+            .iter()
+            .map(ValidatedCustomDataRegistration::from_validated_registration)
+    }
+
+    /// Returns validated actor registrations in manifest order.
+    #[must_use]
+    pub fn actors(self) -> impl ExactSizeIterator<Item = ValidatedActorRegistration> {
+        // SAFETY: validation checked the slice descriptor.
+        unsafe { self.manifest.actors.as_slice() }
+            .iter()
+            .map(ValidatedActorRegistration::from_validated_registration)
+    }
+
+    /// Returns validated strategy registrations in manifest order.
+    #[must_use]
+    pub fn strategies(self) -> impl ExactSizeIterator<Item = ValidatedStrategyRegistration> {
+        // SAFETY: validation checked the slice descriptor.
+        unsafe { self.manifest.strategies.as_slice() }
+            .iter()
+            .map(ValidatedStrategyRegistration::from_validated_registration)
+    }
+}
+
+/// Host-side custom-data registration with a validated type name and vtable.
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedCustomDataRegistration {
+    type_name: &'static str,
+    vtable: ValidatedCustomDataVTable,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedCustomDataRegistration {
+    fn from_validated_registration(registration: &CustomDataRegistration) -> Self {
+        Self {
+            // SAFETY: validation checked the descriptor and manifest strings
+            // live in static plug-in storage.
+            type_name: unsafe { registration.type_name.as_str() },
+            vtable: ValidatedCustomDataVTable::from_validated_ptr(registration.vtable),
+        }
+    }
+
+    /// Returns the canonical custom-data type name.
+    #[must_use]
+    pub fn type_name(self) -> &'static str {
+        self.type_name
+    }
+
+    /// Returns the validated vtable wrapper.
+    #[must_use]
+    pub fn vtable(self) -> ValidatedCustomDataVTable {
+        self.vtable
+    }
+}
+
+/// Host-side actor registration with a validated type name and vtable.
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedActorRegistration {
+    type_name: &'static str,
+    vtable: ValidatedActorVTable,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedActorRegistration {
+    fn from_validated_registration(registration: &ActorRegistration) -> Self {
+        Self {
+            // SAFETY: validation checked the descriptor and manifest strings
+            // live in static plug-in storage.
+            type_name: unsafe { registration.type_name.as_str() },
+            vtable: ValidatedActorVTable::from_validated_ptr(registration.vtable),
+        }
+    }
+
+    /// Returns the canonical actor type name.
+    #[must_use]
+    pub fn type_name(self) -> &'static str {
+        self.type_name
+    }
+
+    /// Returns the validated vtable wrapper.
+    #[must_use]
+    pub fn vtable(self) -> ValidatedActorVTable {
+        self.vtable
+    }
+}
+
+/// Host-side strategy registration with a validated type name and vtable.
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedStrategyRegistration {
+    type_name: &'static str,
+    vtable: ValidatedStrategyVTable,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedStrategyRegistration {
+    fn from_validated_registration(registration: &StrategyRegistration) -> Self {
+        Self {
+            // SAFETY: validation checked the descriptor and manifest strings
+            // live in static plug-in storage.
+            type_name: unsafe { registration.type_name.as_str() },
+            vtable: ValidatedStrategyVTable::from_validated_ptr(registration.vtable),
+        }
+    }
+
+    /// Returns the canonical strategy type name.
+    #[must_use]
+    pub fn type_name(self) -> &'static str {
+        self.type_name
+    }
+
+    /// Returns the validated vtable wrapper.
+    #[must_use]
+    pub fn vtable(self) -> ValidatedStrategyVTable {
+        self.vtable
+    }
+}
+
+/// Host-side pointer to a validated [`CustomDataVTable`].
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedCustomDataVTable {
+    ptr: std::ptr::NonNull<CustomDataVTable>,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedCustomDataVTable {
+    fn from_validated_ptr(ptr: *const CustomDataVTable) -> Self {
+        Self {
+            ptr: std::ptr::NonNull::new(ptr.cast_mut())
+                .expect("validated manifest stores non-null CustomDataVTable"),
+        }
+    }
+
+    /// Wraps a custom-data vtable pointer that the caller already validated.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null, point at immutable process-lifetime storage,
+    /// and contain every required [`CustomDataVTable`] function slot.
+    #[must_use]
+    pub unsafe fn from_raw_unchecked(ptr: *const CustomDataVTable) -> Self {
+        Self::from_validated_ptr(ptr)
+    }
+
+    /// Returns the raw vtable pointer for ABI calls.
+    #[must_use]
+    pub fn as_ptr(self) -> *const CustomDataVTable {
+        self.ptr.as_ptr()
+    }
+}
+
+/// SAFETY: validated vtables point at immutable process-lifetime storage.
+#[cfg(feature = "host")]
+unsafe impl Send for ValidatedCustomDataVTable {}
+/// SAFETY: see `Send`.
+#[cfg(feature = "host")]
+unsafe impl Sync for ValidatedCustomDataVTable {}
+
+/// Host-side pointer to a validated [`ActorVTable`].
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedActorVTable {
+    ptr: std::ptr::NonNull<ActorVTable>,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedActorVTable {
+    fn from_validated_ptr(ptr: *const ActorVTable) -> Self {
+        Self {
+            ptr: std::ptr::NonNull::new(ptr.cast_mut())
+                .expect("validated manifest stores non-null ActorVTable"),
+        }
+    }
+
+    /// Wraps an actor vtable pointer that the caller already validated.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null, point at immutable process-lifetime storage,
+    /// and contain every required [`ActorVTable`] function slot.
+    #[must_use]
+    pub unsafe fn from_raw_unchecked(ptr: *const ActorVTable) -> Self {
+        Self::from_validated_ptr(ptr)
+    }
+
+    /// Returns the raw vtable pointer for ABI calls.
+    #[must_use]
+    pub fn as_ptr(self) -> *const ActorVTable {
+        self.ptr.as_ptr()
+    }
+}
+
+/// SAFETY: validated vtables point at immutable process-lifetime storage.
+#[cfg(feature = "host")]
+unsafe impl Send for ValidatedActorVTable {}
+/// SAFETY: see `Send`.
+#[cfg(feature = "host")]
+unsafe impl Sync for ValidatedActorVTable {}
+
+/// Host-side pointer to a validated [`StrategyVTable`].
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedStrategyVTable {
+    ptr: std::ptr::NonNull<StrategyVTable>,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedStrategyVTable {
+    fn from_validated_ptr(ptr: *const StrategyVTable) -> Self {
+        Self {
+            ptr: std::ptr::NonNull::new(ptr.cast_mut())
+                .expect("validated manifest stores non-null StrategyVTable"),
+        }
+    }
+
+    /// Wraps a strategy vtable pointer that the caller already validated.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null, point at immutable process-lifetime storage,
+    /// and contain every required [`StrategyVTable`] function slot.
+    #[must_use]
+    pub unsafe fn from_raw_unchecked(ptr: *const StrategyVTable) -> Self {
+        Self::from_validated_ptr(ptr)
+    }
+
+    /// Returns the raw vtable pointer for ABI calls.
+    #[must_use]
+    pub fn as_ptr(self) -> *const StrategyVTable {
+        self.ptr.as_ptr()
+    }
+}
+
+/// SAFETY: validated vtables point at immutable process-lifetime storage.
+#[cfg(feature = "host")]
+unsafe impl Send for ValidatedStrategyVTable {}
+/// SAFETY: see `Send`.
+#[cfg(feature = "host")]
+unsafe impl Sync for ValidatedStrategyVTable {}
+
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
@@ -965,6 +1261,31 @@ mod tests {
 
         m.validate()
             .expect("well-formed plug-point registrations are valid");
+    }
+
+    #[cfg(feature = "host")]
+    #[rstest]
+    fn validated_manifest_exposes_wrapped_registrations() {
+        let m = PluginManifest {
+            custom_data: Slice::from_slice(&*VALID_CUSTOM_DATA),
+            actors: Slice::from_slice(&*VALID_ACTORS),
+            strategies: Slice::from_slice(&*VALID_STRATEGIES),
+            ..valid_manifest()
+        };
+
+        let manifest = ValidatedPluginManifest::new(&m)
+            .expect("well-formed plug-point registrations are valid");
+        let custom_data = manifest.custom_data().next().expect("custom data entry");
+        let actor = manifest.actors().next().expect("actor entry");
+        let strategy = manifest.strategies().next().expect("strategy entry");
+
+        assert_eq!(manifest.plugin_name(), "test");
+        assert_eq!(custom_data.type_name(), "TestTick");
+        assert_eq!(actor.type_name(), "TestActor");
+        assert_eq!(strategy.type_name(), "TestStrategy");
+        assert_eq!(custom_data.vtable().as_ptr(), VALID_CUSTOM_DATA[0].vtable);
+        assert_eq!(actor.vtable().as_ptr(), VALID_ACTORS[0].vtable);
+        assert_eq!(strategy.vtable().as_ptr(), VALID_STRATEGIES[0].vtable);
     }
 
     #[rstest]

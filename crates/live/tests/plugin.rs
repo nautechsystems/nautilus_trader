@@ -57,7 +57,10 @@ use nautilus_model::{
     data::{Data, registry::deserialize_custom_from_json},
     identifiers::{ActorId, StrategyId},
 };
-use nautilus_plugin::{PLUGIN_BUILD_ID_VERSION, manifest::PluginManifest};
+use nautilus_plugin::{
+    PLUGIN_BUILD_ID_VERSION,
+    manifest::{PluginManifest, ValidatedPluginManifest},
+};
 use nautilus_trading::strategy::StrategyConfig;
 use rstest::{fixture, rstest};
 
@@ -182,8 +185,7 @@ fn example_manifest() -> &'static PluginManifest {
 #[ignore]
 fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
     assert!(example_manifest.matches_compiled_abi());
-    example_manifest
-        .validate()
+    let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
     // SAFETY: name string lives in cdylib static storage.
     assert_eq!(
@@ -198,20 +200,18 @@ fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
     assert!(!unsafe { example_manifest.build_id.target_triple.as_str() }.is_empty());
     // SAFETY: build id strings live in cdylib static storage.
     assert!(!unsafe { example_manifest.build_id.build_profile.as_str() }.is_empty());
-    // SAFETY: slice points at static storage owned by the manifest.
-    let cd = unsafe { example_manifest.custom_data.as_slice() };
     assert_eq!(
-        cd.len(),
+        manifest.custom_data().len(),
         1,
         "example manifest carries one custom-data entry"
     );
-    // SAFETY: slice points at static storage owned by the manifest.
-    let actors = unsafe { example_manifest.actors.as_slice() };
-    assert_eq!(actors.len(), 1, "example manifest carries one actor entry");
-    // SAFETY: see above.
-    let strategies = unsafe { example_manifest.strategies.as_slice() };
     assert_eq!(
-        strategies.len(),
+        manifest.actors().len(),
+        1,
+        "example manifest carries one actor entry"
+    );
+    assert_eq!(
+        manifest.strategies().len(),
         1,
         "example manifest carries one strategy entry"
     );
@@ -220,18 +220,17 @@ fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
 #[rstest]
 #[ignore]
 fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static PluginManifest) {
-    // SAFETY: actors slice is process-lifetime static.
-    let entry = unsafe { &example_manifest.actors.as_slice()[0] };
-    // SAFETY: type_name string lives in cdylib static storage.
-    let type_name = unsafe { entry.type_name.as_str() };
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest.actors().next().expect("example actor entry");
 
-    // SAFETY: vtable + host_vtable() are process-lifetime static.
+    // SAFETY: host_vtable() is process-lifetime static.
     let mut adapter = unsafe {
         PluginActorAdapter::new(
             ActorId::from("PluginActor-001"),
             "example-custom-data-plugin",
-            type_name,
-            entry.vtable,
+            entry.type_name(),
+            entry.vtable(),
             host_vtable(),
             "{}",
         )
@@ -248,23 +247,25 @@ fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static Plu
 #[rstest]
 #[ignore]
 fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
-    // SAFETY: strategies slice is process-lifetime static.
-    let entry = unsafe { &example_manifest.strategies.as_slice()[0] };
-    // SAFETY: type_name string lives in cdylib static storage.
-    let type_name = unsafe { entry.type_name.as_str() };
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest
+        .strategies()
+        .next()
+        .expect("example strategy entry");
 
     let config = StrategyConfig::builder()
         .strategy_id(StrategyId::from("Plugin-001"))
         .order_id_tag("001".to_string())
         .build();
 
-    // SAFETY: vtable + host_vtable() are process-lifetime static.
+    // SAFETY: host_vtable() is process-lifetime static.
     let mut adapter = unsafe {
         PluginStrategyAdapter::new(
             config,
             "example-custom-data-plugin",
-            type_name,
-            entry.vtable,
+            entry.type_name(),
+            entry.vtable(),
             host_vtable(),
             "{}",
         )
@@ -278,9 +279,10 @@ fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
 #[rstest]
 #[ignore]
 fn custom_data_registration_round_trips_via_registry(example_manifest: &'static PluginManifest) {
-    // SAFETY: manifest is process-lifetime static; slices are bounded by it.
-    let count = unsafe { register_custom_data_from_manifest(example_manifest) }
-        .expect("custom data registration succeeds");
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let count =
+        register_custom_data_from_manifest(manifest).expect("custom data registration succeeds");
     assert_eq!(count, 1);
 
     // Build a `CustomData` envelope matching what the engine's serializer

@@ -416,8 +416,8 @@ impl LiveNode {
         }
 
         for loaded in loader.loaded() {
-            let registered =
-                register_manifest_custom_data(loaded.manifest()).with_context(|| {
+            let registered = register_manifest_custom_data(loaded.validated_manifest())
+                .with_context(|| {
                     format!(
                         "failed to register custom data from plug-in '{}'",
                         loaded.path().display()
@@ -466,7 +466,7 @@ impl LiveNode {
             .find(|loaded| loaded.path() == std::path::Path::new(&config.path))
             .ok_or_else(|| anyhow::anyhow!("plug-in '{}' was not loaded", config.path))?;
 
-        let entry = configured_entry(loaded.manifest(), &config.path, &config.type_name)?;
+        let entry = configured_entry(loaded.validated_manifest(), &config.path, &config.type_name)?;
         let config_json = serde_json::to_string(&config.config)?;
 
         match entry {

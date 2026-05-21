@@ -94,6 +94,7 @@ use nautilus_model::{
 use nautilus_plugin::{
     boundary::{BorrowedStr, Slice},
     host::{HostContext, HostVTable},
+    manifest::{ValidatedActorVTable, ValidatedStrategyVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
         strategy::{PluginStrategy, strategy_vtable},
@@ -641,13 +642,18 @@ fn make_position_closed() -> PositionClosed {
 }
 
 fn build_actor_adapter(actor_id: &str) -> PluginActorAdapter {
-    // SAFETY: actor_vtable + host_vtable return process-lifetime static items.
+    // SAFETY: generated vtables are process-lifetime static and fill every
+    // required actor slot.
+    let vtable =
+        unsafe { ValidatedActorVTable::from_raw_unchecked(actor_vtable::<CountingActor>()) };
+
+    // SAFETY: host_vtable is process-lifetime static.
     unsafe {
         PluginActorAdapter::new(
             ActorId::from(actor_id),
             "in-process",
             CountingActor::TYPE_NAME,
-            actor_vtable::<CountingActor>(),
+            vtable,
             host_vtable(),
             "{}",
         )
@@ -660,13 +666,19 @@ fn build_strategy_adapter(strategy_id: &str) -> PluginStrategyAdapter {
         .strategy_id(StrategyId::from(strategy_id))
         .order_id_tag("001".to_string())
         .build();
-    // SAFETY: strategy_vtable + host_vtable return process-lifetime static items.
+    // SAFETY: generated vtables are process-lifetime static and fill every
+    // required strategy slot.
+    let vtable = unsafe {
+        ValidatedStrategyVTable::from_raw_unchecked(strategy_vtable::<CountingStrategy>())
+    };
+
+    // SAFETY: host_vtable is process-lifetime static.
     unsafe {
         PluginStrategyAdapter::new(
             config,
             "in-process",
             CountingStrategy::TYPE_NAME,
-            strategy_vtable::<CountingStrategy>(),
+            vtable,
             host_vtable(),
             "{}",
         )

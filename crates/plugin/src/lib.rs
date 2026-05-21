@@ -78,6 +78,12 @@ pub use manifest::{
     ActorRegistration, CustomDataRegistration, PluginBuildId, PluginInitFn, PluginManifest,
     StrategyRegistration,
 };
+#[cfg(feature = "host")]
+pub use manifest::{
+    ValidatedActorRegistration, ValidatedActorVTable, ValidatedCustomDataRegistration,
+    ValidatedCustomDataVTable, ValidatedPluginManifest, ValidatedStrategyRegistration,
+    ValidatedStrategyVTable,
+};
 pub use surfaces::{actor::PluginActor, custom_data::PluginCustomData, strategy::PluginStrategy};
 
 /// Re-exports that plug-in authors typically want in scope.

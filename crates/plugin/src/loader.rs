@@ -36,7 +36,10 @@ use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL,
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
     host::{HostContext, HostLogLevel, HostVTable},
-    manifest::{PluginBuildId, PluginInitFn, PluginManifest, PluginManifestValidationErrors},
+    manifest::{
+        PluginBuildId, PluginInitFn, PluginManifest, PluginManifestValidationErrors,
+        ValidatedPluginManifest,
+    },
 };
 
 /// Errors that can occur while loading a plug-in.
@@ -177,7 +180,7 @@ fn borrowed_str_diagnostic(value: BorrowedStr<'_>) -> String {
 pub struct LoadedPlugin {
     path: PathBuf,
     _library: ManuallyDrop<Library>,
-    manifest: *const PluginManifest,
+    manifest: ValidatedPluginManifest<'static>,
 }
 
 impl Debug for LoadedPlugin {
@@ -204,9 +207,13 @@ impl LoadedPlugin {
     /// Returns the manifest the plug-in published at init time.
     #[must_use]
     pub fn manifest(&self) -> &PluginManifest {
-        // SAFETY: pointer originates from `nautilus_plugin_init` and the
-        // library is kept alive by `_library` for the lifetime of `self`.
-        unsafe { &*self.manifest }
+        self.manifest.manifest()
+    }
+
+    /// Returns a host-side manifest view that carries validation invariants.
+    #[must_use]
+    pub fn validated_manifest(&self) -> ValidatedPluginManifest<'static> {
+        self.manifest
     }
 }
 
@@ -291,32 +298,24 @@ impl PluginLoader {
             unsafe { init(host) }
         };
 
-        validate_manifest_ptr(manifest_ptr, &path_buf)?;
-        // SAFETY: validate_manifest_ptr returns Ok only when the pointer is
-        // non-null, the ABI matches, and the manifest passes validation.
-        let abi = unsafe { (*manifest_ptr).abi_version };
-
-        // SAFETY: pointer is non-null and the library is kept alive below.
-        let manifest_ref = unsafe { &*manifest_ptr };
-        // SAFETY: slices borrow from `'static` storage in the cdylib.
-        let custom_data_count = unsafe { manifest_ref.custom_data.as_slice() }.len();
-        // SAFETY: see above.
-        let actor_count = unsafe { manifest_ref.actors.as_slice() }.len();
-        // SAFETY: see above.
-        let strategy_count = unsafe { manifest_ref.strategies.as_slice() }.len();
+        let manifest = validate_manifest_ptr(manifest_ptr, &path_buf)?;
+        let manifest_ref = manifest.manifest();
+        let abi = manifest_ref.abi_version;
+        let custom_data_count = manifest.custom_data().len();
+        let actor_count = manifest.actors().len();
+        let strategy_count = manifest.strategies().len();
         let build_id = PluginBuildIdDiagnostics::from_build_id(&manifest_ref.build_id);
         log::info!(
             target: "nautilus_plugin",
             "Loaded plug-in '{}' (abi={abi}, {build_id}, custom_data={custom_data_count}, actors={actor_count}, strategies={strategy_count}) from {}",
-            // SAFETY: name string lives in the cdylib for the process lifetime.
-            unsafe { manifest_ref.plugin_name.as_str() },
+            manifest.plugin_name(),
             path_buf.display(),
         );
 
         self.loaded.push(LoadedPlugin {
             path: path_buf,
             _library: ManuallyDrop::new(library),
-            manifest: manifest_ptr,
+            manifest,
         });
         Ok(self.loaded.last().expect("just pushed"))
     }
@@ -348,7 +347,7 @@ impl PluginLoader {
 fn validate_manifest_ptr(
     manifest_ptr: *const PluginManifest,
     path: &Path,
-) -> Result<(), LoadError> {
+) -> Result<ValidatedPluginManifest<'static>, LoadError> {
     if manifest_ptr.is_null() {
         return Err(LoadError::NullManifest {
             path: path.to_path_buf(),
@@ -366,15 +365,14 @@ fn validate_manifest_ptr(
         });
     }
 
-    if let Err(errors) = manifest.validate() {
-        return Err(LoadError::InvalidManifest {
+    match ValidatedPluginManifest::new(manifest) {
+        Ok(manifest) => Ok(manifest),
+        Err(errors) => Err(LoadError::InvalidManifest {
             path: path.to_path_buf(),
             diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
             errors,
-        });
+        }),
     }
-
-    Ok(())
 }
 
 /// Returns the process-wide static `HostVTable` exposed to plug-ins.
@@ -880,18 +878,28 @@ mod tests {
 
     #[rstest]
     fn validate_manifest_ptr_accepts_matching_manifest() {
+        let registrations = Box::leak(Box::new([CustomDataRegistration {
+            type_name: BorrowedStr::from_str("LoaderTestTick"),
+            vtable: custom_data_vtable::<LoaderTestTick>(),
+        }]));
         let good_manifest = PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
             plugin_name: BorrowedStr::from_str("good"),
             plugin_vendor: BorrowedStr::from_str(""),
             plugin_version: BorrowedStr::from_str("0.0.0"),
             build_id: PluginBuildId::current(),
-            custom_data: Slice::empty(),
+            custom_data: Slice::from_slice(registrations),
             actors: Slice::empty(),
             strategies: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
-        validate_manifest_ptr(&raw const good_manifest, path).expect("matching manifest accepted");
+        let manifest = validate_manifest_ptr(&raw const good_manifest, path)
+            .expect("matching manifest accepted");
+        let custom_data = manifest.custom_data().next().expect("custom data entry");
+
+        assert_eq!(manifest.plugin_name(), "good");
+        assert_eq!(custom_data.type_name(), "LoaderTestTick");
+        assert_eq!(custom_data.vtable().as_ptr(), registrations[0].vtable);
     }
 
     #[rstest]
