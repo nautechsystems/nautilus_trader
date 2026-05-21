@@ -15,17 +15,21 @@
 
 //! Integration tests for the host-side plug-in adapters in `nautilus-live`.
 //!
-//! The tests build the example cdylib shipped under
+//! Most tests build the example cdylib shipped under
 //! `crates/plugin/examples/custom_data_plugin.rs`, load it through the
-//! live-node-bound [`PluginLoader`], and exercise the adapter pieces that
-//! Phase 1 ships.
+//! live-node-bound [`PluginLoader`], and exercise the host-side adapter pieces.
 //!
-//! Every test is marked `#[ignore]` so default `cargo test` stays fast.
-//! Run explicitly with:
+//! Those broader cdylib tests are marked `#[ignore]` so default `cargo test`
+//! stays focused. Run them explicitly with:
 //!
-//! ```bash
+//! ```text
 //! cargo test -p nautilus-live --features node --test plugin -- --ignored
 //! ```
+//!
+//! The runtime smoke test builds
+//! `crates/plugin/examples/runtime_smoke_plugin.rs` and runs by default. It
+//! proves a configured real plug-in loads through [`LiveNode`], instantiates
+//! from [`PluginConfig`], and receives `on_start`.
 //!
 //! The complementary `plugin_in_process.rs` integration tests run on every
 //! `cargo test` and exercise the adapters via in-process [`PluginActor`]
@@ -440,7 +444,6 @@ fn live_node_checks_sha256_for_each_configured_plugin_instance() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore]
 async fn live_node_start_invokes_configured_plugin_actor() {
     let path = build_runtime_smoke_example_once();
     let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
@@ -472,6 +475,13 @@ async fn live_node_start_invokes_configured_plugin_actor() {
     };
 
     let mut node = LiveNode::build("PluginRuntimeNode".to_string(), Some(config)).unwrap();
+    let actor_registered = {
+        let trader = node.kernel().trader.borrow();
+        trader
+            .actor_ids()
+            .contains(&ActorId::from("RuntimeSmokeActor-001"))
+    };
+    assert!(actor_registered);
 
     node.start().await.unwrap();
     let contents = fs::read_to_string(&marker).expect("plug-in actor writes callback marker");
