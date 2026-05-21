@@ -29,8 +29,8 @@ cdef class GreeksCalculator:
     cdef dict _cached_futures_spreads
     cdef Price _get_underlying_price(self, InstrumentId underlying_instrument_id)
     cdef object _calculate_non_option_greeks(self, object instrument, InstrumentId instrument_id, double spot_shock, uint64_t ts_event, object position, bint percent_greeks, object index_instrument_id, object beta_weights)
-    cdef object _calculate_option_greeks(self, object instrument, InstrumentId instrument_id, InstrumentId underlying_instrument_id, double flat_interest_rate, object flat_dividend_yield, bint use_cached_greeks, bint update_vol, bint cache_greeks, uint64_t ts_event, bint percent_greeks, object index_instrument_id, object beta_weights, object vega_time_weight_base)
-    cdef object _apply_option_greeks_shocks(self, object greeks_data, InstrumentId underlying_instrument_id, double spot_shock, double vol_shock, double time_to_expiry_shock, bint percent_greeks, object index_instrument_id, object beta_weights, object vega_time_weight_base)
+    cdef object _calculate_option_greeks(self, object instrument, InstrumentId instrument_id, InstrumentId underlying_instrument_id, double flat_interest_rate, object flat_dividend_yield, bint use_cached_greeks, bint update_vol, bint cache_greeks, uint64_t ts_event, bint percent_greeks, object index_instrument_id, object beta_weights, object vega_time_weight_base, object vol_index_instrument_id, object vol_beta_weights)
+    cdef object _apply_option_greeks_shocks(self, object greeks_data, InstrumentId underlying_instrument_id, double spot_shock, double vol_shock, double time_to_expiry_shock, bint percent_greeks, object index_instrument_id, object beta_weights, object vega_time_weight_base, object vol_index_instrument_id, object vol_beta_weights)
     cpdef object get_cached_futures_spread_price(self, InstrumentId underlying_instrument_id)
     cdef double _calculate_implied_future_price(self, object call_instrument, Price call_price, Price put_price)
     cdef Price _get_price(self, InstrumentId instrument_id)

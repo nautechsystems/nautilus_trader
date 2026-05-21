@@ -98,6 +98,8 @@ cdef class GreeksCalculator:
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: InstrumentId | None = None,
+        vol_beta_weights: dict[InstrumentId, float] | None = None,
     ) -> GreeksData | None:
         """
         Calculate option or underlying greeks for a given instrument and a quantity of 1.
@@ -105,7 +107,7 @@ cdef class GreeksCalculator:
         Additional features:
         - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
         - Compute percent greeks.
-        - Compute beta-weighted delta and gamma with respect to an index.
+        - Compute beta-weighted delta, gamma and vega with respect to an index.
         - Update volatility to a target price from a previously calculated volatility.
 
         Parameters
@@ -144,7 +146,11 @@ cdef class GreeksCalculator:
             Dictionary of beta weights used to compute portfolio delta and gamma.
         vega_time_weight_base : int, optional
             Base value in days for time-weighting vega. When provided, vega is multiplied by sqrt(vega_time_weight_base / expiry_in_days).
-            Also enables percent vega calculation where vega is multiplied by vol / 100.
+            Also enables percent vega calculation where vega is multiplied by vol * 0.01
+        vol_index_instrument_id : InstrumentId, optional
+            The reference volatility instrument id vega beta is computed with respect to, for example VIX.
+        vol_beta_weights : dict[InstrumentId, float], optional
+            Dictionary of volatility beta weights used to compute portfolio vega.
 
         Returns
         -------
@@ -168,7 +174,7 @@ cdef class GreeksCalculator:
         cdef object greeks_data = self._calculate_option_greeks(
             instrument, instrument_id, underlying_instrument_id, flat_interest_rate, flat_dividend_yield,
             use_cached_greeks, update_vol, cache_greeks, ts_event, percent_greeks, index_instrument_id,
-            beta_weights, vega_time_weight_base
+            beta_weights, vega_time_weight_base, vol_index_instrument_id, vol_beta_weights
         )
         if greeks_data is None:
             return None
@@ -176,7 +182,8 @@ cdef class GreeksCalculator:
         if spot_shock != 0. or vol_shock != 0. or time_to_expiry_shock != 0.:
             greeks_data = self._apply_option_greeks_shocks(
                 greeks_data, underlying_instrument_id, spot_shock, vol_shock, time_to_expiry_shock, percent_greeks,
-                index_instrument_id, beta_weights, vega_time_weight_base
+                index_instrument_id, beta_weights, vega_time_weight_base, vol_index_instrument_id,
+                vol_beta_weights
             )
 
         if position is not None:
@@ -208,7 +215,7 @@ cdef class GreeksCalculator:
         delta, _, _ = self.modify_greeks(
             1., 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
             percent_greeks, index_instrument_id, beta_weights, 0.0, 0.0, 0,
-            None
+            None, 0.0, None, None
         )
         cdef object greeks_data = GreeksData.from_delta(instrument_id, delta, multiplier, ts_event)
 
@@ -233,6 +240,8 @@ cdef class GreeksCalculator:
         object index_instrument_id,
         object beta_weights,
         object vega_time_weight_base,
+        object vol_index_instrument_id,
+        object vol_beta_weights,
     ):
         cdef double cost_of_carry = 0.
         cdef object greeks_data = None
@@ -276,6 +285,9 @@ cdef class GreeksCalculator:
         if underlying_price_obj is None:
             return None
 
+        if vol_index_instrument_id is not None and self._get_price(vol_index_instrument_id) is None:
+            return None
+
         cdef double option_price = float(option_price_obj)
         cdef double underlying_price = float(underlying_price_obj)
 
@@ -302,7 +314,8 @@ cdef class GreeksCalculator:
 
         delta, gamma, vega = self.modify_greeks(
             greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price, underlying_price, percent_greeks,
-            index_instrument_id, beta_weights, greeks.vega, greeks.vol, expiry_in_days, vega_time_weight_base
+            index_instrument_id, beta_weights, greeks.vega, greeks.vol, expiry_in_days, vega_time_weight_base,
+            greeks.vol, vol_index_instrument_id, vol_beta_weights
         )
 
         greeks_data = GreeksData(
@@ -327,6 +340,8 @@ cdef class GreeksCalculator:
         object index_instrument_id,
         object beta_weights,
         object vega_time_weight_base,
+        object vol_index_instrument_id,
+        object vol_beta_weights,
     ):
         cdef double underlying_price = greeks_data.underlying_price
         cdef double shocked_underlying_price = underlying_price + spot_shock
@@ -344,7 +359,7 @@ cdef class GreeksCalculator:
         delta, gamma, vega = self.modify_greeks(
             greeks.delta, greeks.gamma, underlying_instrument_id, shocked_underlying_price, underlying_price,
             percent_greeks, index_instrument_id, beta_weights, greeks.vega, shocked_vol, shocked_expiry_in_days,
-            vega_time_weight_base
+            vega_time_weight_base, greeks_data.vol, vol_index_instrument_id, vol_beta_weights
         )
 
         return GreeksData(
@@ -376,36 +391,6 @@ cdef class GreeksCalculator:
         self._log.warning(f"No price available for {underlying_instrument_id}")
         return None
 
-    cdef Price _get_price(self, InstrumentId instrument_id):
-        # For index-class futures, prefer tradable quotes over the published index
-        # price since index price is the spot level and may diverge from futures basis.
-        # For true index instruments (non-futures), prefer the published index price.
-        cdef object instrument = self._cache.instrument(instrument_id)
-        cdef IndexPriceUpdate index_price
-        cdef Price price
-        if instrument is not None and instrument.asset_class is AssetClass.INDEX:
-            if instrument.instrument_class is InstrumentClass.FUTURE:
-                price = self._cache.price(instrument_id, PriceType.MID)
-                if price is not None:
-                    return price
-                price = self._cache.price(instrument_id, PriceType.LAST)
-                if price is not None:
-                    return price
-            index_price = self._cache.index_price(instrument_id)
-            if index_price is not None:
-                return index_price.value
-
-        price = self._cache.price(instrument_id, PriceType.MID)
-        if price is not None:
-            return price
-
-        price = self._cache.price(instrument_id, PriceType.LAST)
-        if price is not None:
-            return price
-
-        self._log.warning(f"No price available for {instrument_id}")
-        return None
-
     def modify_greeks(
         self,
         delta_input: float,
@@ -420,9 +405,14 @@ cdef class GreeksCalculator:
         vol: float = 0.0,
         expiry_in_days: int = 0,
         vega_time_weight_base: int | None = None,
+        unshocked_vol: float = 0.0,
+        vol_index_instrument_id: InstrumentId | None = None,
+        vol_beta_weights: dict[InstrumentId, float] | None = None,
+        index_price: float | None = None,
+        vol_index_price: float | None = None,
     ) -> tuple[float, float, float]:
         """
-        Modify delta and gamma based on beta weighting and percentage calculations.
+        Modify delta, gamma and vega based on beta weighting and percentage calculations.
 
         Parameters
         ----------
@@ -450,6 +440,16 @@ cdef class GreeksCalculator:
             Days to expiry.
         vega_time_weight_base : int, optional
             Base value in days for time-weighting vega.
+        unshocked_vol : float, default 0.0
+            The base implied volatility before shocks.
+        vol_index_instrument_id : InstrumentId, optional
+            The reference volatility instrument id vega beta is computed with respect to, for example VIX.
+        vol_beta_weights : dict[InstrumentId, float], optional
+            Dictionary of volatility beta weights used to compute portfolio vega.
+        index_price : float, optional
+            Explicit beta index price to use instead of looking up index_instrument_id in the cache.
+        vol_index_price : float, optional
+            Explicit volatility index price to use instead of looking up vol_index_instrument_id in the cache.
 
         Returns
         -------
@@ -471,6 +471,8 @@ cdef class GreeksCalculator:
         These two last equations explain the beta weighting below, considering the price of an option is V(x) and delta and gamma
         are the first and second derivatives respectively of V.
 
+        Vega beta weighting follows the same change of variable with implied volatility and a volatility index.
+
         Also percent greeks assume a change of variable to percent returns by writing:
         V(x = x0 * (1 + stock_percent_return / 100))
         or V(I = I0 * (1 + index_percent_return / 100))
@@ -478,40 +480,98 @@ cdef class GreeksCalculator:
         cdef double delta = delta_input
         cdef double gamma = gamma_input
         cdef double vega = vega_input
-        cdef object index_price = None
+        cdef object used_index_price = index_price
+        cdef object used_index_vol = vol_index_price
         cdef double delta_multiplier = 1.0
         cdef double beta = 1.
+        cdef double vega_beta = 1.
+        cdef double used_vol = vol
 
-        if index_instrument_id is not None:
-            index_price = float(self._cache.price(index_instrument_id, PriceType.LAST))
+        if unshocked_vol != 0.0:
+            used_vol = unshocked_vol
+
+        if used_index_price is None and index_instrument_id is not None:
+            used_index_price = self._get_price(index_instrument_id)
+
+        if used_index_price is not None:
+            used_index_price = float(used_index_price)
 
             if beta_weights is not None:
                 beta = beta_weights.get(underlying_instrument_id, 1.0)
 
             if underlying_price != unshocked_underlying_price:
-                index_price += 1. / beta * (index_price / unshocked_underlying_price) * (underlying_price - unshocked_underlying_price)
+                used_index_price += 1. / beta * (used_index_price / unshocked_underlying_price) * (underlying_price - unshocked_underlying_price)
 
-            delta_multiplier = beta * underlying_price / index_price
+            delta_multiplier = beta * underlying_price / used_index_price
             delta *= delta_multiplier
             gamma *= delta_multiplier ** 2
 
+        if used_index_vol is None and vol_index_instrument_id is not None:
+            used_index_vol = self._get_price(vol_index_instrument_id)
+            if used_index_vol is None:
+                raise ValueError(f"No price available for {vol_index_instrument_id}")
+
+        if used_index_vol is not None:
+            used_index_vol = float(used_index_vol) * 0.01
+
+            if vol_beta_weights is not None:
+                vega_beta = vol_beta_weights.get(underlying_instrument_id, 1.0)
+
+            if vol != used_vol and used_vol != 0.0:
+                used_index_vol += (
+                    1. / vega_beta
+                    * (used_index_vol / used_vol)
+                    * (vol - used_vol)
+                )
+
+            if used_index_vol != 0.0:
+                vega *= vega_beta * vol / used_index_vol
+
         if percent_greeks:
-            if index_price is None:
-                delta *= underlying_price / 100.
-                gamma *= (underlying_price / 100.) ** 2
+            if used_index_price is None:
+                delta *= underlying_price * 0.01
+                gamma *= (underlying_price * 0.01) ** 2
             else:
-                delta *= index_price / 100.
-                gamma *= (index_price / 100.) ** 2
+                delta *= used_index_price * 0.01
+                gamma *= (used_index_price * 0.01) ** 2
 
-            vega = vega * vol / 100.0
+            if used_index_vol is None:
+                vega *= vol * 0.01
+            else:
+                vega *= used_index_vol * 0.01
 
-        # Apply time weighting to vega if vega_time_weight_base is provided
         cdef double time_weight
         if vega_time_weight_base is not None and expiry_in_days > 0:
             time_weight = (vega_time_weight_base / expiry_in_days) ** 0.5
             vega *= time_weight
 
         return delta, gamma, vega
+
+    cdef Price _get_price(self, InstrumentId instrument_id):
+        # For index-class futures, prefer tradable quotes over the published index
+        # price since index price is the spot level and may diverge from futures basis.
+        # For true index instruments (non-futures), prefer the published index price.
+        cdef object instrument = self._cache.instrument(instrument_id)
+        cdef IndexPriceUpdate index_price
+        cdef Price price = self._cache.price(instrument_id, PriceType.MID)
+        if price is None:
+            price = self._cache.price(instrument_id, PriceType.LAST)
+
+        if instrument is not None and instrument.asset_class is AssetClass.INDEX:
+            if instrument.instrument_class is InstrumentClass.FUTURE:
+                if price is not None:
+                    return price
+
+            index_price = self._cache.index_price(instrument_id)
+            if index_price is not None:
+                return index_price.value
+
+        if price is not None:
+            return price
+
+        self._log.warning(f"No price available for {instrument_id}")
+
+        return None
 
     def portfolio_greeks(
         self,
@@ -533,6 +593,8 @@ cdef class GreeksCalculator:
         beta_weights: dict[InstrumentId, float] | None = None,
         greeks_filter: callable | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: InstrumentId | None = None,
+        vol_beta_weights: dict[InstrumentId, float] | None = None,
     ) -> PortfolioGreeks | None:
         """
         Calculate the portfolio Greeks for a given set of positions.
@@ -542,7 +604,7 @@ cdef class GreeksCalculator:
         Additional features:
         - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
         - Compute percent greeks.
-        - Compute beta-weighted delta and gamma with respect to an index.
+        - Compute beta-weighted delta, gamma and vega with respect to an index.
         - Update volatility to a target price from a previously calculated volatility.
 
         Parameters
@@ -590,7 +652,11 @@ cdef class GreeksCalculator:
             Filter function to select which greeks to add to the portfolio_greeks.
         vega_time_weight_base : int, optional
             Base value in days for time-weighting vega. When provided, vega is multiplied by sqrt(vega_time_weight_base / expiry_in_days).
-            Also enables percent vega calculation where vega is multiplied by vol / 100.
+            Also enables percent vega calculation where vega is multiplied by vol * 0.01
+        vol_index_instrument_id : InstrumentId, optional
+            The reference volatility instrument id vega beta is computed with respect to, for example VIX.
+        vol_beta_weights : dict[InstrumentId, float], optional
+            Dictionary of volatility beta weights used to compute portfolio vega.
 
         Returns
         -------
@@ -633,6 +699,7 @@ cdef class GreeksCalculator:
                 position_instrument_id, flat_interest_rate, flat_dividend_yield, spot_shock, vol_shock,
                 time_to_expiry_shock, use_cached_greeks, update_vol, cache_greeks, ts_event, position,
                 percent_greeks, index_instrument_id, beta_weights, vega_time_weight_base,
+                vol_index_instrument_id, vol_beta_weights,
             )
             if instrument_greeks is None:
                 self._log.warning(f"No greeks available for underlying {position_instrument_id}")
