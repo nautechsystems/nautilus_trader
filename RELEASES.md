@@ -46,6 +46,7 @@ None
 - Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
+- Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 
 ### Internal Improvements

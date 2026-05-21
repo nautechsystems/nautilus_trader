@@ -185,6 +185,24 @@ impl NodeState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EngineConnectionStatus {
+    Connected,
+    TimedOut,
+    StopRequested,
+    ShutdownRequested,
+}
+
+impl EngineConnectionStatus {
+    const fn abort_reason(self) -> Option<&'static str> {
+        match self {
+            Self::Connected | Self::TimedOut => None,
+            Self::StopRequested => Some("Stop signal received during startup"),
+            Self::ShutdownRequested => Some("Shutdown signal received during startup"),
+        }
+    }
+}
+
 /// A thread-safe handle to control a `LiveNode` from other threads.
 ///
 /// This allows stopping and querying the node's state without requiring the
@@ -508,6 +526,7 @@ impl LiveNode {
         self.handle.set_state(NodeState::Starting);
 
         self.kernel.start_async().await;
+        self.kernel.reset_shutdown_flag();
 
         // Connect data clients first and flush instrument events into cache
         self.kernel.connect_data_clients().await;
@@ -518,16 +537,28 @@ impl LiveNode {
 
         self.kernel.connect_exec_clients().await;
 
-        if self.handle.should_stop() {
-            log::info!("Stop signal received during startup, aborting start");
-            self.handle.set_state(NodeState::Stopped);
+        if let Some(reason) = self.startup_abort_reason() {
+            self.abort_startup(reason).await?;
             return Ok(());
         }
 
-        if !self.await_engines_connected().await {
-            log::error!("Cannot start trader: engine client(s) not connected");
-            self.handle.set_state(NodeState::Running);
-            return Ok(());
+        match self.await_engines_connected().await {
+            EngineConnectionStatus::Connected => {}
+            EngineConnectionStatus::TimedOut => {
+                log::error!("Cannot start trader: engine client(s) not connected");
+                self.handle.set_state(NodeState::Running);
+                return Ok(());
+            }
+            EngineConnectionStatus::StopRequested => {
+                self.abort_startup("Stop signal received during startup")
+                    .await?;
+                return Ok(());
+            }
+            EngineConnectionStatus::ShutdownRequested => {
+                self.abort_startup("Shutdown signal received during startup")
+                    .await?;
+                return Ok(());
+            }
         }
 
         self.perform_startup_reconciliation().await?;
@@ -564,8 +595,8 @@ impl LiveNode {
 
     /// Awaits engine clients to connect with timeout.
     ///
-    /// Returns `true` if all engines connected, `false` if timed out.
-    async fn await_engines_connected(&self) -> bool {
+    /// Returns the final connection wait status.
+    async fn await_engines_connected(&self) -> EngineConnectionStatus {
         log::info!(
             "Awaiting engine connections ({:?} timeout)...",
             self.config.timeout_connection
@@ -578,18 +609,23 @@ impl LiveNode {
         while start.elapsed() < timeout {
             if self.handle.should_stop() {
                 log::warn!("Stop signal received, aborting connection wait");
-                return false;
+                return EngineConnectionStatus::StopRequested;
+            }
+
+            if self.kernel.is_shutdown_requested() {
+                log::warn!("Shutdown signal received, aborting connection wait");
+                return EngineConnectionStatus::ShutdownRequested;
             }
 
             if self.kernel.check_engines_connected() {
                 log::info!("All engine clients connected");
-                return true;
+                return EngineConnectionStatus::Connected;
             }
             dst::time::sleep(interval).await;
         }
 
         self.log_connection_status();
-        false
+        EngineConnectionStatus::TimedOut
     }
 
     /// Awaits engine clients to disconnect with timeout.
@@ -836,6 +872,8 @@ impl LiveNode {
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
+        // TODO: Add ctrl_c, stop_handle, and shutdown_flag monitoring here to
+        // allow aborting a hanging connect future.
         drive_with_event_buffering(
             self.kernel.connect_data_clients(),
             &mut pending,
@@ -857,7 +895,7 @@ impl LiveNode {
         );
 
         // Startup phase 2: Connect execution clients (instruments now in cache)
-        let engines_connected = drive_with_event_buffering(
+        let engine_connection_status = drive_with_event_buffering(
             self.connect_exec_phase(),
             &mut pending,
             &mut time_evt_rx,
@@ -882,13 +920,23 @@ impl LiveNode {
             "all startup events must be processed before reconciliation",
         );
 
-        if self.handle.should_stop() {
-            log::info!("Stop signal received during startup, aborting run");
-            self.handle.set_state(NodeState::Stopped);
+        if let Some(reason) = engine_connection_status
+            .abort_reason()
+            .or_else(|| self.startup_abort_reason())
+        {
+            self.abort_startup(reason).await?;
+            self.drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
             return Ok(());
         }
 
-        if engines_connected {
+        if engine_connection_status == EngineConnectionStatus::Connected {
             // Run reconciliation now that instruments are in cache and start trader
             self.perform_startup_reconciliation().await?;
             self.kernel.start_trader();
@@ -1290,16 +1338,27 @@ impl LiveNode {
 
     /// Connects execution clients and checks all engines are connected.
     ///
-    /// Returns `true` if all engines connected successfully, `false` otherwise.
+    /// Returns the final connection wait status.
     /// Must be called after data clients are connected and instrument events drained.
-    async fn connect_exec_phase(&mut self) -> anyhow::Result<bool> {
+    async fn connect_exec_phase(&mut self) -> anyhow::Result<EngineConnectionStatus> {
         self.kernel.connect_exec_clients().await;
+        Ok(self.await_engines_connected().await)
+    }
 
-        if !self.await_engines_connected().await {
-            return Ok(false);
+    fn startup_abort_reason(&self) -> Option<&'static str> {
+        if self.handle.should_stop() {
+            Some("Stop signal received during startup")
+        } else if self.kernel.is_shutdown_requested() {
+            Some("Shutdown signal received during startup")
+        } else {
+            None
         }
+    }
 
-        Ok(true)
+    async fn abort_startup(&mut self, reason: &str) -> anyhow::Result<()> {
+        log::info!("{reason}, aborting startup");
+        self.handle.set_state(NodeState::ShuttingDown);
+        self.finalize_stop().await
     }
 
     fn initiate_shutdown(&mut self) {
@@ -2009,6 +2068,54 @@ mod tests {
         assert!(NodeState::Running.is_running());
         assert!(!NodeState::ShuttingDown.is_running());
         assert!(!NodeState::Stopped.is_running());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_await_engines_connected_returns_stop_requested() {
+        let node = LiveNode::build("TestNode".to_string(), None).unwrap();
+        let handle = node.handle();
+
+        handle.stop();
+
+        let status = node.await_engines_connected().await;
+
+        assert_eq!(status, EngineConnectionStatus::StopRequested);
+        assert!(handle.should_stop());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_await_engines_connected_returns_shutdown_requested() {
+        let node = LiveNode::build("TestNode".to_string(), None).unwrap();
+
+        node.kernel().shutdown_flag().set(true);
+
+        let status = node.await_engines_connected().await;
+
+        assert_eq!(status, EngineConnectionStatus::ShutdownRequested);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_stop_request_aborts_startup_without_running() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+
+        handle.stop();
+        node.start().await.unwrap();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(handle.should_stop());
+        assert!(!handle.is_running());
     }
 
     #[rstest]
