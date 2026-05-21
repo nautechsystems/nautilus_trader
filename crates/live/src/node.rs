@@ -518,6 +518,12 @@ impl LiveNode {
 
         self.kernel.connect_exec_clients().await;
 
+        if self.handle.should_stop() {
+            log::info!("Stop signal received during startup, aborting start");
+            self.handle.set_state(NodeState::Stopped);
+            return Ok(());
+        }
+
         if !self.await_engines_connected().await {
             log::error!("Cannot start trader: engine client(s) not connected");
             self.handle.set_state(NodeState::Running);
@@ -570,6 +576,11 @@ impl LiveNode {
         let interval = Duration::from_millis(100);
 
         while start.elapsed() < timeout {
+            if self.handle.should_stop() {
+                log::warn!("Stop signal received, aborting connection wait");
+                return false;
+            }
+
             if self.kernel.check_engines_connected() {
                 log::info!("All engine clients connected");
                 return true;
@@ -825,9 +836,6 @@ impl LiveNode {
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
-        // TODO: Add ctrl_c and stop_handle monitoring here to allow aborting a
-        // hanging startup. Currently signals during startup are ignored, and
-        // any pending stop_flag is cleared when transitioning to Running.
         drive_with_event_buffering(
             self.kernel.connect_data_clients(),
             &mut pending,
@@ -873,6 +881,12 @@ impl LiveNode {
             pending.is_empty(),
             "all startup events must be processed before reconciliation",
         );
+
+        if self.handle.should_stop() {
+            log::info!("Stop signal received during startup, aborting run");
+            self.handle.set_state(NodeState::Stopped);
+            return Ok(());
+        }
 
         if engines_connected {
             // Run reconciliation now that instruments are in cache and start trader
