@@ -452,7 +452,11 @@ correctly. Commands with future timestamps are deferred and processed when the e
 `BacktestEngine::end()` invokes each strategy's `on_stop` handler, drains and settles any commands
 it emits (e.g. `close_all_positions`, `cancel_all_orders`), then stops the engines.
 
-- Final positions, orders, and account balances reflect `on_stop` fills and cancels.
+- `on_stop` commands use normal venue queueing and latency. They do not get priority over earlier inflight commands.
+- If a pre-stop order reaches the venue before an `on_stop` cancel, it may still fill. A later
+  reduce-only close can then reject if the fill changed net exposure.
+- Strategies that need deterministic flattening should enter an exit-only state before stopping and
+  avoid new opening orders while cancel and close commands are in-flight.
 - Strategy event handlers do not fire for the resulting events: the strategy is already `Stopped`,
   so `OrderFilled` and similar events log but bypass `on_order_filled` and friends. Logic that
   reacts to fills must run before `on_stop` returns.
