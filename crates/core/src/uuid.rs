@@ -55,24 +55,7 @@ impl UUID4 {
     /// The UUID value is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
-        let mut bytes = [0u8; 16];
-        #[cfg(all(feature = "simulation", madsim))]
-        {
-            // Deterministic RNG when running inside a madsim runtime; otherwise
-            // (e.g. plain `#[rstest]` tests under `cfg(madsim)`) fall back to
-            // the host RNG. Production paths under simulation always run inside
-            // a runtime, so they continue to consume seeded bytes.
-            if madsim::runtime::Handle::try_current().is_ok() {
-                MadsimRngCore::fill_bytes(&mut madsim::rand::thread_rng(), &mut bytes);
-            } else {
-                rand::rng().fill_bytes(&mut bytes); // dst-ok: tests outside a madsim runtime
-            }
-        }
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        rand::rng().fill_bytes(&mut bytes);
-
-        bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
-        bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
+        let bytes = Self::new_bytes();
 
         let mut value = [0u8; UUID4_LEN];
         let mut cursor = Cursor::new(&mut value[..36]);
@@ -108,6 +91,31 @@ impl UUID4 {
         );
 
         Self { value }
+    }
+
+    /// Creates raw `UUIDv4` bytes.
+    #[must_use]
+    pub fn new_bytes() -> [u8; 16] {
+        let mut bytes = [0u8; 16];
+        #[cfg(all(feature = "simulation", madsim))]
+        {
+            // Deterministic RNG when running inside a madsim runtime; otherwise
+            // (e.g. plain `#[rstest]` tests under `cfg(madsim)`) fall back to
+            // the host RNG. Production paths under simulation always run inside
+            // a runtime, so they continue to consume seeded bytes.
+            if madsim::runtime::Handle::try_current().is_ok() {
+                MadsimRngCore::fill_bytes(&mut madsim::rand::thread_rng(), &mut bytes);
+            } else {
+                rand::rng().fill_bytes(&mut bytes); // dst-ok: tests outside a madsim runtime
+            }
+        }
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        rand::rng().fill_bytes(&mut bytes);
+
+        bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
+        bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
+
+        bytes
     }
 
     /// Creates a [`UUID4`] from raw 16-byte representation.
@@ -313,6 +321,16 @@ mod tests {
         // RFC4122 variant requires bits: 0b10xxxxxx
         let variant_char = &uuid_string[19..20];
         assert!(matches!(variant_char, "8" | "9" | "a" | "b" | "A" | "B"));
+    }
+
+    #[rstest]
+    fn test_new_bytes() {
+        let bytes = UUID4::new_bytes();
+        let uuid = UUID4::from_bytes(bytes);
+
+        assert_eq!(bytes[6] >> 4, 4);
+        assert!(matches!(bytes[8] >> 6, 0b10));
+        assert_eq!(uuid.as_bytes(), bytes);
     }
 
     #[rstest]
