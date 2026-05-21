@@ -17,6 +17,7 @@
 //!
 //! Provides methods to load, query, and update cached data such as instruments, orders, and prices.
 
+pub mod bounded;
 pub mod config;
 pub mod database;
 pub mod fifo;
@@ -31,7 +32,6 @@ mod tests;
 use std::{
     borrow::Cow,
     cell::{Ref, RefCell},
-    collections::VecDeque,
     fmt::{Debug, Display},
     rc::Rc,
     str::FromStr,
@@ -39,6 +39,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
@@ -216,14 +217,14 @@ pub struct Cache {
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
-    quotes: AHashMap<InstrumentId, VecDeque<QuoteTick>>,
-    trades: AHashMap<InstrumentId, VecDeque<TradeTick>>,
+    quotes: AHashMap<InstrumentId, BoundedVecDeque<QuoteTick>>,
+    trades: AHashMap<InstrumentId, BoundedVecDeque<TradeTick>>,
     mark_xrates: AHashMap<(Currency, Currency), f64>,
-    mark_prices: AHashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
-    index_prices: AHashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
-    funding_rates: AHashMap<InstrumentId, VecDeque<FundingRateUpdate>>,
-    instrument_statuses: AHashMap<InstrumentId, VecDeque<InstrumentStatus>>,
-    bars: AHashMap<BarType, VecDeque<Bar>>,
+    mark_prices: AHashMap<InstrumentId, BoundedVecDeque<MarkPriceUpdate>>,
+    index_prices: AHashMap<InstrumentId, BoundedVecDeque<IndexPriceUpdate>>,
+    funding_rates: AHashMap<InstrumentId, BoundedVecDeque<FundingRateUpdate>>,
+    instrument_statuses: AHashMap<InstrumentId, BoundedVecDeque<InstrumentStatus>>,
+    bars: AHashMap<BarType, BoundedVecDeque<Bar>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
@@ -1685,7 +1686,7 @@ impl Cache {
         let mark_prices_deque = self
             .mark_prices
             .entry(mark_price.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         mark_prices_deque.push_front(mark_price);
         Ok(())
     }
@@ -1708,7 +1709,7 @@ impl Cache {
         let index_prices_deque = self
             .index_prices
             .entry(index_price.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         index_prices_deque.push_front(index_price);
         Ok(())
     }
@@ -1731,7 +1732,7 @@ impl Cache {
         let funding_rates_deque = self
             .funding_rates
             .entry(funding_rate.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         funding_rates_deque.push_front(funding_rate);
         Ok(())
     }
@@ -1761,7 +1762,7 @@ impl Cache {
         let funding_rate_deque = self
             .funding_rates
             .entry(instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
 
         for funding_rate in funding_rates {
             funding_rate_deque.push_front(*funding_rate);
@@ -1784,7 +1785,7 @@ impl Cache {
         let statuses_deque = self
             .instrument_statuses
             .entry(status.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         statuses_deque.push_front(status);
         Ok(())
     }
@@ -1806,7 +1807,7 @@ impl Cache {
         let quotes_deque = self
             .quotes
             .entry(quote.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         quotes_deque.push_front(quote);
         Ok(())
     }
@@ -1833,7 +1834,7 @@ impl Cache {
         let quotes_deque = self
             .quotes
             .entry(instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
 
         for quote in quotes {
             quotes_deque.push_front(*quote);
@@ -1858,7 +1859,7 @@ impl Cache {
         let trades_deque = self
             .trades
             .entry(trade.instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         trades_deque.push_front(trade);
         Ok(())
     }
@@ -1885,7 +1886,7 @@ impl Cache {
         let trades_deque = self
             .trades
             .entry(instrument_id)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
 
         for trade in trades {
             trades_deque.push_front(*trade);
@@ -1910,7 +1911,7 @@ impl Cache {
         let bars = self
             .bars
             .entry(bar.bar_type)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.bar_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
         bars.push_front(bar);
         Ok(())
     }
@@ -1937,7 +1938,7 @@ impl Cache {
         let bars_deque = self
             .bars
             .entry(bar_type)
-            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
 
         for bar in bars {
             bars_deque.push_front(*bar);
@@ -5100,7 +5101,7 @@ impl Cache {
     pub fn quote_count(&self, instrument_id: &InstrumentId) -> usize {
         self.quotes
             .get(instrument_id)
-            .map_or(0, std::collections::VecDeque::len)
+            .map_or(0, BoundedVecDeque::len)
     }
 
     /// Gets the trade tick count for the `instrument_id`.
@@ -5108,15 +5109,13 @@ impl Cache {
     pub fn trade_count(&self, instrument_id: &InstrumentId) -> usize {
         self.trades
             .get(instrument_id)
-            .map_or(0, std::collections::VecDeque::len)
+            .map_or(0, BoundedVecDeque::len)
     }
 
     /// Gets the bar count for the `instrument_id`.
     #[must_use]
     pub fn bar_count(&self, bar_type: &BarType) -> usize {
-        self.bars
-            .get(bar_type)
-            .map_or(0, std::collections::VecDeque::len)
+        self.bars.get(bar_type).map_or(0, BoundedVecDeque::len)
     }
 
     /// Returns whether the cache contains an order book for the `instrument_id`.
