@@ -355,7 +355,7 @@ For a complete parameter list see the `StrategyConfig`
 |-----------------------------|---------|--------------------------------------------------------------------------------------------|
 | `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing.  |
 | `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                     |
-| `external_order_claims`     | None    | Instrument IDs whose external orders this strategy claims.                                 |
+| `external_order_claims`     | None    | Instrument IDs whose external orders and reconciliation activity this strategy claims.      |
 | `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                  |
 | `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                         |
 

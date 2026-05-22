@@ -50,7 +50,8 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs.
     external_order_claims : list[InstrumentId], optional
         The external order claim instrument IDs.
-        External orders for matching instrument IDs will be associated with (claimed by) the strategy.
+        External orders and reconciled position exposure for matching instrument IDs will be associated
+        with (claimed by) the strategy.
     manage_contingent_orders : bool, default False
         If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
         Any emulated orders which are active local will be managed by the `OrderEmulator` instead.

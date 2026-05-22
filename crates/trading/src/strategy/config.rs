@@ -55,7 +55,8 @@ pub struct StrategyConfig {
     /// how the `ExecutionEngine` handles position IDs.
     pub oms_type: Option<OmsType>,
     /// The external order claim instrument IDs.
-    /// External orders for matching instrument IDs will be associated with (claimed by) the strategy.
+    /// External orders, fills, and materialized reconciliation activity for matching instrument IDs
+    /// will be associated with the strategy.
     pub external_order_claims: Option<Vec<InstrumentId>>,
     /// If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
     /// Any emulated orders which are active local will be managed by the `OrderEmulator` instead.

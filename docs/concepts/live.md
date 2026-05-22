@@ -76,16 +76,18 @@ information loss that a longer window would avoid. Some venues also filter or dr
 older execution data. Persisting all events to the cache database prevents both issues.
 :::
 
-Each strategy can claim external orders for an instrument ID generated during reconciliation
-via the `external_order_claims` config parameter. This lets a strategy resume managing open
-orders when no cached state exists.
+Each strategy can claim venue-sourced external orders and materialized reconciliation activity
+for an instrument ID via the `external_order_claims` config parameter. This lets a strategy
+resume managing open orders and positions when no cached state exists.
 
-Orders generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` during position
-reconciliation are internal to the engine. They cannot be claimed via `external_order_claims`
-and should not be managed by user strategies.
+Unclaimed external orders use strategy ID `EXTERNAL` with tag `VENUE`. Unclaimed orders
+generated during position reconciliation use strategy ID `EXTERNAL` with tag `RECONCILIATION`.
+Claimed orders and fills use the claiming strategy ID and have no external/reconciliation tag,
+so the strategy can continue managing the recovered state.
 
 :::tip
-To detect external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`. These orders participate in portfolio calculations and position tracking like any other order.
+To detect unclaimed external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`.
+These orders participate in portfolio calculations and position tracking like any other order.
 :::
 
 For all live trading options, see the `LiveExecEngineConfig` [API Reference](/docs/python-api-latest/config.html#nautilus_trader.live.config.LiveExecEngineConfig).
@@ -123,9 +125,13 @@ The system reconciles its state against these reports, which represent external 
   - Generates external order events for unrecognized client order IDs or reports missing a client order ID.
   - Verifies fill report data consistency with tolerance-based price and commission comparisons.
 - **Position reconciliation**:
-  - Matches the net position per instrument against venue position reports using instrument precision.
+  - Matches the net position per account and instrument against venue position reports using
+    instrument precision.
   - Generates external order events when order reconciliation leaves a position that differs from the venue.
-  - When `generate_missing_orders` is enabled (default: True), generates orders with strategy ID `EXTERNAL` and tag `RECONCILIATION` to align discrepancies.
+  - When `generate_missing_orders` is enabled (default: True), generates orders with strategy ID
+    `EXTERNAL` and tag `RECONCILIATION` to align discrepancies.
+  - Logs a warning when NETTING ownership is split across multiple strategies for the same account
+    and instrument, since venue position reports are account-level net positions.
   - Falls through a price hierarchy when generating reconciliation orders:
     1. **Calculated reconciliation price** (preferred): targets the correct average position.
     2. **Market mid-price**: uses the current bid-ask midpoint.
@@ -159,7 +165,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 | **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).              | Updates local order to match venue state, emits missing events.                 |
 | **Missed fills**                       | Venue filled an order but the engine missed the event.                                   | Generates missing `OrderFilled` events.                                         |
 | **Multiple fills**                     | Order has partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                          |
-| **External orders**                    | Orders exist on venue but not in local cache.                                            | Creates orders with strategy ID `EXTERNAL` and tag `VENUE`.                     |
+| **External orders**                    | Orders exist on venue but not in local cache.                                            | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.           |
 | **Partially filled then canceled**     | Order partially filled then canceled by venue.                                           | Updates state to `CANCELED`, preserves fill history.                            |
 | **Different fill data**                | Venue reports different fill price/commission than cached.                               | Preserves cached data, logs discrepancies.                                      |
 | **Filtered orders**                    | Orders marked for filtering via config.                                                  | Skips based on `filtered_client_order_ids` or instrument filters.               |
@@ -168,7 +174,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 | **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                         | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`. |
 | **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long).          | Generates opposite‑side LIMIT order with calculated price.                      |
 | **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).           | Generates LIMIT order to close internal and open external position.             |
-| **Internal reconciliation orders**     | Orders with strategy ID `EXTERNAL` and tag `RECONCILIATION`.                             | Never filtered, regardless of `filter_unclaimed_external_orders`.               |
+| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                                        | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.          |
 
 #### Runtime checks
 
@@ -181,11 +187,19 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 
 ### Common reconciliation issues
 
-- **Missing trade reports**: Some venues filter out older trades. Increase `reconciliation_lookback_mins` or cache all events locally.
-- **Position mismatches**: External orders that predate the lookback window cause position drift. Flatten the account before restarting to reset state.
-- **Duplicate order IDs**: Deduplicated with warnings logged. Frequent duplicates may indicate venue data integrity issues.
-- **Precision differences**: Small decimal differences are handled using instrument precision. Large discrepancies may indicate missing orders.
-- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
+- **Missing trade reports**: Some venues filter out older trades. Increase
+  `reconciliation_lookback_mins` or cache all events locally.
+- **Position mismatches**: External orders that predate the lookback window cause position drift.
+  Flatten the account before restarting to reset state.
+- **Split NETTING ownership**: Multiple strategies can hold cached positions for the same account
+  and instrument, but venues report a single account-level net position. Prefer one claiming
+  strategy per NETTING account/instrument pair when resuming external state.
+- **Duplicate order IDs**: Deduplicated with warnings logged. Frequent duplicates may indicate
+  venue data integrity issues.
+- **Precision differences**: Small decimal differences are handled using instrument precision.
+  Large discrepancies may indicate missing orders.
+- **Out-of-order reports**: Fill reports arriving before order status reports are deferred until
+  order state is available.
 
 :::tip
 For persistent issues, drop cached state or flatten accounts before restarting.

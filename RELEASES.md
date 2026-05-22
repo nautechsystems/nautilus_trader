@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
 - Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
+- Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
@@ -48,7 +49,9 @@ None
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
+- Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
+- Fixed unbounded Cache VecDeque memory leak in Rust (#4107), thanks @filipmacek
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 
 ### Internal Improvements

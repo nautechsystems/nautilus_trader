@@ -2472,6 +2472,13 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             account_id=report.account_id,
         )
+        split_ownership_message = self._netting_split_position_ownership_message(
+            report,
+            positions_open,
+        )
+
+        if split_ownership_message is not None:
+            self._log.warning(split_ownership_message, LogColor.YELLOW)
 
         position_signed_decimal_qty: Decimal = Decimal()
 
@@ -2588,6 +2595,28 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
 
         return True  # Reconciled
+
+    def _netting_split_position_ownership_message(
+        self,
+        report: PositionStatusReport,
+        positions_open: list[Position],
+    ) -> str | None:
+        strategy_ids = sorted({position.strategy_id.value for position in positions_open})
+        if len(strategy_ids) <= 1:
+            return None
+
+        position_details = ", ".join(
+            f"{position.id}:strategy_id={position.strategy_id},"
+            f"signed_qty={position.signed_decimal_qty()}"
+            for position in sorted(positions_open, key=lambda pos: pos.id.value)
+        )
+        return (
+            f"NETTING position ownership is split for account_id={report.account_id}, "
+            f"instrument_id={report.instrument_id}: strategy_ids={strategy_ids}, "
+            f"positions=[{position_details}]. This is legal in Nautilus but dangerous on venues "
+            "with account-level net positions; use `external_order_claims` when one strategy "
+            "should claim reconciled exposure."
+        )
 
     def _reconcile_cross_zero_position(
         self,
