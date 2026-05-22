@@ -1131,7 +1131,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.place_order(ib_order)
 
     def _ensure_client_ready_for_order_request(self, request: str) -> None:
-        if not self._client.is_client_ready:
+        if not self._client.is_ready:
             raise ValueError(
                 f"Interactive Brokers client is not ready; refusing to {request}",
             )

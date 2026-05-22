@@ -27,6 +27,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 )
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
 from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.model.enums import AssetClass
@@ -887,6 +888,59 @@ async def test_batch_cancel_orders_rejects_when_ib_client_not_ready(
     assert (
         generate_order_cancel_rejected.call_args.kwargs["reason"]
         == "Interactive Brokers client is not ready; refusing to cancel order"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_orders_rejects_when_ib_client_not_ready(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+    client_order_id,
+    venue_order_id,
+):
+    # Arrange
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+    exec_client._set_connected(True)
+    exec_client._client._is_client_ready.clear()
+    cancel_order = mocker.patch.object(exec_client._client, "cancel_order")
+    generate_order_cancel_rejected = mocker.patch.object(
+        exec_client,
+        "generate_order_cancel_rejected",
+    )
+
+    order = order_setup(
+        exec_client=exec_client,
+        instrument=instrument,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        status=OrderStatus.ACCEPTED,
+    )
+    command = CancelAllOrders(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        order_side=OrderSide.NO_ORDER_SIDE,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._cancel_all_orders(command)
+
+    # Assert
+    cancel_order.assert_not_called()
+    generate_order_cancel_rejected.assert_called_once()
+    assert (
+        generate_order_cancel_rejected.call_args.kwargs["reason"]
+        == "Interactive Brokers client is not ready; refusing to cancel orders"
     )
 
 
