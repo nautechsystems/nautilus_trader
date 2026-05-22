@@ -110,6 +110,8 @@ pub trait BarAggregator: Any + Debug {
     /// Sets the weak reference to the aggregator wrapper (for historical mode).
     /// Default implementation does nothing, `TimeBarAggregator` overrides.
     fn set_aggregator_weak(&mut self, _weak: Weak<RefCell<Box<dyn BarAggregator>>>) {}
+    /// Configures the continuous-future price adjustment for the underlying builder.
+    fn set_adjustment(&mut self, _adjustment: Decimal, _mode: ContinuousFutureAdjustmentType) {}
 }
 
 impl dyn BarAggregator {
@@ -427,12 +429,24 @@ impl BarAggregatorCore {
         let bar = self.builder.build(ts_event, ts_init);
         (self.handler)(bar);
     }
+
+    fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+        self.builder.set_adjustment(adjustment, mode);
+    }
 }
 
 macro_rules! impl_set_historical_handler {
     () => {
         fn set_historical_mode(&mut self, _historical_mode: bool, handler: Box<dyn FnMut(Bar)>) {
             self.core.set_handler(handler);
+        }
+    };
+}
+
+macro_rules! impl_set_adjustment {
+    () => {
+        fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+            self.core.set_adjustment(adjustment, mode);
         }
     };
 }
@@ -485,6 +499,7 @@ impl BarAggregator for TickBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -557,6 +572,7 @@ impl BarAggregator for TickImbalanceBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -644,6 +660,7 @@ impl BarAggregator for TickRunsBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -738,6 +755,7 @@ impl BarAggregator for VolumeBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -852,6 +870,7 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -957,6 +976,7 @@ impl BarAggregator for VolumeRunsBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -1074,6 +1094,7 @@ impl BarAggregator for ValueBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -1220,6 +1241,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -1388,6 +1410,7 @@ impl BarAggregator for ValueRunsBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -1529,6 +1552,7 @@ impl BarAggregator for RenkoBarAggregator {
     }
 
     impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -2054,6 +2078,10 @@ impl BarAggregator for TimeBarAggregator {
 
     fn start_timer(&mut self, aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>) {
         self.start_timer_internal(aggregator_rc);
+    }
+
+    fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+        self.core.set_adjustment(adjustment, mode);
     }
 }
 

@@ -51,6 +51,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
 use bar::{BarAggregatorKey, bar_aggregator_key};
 use book::{
@@ -69,12 +70,13 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        DataCommand, DataResponse, ForwardPricesResponse, RequestCommand, RequestForwardPrices,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, is_parent_subscription,
+        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, RequestBars,
+        RequestCommand, RequestForwardPrices, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes, is_parent_subscription,
     },
     msgbus::{
         self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -84,7 +86,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UUID4, WeakCell,
+    Params, UUID4, UnixNanos, WeakCell,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -108,7 +110,12 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
-use requests::{RequestBarAggregation, request_bar_aggregation_from_params, request_params};
+use requests::{
+    ContinuousFutureRequest, ContinuousFutureRequestState, ContinuousFutureSegment,
+    ContinuousFutureSource, RequestBarAggregation, continuous_future_parent_request_id,
+    continuous_future_request_from_bars, has_continuous_future_params,
+    request_bar_aggregation_from_params, request_params, response_params,
+};
 #[cfg(feature = "streaming")]
 use streaming::CatalogMap;
 use ustr::Ustr;
@@ -149,6 +156,7 @@ pub struct DataEngine {
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
     spread_quote_aggregators: AHashMap<InstrumentId, Rc<RefCell<SpreadQuoteAggregator>>>,
     spread_quote_handlers: AHashMap<InstrumentId, Vec<(InstrumentId, TypedHandler<QuoteTick>)>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
@@ -213,6 +221,7 @@ impl DataEngine {
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
+            continuous_future_requests: AHashMap::new(),
             spread_quote_aggregators: AHashMap::new(),
             spread_quote_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
@@ -495,6 +504,7 @@ impl DataEngine {
         }
 
         self.request_bar_aggregations.clear();
+        self.continuous_future_requests.clear();
 
         let spread_ids: Vec<InstrumentId> = self.spread_quote_aggregators.keys().copied().collect();
         for spread_id in spread_ids {
@@ -1073,44 +1083,176 @@ impl DataEngine {
             return Ok(());
         }
 
+        if has_continuous_future_params(request_params(&req)) {
+            return self.execute_continuous_future_request(req);
+        }
+
         let request_id = *req.request_id();
         self.prepare_request_bar_aggregators(&req)?;
 
-        let result = if let Some(client) = self.get_client(req.client_id(), req.venue()) {
-            match req {
-                RequestCommand::Data(req) => client.request_data(req),
-                RequestCommand::Instrument(req) => client.request_instrument(req),
-                RequestCommand::Instruments(req) => client.request_instruments(req),
-                RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
-                RequestCommand::BookDepth(req) => client.request_book_depth(req),
-                RequestCommand::Quotes(req) => client.request_quotes(req),
-                RequestCommand::Trades(req) => client.request_trades(req),
-                RequestCommand::FundingRates(req) => client.request_funding_rates(req),
-                RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
-                RequestCommand::Bars(req) => client.request_bars(req),
-            }
-        } else {
-            Err(anyhow::anyhow!(
-                "Cannot handle request: no client found for {:?} {:?}",
-                req.client_id(),
-                req.venue()
-            ))
-        };
+        let result = self.dispatch_request_to_client(req);
 
         if result.is_err() {
             self.cleanup_request_bar_aggregators(&request_id);
         }
 
-        result
+        result.map(|_| ())
     }
 
-    fn prepare_request_bar_aggregators(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
-        let request_id = *req.request_id();
-        let Some(state) = request_bar_aggregation_from_params(request_params(req))? else {
+    fn dispatch_request_to_client(&mut self, req: RequestCommand) -> anyhow::Result<ClientId> {
+        let client_id = req.client_id().copied();
+        let venue = req.venue().copied();
+        let Some(client) = self.get_client(client_id.as_ref(), venue.as_ref()) else {
+            anyhow::bail!("Cannot handle request: no client found for {client_id:?} {venue:?}");
+        };
+        let resolved_client_id = client.client_id();
+
+        match req {
+            RequestCommand::Data(req) => client.request_data(req),
+            RequestCommand::Instrument(req) => client.request_instrument(req),
+            RequestCommand::Instruments(req) => client.request_instruments(req),
+            RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+            RequestCommand::BookDepth(req) => client.request_book_depth(req),
+            RequestCommand::Quotes(req) => client.request_quotes(req),
+            RequestCommand::Trades(req) => client.request_trades(req),
+            RequestCommand::FundingRates(req) => client.request_funding_rates(req),
+            RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
+            RequestCommand::Bars(req) => client.request_bars(req),
+        }?;
+
+        Ok(resolved_client_id)
+    }
+
+    fn execute_continuous_future_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        let RequestCommand::Bars(parent) = req else {
+            anyhow::bail!("Continuous future requests require `RequestBars`");
+        };
+        let request_id = parent.request_id;
+        let Some(continuous_request) = continuous_future_request_from_bars(&parent)? else {
             return Ok(());
         };
 
-        if !self.can_start_request_bar_aggregators(request_id, &state) {
+        self.ensure_continuous_future_target_instrument(&continuous_request);
+        self.prepare_request_bar_aggregators_from_state(
+            request_id,
+            &continuous_request.request_bar_aggregation,
+        )?;
+
+        let response_client_id = match self.resolve_request_client_id(
+            parent.client_id.as_ref(),
+            Some(&continuous_request.primary_bar_type.instrument_id().venue),
+        ) {
+            Ok(client_id) => client_id,
+            Err(e) => {
+                self.cleanup_request_bar_aggregators(&request_id);
+                return Err(e);
+            }
+        };
+        let (cursor_ns, end_ns) = match self.bound_continuous_future_dates(&parent) {
+            Ok(bounds) => bounds,
+            Err(e) => {
+                self.cleanup_request_bar_aggregators(&request_id);
+                return Err(e);
+            }
+        };
+
+        self.continuous_future_requests.insert(
+            request_id,
+            ContinuousFutureRequestState {
+                parent,
+                request: continuous_request,
+                start_ns: cursor_ns,
+                cursor_ns,
+                end_ns,
+                response_client_id,
+                data_count: 0,
+            },
+        );
+
+        if let Err(e) = self.dispatch_next_continuous_future_segment(request_id) {
+            self.continuous_future_requests.remove(&request_id);
+            self.cleanup_request_bar_aggregators(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn resolve_request_client_id(
+        &mut self,
+        client_id: Option<&ClientId>,
+        venue: Option<&Venue>,
+    ) -> anyhow::Result<ClientId> {
+        self.get_client(client_id, venue)
+            .map(|client| client.client_id())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot handle request: no client found for {client_id:?} {venue:?}"
+                )
+            })
+    }
+
+    fn bound_continuous_future_dates(
+        &self,
+        request: &RequestBars,
+    ) -> anyhow::Result<(UnixNanos, UnixNanos)> {
+        let now = self.clock.borrow().timestamp_ns();
+        let start = request
+            .start
+            .map(datetime_to_unix_nanos)
+            .transpose()?
+            .unwrap_or_default();
+        let end = request
+            .end
+            .map(datetime_to_unix_nanos)
+            .transpose()?
+            .unwrap_or(now);
+
+        Ok((start.min(now), end.min(now)))
+    }
+
+    fn ensure_continuous_future_target_instrument(&self, request: &ContinuousFutureRequest) {
+        let target_id = request.primary_bar_type.instrument_id();
+        if self.cache.borrow().instrument(&target_id).is_some() {
+            return;
+        }
+
+        let segment_id = request.first_segment_instrument_id();
+        let segment_instrument = self.cache.borrow().instrument(&segment_id).cloned();
+        let Some(segment_instrument) = segment_instrument else {
+            log::warn!(
+                "Cannot synthesize continuous future instrument {target_id}: first segment {segment_id} not in cache"
+            );
+            return;
+        };
+
+        let InstrumentAny::FuturesContract(mut target) = segment_instrument else {
+            log::warn!(
+                "Cannot synthesize continuous future instrument {target_id}: segment {segment_id} is not a FuturesContract",
+            );
+            return;
+        };
+
+        target.id = target_id;
+        target.raw_symbol = target_id.symbol;
+        target.activation_ns = UnixNanos::default();
+        target.expiration_ns = UnixNanos::default();
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::FuturesContract(target))
+        {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn prepare_request_bar_aggregators_from_state(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        if !self.can_start_request_bar_aggregators(request_id, state) {
             anyhow::bail!(
                 "Cannot request aggregated bars: one of the aggregators in `bar_types` is already running"
             );
@@ -1119,12 +1261,138 @@ impl DataEngine {
         self.request_bar_aggregations
             .insert(request_id, state.clone());
 
-        if let Err(e) = self.init_request_bar_aggregators(request_id, &state) {
+        if let Err(e) = self.init_request_bar_aggregators(request_id, state) {
             self.cleanup_request_bar_aggregators(&request_id);
             return Err(e);
         }
 
         Ok(())
+    }
+
+    fn dispatch_next_continuous_future_segment(&mut self, request_id: UUID4) -> anyhow::Result<()> {
+        let Some(state) = self.continuous_future_requests.get(&request_id).cloned() else {
+            anyhow::bail!("No active continuous future request for {request_id}");
+        };
+
+        let Some(segment) = state
+            .request
+            .next_segment(state.cursor_ns.as_u64(), state.end_ns.as_u64())
+        else {
+            self.emit_empty_continuous_future_response(request_id);
+            return Ok(());
+        };
+
+        self.apply_continuous_future_adjustment(request_id, &state.request, segment.index)?;
+        let child = self.build_continuous_future_child_request(request_id, &state, segment);
+        if let Some(active) = self.continuous_future_requests.get_mut(&request_id) {
+            active.cursor_ns = UnixNanos::from(segment.end_ns.saturating_add(1));
+        }
+
+        self.dispatch_request_to_client(child).map(|_| ())
+    }
+
+    fn apply_continuous_future_adjustment(
+        &self,
+        request_id: UUID4,
+        request: &ContinuousFutureRequest,
+        segment_index: usize,
+    ) -> anyhow::Result<()> {
+        let adjustment = request.adjustment_for_segment(segment_index);
+        let key = bar_aggregator_key(request.primary_bar_type, Some(request_id));
+        let aggregator = self.bar_aggregators.get(&key).ok_or_else(|| {
+            anyhow::anyhow!("No aggregator for continuous future request {request_id}")
+        })?;
+        aggregator
+            .borrow_mut()
+            .set_adjustment(adjustment, request.adjustment_mode);
+
+        Ok(())
+    }
+
+    fn build_continuous_future_child_request(
+        &self,
+        request_id: UUID4,
+        state: &ContinuousFutureRequestState,
+        segment: ContinuousFutureSegment,
+    ) -> RequestCommand {
+        let source = state.request.source_for_segment(segment.instrument_id);
+        let start = Some(UnixNanos::from(segment.start_ns).to_datetime_utc());
+        let end = Some(UnixNanos::from(segment.end_ns).to_datetime_utc());
+        let child_params = Some(
+            state
+                .request
+                .child_params(state.parent.params.as_ref(), request_id),
+        );
+        let child_request_id = UUID4::new();
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        match source {
+            ContinuousFutureSource::Bars(bar_type) => RequestCommand::Bars(RequestBars::new(
+                bar_type,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+            ContinuousFutureSource::Trades => RequestCommand::Trades(RequestTrades::new(
+                segment.instrument_id,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+            ContinuousFutureSource::Quotes => RequestCommand::Quotes(RequestQuotes::new(
+                segment.instrument_id,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+        }
+    }
+
+    fn emit_empty_continuous_future_response(&mut self, request_id: UUID4) {
+        let Some(state) = self.continuous_future_requests.remove(&request_id) else {
+            return;
+        };
+
+        let mut params = state.parent.params.unwrap_or_default();
+        if state.data_count != 0 {
+            params.insert(
+                "data_count".to_string(),
+                serde_json::json!(state.data_count),
+            );
+        }
+
+        let response = DataResponse::Bars(BarsResponse::new(
+            request_id,
+            state.response_client_id,
+            state.parent.bar_type,
+            Vec::new(),
+            Some(state.start_ns),
+            Some(state.end_ns),
+            self.clock.borrow().timestamp_ns(),
+            Some(params),
+        ));
+        self.response(response);
+    }
+
+    fn prepare_request_bar_aggregators(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
+        let request_id = *req.request_id();
+        let Some(state) = request_bar_aggregation_from_params(request_params(req))? else {
+            return Ok(());
+        };
+
+        self.prepare_request_bar_aggregators_from_state(request_id, &state)
     }
 
     fn can_start_request_bar_aggregators(
@@ -1158,7 +1426,48 @@ impl DataEngine {
             }
         }
 
+        self.set_request_bar_aggregator_chain_handlers(request_id, state);
+
         Ok(())
+    }
+
+    fn set_request_bar_aggregator_chain_handlers(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            let Some(aggregator) = self.bar_aggregators.get(&key).cloned() else {
+                continue;
+            };
+
+            let downstream: Vec<_> = state
+                .bar_types
+                .iter()
+                .filter(|candidate| {
+                    candidate.is_composite()
+                        && candidate.composite().standard() == bar_type.standard()
+                })
+                .filter_map(|candidate| {
+                    let key = bar_aggregator_key(*candidate, aggregator_request_id);
+                    self.bar_aggregators.get(&key).cloned()
+                })
+                .collect();
+            let cache = self.cache.clone();
+            let validate_sequence = self.config.validate_data_sequence;
+            let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
+                process_engine_bar(&cache, validate_sequence, false, bar);
+
+                for aggregator in &downstream {
+                    aggregator.borrow_mut().handle_bar(bar);
+                }
+            });
+
+            aggregator.borrow_mut().set_historical_mode(true, handler);
+        }
     }
 
     fn cleanup_request_bar_aggregators(&mut self, request_id: &UUID4) -> bool {
@@ -1300,6 +1609,11 @@ impl DataEngine {
         self.response_count += 1;
         let correlation_id = *resp.correlation_id();
 
+        if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
+            self.handle_continuous_future_child_response(parent_id, &resp);
+            return;
+        }
+
         match &resp {
             DataResponse::Instrument(r) => {
                 self.handle_instrument_response(r.data.clone());
@@ -1366,6 +1680,102 @@ impl DataEngine {
         }
 
         self.cleanup_request_bar_aggregators(&correlation_id);
+    }
+
+    fn handle_continuous_future_child_response(&mut self, parent_id: UUID4, resp: &DataResponse) {
+        if !self.continuous_future_requests.contains_key(&parent_id) {
+            log::error!("No active continuous future request for child response {parent_id}");
+            return;
+        }
+
+        let data_count = response_params(resp)
+            .and_then(|params| params.get("data_count"))
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| resp.record_count().map(|count| count as u64))
+            .unwrap_or(0);
+
+        if let Some(state) = self.continuous_future_requests.get_mut(&parent_id) {
+            state.data_count += data_count;
+        }
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
+                    self.handle_quotes(&r.data);
+                }
+            }
+            DataResponse::Trades(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
+                    self.handle_trades(&r.data);
+                }
+            }
+            DataResponse::Bars(r) => {
+                if !log_if_empty_response(&r.data, &r.bar_type, resp.correlation_id()) {
+                    self.handle_bars(&r.data);
+                }
+            }
+            _ => {
+                log::error!(
+                    "Continuous future child response {parent_id} must contain quotes, trades, or bars"
+                );
+                return;
+            }
+        }
+
+        self.process_continuous_future_aggregation_response(parent_id, resp);
+        if let Err(e) = self.dispatch_next_continuous_future_segment(parent_id) {
+            log::error!("Error dispatching continuous future segment for {parent_id}: {e}");
+            self.emit_empty_continuous_future_response(parent_id);
+        }
+    }
+
+    fn process_continuous_future_aggregation_response(
+        &self,
+        parent_id: UUID4,
+        resp: &DataResponse,
+    ) {
+        let Some(state) = self.continuous_future_requests.get(&parent_id) else {
+            return;
+        };
+        let primary_bar_type = state.request.primary_bar_type;
+        let aggregator_request_id = Some(parent_id);
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                for quote in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_quote(*quote);
+                        },
+                    );
+                }
+            }
+            DataResponse::Trades(r) => {
+                for trade in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_trade(*trade);
+                        },
+                    );
+                }
+            }
+            DataResponse::Bars(r) => {
+                for bar in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_bar(*bar);
+                        },
+                    );
+                }
+            }
+            _ => {}
+        }
     }
 
     fn update_request_bar_aggregators_from_quote(
@@ -3465,6 +3875,15 @@ fn parse_spread_leg_parts(
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
+}
+
+fn datetime_to_unix_nanos(datetime: chrono::DateTime<chrono::Utc>) -> anyhow::Result<UnixNanos> {
+    let timestamp = datetime
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("datetime is outside the supported nanosecond range"))?;
+    let timestamp = u64::try_from(timestamp)
+        .context("datetime is before the UNIX epoch and cannot be represented as UnixNanos")?;
+    Ok(UnixNanos::from(timestamp))
 }
 
 // Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for

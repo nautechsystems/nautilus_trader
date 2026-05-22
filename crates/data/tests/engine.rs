@@ -36,6 +36,7 @@ use nautilus_common::messages::defi::{
 };
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     clock::{Clock, TestClock},
     messages::data::{
         BarsResponse, CustomDataResponse, DataCommand, DataResponse, InstrumentResponse,
@@ -101,7 +102,7 @@ use nautilus_model::{
 #[cfg(feature = "streaming")]
 use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
 use rstest::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use ustr::Ustr;
 
 #[fixture]
@@ -177,6 +178,68 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+struct FailingRequestDataClient {
+    client_id: ClientId,
+    venue: Option<Venue>,
+    error_message: String,
+}
+
+impl FailingRequestDataClient {
+    fn new(client_id: ClientId, venue: Option<Venue>, error_message: impl Into<String>) -> Self {
+        Self {
+            client_id,
+            venue,
+            error_message: error_message.into(),
+        }
+    }
+}
+
+impl DataClient for FailingRequestDataClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        self.venue
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn is_disconnected(&self) -> bool {
+        false
+    }
+
+    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
 }
 
 fn parent_params() -> Params {
@@ -1746,6 +1809,1078 @@ fn test_request_scoped_composite_bar_aggregator_handles_bar_response(
         cache.borrow().bar(&composite).map(|bar| bar.ts_event),
         Some(UnixNanos::from(1_000)),
     );
+}
+
+fn add_es_contract(cache: &Rc<RefCell<Cache>>, instrument_id: &str, symbol: &str) -> InstrumentId {
+    let instrument = make_es_future(instrument_id, symbol);
+    let instrument_id = instrument.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(instrument))
+        .unwrap();
+    instrument_id
+}
+
+fn params_from_json(value: Value) -> Params {
+    serde_json::from_value(value).unwrap()
+}
+
+fn make_bar(
+    bar_type: BarType,
+    open: &str,
+    high: &str,
+    low: &str,
+    close: &str,
+    volume: u64,
+    ts: u64,
+) -> Bar {
+    Bar::new(
+        bar_type,
+        Price::from(open),
+        Price::from(high),
+        Price::from(low),
+        Price::from(close),
+        Quantity::from(volume),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn make_trade(
+    instrument_id: InstrumentId,
+    price: &str,
+    size: u64,
+    trade_id: &str,
+    ts: u64,
+) -> TradeTick {
+    TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from(size),
+        AggressorSide::Buyer,
+        TradeId::new(trade_id),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn make_quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn recorded_bars_request(recorder: &Rc<RefCell<Vec<DataCommand>>>, index: usize) -> RequestBars {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Bars(request)) => request,
+        other => panic!("Expected child bar request, was {other:?}"),
+    }
+}
+
+fn recorded_trades_request(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    index: usize,
+) -> RequestTrades {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Trades(request)) => request,
+        other => panic!("Expected child trade request, was {other:?}"),
+    }
+}
+
+fn recorded_quotes_request(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    index: usize,
+) -> RequestQuotes {
+    match recorder.borrow()[index].clone() {
+        DataCommand::Request(RequestCommand::Quotes(request)) => request,
+        other => panic!("Expected child quote request, was {other:?}"),
+    }
+}
+
+fn response_data_count(response: &BarsResponse) -> Option<u64> {
+    response
+        .params
+        .as_ref()
+        .and_then(|params| params.get("data_count"))
+        .and_then(Value::as_u64)
+}
+
+fn data_engine_clock_at(now: u64) -> Rc<RefCell<dyn Clock>> {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(now), true);
+    clock
+}
+
+#[rstest]
+fn test_continuous_future_request_adjusts_external_bars_across_transitions(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(3));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let esu = add_es_contract(&cache, "ESU24.GLBX", "ESU24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "95.00"
+            },
+            {
+                "transition_time_ns": minute(3),
+                "pre_instrument_id": esm.to_string(),
+                "post_instrument_id": esu.to_string(),
+                "pre_price": "110.00",
+                "post_price": "105.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-external-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(3)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    assert_eq!(
+        child
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("continuous_future_parent_request_id")),
+        Some(parent_id_str.as_str()),
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "100.00",
+            "101.00",
+            "99.00",
+            "100.50",
+            1,
+            minute(1),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(1)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("90.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 1);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESM24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "96.00",
+            "97.00",
+            "95.50",
+            "96.50",
+            2,
+            minute(2),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(2)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("91.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 2);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESU24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "106.00",
+            "107.00",
+            "105.50",
+            "106.50",
+            3,
+            minute(3),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(3)),
+        child.params,
+    )));
+
+    let cached_bar = cache
+        .borrow()
+        .bar(&target_bar_type.standard())
+        .copied()
+        .unwrap();
+    assert_eq!(cached_bar.open, Price::from("106.00"));
+    assert_eq!(cached_bar.high, Price::from("107.00"));
+    assert_eq!(cached_bar.low, Price::from("105.50"));
+    assert_eq!(cached_bar.close, Price::from("106.50"));
+    assert_eq!(cached_bar.volume, Quantity::from(3));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(3));
+}
+
+#[rstest]
+fn test_continuous_future_request_applies_ratio_to_external_bars(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let minute = |value: u64| value * 60_000_000_000;
+    let clock = data_engine_clock_at(minute(2));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_RATIO",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": minute(2),
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "50.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-ratio-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(minute(1)).to_datetime_utc()),
+        Some(UnixNanos::from(minute(2)).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "100.00",
+            "101.00",
+            "99.00",
+            "100.50",
+            1,
+            minute(1),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(1)),
+        child.params,
+    )));
+    assert_eq!(
+        cache
+            .borrow()
+            .bar(&target_bar_type.standard())
+            .map(|bar| bar.open),
+        Some(Price::from("50.00"))
+    );
+
+    let child = recorded_bars_request(&recorder, 1);
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![make_bar(
+            child.bar_type,
+            "55.00",
+            "56.00",
+            "54.50",
+            "55.50",
+            2,
+            minute(2),
+        )],
+        None,
+        None,
+        UnixNanos::from(minute(2)),
+        child.params,
+    )));
+
+    let cached_bar = cache
+        .borrow()
+        .bar(&target_bar_type.standard())
+        .copied()
+        .unwrap();
+    assert_eq!(cached_bar.open, Price::from("55.00"));
+    assert_eq!(cached_bar.close, Price::from("55.50"));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(2));
+}
+
+#[rstest]
+fn test_continuous_future_request_preserves_bar_type_chain(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(80);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let bar_type_1 = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
+    let bar_type_2 = BarType::from("ES.GLBX-4-TICK-LAST-INTERNAL@2-TICK-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "bar_types": [bar_type_1.to_string(), bar_type_2.to_string()],
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 50,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "103.00",
+                "post_price": "95.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-chain-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        bar_type_2,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(80).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_bars_request(&recorder, 0);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-TICK-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![
+            make_bar(child.bar_type, "100.00", "100.00", "100.00", "100.00", 1, 1),
+            make_bar(child.bar_type, "101.00", "101.00", "101.00", "101.00", 1, 2),
+            make_bar(child.bar_type, "102.00", "102.00", "102.00", "102.00", 1, 3),
+            make_bar(child.bar_type, "103.00", "103.00", "103.00", "103.00", 1, 4),
+        ],
+        None,
+        None,
+        UnixNanos::from(4),
+        child.params,
+    )));
+
+    let child = recorded_bars_request(&recorder, 1);
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESM24.GLBX-1-TICK-LAST-EXTERNAL")
+    );
+    data_engine.response(DataResponse::Bars(BarsResponse::new(
+        child.request_id,
+        client_id,
+        child.bar_type,
+        vec![
+            make_bar(child.bar_type, "95.00", "95.00", "95.00", "95.00", 1, 51),
+            make_bar(child.bar_type, "96.00", "96.00", "96.00", "96.00", 1, 52),
+            make_bar(child.bar_type, "97.00", "97.00", "97.00", "97.00", 1, 53),
+            make_bar(child.bar_type, "98.00", "98.00", "98.00", "98.00", 1, 54),
+        ],
+        None,
+        None,
+        UnixNanos::from(54),
+        child.params,
+    )));
+
+    let first_level = cache.borrow().bar(&bar_type_1).copied().unwrap();
+    assert_eq!(first_level.open, Price::from("97.00"));
+    assert_eq!(first_level.close, Price::from("98.00"));
+    assert_eq!(first_level.volume, Quantity::from(2));
+    let second_level = cache.borrow().bar(&bar_type_2).copied().unwrap();
+    assert_eq!(second_level.open, Price::from("92.00"));
+    assert_eq!(second_level.high, Price::from("98.00"));
+    assert_eq!(second_level.low, Price::from("92.00"));
+    assert_eq!(second_level.close, Price::from("98.00"));
+    assert_eq!(second_level.volume, Quantity::from(8));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(8));
+}
+
+#[rstest]
+fn test_continuous_future_request_uses_quote_tick_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-BID-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-quote-bars")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_quotes_request(&recorder, 0);
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(child.instrument_id, esh);
+    assert_eq!(
+        child
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("continuous_future_parent_request_id")),
+        Some(parent_id_str.as_str()),
+    );
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_quote(child.instrument_id, "100.00", "100.25", 1)],
+        None,
+        None,
+        UnixNanos::from(1),
+        child.params,
+    )));
+
+    let child = recorded_quotes_request(&recorder, 1);
+    assert_eq!(child.instrument_id, esm);
+    data_engine.response(DataResponse::Quotes(QuotesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_quote(child.instrument_id, "111.00", "111.25", 11)],
+        None,
+        None,
+        UnixNanos::from(11),
+        child.params,
+    )));
+
+    let cached_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(cached_bar.open, Price::from("110.00"));
+    assert_eq!(cached_bar.close, Price::from("111.00"));
+    assert_eq!(cached_bar.volume, Quantity::from(2));
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(response_data_count(&responses[0]), Some(2));
+}
+
+#[rstest]
+fn test_continuous_future_request_start_after_end_emits_empty_parent_response(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_instrument_id.to_string(),
+                "post_instrument_id": post_instrument_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-empty-bounds")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        Some(UnixNanos::from(10).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let responses = response_saver.get_messages();
+    assert!(recorder.borrow().is_empty());
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(responses[0].start, Some(UnixNanos::from(20)));
+    assert_eq!(responses[0].end, Some(UnixNanos::from(10)));
+    assert_eq!(response_data_count(&responses[0]), None);
+}
+
+#[rstest]
+fn test_continuous_future_request_walks_segments_and_applies_adjustments(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(20), true);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+
+    let pre_instrument = make_es_future("ESH24.GLBX", "ESH24");
+    let post_instrument = make_es_future("ESM24.GLBX", "ESM24");
+    let pre_instrument_id = pre_instrument.id;
+    let post_instrument_id = post_instrument.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(pre_instrument))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(post_instrument))
+        .unwrap();
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = || -> Params {
+        serde_json::from_value(json!({
+            "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+            "continuous_future_transitions": [
+                {
+                    "transition_time_ns": 10,
+                    "pre_instrument_id": pre_instrument_id.to_string(),
+                    "post_instrument_id": post_instrument_id.to_string(),
+                    "pre_price": "100.00",
+                    "post_price": "110.00"
+                }
+            ]
+        }))
+        .unwrap()
+    };
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-future-response")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let first_child = recorded_trades_request(&recorder, 0);
+    assert_eq!(first_child.instrument_id, pre_instrument_id);
+    assert_eq!(
+        first_child
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(0)
+    );
+    assert_eq!(
+        first_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(9)
+    );
+    let first_child_params_ref = first_child.params.as_ref().unwrap();
+    let parent_id_str = parent_id.to_string();
+    assert_eq!(
+        first_child_params_ref.get_str("continuous_future_parent_request_id"),
+        Some(parent_id_str.as_str()),
+    );
+    assert!(!first_child_params_ref.contains_key("continuous_future_transitions"));
+    assert!(!first_child_params_ref.contains_key("bar_types"));
+    let mut first_response_params = first_child.params.clone().unwrap();
+    first_response_params.insert("data_count".to_string(), json!(7));
+
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        first_child.request_id,
+        client_id,
+        pre_instrument_id,
+        vec![make_trade(pre_instrument_id, "100.00", 1, "pre-1", 1)],
+        Some(UnixNanos::from(0)),
+        Some(UnixNanos::from(9)),
+        UnixNanos::from(1),
+        Some(first_response_params),
+    )));
+
+    assert!(response_saver.get_messages().is_empty());
+    assert_eq!(recorder.borrow().len(), 2);
+
+    let second_child = recorded_trades_request(&recorder, 1);
+    assert_eq!(second_child.instrument_id, post_instrument_id);
+    assert_eq!(
+        second_child
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(10)
+    );
+    assert_eq!(
+        second_child.end.map(|dt| dt.timestamp_nanos_opt().unwrap()),
+        Some(20)
+    );
+    let mut second_response_params = second_child.params.clone().unwrap();
+    second_response_params.insert("data_count".to_string(), json!(8));
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        second_child.request_id,
+        client_id,
+        post_instrument_id,
+        vec![make_trade(post_instrument_id, "111.00", 1, "post-1", 11)],
+        Some(UnixNanos::from(10)),
+        Some(UnixNanos::from(20)),
+        UnixNanos::from(11),
+        Some(second_response_params),
+    )));
+
+    let cached_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(cached_bar.open, Price::from("110.00"));
+    assert_eq!(cached_bar.close, Price::from("111.00"));
+    assert_eq!(cached_bar.volume, Quantity::from(2));
+    let target_instrument = cache
+        .borrow()
+        .instrument(&target_bar_type.instrument_id())
+        .cloned()
+        .unwrap();
+    let InstrumentAny::FuturesContract(target_instrument) = target_instrument else {
+        panic!("Expected synthesized futures contract");
+    };
+    assert_eq!(target_instrument.id, target_bar_type.instrument_id());
+    assert_eq!(
+        target_instrument.raw_symbol,
+        target_bar_type.instrument_id().symbol
+    );
+    assert_eq!(target_instrument.activation_ns, UnixNanos::default());
+    assert_eq!(target_instrument.expiration_ns, UnixNanos::default());
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(response_data_count(&responses[0]), Some(15));
+
+    let second_parent_id = UUID4::new();
+    let second_request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        second_parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Bars(second_request))
+        .unwrap();
+
+    assert_eq!(recorder.borrow().len(), 3);
+    match recorder.borrow()[2].clone() {
+        DataCommand::Request(RequestCommand::Trades(request)) => {
+            assert_eq!(request.instrument_id, pre_instrument_id);
+        }
+        other => panic!("Expected repeated continuous future child request, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let failing_client =
+        FailingRequestDataClient::new(client_id, Some(venue), "request dispatch failed");
+    let adapter =
+        DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(failing_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = || {
+        params_from_json(json!({
+            "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+            "continuous_future_transitions": [
+                {
+                    "transition_time_ns": 10,
+                    "pre_instrument_id": pre_instrument_id.to_string(),
+                    "post_instrument_id": post_instrument_id.to_string(),
+                    "pre_price": "100.00",
+                    "post_price": "110.00"
+                }
+            ]
+        }))
+    };
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    let result = data_engine.execute_request(RequestCommand::Bars(request));
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("request dispatch failed")
+    );
+
+    data_engine.deregister_client(&client_id);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let retry = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params()),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(retry))
+        .unwrap();
+
+    let child = recorded_trades_request(&recorder, 0);
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(child.instrument_id, pre_instrument_id);
+}
+
+#[rstest]
+fn test_continuous_future_request_emits_parent_response_on_later_dispatch_error(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(20);
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_instrument_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let venue = Venue::from("GLBX");
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        test_clock,
+        Rc::new(RefCell::new(Cache::default())),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let parent_id = UUID4::new();
+    let target_bar_type = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_instrument_id.to_string(),
+                "post_instrument_id": post_instrument_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "110.00"
+            }
+        ]
+    }));
+    let (response_handler, response_saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-dispatch-error")));
+    msgbus::register_response_handler(&parent_id, response_handler);
+
+    let request = RequestBars::new(
+        target_bar_type,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(20).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    );
+    data_engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+
+    let child = recorded_trades_request(&recorder, 0);
+    data_engine.deregister_client(&client_id);
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        child.request_id,
+        client_id,
+        child.instrument_id,
+        vec![make_trade(child.instrument_id, "100.00", 1, "pre-1", 1)],
+        Some(UnixNanos::from(0)),
+        Some(UnixNanos::from(9)),
+        UnixNanos::from(1),
+        child.params,
+    )));
+
+    let responses = response_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert!(responses[0].data.is_empty());
+    assert_eq!(response_data_count(&responses[0]), Some(1));
+    assert_eq!(recorder.borrow().len(), 1);
+}
+
+#[rstest]
+fn test_continuous_future_params_require_request_bars(
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let params: Params = serde_json::from_value(json!({
+        "continuous_future_transitions": []
+    }))
+    .unwrap();
+    let request = RequestTrades::new(
+        audusd_sim.id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    );
+
+    let result = data_engine.execute_request(RequestCommand::Trades(request));
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("RequestBars"));
 }
 
 #[rstest]
