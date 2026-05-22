@@ -39,22 +39,24 @@ Released on TBD (UTC).
 None
 
 ### Fixes
+- Fixed unbounded Cache `VecDeque` memory leak in Rust (#4107), thanks @filipmacek
+- Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
-- Fixed blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
+- Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
+- Fixed `DefiDataEngine` exposing zero-state pool profiler during snapshot bootstrap
+- Fixed pool profiler `AlreadyInitialized` error when hypersync replay revisits `Initialize` after snapshot restore
+- Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
+- Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
 - Fixed Betfair Rust adapter overfill checks for rounded stream matched sizes
 - Fixed Betfair Rust adapter unsupported unsubscribe commands logging above debug
+- Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
-- Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
-- Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
-- Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
-- Fixed unbounded Cache VecDeque memory leak in Rust (#4107), thanks @filipmacek
-- Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 
 ### Internal Improvements

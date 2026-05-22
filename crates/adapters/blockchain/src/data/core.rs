@@ -957,16 +957,33 @@ impl BlockchainDataClientCore {
             .await
         {
             Ok(Some(snapshot)) => {
-                log::info!(
-                    "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
-                    snapshot.block_position.number.separate_with_commas(),
-                    snapshot.positions.len(),
-                    snapshot.ticks.len()
-                );
-                let block_position = snapshot.block_position.clone();
-                profiler.restore_from_snapshot(snapshot)?;
-                log::info!("Restored profiler from snapshot");
-                Some(block_position)
+                // Empty snapshots at the pool's creation block are stubs left behind by an
+                // earlier bootstrap that bailed before any liquidity events landed. Restoring
+                // marks the profiler as initialized, which then conflicts with the Initialize
+                // event that hypersync re-emits at the same block. Fall through to a fresh
+                // bootstrap rather than trust the stub.
+                if snapshot.positions.is_empty()
+                    && snapshot.ticks.is_empty()
+                    && snapshot.block_position.number == pool.creation_block
+                {
+                    log::warn!(
+                        "Ignoring empty stub snapshot at pool creation block {} for {}; rebuilding from events",
+                        snapshot.block_position.number.separate_with_commas(),
+                        pool.instrument_id,
+                    );
+                    None
+                } else {
+                    log::info!(
+                        "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
+                        snapshot.block_position.number.separate_with_commas(),
+                        snapshot.positions.len(),
+                        snapshot.ticks.len()
+                    );
+                    let block_position = snapshot.block_position.clone();
+                    profiler.restore_from_snapshot(snapshot)?;
+                    log::info!("Restored profiler from snapshot");
+                    Some(block_position)
+                }
             }
             _ => {
                 log::info!("No valid snapshot found, processing from beginning");
@@ -1131,14 +1148,24 @@ impl BlockchainDataClientCore {
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
-                let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
-                profiler.initialize(initialize_event.sqrt_price_x96)?;
-                self.cache
-                    .database
-                    .as_ref()
-                    .unwrap()
-                    .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
-                    .await?;
+                if profiler.is_initialized {
+                    // Profiler was restored from a snapshot at or after this block; the
+                    // initialize state is already in place. Skip the re-init that would
+                    // otherwise trip AlreadyInitialized.
+                    log::debug!(
+                        "Profiler already initialized; skipping Initialize event at block {}",
+                        extract_block_number(&log)?.separate_with_commas(),
+                    );
+                } else {
+                    let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
+                    profiler.initialize(initialize_event.sqrt_price_x96)?;
+                    self.cache
+                        .database
+                        .as_ref()
+                        .unwrap()
+                        .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
+                        .await?;
+                }
             } else if event_sig_bytes == mint_sig_bytes {
                 let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
                 match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {

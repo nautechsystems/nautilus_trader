@@ -72,7 +72,11 @@ use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
     Block, Blockchain, DefiData, Pool, PoolIdentifier, PoolLiquidityUpdate,
-    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token,
+    data::PoolFeeCollect,
+    data::PoolFlash,
+    data::block::BlockPosition,
+    pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
 };
 use nautilus_model::{
     data::{
@@ -10536,6 +10540,228 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
             .pool_profiler(&instrument_id)
             .is_none(),
         "profiler must not be cached when initialize fails"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0xAA; 20]),
+        PoolIdentifier::from_address(Address::from([0xAA; 20])),
+        12_345_678u64,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
+    let instrument_id = pool.instrument_id;
+
+    // Subscribe with no pool in cache: triggers RequestPoolSnapshot and arms both pending flags.
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(
+            recorded.len(),
+            2,
+            "Expected SubscribePool + RequestPoolSnapshot before Pool arrives"
+        );
+        assert!(matches!(
+            recorded[1],
+            DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(_))
+        ));
+    }
+
+    // Pool definition arrives while the snapshot is still in flight.
+    data_engine.process_defi_data(DefiData::Pool(pool.clone()));
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool(&instrument_id)
+            .is_some(),
+        "pool must be added to cache when Pool data arrives"
+    );
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "profiler must not be eager-created while a snapshot is pending"
+    );
+    assert_eq!(
+        recorder.borrow().len(),
+        2,
+        "Pool arrival must not trigger a second snapshot request"
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let creation_block: u64 = 12_345_678;
+    let mut pool = Pool::new(
+        chain,
+        dex,
+        Address::from([0xBB; 20]),
+        PoolIdentifier::from_address(Address::from([0xBB; 20])),
+        creation_block,
+        token0,
+        token1,
+        Some(500u32),
+        Some(10u32),
+        UnixNanos::from(1),
+    );
+
+    let initial_price = U160::from(79228162514264337593543950336u128);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
+    let instrument_id = pool.instrument_id;
+
+    let subscribe_pool = SubscribePool::new(
+        instrument_id,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(subscribe_pool));
+    data_engine.execute(cmd);
+
+    data_engine.process_defi_data(DefiData::Pool(pool.clone()));
+
+    // Stub snapshot: empty positions, empty ticks, block matches pool.creation_block.
+    let stub = PoolSnapshot::new(
+        instrument_id,
+        PoolState::default(),
+        Vec::new(),
+        Vec::new(),
+        PoolAnalytics::default(),
+        BlockPosition::new(creation_block, "0x0".to_string(), 0, 0),
+    );
+    data_engine.process_defi_data(DefiData::PoolSnapshot(stub));
+
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool_profiler(&instrument_id)
+            .is_none(),
+        "stub snapshot must not result in an installed profiler"
+    );
+    assert!(
+        data_engine
+            .cache_rc()
+            .borrow()
+            .pool(&instrument_id)
+            .is_some(),
+        "pool entry must be preserved even when its stub snapshot is refused"
     );
 }
 
