@@ -646,29 +646,11 @@ impl HistoricalInteractiveBrokersClient {
             anyhow::bail!("Either instrument_ids or contracts must be provided");
         }
 
-        let mut loaded_instruments = Vec::new();
-
-        // Load instruments from instrument IDs
-        for instrument_id in instrument_ids {
-            // Try fetching from provider if not already loaded
-            if self.instrument_provider.find(&instrument_id).is_none()
-                && let Err(e) = self
-                    .instrument_provider
-                    .fetch_contract_details(&self.ib_client, instrument_id, false, None)
-                    .await
-            {
-                tracing::warn!(
-                    "Failed to fetch contract details for {}: {}",
-                    instrument_id,
-                    e
-                );
-                continue;
-            }
-
-            if let Some(instrument) = self.instrument_provider.find(&instrument_id) {
-                loaded_instruments.push(instrument);
-            }
-        }
+        let loaded_ids = self
+            .instrument_provider
+            .load_ids_with_return_async(&self.ib_client, instrument_ids, None)
+            .await?;
+        let mut loaded_instruments = self.instrument_provider.find_all(&loaded_ids);
 
         // Load instruments from contracts (equivalent to Python's _fetch_instruments_if_not_cached)
         for contract in contracts {

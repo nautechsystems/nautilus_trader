@@ -253,6 +253,14 @@ impl InteractiveBrokersInstrumentProvider {
             .map(|entry| entry.value().clone())
     }
 
+    #[must_use]
+    pub(crate) fn find_all(&self, instrument_ids: &[InstrumentId]) -> Vec<InstrumentAny> {
+        instrument_ids
+            .iter()
+            .filter_map(|instrument_id| self.find(instrument_id))
+            .collect()
+    }
+
     /// Get an instrument by contract ID.
     ///
     /// # Arguments
@@ -883,35 +891,16 @@ impl InteractiveBrokersInstrumentProvider {
     ) -> anyhow::Result<Vec<InstrumentId>> {
         let mut loaded_ids = Vec::new();
 
-        let force_instrument_update = filters
-            .as_ref()
-            .and_then(|f| f.get("force_instrument_update"))
-            .map(|v| v == "true")
-            .unwrap_or(false);
-
         for instrument_id in instrument_ids {
-            let load_result = if is_spread_instrument_id(&instrument_id) {
-                self.fetch_spread_instrument(
-                    client,
-                    instrument_id,
-                    force_instrument_update,
-                    filters.clone(),
-                )
+            match self
+                .load_with_return_async(client, instrument_id, filters.clone())
                 .await
-                .map(|loaded| loaded.then_some(()))
-            } else {
-                self.fetch_contract_details(
-                    client,
-                    instrument_id,
-                    force_instrument_update,
-                    filters.clone(),
-                )
-                .await
-                .map(Some)
-            };
-
-            if load_result.is_ok() {
-                loaded_ids.push(instrument_id);
+            {
+                Ok(Some(loaded_id)) => loaded_ids.push(loaded_id),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to load instrument {}: {}", instrument_id, e);
+                }
             }
         }
 
