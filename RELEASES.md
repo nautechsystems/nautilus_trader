@@ -77,7 +77,7 @@ None
 - Refined `OptionSpread`/`FuturesSpread` trait accessors to read `size_precision`/`size_increment` fields
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
-- Optimized Hyperliquid hot paths with benchmark report
+- Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
 
 ### Documentation Updates

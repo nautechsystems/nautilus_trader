@@ -1518,7 +1518,8 @@ async fn test_request_order_status_report_not_found() {
 #[tokio::test]
 async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
     let coid = ClientOrderId::new("O-20240101-000001");
-    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+    let cloid = Cloid::from_client_order_id(coid);
+    let cloid_hex = cloid.to_hex();
 
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([{
@@ -1540,14 +1541,52 @@ async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
         .request_order_status_report_by_client_order_id("0xuser", &coid)
         .await
         .unwrap()
-        .expect("should match by cloid hash");
+        .expect("should match by deterministic cloid");
 
     assert_eq!(
         report.client_order_id,
         Some(coid),
-        "should return original client_order_id, not cloid hash"
+        "should return original client_order_id, not venue cloid"
     );
     assert_eq!(report.order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_matches_legacy_cloid() {
+    let coid = ClientOrderId::new("O-20240101-000002");
+    let legacy_cloid = Cloid::from_legacy_client_order_id(coid);
+    let cloid_hex = legacy_cloid.to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 77778,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap()
+        .expect("should match by legacy cloid");
+
+    assert_eq!(report.client_order_id, Some(coid));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        client.cached_client_order_id_cloid(&coid),
+        Some(legacy_cloid),
+        "legacy lookup should retain cancel-by-cloid recovery",
+    );
 }
 
 #[rstest]
@@ -1571,6 +1610,7 @@ async fn test_request_order_status_report_by_client_order_id_no_match() {
     cache_btc_instrument(&client);
 
     let coid = ClientOrderId::new("O-20240101-999999");
+    client.cache_client_order_id_cloid(coid, Cloid::from_client_order_id(coid));
     let report = client
         .request_order_status_report_by_client_order_id("0xuser", &coid)
         .await

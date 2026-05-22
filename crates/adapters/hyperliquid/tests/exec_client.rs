@@ -91,6 +91,7 @@ use nautilus_network::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 #[derive(Clone)]
 struct TestServerState {
@@ -1035,6 +1036,16 @@ fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
     }
 }
 
+fn assert_adapter_cloid_marker(cloid: &str) {
+    assert!(cloid.starts_with("0x"));
+    assert_eq!(cloid.len(), 34);
+    assert_eq!(&cloid[2..6], "6e42");
+    assert!(cloid[2..].chars().all(|c| c.is_ascii_hexdigit()));
+    assert!(cloid[2..].chars().all(|c| !c.is_ascii_uppercase()));
+    assert_eq!(cloid.as_bytes()[14], b'4');
+    assert!(matches!(cloid.as_bytes()[18], b'8' | b'9' | b'a' | b'b'));
+}
+
 async fn create_test_trade_signer(addr: SocketAddr) -> HyperliquidHttpClient {
     let mut signer = HyperliquidHttpClient::from_credentials(
         TEST_PRIVATE_KEY,
@@ -1096,7 +1107,10 @@ async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
         .clone()
         .expect("missing WS action");
     let order = &action["orders"][0];
-    let expected_cloid = Cloid::from_client_order_id(client_order_id).to_hex();
+    let cloid = order
+        .get("c")
+        .and_then(|v| v.as_str())
+        .expect("order should include cloid");
 
     assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("order"));
     assert_eq!(
@@ -1113,9 +1127,13 @@ async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
             .and_then(|v| v.as_u64()),
         Some(0),
     );
+    assert_adapter_cloid_marker(cloid);
     assert_eq!(
-        order.get("c").and_then(|v| v.as_str()),
-        Some(expected_cloid.as_str()),
+        signer
+            .cached_client_order_id_cloid(&client_order_id)
+            .expect("missing cached cloid")
+            .to_hex(),
+        cloid
     );
 
     ws_client.disconnect().await.unwrap();
@@ -1138,6 +1156,7 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
     ws_client.connect().await.unwrap();
 
     let cancel_coid = ClientOrderId::new("O-WS-CANCEL");
+    let cancel_cloid = signer.get_or_generate_client_order_id_cloid(cancel_coid);
     ws_client
         .cancel_order(
             &signer,
@@ -1154,7 +1173,7 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         .await
         .clone()
         .expect("missing cancel action");
-    let cancel_cloid = Cloid::from_client_order_id(cancel_coid).to_hex();
+    let cancel_cloid_hex = cancel_cloid.to_hex();
 
     assert_eq!(
         cancel_action.get("type").and_then(|v| v.as_str()),
@@ -1170,8 +1189,9 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         cancel_action["cancels"][0]
             .get("cloid")
             .and_then(|v| v.as_str()),
-        Some(cancel_cloid.as_str()),
+        Some(cancel_cloid_hex.as_str()),
     );
+    assert_adapter_cloid_marker(&cancel_cloid_hex);
 
     let modify_coid = ClientOrderId::new("O-WS-MODIFY");
     ws_client
@@ -1199,7 +1219,10 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         .clone()
         .expect("missing modify action");
     let modify_order = &modify_action["order"];
-    let modify_cloid = Cloid::from_client_order_id(modify_coid).to_hex();
+    let modify_cloid = signer
+        .cached_client_order_id_cloid(&modify_coid)
+        .expect("missing modify cloid")
+        .to_hex();
 
     assert_eq!(
         modify_action.get("type").and_then(|v| v.as_str()),
@@ -1224,8 +1247,447 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         modify_order.get("c").and_then(|v| v.as_str()),
         Some(modify_cloid.as_str()),
     );
+    assert_adapter_cloid_marker(&modify_cloid);
+    assert_eq!(
+        ws_client.get_cloid_mapping(&Ustr::from(&modify_cloid)),
+        Some(modify_coid),
+    );
 
     ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_venue_id_is_invalid() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let valid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-OK");
+    let valid_cloid = signer.get_or_generate_client_order_id_cloid(valid_coid);
+    let valid_cloid_hex = valid_cloid.to_hex();
+    let invalid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-BAD");
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let results = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, valid_coid, None),
+                (
+                    instrument_id,
+                    invalid_coid,
+                    Some(VenueOrderId::from("not-an-oid")),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+
+    assert_eq!(
+        results,
+        vec![None, Some("Invalid venue order ID format".to_string())],
+    );
+    assert_eq!(
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid"),
+    );
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        action["cancels"][0].get("cloid").and_then(|v| v.as_str()),
+        Some(valid_cloid_hex.as_str()),
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_asset_index_is_missing() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let valid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-ASSET-OK");
+    let valid_cloid = signer.get_or_generate_client_order_id_cloid(valid_coid);
+    let valid_cloid_hex = valid_cloid.to_hex();
+    let missing_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-ASSET-MISSING");
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let missing_instrument_id = InstrumentId::from("BAD-USD-PERP.HYPERLIQUID");
+
+    let results = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, valid_coid, None),
+                (missing_instrument_id, missing_coid, None),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], None);
+    assert!(
+        results[1]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("Asset index not found"))
+    );
+    assert_eq!(
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid"),
+    );
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        action["cancels"][0].get("cloid").and_then(|v| v.as_str()),
+        Some(valid_cloid_hex.as_str()),
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_returns_err_on_post_failure() {
+    let state = TestServerState::default();
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let coid = ClientOrderId::new("O-WS-BATCH-CANCEL-POST-FAIL");
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let err = ws_client
+        .cancel_orders(&signer, &[(instrument_id, coid, None)])
+        .await
+        .expect_err("post failure should stay an error");
+
+    assert!(
+        err.to_string().contains("503 Service Unavailable"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_returns_per_item_errors_for_mixed_venue_statuses() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": [
+                    "success",
+                    {"error": "Order was never placed"}
+                ]
+            }
+        }
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let first_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-MIXED-OK");
+    let second_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-MIXED-ERR");
+    let _ = signer.get_or_generate_client_order_id_cloid(first_coid);
+    let _ = signer.get_or_generate_client_order_id_cloid(second_coid);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let results = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, first_coid, None),
+                (instrument_id, second_coid, None),
+            ],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0], None);
+    assert_eq!(results[1], Some("Order was never placed".to_string()));
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_returns_err_when_second_route_post_fails() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": [
+                    {"error": "Order was never placed"}
+                ]
+            }
+        }
+    }));
+    state.rate_limit_after.store(1, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let cloid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-CLOID-ERR-FIRST");
+    let oid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-OID-POST-FAIL");
+    let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let err = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, cloid_coid, None),
+                (instrument_id, oid_coid, Some(VenueOrderId::from("177"))),
+            ],
+        )
+        .await
+        .expect_err("later post failure should stay an error");
+
+    assert!(
+        err.to_string().contains("Rate limited"),
+        "unexpected error: {err}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "err",
+        "response": {
+            "error": "cloid route rejected"
+        }
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let cloid_coid = ClientOrderId::new("O-WS-BATCH-CLOID-FAIL");
+    let oid_coid = ClientOrderId::new("O-WS-BATCH-OID-OK");
+    let cloid = signer.get_or_generate_client_order_id_cloid(cloid_coid);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let results = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, cloid_coid, None),
+                (instrument_id, oid_coid, Some(VenueOrderId::from("177"))),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let request_count = *state.exchange_request_count.lock().await;
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+
+    assert_eq!(request_count, 2);
+    assert_eq!(results.len(), 2);
+    assert!(
+        results[0]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("cloid route rejected"))
+    );
+    assert_eq!(results[1], None);
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
+    assert_eq!(
+        signer
+            .cached_client_order_id_cloid(&cloid_coid)
+            .expect("missing cached cloid"),
+        cloid,
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_cancel_orders_sends_oid_route_when_cloid_status_count_mismatches() {
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": ["success"]
+            }
+        }
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let cloid_coid_a = ClientOrderId::new("O-WS-BATCH-CLOID-SHORT-A");
+    let cloid_coid_b = ClientOrderId::new("O-WS-BATCH-CLOID-SHORT-B");
+    let oid_coid = ClientOrderId::new("O-WS-BATCH-OID-AFTER-SHORT");
+    let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid_a);
+    let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid_b);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let results = ws_client
+        .cancel_orders(
+            &signer,
+            &[
+                (instrument_id, cloid_coid_a, None),
+                (instrument_id, cloid_coid_b, None),
+                (instrument_id, oid_coid, Some(VenueOrderId::from("188"))),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let request_count = *state.exchange_request_count.lock().await;
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+
+    assert_eq!(request_count, 2);
+    assert_eq!(results.len(), 3);
+    assert!(
+        results[0]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
+    );
+    assert!(
+        results[1]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
+    );
+    assert_eq!(results[2], None);
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_submit_orders_does_not_cache_cloids_when_later_order_fails_conversion() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let signer = create_test_trade_signer(addr).await;
+    let ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    let valid_order = make_limit_order("O-WS-SUBMIT-LIST-OK");
+    let invalid_order = make_limit_order_on_instrument(
+        "O-WS-SUBMIT-LIST-BAD",
+        InstrumentId::from("BAD-USD-PERP.HYPERLIQUID"),
+    );
+
+    let err = ws_client
+        .submit_orders(&signer, &[&valid_order, &invalid_order])
+        .await
+        .expect_err("missing asset index should reject the list before posting");
+
+    assert!(
+        err.to_string()
+            .contains("Asset index not found for symbol: BAD-USD-PERP")
+    );
+    assert!(
+        signer
+            .cached_client_order_id_cloid(&valid_order.client_order_id())
+            .is_none()
+    );
+    assert!(
+        signer
+            .cached_client_order_id_cloid(&invalid_order.client_order_id())
+            .is_none()
+    );
 }
 
 fn create_test_execution_client(

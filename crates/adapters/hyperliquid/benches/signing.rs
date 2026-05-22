@@ -17,7 +17,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_hyperliquid::{
-    common::credential::EvmPrivateKey,
+    common::credential::{EvmPrivateKey, VaultAddress},
     http::models::{
         HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
         HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
@@ -111,7 +111,9 @@ fn bench_sign_l1_with_vault(c: &mut Criterion) {
         time_nonce: TimeNonce::from_millis(1733833200000),
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
-        vault_address: Some("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01".to_string()),
+        vault_address: Some(
+            VaultAddress::parse("0xAbCdEf0123456789AbCdEf0123456789AbCdEf01").unwrap(),
+        ),
         expires_after: None,
     };
 

@@ -289,9 +289,8 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
-    /// Caches a cloid (hex hash) to client_order_id mapping for order/fill resolution.
+    /// Caches a venue CLOID to client_order_id mapping for order/fill resolution.
     ///
-    /// The cloid is a keccak256 hash of the client_order_id that Hyperliquid uses internally.
     /// This mapping allows WebSocket order status and fill reports to be resolved back to
     /// the original client_order_id.
     ///
@@ -325,7 +324,7 @@ impl HyperliquidWebSocketClient {
         self.cloid_cache_len()
     }
 
-    /// Looks up a client_order_id by its cloid hash.
+    /// Looks up a client_order_id by its venue CLOID.
     ///
     /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[pyo3(name = "get_cloid_mapping")]

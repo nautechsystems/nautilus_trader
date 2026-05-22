@@ -264,7 +264,7 @@ fn bench_cancel(c: &mut Criterion) {
             let action = HyperliquidExecAction::CancelByCloid {
                 cancels: vec![HyperliquidExecCancelByCloidRequest {
                     asset: BTC_ASSET_INDEX,
-                    cloid: cloid.clone(),
+                    cloid,
                 }],
             };
             let bytes = sign_action(&signer, black_box(&action));

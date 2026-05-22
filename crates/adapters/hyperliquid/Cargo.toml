@@ -90,7 +90,6 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 url = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 zeroize = { workspace = true }
 
 arrow = { workspace = true, optional = true }

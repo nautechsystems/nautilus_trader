@@ -29,12 +29,11 @@ and won't need to work directly with these lower-level components.
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
 
-## Builder attribution
+## Builder address
 
 Mainnet orders submitted through the adapter include a NautilusTrader builder address with a
-**zero fee rate**, so attribution adds no trading cost to your orders. This marks
-NautilusTrader‑originated order flow on‑chain, which helps us gauge real usage of the integration
-and prioritize ongoing maintenance and improvements.
+**zero fee rate**, so it adds no trading cost to your orders. This helps us gauge real usage of
+the integration and prioritize ongoing maintenance and improvements.
 
 The builder address is omitted from orders in two cases:
 

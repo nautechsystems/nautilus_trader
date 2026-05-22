@@ -53,15 +53,16 @@ use crate::{
         parse::{
             bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
             determine_order_list_grouping, extract_error_message, extract_inner_error,
-            extract_inner_errors, normalize_price, order_to_hyperliquid_request_with_asset,
-            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            extract_inner_errors, normalize_price,
+            order_to_hyperliquid_request_with_asset_and_cloid, round_to_sig_figs,
+            time_in_force_to_hyperliquid_tif,
         },
     },
     http::{
         client::HyperliquidHttpClient,
         error::{Error as HyperliquidError, Result as HyperliquidResult},
         models::{
-            Cloid, HyperliquidExchangeResponse, HyperliquidExecAction,
+            HyperliquidExchangeResponse, HyperliquidExecAction,
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest,
             HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
@@ -537,8 +538,12 @@ impl HyperliquidWebSocketClient {
             size: size_decimal,
             reduce_only,
             kind,
-            cloid: Some(Cloid::from_client_order_id(client_order_id)),
+            cloid: Some(signer.get_or_generate_client_order_id_cloid(client_order_id)),
         };
+
+        if let Some(cloid) = order.cloid {
+            self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
+        }
         let action = HyperliquidExecAction::Order {
             orders: vec![order],
             grouping: HyperliquidExecGrouping::Na,
@@ -556,6 +561,7 @@ impl HyperliquidWebSocketClient {
         orders: &[&OrderAny],
     ) -> HyperliquidResult<()> {
         let mut hyperliquid_orders = Vec::with_capacity(orders.len());
+        let mut client_order_ids = Vec::with_capacity(orders.len());
 
         for order in orders {
             let instrument_id = order.instrument_id();
@@ -566,15 +572,23 @@ impl HyperliquidWebSocketClient {
                 ))
             })?;
             let price_decimals = signer.get_price_precision(symbol).unwrap_or(2);
-            let request = order_to_hyperliquid_request_with_asset(
+            let request = order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
                 asset,
                 price_decimals,
                 signer.normalize_prices(),
                 signer.market_order_slippage_bps(),
+                None,
             )
             .map_err(|e| HyperliquidError::bad_request(format!("Failed to convert order: {e}")))?;
+            client_order_ids.push(order.client_order_id());
             hyperliquid_orders.push(request);
+        }
+
+        for (request, client_order_id) in hyperliquid_orders.iter_mut().zip(client_order_ids) {
+            let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
+            request.cloid = Some(cloid);
+            self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
         }
 
         let grouping =
@@ -603,22 +617,32 @@ impl HyperliquidWebSocketClient {
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
-        let action = if let Some(cloid) = client_order_id {
-            let cancel_req = HyperliquidExecCancelByCloidRequest {
-                asset,
-                cloid: Cloid::from_client_order_id(cloid),
-            };
-            HyperliquidExecAction::CancelByCloid {
-                cancels: vec![cancel_req],
+        let action = if let Some(client_order_id) = client_order_id {
+            if let Some(cloid) = signer.cached_client_order_id_cloid(&client_order_id) {
+                HyperliquidExecAction::CancelByCloid {
+                    cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                }
+            } else if let Some(oid) = venue_order_id {
+                let oid = oid
+                    .as_str()
+                    .parse::<u64>()
+                    .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
+                HyperliquidExecAction::Cancel {
+                    cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
+                }
+            } else {
+                let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
+                HyperliquidExecAction::CancelByCloid {
+                    cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                }
             }
         } else if let Some(oid) = venue_order_id {
             let oid = oid
                 .as_str()
                 .parse::<u64>()
                 .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
-            let cancel_req = HyperliquidExecCancelOrderRequest { asset, oid };
             HyperliquidExecAction::Cancel {
-                cancels: vec![cancel_req],
+                cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
             }
         } else {
             return Err(HyperliquidError::bad_request(
@@ -636,39 +660,121 @@ impl HyperliquidWebSocketClient {
         signer: &HyperliquidHttpClient,
         cancels: &[(InstrumentId, ClientOrderId, Option<VenueOrderId>)],
     ) -> HyperliquidResult<Vec<Option<String>>> {
-        let mut cancel_requests = Vec::with_capacity(cancels.len());
+        let mut cloid_requests = Vec::new();
+        let mut cloid_indices = Vec::new();
+        let mut oid_requests = Vec::new();
+        let mut oid_indices = Vec::new();
+        let mut results = vec![None; cancels.len()];
 
-        for (instrument_id, client_order_id, _) in cancels {
+        for (index, (instrument_id, client_order_id, venue_order_id)) in cancels.iter().enumerate()
+        {
             let symbol = instrument_id.symbol.as_str();
-            let asset = signer.get_asset_index(symbol).ok_or_else(|| {
-                HyperliquidError::bad_request(format!(
+            let Some(asset) = signer.get_asset_index(symbol) else {
+                results[index] = Some(format!(
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
-                ))
-            })?;
-            cancel_requests.push(HyperliquidExecCancelByCloidRequest {
-                asset,
-                cloid: Cloid::from_client_order_id(*client_order_id),
-            });
+                ));
+                continue;
+            };
+
+            if let Some(cloid) = signer.cached_client_order_id_cloid(client_order_id) {
+                cloid_requests.push(HyperliquidExecCancelByCloidRequest { asset, cloid });
+                cloid_indices.push(index);
+            } else if let Some(venue_order_id) = venue_order_id {
+                match venue_order_id.as_str().parse::<u64>() {
+                    Ok(oid) => {
+                        oid_requests.push(HyperliquidExecCancelOrderRequest { asset, oid });
+                        oid_indices.push(index);
+                    }
+                    Err(_) => {
+                        results[index] = Some("Invalid venue order ID format".to_string());
+                    }
+                }
+            } else {
+                let cloid = signer.get_or_generate_client_order_id_cloid(*client_order_id);
+                cloid_requests.push(HyperliquidExecCancelByCloidRequest { asset, cloid });
+                cloid_indices.push(index);
+            }
         }
 
-        if cancel_requests.is_empty() {
-            return Ok(Vec::new());
+        if cloid_requests.is_empty() && oid_requests.is_empty() {
+            return Ok(results);
         }
 
-        let action = HyperliquidExecAction::CancelByCloid {
-            cancels: cancel_requests,
-        };
-        let response = self.post_action_exec(signer, &action).await?;
+        if !cloid_requests.is_empty() {
+            let action = HyperliquidExecAction::CancelByCloid {
+                cancels: cloid_requests,
+            };
+            let errors = self
+                .post_cancel_action_errors(signer, &action, cloid_indices.len())
+                .await?;
 
-        if response.is_ok() {
-            let errors = extract_inner_errors(&response);
-            return cancel_errors_for_requests(errors, cancels.len());
+            for (index, error) in cloid_indices.into_iter().zip(errors) {
+                results[index] = error;
+            }
         }
 
-        Err(HyperliquidError::bad_request(format!(
-            "Cancel orders failed: {}",
-            extract_error_message(&response)
-        )))
+        if !oid_requests.is_empty() {
+            let action = HyperliquidExecAction::Cancel {
+                cancels: oid_requests,
+            };
+            let errors = self
+                .post_cancel_action_errors(signer, &action, oid_indices.len())
+                .await?;
+
+            for (index, error) in oid_indices.into_iter().zip(errors) {
+                results[index] = error;
+            }
+        }
+
+        Ok(results)
+    }
+
+    async fn post_cancel_action_errors(
+        &self,
+        signer: &HyperliquidHttpClient,
+        action: &HyperliquidExecAction,
+        request_count: usize,
+    ) -> HyperliquidResult<Vec<Option<String>>> {
+        match self.post_cancel_action(signer, action).await {
+            Ok(response) if response.is_ok() => {
+                match cancel_errors_for_requests(extract_inner_errors(&response), request_count) {
+                    Ok(errors) => Ok(errors),
+                    Err(e) => Ok(vec![Some(e.to_string()); request_count]),
+                }
+            }
+            Ok(response) => Ok(vec![
+                Some(format!(
+                    "Cancel orders failed: {}",
+                    extract_error_message(&response)
+                ));
+                request_count
+            ]),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn post_cancel_action(
+        &self,
+        signer: &HyperliquidHttpClient,
+        action: &HyperliquidExecAction,
+    ) -> HyperliquidResult<HyperliquidExchangeResponse> {
+        let weight = exec_action_weight(action);
+        self.post_limiter.acquire(weight).await;
+
+        let payload = signer.sign_action_exec_request(action, None)?;
+        let response = self
+            .send_post_request(PostRequest::Action { payload }, self.post_timeout)
+            .await?;
+
+        match response.response {
+            PostResponsePayload::Action { payload } => {
+                serde_json::from_value(payload).map_err(HyperliquidError::Serde)
+            }
+            PostResponsePayload::Error { payload } => Err(map_post_payload_error(payload, weight)),
+            PostResponsePayload::Info { payload } => Err(HyperliquidError::decode(format!(
+                "expected action post response, received info payload: {payload}"
+            ))),
+        }
     }
 
     /// Modify an order through the Hyperliquid WebSocket post API.
@@ -716,6 +822,8 @@ impl HyperliquidWebSocketClient {
             signer.normalize_prices(),
             price_decimals,
         )?;
+        let cloid =
+            client_order_id.map(|id| (id, signer.get_or_generate_client_order_id_cloid(id)));
         let order = HyperliquidExecPlaceOrderRequest {
             asset,
             is_buy,
@@ -723,8 +831,12 @@ impl HyperliquidWebSocketClient {
             size: quantity.as_decimal().normalize(),
             reduce_only,
             kind,
-            cloid: client_order_id.map(Cloid::from_client_order_id),
+            cloid: cloid.map(|(_, cloid)| cloid),
         };
+
+        if let Some((client_order_id, cloid)) = cloid {
+            self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
+        }
         let action = HyperliquidExecAction::Modify {
             modify: HyperliquidExecModifyOrderRequest { oid, order },
         };
@@ -828,9 +940,8 @@ impl HyperliquidWebSocketClient {
         }
     }
 
-    /// Caches a cloid (hex hash) to client_order_id mapping for order/fill resolution.
+    /// Caches a venue CLOID to client_order_id mapping for order/fill resolution.
     ///
-    /// The cloid is a keccak256 hash of the client_order_id that Hyperliquid uses internally.
     /// This mapping allows WebSocket order status and fill reports to be resolved back to
     /// the original client_order_id.
     ///
@@ -895,7 +1006,7 @@ impl HyperliquidWebSocketClient {
         self.cloid_cache.lock().expect(MUTEX_POISONED).len()
     }
 
-    /// Looks up a client_order_id by its cloid hash.
+    /// Looks up a client_order_id by its venue CLOID.
     ///
     /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[must_use]

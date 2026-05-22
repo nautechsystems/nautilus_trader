@@ -408,6 +408,25 @@ pub fn order_to_hyperliquid_request_with_asset(
     should_normalize_prices: bool,
     slippage_bps: u32,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
+    order_to_hyperliquid_request_with_asset_and_cloid(
+        order,
+        asset,
+        price_decimals,
+        should_normalize_prices,
+        slippage_bps,
+        Some(Cloid::from_client_order_id(order.client_order_id())),
+    )
+}
+
+/// Converts a Nautilus order to Hyperliquid request with an explicit CLOID.
+pub fn order_to_hyperliquid_request_with_asset_and_cloid(
+    order: &OrderAny,
+    asset: u32,
+    price_decimals: u8,
+    should_normalize_prices: bool,
+    slippage_bps: u32,
+    cloid: Option<Cloid>,
+) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
     let order_side = order.order_side();
@@ -538,8 +557,6 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
-
-    let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
 
     Ok(HyperliquidExecPlaceOrderRequest {
         asset,

@@ -51,10 +51,10 @@ use crate::{
     websocket::HyperliquidWebSocketClient,
 };
 
-/// Compute the cloid (hex hash) from a client_order_id.
+/// Compute the deterministic CLOID from a client_order_id.
 ///
-/// The cloid is a keccak256 hash of the client_order_id, truncated to 16 bytes,
-/// represented as a hex string with `0x` prefix.
+/// The CLOID is derived from a keccak256 hash of the client_order_id,
+/// truncated to 16 bytes, represented as a hex string with `0x` prefix.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.hyperliquid")]
 #[pyo3(name = "hyperliquid_cloid_from_client_order_id")]

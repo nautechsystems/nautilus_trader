@@ -1,6 +1,6 @@
 # Hyperliquid Adapter Benchmarks
 
-Numbers measured 2026-05-18 on AMD Ryzen Threadripper 9980X under
+Unless a section states otherwise, numbers were measured 2026-05-18 on AMD Ryzen Threadripper 9980X under
 rustc 1.95.0, `bench-lto` profile (release opts + `lto = "fat"` +
 `codegen-units = 1`, `debug = full`). The CPU governor is pinned to
 `performance` and ASLR is disabled via `setarch -R` for the run.
@@ -13,7 +13,7 @@ Absolute numbers vary by machine; only same-machine deltas are meaningful.
 ```bash
 sudo cpupower frequency-set -g performance
 setarch -R cargo bench -p nautilus-hyperliquid --profile bench-lto \
-    --bench data --bench exec --bench micros
+    --bench data --bench exec --bench micros --bench signing
 sudo cpupower frequency-set -g powersave  # restore default
 ```
 
@@ -54,6 +54,20 @@ ready to POST. Covers normalize + serialize (msgpack) + EIP-712 sign.
 | `exec_pipeline/submit_stop_market` | 42.5 µs | 23.5 k/s   |
 | `exec_pipeline/cancel`             | 47.9 µs | 20.9 k/s   |
 | `exec_pipeline/modify`             | 42.2 µs | 23.7 k/s   |
+
+## Signing (`signing.rs`)
+
+Measured 2026-05-22 on the same host and profile. Direct signer and
+serialization benches isolate L1 signing from order normalization and POST body
+construction.
+
+| Bench                       | Median  |
+|-----------------------------|---------|
+| `sign_l1_action`            | 41.8 µs |
+| `sign_l1_action_with_vault` | 42.2 µs |
+| `signer_construction`       | 31.3 µs |
+| `msgpack_serialize_action`  | 172 ns  |
+| `json_serialize_action`     | 329 ns  |
 
 ## Dispatch (`exec.rs`)
 
