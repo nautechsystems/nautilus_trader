@@ -34,7 +34,7 @@ crate-type = ["rlib"]
 [features]
 default = []
 arrow = ["dep:arrow", "nautilus-model/arrow"]
-capnp = ["dep:capnp"]
+capnp = ["dep:capnp", "dep:capnpc", "dep:walkdir"]
 display = ["arrow"]
 sbe = []
 extension-module = [
@@ -50,6 +50,12 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "capnpc", # Used by build.rs when the `capnp` feature is enabled
+  "walkdir", # Used by build.rs when the `capnp` feature is enabled
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -80,8 +86,8 @@ pretty_assertions = { workspace = true }
 rstest = { workspace = true }
 
 [build-dependencies]
-capnpc = { workspace = true }
-walkdir = { workspace = true }
+capnpc = { workspace = true, optional = true }
+walkdir = { workspace = true, optional = true }
 
 [[bench]]
 name = "capnp_serialization"

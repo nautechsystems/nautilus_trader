@@ -27,6 +27,12 @@ extension-module = ["python", "pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3", "pyo3-stub-gen", "strum"]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
+  "toml", # Used by build.rs to read pyproject.toml version metadata
+]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

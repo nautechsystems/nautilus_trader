@@ -46,6 +46,11 @@ high-precision = ["nautilus-model/high-precision"]
 capnp = ["nautilus-serialization/capnp"]
 tracing-bridge = ["tracing", "tracing-subscriber"]
 
+[package.metadata.cargo-machete]
+ignored = [
+  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
+]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
