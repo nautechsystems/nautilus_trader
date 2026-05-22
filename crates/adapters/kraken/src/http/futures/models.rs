@@ -63,7 +63,8 @@ pub struct FuturesInstrument {
     pub isin: Option<String>,
     pub contract_value_trade_precision: i32,
     pub post_only: bool,
-    pub fee_schedule_uid: String,
+    #[serde(default)]
+    pub fee_schedule_uid: Option<String>,
     pub mtf: bool,
     pub base: String,
     pub quote: String,

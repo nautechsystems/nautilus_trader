@@ -55,6 +55,7 @@ None
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 - Fixed unbounded Cache VecDeque memory leak in Rust (#4107), thanks @filipmacek
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
+- Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies

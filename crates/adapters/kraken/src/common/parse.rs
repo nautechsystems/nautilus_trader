@@ -1419,6 +1419,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_futures_instrument_without_fee_schedule_uid() {
+        let json = load_test_json("http_futures_instrument_no_fee_schedule.json");
+        let response: crate::http::models::FuturesInstrumentsResponse =
+            serde_json::from_str(&json).unwrap();
+
+        let fut_instrument = &response.instruments[0];
+        assert!(fut_instrument.fee_schedule_uid.is_none());
+
+        let instrument = parse_futures_instrument(fut_instrument, TS, TS).unwrap();
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.symbol.as_str(), "PF_ETHUSD");
+            }
+            _ => panic!("Expected CryptoPerpetual"),
+        }
+    }
+
+    #[rstest]
     fn test_parse_trade_tick_from_array() {
         let json = load_test_json("http_trades.json");
         let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
