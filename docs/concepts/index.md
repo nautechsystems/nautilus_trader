@@ -48,6 +48,11 @@ The event types that drive the system: order events, position events, account
 events, and time events. Covers handler dispatch, the causal chain from order
 fills to position events, and tracing orders to positions.
 
+## Event Sourcing
+
+The durable event-store log for state-affecting messages, including capture boundaries,
+correlation headers, replay modes, recovery anchors, and verifier behavior.
+
 ## Options
 
 Option instrument types, venue-provided Greeks streaming, option chain subscriptions
