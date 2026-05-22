@@ -175,11 +175,12 @@ class HistoricInteractiveBrokersClient:
             for instrument_id in (instrument_ids or [])
         ]
 
-        await self._data_client.instrument_provider.load_ids_async(
+        loaded_ids = await self._data_client.instrument_provider.load_ids_with_return_async(
             converted_instrument_ids + (contracts or []),
         )
 
-        return list(self._data_client.instrument_provider._instruments.values())
+        instruments = self._data_client.instrument_provider._instruments
+        return [instruments[iid] for iid in loaded_ids if iid in instruments]
 
     async def request_bars(
         self,
