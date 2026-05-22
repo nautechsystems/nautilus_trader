@@ -2086,7 +2086,7 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
     let product_type = HyperliquidProductType::from_symbol(symbol).map_err(|_| {
         anyhow::anyhow!(
             "Unsupported instrument symbol format for Hyperliquid: {symbol} \
-             (expected -PERP, -SPOT, or HIP-4 outcome `+E`/`#E`)"
+             (expected -PERP, -SPOT, or HIP-4 outcome `{{N}}-{{YES|NO}}-OUTCOME`)"
         )
     })?;
 
@@ -3185,7 +3185,7 @@ mod tests {
         OrderAny::Limit(LimitOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
-            InstrumentId::from("+10.HYPERLIQUID"),
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
             ClientOrderId::from(id),
             OrderSide::Buy,
             Quantity::from("1"),
@@ -3215,7 +3215,7 @@ mod tests {
         OrderAny::StopMarket(StopMarketOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
-            InstrumentId::from("+10.HYPERLIQUID"),
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
             ClientOrderId::from(id),
             OrderSide::Sell,
             Quantity::from("1"),

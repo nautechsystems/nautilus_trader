@@ -193,25 +193,28 @@ handled by the instrument provider.
 
 ### HIP-4 outcome side tokens
 
-Format: `+{encoding}` (token form) or `#{encoding}` (spot-coin form), where
-`encoding = 10 * outcome + side` and `side` is `0` for Yes, `1` for No.
+Format: `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`, where `outcome_index`
+is the `outcome` field from `outcomeMeta` and the middle segment names the
+binary side. The `-OUTCOME` suffix is symmetric with `-PERP` / `-SPOT`.
 
 [HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
 side tokens are binary contracts that settle in USDH at `0` (loser) or `1`
-(winner). Nautilus uses the token form (`+{encoding}.HYPERLIQUID`); the wire
-`raw_symbol` uses the coin form (`#{encoding}`), which is what `l2Book` and
-`allMids` accept.
+(winner). The Nautilus symbol uses the human-readable form above; the wire
+`raw_symbol` uses the venue coin form `#{encoding}` (where
+`encoding = 10 * outcome_index + side`, `side` is `0` for Yes / `1` for No),
+which is what `l2Book` and `allMids` accept.
 
-Examples:
+Examples (outcome 25):
 
-- `+250.HYPERLIQUID`: Yes side of outcome 25.
-- `+251.HYPERLIQUID`: No side of outcome 25.
-- `#250`: equivalent wire symbol for market-data subscriptions.
+- `25-YES-OUTCOME.HYPERLIQUID`: Yes side. Encoding `250`, wire coin `#250`,
+  token name `+250`, action asset id `100_000_250`.
+- `25-NO-OUTCOME.HYPERLIQUID`: No side. Encoding `251`, wire coin `#251`,
+  token name `+251`, action asset id `100_000_251`.
 
 To subscribe in your strategy:
 
 ```python
-InstrumentId.from_str("+250.HYPERLIQUID")
+InstrumentId.from_str("25-YES-OUTCOME.HYPERLIQUID")
 ```
 
 :::note
@@ -358,10 +361,42 @@ HyperliquidDataClientConfig(
 ```
 
 The provider emits two `BinaryOption` instruments per outcome (one per side),
-denominated in USDH. `expiration_ns` is parsed from the venue description
-(`expiry:YYYYMMDD-HHMM`, UTC). Standalone binaries carry their own expiry;
-named and fallback outcomes inherit from their parent question. Defaults:
-`0.0001` per tick, `0.01` per lot.
+denominated in USDH. Symbols use the form
+`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`. `expiration_ns` is parsed
+from the venue description (`expiry:YYYYMMDD-HHMM`, UTC). Standalone binaries
+carry their own expiry; named and fallback outcomes inherit from their
+parent question. Defaults: `0.0001` per tick, `0.01` per lot.
+
+Each instrument's `BinaryOption.info` carries the parsed venue metadata as a
+key/value map (consumed via `info["key"]` in Python or `Params.get_str(...)`
+in Rust). Derived identifiers are always populated; description-derived
+fields appear when the venue includes them.
+
+| Field              | Source                         | Notes                                             |
+|--------------------|--------------------------------|---------------------------------------------------|
+| `outcome_index`    | derived                        | `outcome` from `outcomeMeta`                      |
+| `outcome_side`     | derived                        | `0` = Yes, `1` = No                               |
+| `side_name`        | derived                        | `"Yes"` or `"No"`                                 |
+| `encoding`         | derived                        | `10 * outcome_index + side`                       |
+| `asset_id`         | derived                        | `100_000_000 + encoding`                          |
+| `market_name`      | `outcomeMeta.outcomes[*].name` | venue market label                                |
+| `class`            | description                    | `priceBinary` or `priceBucket`                    |
+| `underlying`       | description                    | underlying asset code                             |
+| `expiry`           | description                    | `YYYYMMDD-HHMM` UTC                               |
+| `target_price`     | description                    | binary settlement threshold                       |
+| `period`           | description                    | recurrence period (e.g. `1d`, `3m`)               |
+| `price_thresholds` | description                    | comma‑separated thresholds (bucket markets)       |
+| `named_index`      | named‑outcome description      | position in parent `named_outcomes` array         |
+| `is_fallback`      | fallback‑outcome description   | `true` for the `other` outcome of a question      |
+| `question`         | parent question                | question id                                       |
+| `question_name`    | parent question                | question label                                    |
+| `question_*`       | parent question description    | every parsed question field, `question_` prefixed |
+
+Description keys are lowered from venue camelCase to snake_case
+(`targetPrice` -> `target_price`, `priceThresholds` -> `price_thresholds`).
+Values are kept as strings to preserve wire fidelity; numeric identifiers
+(`outcome_index`, `outcome_side`, `encoding`, `asset_id`, `question`,
+`named_index`) are stored as JSON numbers.
 
 ### Settlement currency
 
@@ -375,11 +410,12 @@ carries USDH alongside USDC and any other non-zero spot holdings.
 
 ### Trading flow
 
-Outcome side tokens (`+{encoding}.HYPERLIQUID`, where `encoding = 10 *
-outcome_index + outcome_side`) trade through the standard order path.
-Submit `SubmitOrder` as you would for any perp or spot instrument; the
-execution client routes it through the same `Order` action against the
-venue's `#{encoding}` orderbook. No HIP-4-specific call is needed.
+Outcome side tokens (`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`) trade
+through the standard order path. Submit `SubmitOrder` as you would for any
+perp or spot instrument; the execution client routes it through the same
+`Order` action against the venue's `#{encoding}` orderbook (where
+`encoding = 10 * outcome_index + outcome_side`). No HIP-4-specific call is
+needed.
 
 Settlement is venue-driven; see [Settlement dispatch](#settlement-dispatch).
 

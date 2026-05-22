@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
         AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -27,10 +27,12 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, OutcomeMarket, OutcomeMeta, PerpMeta, SpotBalance, SpotMeta,
+    AssetPosition, HyperliquidFill, OutcomeMarket, OutcomeMeta, OutcomeQuestion, PerpMeta,
+    SpotBalance, SpotMeta,
 };
 use crate::{
     common::{
@@ -39,7 +41,10 @@ use crate::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
             HyperliquidSide, HyperliquidTimeInForce,
         },
-        parse::{is_conditional_order_data, make_fill_trade_id, parse_trigger_order_type},
+        parse::{
+            format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
+            parse_trigger_order_type,
+        },
         types::HyperliquidAssetId,
     },
     websocket::messages::{WsBasicOrderData, WsOrderData},
@@ -70,8 +75,9 @@ pub struct HyperliquidOutcomeMetadata {
     pub outcome_side: u8,
     /// Outcome market name (for example, "BTC daily").
     pub market_name: Ustr,
-    /// Side specification name (for example, "Yes" or "No"); `None` when the
-    /// venue payload omits side specs.
+    /// Side specification name. Set from the venue's `sideSpecs` entry when
+    /// present, otherwise falls back to the canonical HIP-4 labels (`"Yes"`
+    /// for side `0`, `"No"` for side `1`).
     pub side_name: Option<Ustr>,
     /// Venue-supplied description.
     pub description: Option<Ustr>,
@@ -79,6 +85,10 @@ pub struct HyperliquidOutcomeMetadata {
     pub activation_ns: UnixNanos,
     /// Expiration timestamp; `0` when the venue payload does not expose it.
     pub expiration_ns: UnixNanos,
+    /// Structured metadata surfaced as `BinaryOption.info`; see the Hyperliquid
+    /// integration guide for the field layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<Params>,
 }
 
 /// Normalized instrument definition produced by this parser.
@@ -301,16 +311,17 @@ pub const OUTCOME_SIZE_DECIMALS: u32 = 2;
 ///
 /// Each [`OutcomeMarket`] yields two definitions, one per side (`0` and `1`),
 /// modeled as binary outcome side tokens. The Nautilus internal symbol uses
-/// the venue's token form (`+<encoding>`), and the wire `raw_symbol` uses the
-/// spot-coin form (`#<encoding>`) which is what `l2Book`, `trades`, and `bbo`
-/// subscriptions accept.
+/// the form `{outcome_index}-{YES|NO}-OUTCOME` (symmetric with `-PERP` /
+/// `-SPOT`), and the wire `raw_symbol` uses the spot-coin form
+/// (`#<encoding>`) which is what `l2Book`, `trades`, and `bbo` subscriptions
+/// accept.
 ///
 /// Expiry is read from the market's own description when it carries
 /// `class:priceBinary`; for outcomes that point at a parent question (`other`
 /// or `index:N`), the expiry is inherited from that question's description.
 ///
-/// `side_name` is left unset on the resulting metadata when the venue payload
-/// does not supply `sideSpecs`.
+/// `side_name` is taken from the venue's `sideSpecs` entry when present,
+/// otherwise it falls back to the canonical HIP-4 labels (`"Yes"` / `"No"`).
 pub fn parse_outcome_instruments(
     meta: &OutcomeMeta,
 ) -> Result<Vec<HyperliquidInstrumentDef>, String> {
@@ -330,19 +341,21 @@ fn build_outcome_def(
     side: u8,
     meta: &OutcomeMeta,
 ) -> Result<HyperliquidInstrumentDef, String> {
-    let outcome = market.outcome;
-    let asset_id = HyperliquidAssetId::outcome(outcome, side);
-    let encoding = asset_id
-        .outcome_encoding()
-        .ok_or_else(|| format!("Invalid outcome encoding for outcome={outcome} side={side}"))?;
+    let outcome_index = market.outcome;
+    let asset_id = HyperliquidAssetId::outcome(outcome_index, side);
+    let encoding = asset_id.outcome_encoding().ok_or_else(|| {
+        format!("Invalid outcome encoding for outcome={outcome_index} side={side}")
+    })?;
 
     let token = format!("+{encoding}");
     let coin = format!("#{encoding}");
+    let symbol = format_outcome_nautilus_symbol(outcome_index, side);
 
     let side_name = market
         .side_specs
         .get(usize::from(side))
-        .map(|spec| Ustr::from(spec.name.as_str()));
+        .map(|spec| Ustr::from(spec.name.as_str()))
+        .or_else(|| Some(Ustr::from(default_side_label(side))));
 
     let description = if market.description.is_empty() {
         None
@@ -350,20 +363,31 @@ fn build_outcome_def(
         Some(Ustr::from(market.description.as_str()))
     };
 
+    let parent_question = meta.parent_question(outcome_index);
     let expiration_ns = resolve_outcome_expiration_ns(market, meta);
 
-    let outcome = HyperliquidOutcomeMetadata {
-        outcome_index: market.outcome,
+    let info = build_outcome_info(
+        market,
+        side,
+        encoding,
+        asset_id.to_raw(),
+        side_name.as_ref().map(Ustr::as_str),
+        parent_question,
+    );
+
+    let outcome_metadata = HyperliquidOutcomeMetadata {
+        outcome_index,
         outcome_side: side,
         market_name: Ustr::from(market.name.as_str()),
         side_name,
         description,
         activation_ns: UnixNanos::default(),
         expiration_ns,
+        info: Some(info),
     };
 
     Ok(HyperliquidInstrumentDef {
-        symbol: Ustr::from(token.as_str()),
+        symbol: Ustr::from(symbol.as_str()),
         raw_symbol: Ustr::from(coin.as_str()),
         base: Ustr::from(token.as_str()),
         quote: "USDH".into(),
@@ -377,9 +401,96 @@ fn build_outcome_def(
         only_isolated: false,
         is_hip3: false,
         active: true,
-        outcome: Some(outcome),
+        outcome: Some(outcome_metadata),
         raw_data: serde_json::to_string(market).unwrap_or_default(),
     })
+}
+
+// Side `0` is Yes, `1` is No; matches the HIP-4 encoding convention.
+fn default_side_label(side: u8) -> &'static str {
+    if side == 0 { "Yes" } else { "No" }
+}
+
+// Splits a `key:value|key:value|...` description into snake_case keyed entries
+// keyed on the venue's camelCase keys lowered to snake_case. Empty descriptions
+// produce an empty iterator.
+fn parse_description_fields(description: &str) -> impl Iterator<Item = (String, String)> + '_ {
+    description
+        .split('|')
+        .filter_map(|piece| piece.split_once(':'))
+        .map(|(key, value)| (camel_to_snake(key.trim()), value.trim().to_string()))
+}
+
+fn camel_to_snake(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.char_indices() {
+        if ch.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn build_outcome_info(
+    market: &OutcomeMarket,
+    side: u8,
+    encoding: u32,
+    asset_id_raw: u32,
+    side_name: Option<&str>,
+    parent_question: Option<&OutcomeQuestion>,
+) -> Params {
+    let mut info = Params::new();
+
+    info.insert("outcome_index".into(), json!(market.outcome));
+    info.insert("outcome_side".into(), json!(side));
+    if let Some(name) = side_name {
+        info.insert("side_name".into(), Value::String(name.to_string()));
+    }
+    info.insert("encoding".into(), json!(encoding));
+    info.insert("asset_id".into(), json!(asset_id_raw));
+    info.insert("market_name".into(), Value::String(market.name.clone()));
+
+    // Direct binary outcomes (`class:priceBinary|...`) carry the full metadata
+    // on the market description. Named-outcome descriptions are sentinels
+    // (`index:N` / `other`) that just point at the parent question.
+    for (key, value) in parse_description_fields(&market.description) {
+        match key.as_str() {
+            "index" => {
+                if let Ok(named) = value.parse::<u32>() {
+                    info.insert("named_index".into(), json!(named));
+                }
+            }
+            "other" => {
+                info.insert("is_fallback".into(), json!(true));
+            }
+            _ => {
+                info.insert(key, Value::String(value));
+            }
+        }
+    }
+
+    // The market description for named outcomes is literally the keyless
+    // sentinel `other`; capture it explicitly so consumers don't need to
+    // inspect the raw description.
+    if market.description.trim() == "other" {
+        info.insert("is_fallback".into(), json!(true));
+    }
+
+    if let Some(question) = parent_question {
+        info.insert("question".into(), json!(question.question));
+        info.insert("question_name".into(), Value::String(question.name.clone()));
+        for (key, value) in parse_description_fields(&question.description) {
+            let prefixed = format!("question_{key}");
+            info.insert(prefixed, Value::String(value));
+        }
+    }
+
+    info
 }
 
 fn pow10_neg(decimals: u32) -> Decimal {
@@ -708,7 +819,7 @@ pub fn create_instrument_from_def(
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
-                None, // info
+                outcome.info.clone(),
                 ts_init,
                 ts_init,
             )))
@@ -1484,7 +1595,7 @@ mod tests {
         assert_eq!(defs.len(), 2);
 
         let yes = &defs[0];
-        assert_eq!(yes.symbol.as_str(), "+10");
+        assert_eq!(yes.symbol.as_str(), "1-YES-OUTCOME");
         assert_eq!(yes.raw_symbol.as_str(), "#10");
         assert_eq!(yes.market_type, HyperliquidMarketType::Outcome);
         assert_eq!(yes.asset_index, 100_000_010);
@@ -1506,7 +1617,7 @@ mod tests {
         );
 
         let no = &defs[1];
-        assert_eq!(no.symbol.as_str(), "+11");
+        assert_eq!(no.symbol.as_str(), "1-NO-OUTCOME");
         assert_eq!(no.raw_symbol.as_str(), "#11");
         assert_eq!(no.asset_index, 100_000_011);
         let no_meta = no.outcome.as_ref().unwrap();
@@ -1529,10 +1640,32 @@ mod tests {
         let defs = parse_outcome_instruments(&meta).unwrap();
         assert_eq!(defs.len(), 2);
 
+        // Even when the venue omits `sideSpecs`, the parser falls back to the
+        // canonical HIP-4 labels ("Yes" / "No") so downstream `BinaryOption`
+        // instruments always carry a meaningful side label.
+        assert_eq!(
+            defs[0]
+                .outcome
+                .as_ref()
+                .unwrap()
+                .side_name
+                .unwrap()
+                .as_str(),
+            "Yes"
+        );
+        assert_eq!(
+            defs[1]
+                .outcome
+                .as_ref()
+                .unwrap()
+                .side_name
+                .unwrap()
+                .as_str(),
+            "No"
+        );
+
         for def in &defs {
-            let outcome = def.outcome.as_ref().unwrap();
-            assert!(outcome.side_name.is_none());
-            assert!(outcome.description.is_none());
+            assert!(def.outcome.as_ref().unwrap().description.is_none());
         }
 
         assert_eq!(defs[0].asset_index, 100_000_050);
@@ -1576,7 +1709,7 @@ mod tests {
 
         match instrument {
             InstrumentAny::BinaryOption(bo) => {
-                assert_eq!(bo.id.symbol.as_str(), "+20");
+                assert_eq!(bo.id.symbol.as_str(), "2-YES-OUTCOME");
                 assert_eq!(bo.raw_symbol.as_str(), "#20");
                 assert_eq!(bo.asset_class, AssetClass::Alternative);
                 assert_eq!(bo.currency.code.as_str(), "USDH");
@@ -1584,6 +1717,117 @@ mod tests {
                 assert_eq!(bo.size_precision, OUTCOME_SIZE_DECIMALS as u8);
                 assert_eq!(bo.outcome.unwrap().as_str(), "Yes");
                 assert_eq!(bo.description.unwrap().as_str(), "Daily settlement");
+
+                let info = bo.info.expect("info should be populated for outcomes");
+                assert_eq!(info.get_u64("outcome_index"), Some(2));
+                assert_eq!(info.get_u64("outcome_side"), Some(0));
+                assert_eq!(info.get_u64("encoding"), Some(20));
+                assert_eq!(info.get_u64("asset_id"), Some(100_000_020));
+                assert_eq!(info.get_str("side_name"), Some("Yes"));
+                assert_eq!(info.get_str("market_name"), Some("Recurring BTC"));
+            }
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_create_instrument_from_def_outcome_info_carries_parsed_description() {
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 5,
+                name: "Recurring BTC".to_string(),
+                description:
+                    "class:priceBinary|underlying:BTC|expiry:20260508-0600|targetPrice:81041|period:1d"
+                        .to_string(),
+                side_specs: vec![
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
+                ],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let yes = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        match yes {
+            InstrumentAny::BinaryOption(bo) => {
+                let info = bo.info.expect("info should be populated for outcomes");
+                assert_eq!(info.get_str("class"), Some("priceBinary"));
+                assert_eq!(info.get_str("underlying"), Some("BTC"));
+                assert_eq!(info.get_str("expiry"), Some("20260508-0600"));
+                assert_eq!(info.get_str("target_price"), Some("81041"));
+                assert_eq!(info.get_str("period"), Some("1d"));
+                assert!(info.get("question").is_none());
+            }
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_create_instrument_from_def_outcome_info_merges_parent_question() {
+        let meta = OutcomeMeta {
+            outcomes: vec![
+                OutcomeMarket {
+                    outcome: 6,
+                    name: "Recurring Fallback".to_string(),
+                    description: "other".to_string(),
+                    side_specs: vec![],
+                },
+                OutcomeMarket {
+                    outcome: 7,
+                    name: "Recurring Named Outcome".to_string(),
+                    description: "index:0".to_string(),
+                    side_specs: vec![],
+                },
+            ],
+            questions: vec![OutcomeQuestion {
+                question: 0,
+                name: "Recurring".to_string(),
+                description:
+                    "class:priceBucket|underlying:BTC|expiry:20260508-0600|priceThresholds:79303,82540|period:1d"
+                        .to_string(),
+                fallback_outcome: Some(6),
+                named_outcomes: vec![7, 8, 9],
+                settled_named_outcomes: vec![],
+            }],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+
+        // Named outcome 7, Yes side (defs[2]).
+        let named = create_instrument_from_def(&defs[2], UnixNanos::default()).unwrap();
+        match named {
+            InstrumentAny::BinaryOption(bo) => {
+                assert_eq!(bo.id.symbol.as_str(), "7-YES-OUTCOME");
+                let info = bo.info.expect("info should be populated for outcomes");
+                assert_eq!(info.get_u64("named_index"), Some(0));
+                assert_eq!(info.get_u64("question"), Some(0));
+                assert_eq!(info.get_str("question_name"), Some("Recurring"));
+                assert_eq!(info.get_str("question_class"), Some("priceBucket"));
+                assert_eq!(info.get_str("question_underlying"), Some("BTC"));
+                assert_eq!(
+                    info.get_str("question_price_thresholds"),
+                    Some("79303,82540"),
+                );
+                assert_eq!(info.get_str("question_expiry"), Some("20260508-0600"));
+            }
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        }
+
+        // Fallback outcome 6, Yes side (defs[0]).
+        let fallback = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        match fallback {
+            InstrumentAny::BinaryOption(bo) => {
+                assert_eq!(bo.id.symbol.as_str(), "6-YES-OUTCOME");
+                let info = bo.info.expect("info should be populated for outcomes");
+                assert_eq!(info.get_bool("is_fallback"), Some(true));
+                assert_eq!(info.get_u64("question"), Some(0));
+                assert_eq!(info.get_str("question_class"), Some("priceBucket"));
             }
             other => panic!("Expected BinaryOption, was {other:?}"),
         }
@@ -1610,7 +1854,7 @@ mod tests {
 
         let defs = parse_outcome_instruments(&meta).unwrap();
         let yes = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
-        assert_eq!(yes.id().symbol.as_str(), "+420");
+        assert_eq!(yes.id().symbol.as_str(), "42-YES-OUTCOME");
 
         let fill = HyperliquidFill {
             coin: Ustr::from("#420"),

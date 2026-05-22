@@ -693,7 +693,7 @@ mod tests {
 
         let defs = parse_outcome_instruments(&meta).unwrap();
         let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
-        assert_eq!(instrument.id().symbol.as_str(), "+990");
+        assert_eq!(instrument.id().symbol.as_str(), "99-YES-OUTCOME");
 
         let fill_data = WsFillData {
             coin: Ustr::from("#990"),

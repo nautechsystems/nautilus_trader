@@ -51,14 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = "HYPERLIQUID-OUTCOME-EXEC-TESTER-001".to_string();
     let client_id = *HYPERLIQUID_CLIENT_ID;
 
-    // Targets a HIP-4 outcome side token by Nautilus instrument id (`+E`).
-    // Pick the encoding for the desired outcome / side from the current
-    // `outcomeMeta` snapshot: `encoding = 10 * outcome_index + outcome_side`,
-    // side 0 = Yes, side 1 = No. The venue's spot-coin form is `#E`.
-    // Inspect the live universe with:
+    // Targets a HIP-4 outcome side token by Nautilus instrument id
+    // (`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`). Pick the index and
+    // side from the current `outcomeMeta` snapshot; the venue wire form is
+    // `#<encoding>` where `encoding = 10 * outcome_index + side` (0 = Yes,
+    // 1 = No). Inspect the live universe with:
     //   curl -s -X POST https://api.hyperliquid.xyz/info \
     //     -d '{"type":"outcomeMeta"}'
-    let instrument_id = InstrumentId::from("+250.HYPERLIQUID");
+    let instrument_id = InstrumentId::from("25-YES-OUTCOME.HYPERLIQUID");
 
     let data_config = HyperliquidDataClientConfig {
         environment: hl_environment,

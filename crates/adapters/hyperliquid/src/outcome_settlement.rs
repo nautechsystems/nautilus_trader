@@ -250,7 +250,10 @@ mod tests {
 
         assert_eq!(fills.len(), 1);
         let fill = &fills[0];
-        assert_eq!(fill.instrument_id, InstrumentId::from("+10.HYPERLIQUID"));
+        assert_eq!(
+            fill.instrument_id,
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
+        );
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty.as_decimal(), dec!(25));
         // Quantity must match the outcome instrument's size precision (2),
@@ -307,7 +310,10 @@ mod tests {
 
         assert_eq!(fills.len(), 1);
         let fill = &fills[0];
-        assert_eq!(fill.instrument_id, InstrumentId::from("+11.HYPERLIQUID"));
+        assert_eq!(
+            fill.instrument_id,
+            InstrumentId::from("1-NO-OUTCOME.HYPERLIQUID"),
+        );
         assert_eq!(fill.last_px.as_decimal(), dec!(0));
         assert!(tracker.contains(1, 1));
     }

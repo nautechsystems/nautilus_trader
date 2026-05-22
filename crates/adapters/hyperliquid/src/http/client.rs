@@ -65,9 +65,9 @@ use crate::{
             HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType,
         },
         parse::{
-            bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
-            determine_order_list_grouping, extract_inner_error, normalize_price,
-            order_to_hyperliquid_request_with_asset_and_cloid,
+            bar_type_to_interval, cache_alias_for_symbol, clamp_price_to_precision,
+            derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
+            normalize_price, order_to_hyperliquid_request_with_asset_and_cloid,
             parse_combined_account_balances_and_margins, parse_spot_account_balances,
             round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
@@ -1179,8 +1179,7 @@ impl HyperliquidHttpClient {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
 
-                // Index the leading symbol component (the part before the first
-                // `-`) as a secondary key for two distinct callers:
+                // Secondary alias key for two distinct callers:
                 //
                 // * Spot raw_symbols are either `@{pair_index}` or slash format
                 //   (e.g., "PURR/USDC"); spot balance/position reconciliation
@@ -1193,15 +1192,22 @@ impl HyperliquidHttpClient {
                 //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
                 //   sanitized base lets that lookup resolve.
                 //
+                // For outcomes the alias is the `+<encoding>` token form
+                // (matching the `coin` field on `spotClearinghouseState`);
+                // for perps / spots it is the leading symbol segment.
+                // `cache_alias_for_symbol` keeps the two rules co-located so
+                // every caller derives the same key.
+                //
                 // First-write-wins guards against non-canonical spot pairs that
                 // share a base token overwriting the canonical instrument; the
                 // spot loader sorts canonical pairs first so the alias resolves
                 // to the canonical one. For standard perps `base == coin`, so
                 // the alias is a no-op.
-                if let Some(base) = full_symbol.as_str().split('-').next() {
-                    let base_ustr = Ustr::from(base);
-                    let key = (base_ustr, product_type);
-                    if base_ustr != coin && !m.contains_key(&key) {
+                if let Some(alias_ustr) = cache_alias_for_symbol(full_symbol.as_str())
+                    .map(|alias| Ustr::from(alias.as_str()))
+                {
+                    let key = (alias_ustr, product_type);
+                    if alias_ustr != coin && !m.contains_key(&key) {
                         m.insert(key, instrument.clone());
                     }
                 }
@@ -2553,17 +2559,15 @@ impl HyperliquidHttpClient {
 
         let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
 
-        // Extract base currency for lookup, then use raw_symbol for the API call
-        let base = Ustr::from(
-            symbol
-                .as_str()
-                .split('-')
-                .next()
-                .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?,
-        );
+        // `cache_alias_for_symbol` mirrors how `cache_instrument` stores the
+        // secondary key (token form `+<encoding>` for outcomes, leading
+        // segment for perps / spots), so this lookup stays in sync.
+        let alias = cache_alias_for_symbol(symbol.as_str())
+            .map(|alias| Ustr::from(alias.as_str()))
+            .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
 
         let instrument = self
-            .get_or_create_instrument(&base, product_type)
+            .get_or_create_instrument(&alias, product_type)
             .ok_or_else(|| {
                 Error::bad_request(format!("Instrument not found in cache: {instrument_id}"))
             })?;
@@ -2814,12 +2818,15 @@ impl HyperliquidHttpClient {
                 let symbol_str = instrument_id.symbol.as_str();
                 let product_type = HyperliquidProductType::from_symbol(symbol_str).ok();
 
-                // Extract base coin from symbol (first segment before '-')
-                let asset_str = symbol_str.split('-').next().unwrap_or(symbol_str);
+                // Mirror the alias `cache_instrument` stored (token form for
+                // outcomes, leading segment for perps / spots) so the lookup
+                // succeeds after the venue accepts an outcome order.
+                let asset_alias =
+                    cache_alias_for_symbol(symbol_str).unwrap_or_else(|| symbol_str.to_string());
                 let instrument = self
-                    .get_or_create_instrument(&Ustr::from(asset_str), product_type)
+                    .get_or_create_instrument(&Ustr::from(asset_alias.as_str()), product_type)
                     .ok_or_else(|| {
-                        Error::bad_request(format!("Instrument not found for {asset_str}"))
+                        Error::bad_request(format!("Instrument not found for {asset_alias}"))
                     })?;
 
                 let account_id = self
@@ -3045,15 +3052,16 @@ impl HyperliquidHttpClient {
                 // status. For grouped submissions the exchange may return
                 // fewer statuses; remaining orders are confirmed via WS.
                 for (order, order_status) in orders.iter().zip(order_response.statuses.iter()) {
-                    // Extract asset from instrument symbol
                     let instrument_id = order.instrument_id();
                     let symbol = instrument_id.symbol.as_str();
                     let product_type = HyperliquidProductType::from_symbol(symbol).ok();
 
-                    // Extract base coin from symbol (first segment before '-')
-                    let asset = symbol.split('-').next().unwrap_or(symbol);
+                    // Mirror the alias `cache_instrument` stored (token form
+                    // for outcomes, leading segment for perps / spots).
+                    let asset =
+                        cache_alias_for_symbol(symbol).unwrap_or_else(|| symbol.to_string());
                     let instrument = self
-                        .get_or_create_instrument(&Ustr::from(asset), product_type)
+                        .get_or_create_instrument(&Ustr::from(asset.as_str()), product_type)
                         .ok_or_else(|| {
                             Error::bad_request(format!("Instrument not found for {asset}"))
                         })?;
