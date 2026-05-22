@@ -1669,25 +1669,63 @@ impl ExecutionEngine {
         self.handle_event(event);
     }
 
-    /// Starts the execution engine.
+    /// Starts the execution engine and all registered execution clients.
     pub fn start(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.start() {
+                log::error!("{e}");
+            }
+        }
+
         self.start_snapshot_timer();
         self.start_purge_timers();
 
         log::info!("Started");
     }
 
-    /// Stops the execution engine.
+    /// Stops the execution engine and all registered execution clients.
+    ///
+    /// Adapters are expected to be idempotent on repeated `stop()` calls
+    /// (e.g. via an internal `is_stopped` guard); the backtest teardown
+    /// sequence calls `stop()` more than once per run.
     pub fn stop(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
+        }
+
         self.stop_snapshot_timer();
         self.stop_purge_timers();
 
         log::info!("Stopped");
     }
 
-    /// Resets the execution engine to its initial state.
+    /// Stops all registered execution clients without stopping the engine itself.
+    pub fn stop_clients(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
+        }
+    }
+
+    /// Resets the execution engine and all registered execution clients to initial state.
+    ///
+    /// Cancels engine-owned timers (snapshot, purge) but leaves timers owned by
+    /// other components on the shared clock untouched.
     pub fn reset(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.reset() {
+                log::error!("{e}");
+            }
+        }
+
         self.pos_id_generator.reset();
+
+        self.stop_snapshot_timer();
+        self.stop_purge_timers();
+
         self.command_count.set(0);
         self.event_count = 0;
         self.report_count = 0;
@@ -1695,8 +1733,20 @@ impl ExecutionEngine {
         log::info!("Reset");
     }
 
-    /// Disposes of the execution engine, releasing resources.
+    /// Disposes of the execution engine, releasing resources from all clients and timers.
+    ///
+    /// Cancels engine-owned timers (snapshot, purge) but leaves timers owned by
+    /// other components on the shared clock untouched.
     pub fn dispose(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.dispose() {
+                log::error!("{e}");
+            }
+        }
+
+        self.stop_snapshot_timer();
+        self.stop_purge_timers();
+
         log::info!("Disposed");
     }
 

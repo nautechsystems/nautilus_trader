@@ -40,6 +40,7 @@ use nautilus_common::{
         self, MessageBus, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler,
         switchboard,
     },
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
 use nautilus_execution::engine::{
@@ -11468,5 +11469,270 @@ fn test_handle_order_fill_oto_links_position_to_contingent_children(
         cache.position_id(&child_id),
         Some(&position_id),
         "Cache index must map the contingent child to the new position id",
+    );
+}
+
+#[rstest]
+fn test_start_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    // Counter handles inside the stub are `Rc<Cell<_>>`, so a pre-registration
+    // clone keeps a view of the boxed-and-moved client's counters.
+    let client_id = stub_client.client_id();
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+
+    let client = execution_engine
+        .get_client(&client_id)
+        .expect("registered client must be discoverable");
+    assert!(
+        client.is_connected(),
+        "engine.start should mark the registered client connected"
+    );
+    assert_eq!(
+        counts.start_count(),
+        1,
+        "engine.start should call client.start exactly once"
+    );
+}
+
+#[rstest]
+fn test_stop_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let client_id = stub_client.client_id();
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop();
+
+    let client = execution_engine
+        .get_client(&client_id)
+        .expect("registered client must be discoverable");
+    assert!(
+        !client.is_connected(),
+        "engine.stop should mark the registered client disconnected"
+    );
+    assert_eq!(counts.start_count(), 1);
+    assert_eq!(
+        counts.stop_count(),
+        1,
+        "engine.stop should call client.stop exactly once"
+    );
+}
+
+#[rstest]
+fn test_stop_clients_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop_clients();
+
+    assert_eq!(
+        counts.stop_count(),
+        1,
+        "stop_clients should call client.stop exactly once"
+    );
+}
+
+#[rstest]
+fn test_reset_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.reset();
+
+    assert_eq!(
+        counts.reset_count(),
+        1,
+        "engine.reset should call client.reset exactly once"
+    );
+}
+
+#[rstest]
+fn test_dispose_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.dispose();
+
+    assert_eq!(
+        counts.dispose_count(),
+        1,
+        "engine.dispose should call client.dispose exactly once"
+    );
+}
+
+#[rstest]
+fn test_lifecycle_propagates_to_default_client(mut execution_engine: ExecutionEngine) {
+    let stub = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("TEST-ACCOUNT"),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let counts = stub.clone();
+    execution_engine.register_default_client(Box::new(stub));
+
+    execution_engine.start();
+    execution_engine.stop();
+    execution_engine.reset();
+    execution_engine.dispose();
+
+    assert_eq!(
+        counts.start_count(),
+        1,
+        "default client should receive start"
+    );
+    assert_eq!(counts.stop_count(), 1, "default client should receive stop");
+    assert_eq!(
+        counts.reset_count(),
+        1,
+        "default client should receive reset"
+    );
+    assert_eq!(
+        counts.dispose_count(),
+        1,
+        "default client should receive dispose"
+    );
+}
+
+#[rstest]
+fn test_repeated_stop_invokes_client_each_time(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    // Mirrors the backtest teardown sequence (end -> reset -> dispose),
+    // where the engine does not guard at the engine level and adapters must
+    // guard internally per the trait contract on `ExecutionClient::stop`.
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop();
+    execution_engine.stop();
+    execution_engine.dispose();
+
+    assert_eq!(counts.start_count(), 1);
+    assert_eq!(
+        counts.stop_count(),
+        2,
+        "engine.stop should propagate on every call"
+    );
+    assert_eq!(counts.dispose_count(), 1);
+}
+
+#[rstest]
+fn test_reset_leaves_unrelated_clock_timers_intact() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+    assert!(
+        clock
+            .borrow()
+            .timer_names()
+            .contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine purge timer should be registered after start",
+    );
+
+    let callback: TimeEventCallback = TimeEventCallback::from(|_: TimeEvent| {});
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            "EXT_UNRELATED",
+            NANOSECONDS_IN_MINUTE,
+            None,
+            None,
+            Some(callback),
+            None,
+            None,
+        )
+        .unwrap();
+
+    engine.reset();
+
+    let clock_borrow = clock.borrow();
+    let names = clock_borrow.timer_names();
+    assert!(
+        names.contains(&"EXT_UNRELATED"),
+        "engine.reset must not cancel unrelated timers, names={names:?}",
+    );
+    assert!(
+        !names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine.reset should cancel engine-owned purge timers, names={names:?}",
+    );
+}
+
+#[rstest]
+fn test_dispose_leaves_unrelated_clock_timers_intact() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let callback: TimeEventCallback = TimeEventCallback::from(|_: TimeEvent| {});
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            "EXT_UNRELATED",
+            NANOSECONDS_IN_MINUTE,
+            None,
+            None,
+            Some(callback),
+            None,
+            None,
+        )
+        .unwrap();
+
+    engine.dispose();
+
+    let clock_borrow = clock.borrow();
+    let names = clock_borrow.timer_names();
+    assert!(
+        names.contains(&"EXT_UNRELATED"),
+        "engine.dispose must not cancel unrelated timers, names={names:?}",
+    );
+    assert!(
+        !names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine.dispose should cancel engine-owned purge timers, names={names:?}",
     );
 }

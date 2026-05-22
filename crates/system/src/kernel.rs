@@ -526,12 +526,7 @@ impl NautilusKernel {
             return;
         }
 
-        log::info!("Starting clients...");
-
-        if let Err(e) = self.start_clients() {
-            log::error!("Error starting clients: {e:?}");
-        }
-        log::info!("Clients started");
+        // Execution and data clients are started by their engines via `start_engines` above
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
         log::info!("Started");
@@ -598,10 +593,7 @@ impl NautilusKernel {
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
     pub async fn finalize_stop(&mut self) {
-        // Stop all adapter clients
-        if let Err(e) = self.stop_all_clients() {
-            log::error!("Error stopping clients: {e:?}");
-        }
+        // Execution and data clients are stopped by their engines via `stop_engines` below
 
         self.stop_engines();
         self.cancel_timers();
@@ -702,58 +694,6 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().stop();
         self.exec_engine.borrow_mut().stop();
         self.risk_engine.borrow_mut().stop();
-    }
-
-    /// Starts all engine clients.
-    ///
-    /// Note: Async connection (connect/disconnect) is handled by LiveNode for live clients.
-    /// This method only handles synchronous start operations on execution clients.
-    fn start_clients(&self) -> Result<(), Vec<anyhow::Error>> {
-        let mut errors = Vec::new();
-
-        {
-            let mut exec_engine = self.exec_engine.borrow_mut();
-            let exec_adapters = exec_engine.get_clients_mut();
-
-            for adapter in exec_adapters {
-                if let Err(e) = adapter.start() {
-                    log::error!("Error starting execution client {}: {e}", adapter.client_id);
-                    errors.push(e);
-                }
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
-    }
-
-    /// Stops all engine clients.
-    ///
-    /// Note: Async disconnection is handled by LiveNode for live clients.
-    /// This method only handles synchronous stop operations on execution clients.
-    fn stop_all_clients(&self) -> Result<(), Vec<anyhow::Error>> {
-        let mut errors = Vec::new();
-
-        {
-            let mut exec_engine = self.exec_engine.borrow_mut();
-            let exec_adapters = exec_engine.get_clients_mut();
-
-            for adapter in exec_adapters {
-                if let Err(e) = adapter.stop() {
-                    log::error!("Error stopping execution client {}: {e}", adapter.client_id);
-                    errors.push(e);
-                }
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
     }
 
     /// Connects data engine clients.
