@@ -81,7 +81,9 @@ None
 - Optimized OKX hot paths with benchmark report
 
 ### Documentation Updates
-- Added `nautilus-plugin` README early-alpha warning declaring ABI and public API are not stable
+- Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
+- Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
+- Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 
 ### Deprecations
 None

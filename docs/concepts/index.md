@@ -135,6 +135,12 @@ convention, builder patterns, and common fields shared across adapters and engin
 Deploying backtested strategies in real-time without code changes, and the key differences
 between backtesting and live trading.
 
+## Plugins
+
+The Rust plug-in system loaded by a live node, covering the C-ABI boundary, manifest validation,
+plug-point surfaces (custom data, actors, strategies), host callback routing, configuration, and
+the lifecycle from `dlopen` through adapter registration.
+
 ## Adapters
 
 Requirements and best practices for developing integration adapters for data providers and trading venues.
