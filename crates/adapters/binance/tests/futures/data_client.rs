@@ -15,7 +15,7 @@
 
 //! Integration tests for the Binance Futures data client.
 
-use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
 
 use axum::{
     Router,
@@ -62,6 +62,7 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::json;
 
 fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
@@ -543,7 +544,7 @@ async fn test_request_open_interest_usdm_emits_custom_data_response() {
                     .downcast_ref::<BinanceFuturesOpenInterest>()
                     .is_some_and(|payload| {
                         payload.instrument_id == instrument_id
-                            && payload.open_interest == "12345.678"
+                            && payload.open_interest == Decimal::from_str("12345.678").unwrap()
                             && payload.ts_event.as_u64()
                                 == UnixNanos::from_millis(1700000000000).as_u64()
                             && custom.data_type == data_type
@@ -600,8 +601,9 @@ async fn test_request_open_interest_hist_usdm_emits_batch_custom_data_response()
                 payload.instrument_id == instrument_id
                     && payload.period == "5m"
                     && payload.points.len() == 2
-                    && payload.points[0].sum_open_interest == "100.0"
-                    && payload.points[1].sum_open_interest_value == "1005.0"
+                    && payload.points[0].sum_open_interest == Decimal::from_str("100.0").unwrap()
+                    && payload.points[1].sum_open_interest_value
+                        == Decimal::from_str("1005.0").unwrap()
                     && payload.ts_event.as_u64() == UnixNanos::from_millis(1700000300000).as_u64()
                     && custom.data_type == data_type
             });
@@ -656,7 +658,7 @@ async fn test_request_open_interest_coinm_uses_symbol_mapping() {
                     .downcast_ref::<BinanceFuturesOpenInterest>()
                     .is_some_and(|payload| {
                         payload.instrument_id == instrument_id
-                            && payload.open_interest == "987.654"
+                            && payload.open_interest == Decimal::from_str("987.654").unwrap()
                             && custom.data_type == data_type
                     })
             });
@@ -715,8 +717,9 @@ async fn test_request_open_interest_hist_coinm_uses_pair_and_contract_type_mappi
                 payload.instrument_id == instrument_id
                     && payload.period == "5m"
                     && payload.points.len() == 2
-                    && payload.points[0].sum_open_interest == "200.0"
-                    && payload.points[1].sum_open_interest_value == "1510.0"
+                    && payload.points[0].sum_open_interest == Decimal::from_str("200.0").unwrap()
+                    && payload.points[1].sum_open_interest_value
+                        == Decimal::from_str("1510.0").unwrap()
                     && custom.data_type == data_type
             });
             async move { found }

@@ -27,6 +27,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Binance Futures current open interest snapshot.
@@ -42,8 +43,8 @@ use serde::{Deserialize, Serialize};
 pub struct BinanceFuturesOpenInterest {
     /// The instrument for this snapshot.
     pub instrument_id: InstrumentId,
-    /// The total open interest value as returned by Binance.
-    pub open_interest: String,
+    /// The total open interest value.
+    pub open_interest: Decimal,
     /// UNIX timestamp (nanoseconds) when the snapshot event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
@@ -55,7 +56,7 @@ impl BinanceFuturesOpenInterest {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
-        open_interest: String,
+        open_interest: Decimal,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -130,10 +131,10 @@ impl CustomDataTrait for BinanceFuturesOpenInterest {
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesOpenInterestHistPoint {
-    /// The total open interest value as returned by Binance.
-    pub sum_open_interest: String,
-    /// The total open interest notional value as returned by Binance.
-    pub sum_open_interest_value: String,
+    /// The total open interest value.
+    pub sum_open_interest: Decimal,
+    /// The total open interest notional value.
+    pub sum_open_interest_value: Decimal,
     /// UNIX timestamp (nanoseconds) for the bucket represented by this point.
     pub ts_event: UnixNanos,
 }
@@ -142,8 +143,8 @@ impl BinanceFuturesOpenInterestHistPoint {
     /// Creates a new [`BinanceFuturesOpenInterestHistPoint`] instance.
     #[must_use]
     pub fn new(
-        sum_open_interest: String,
-        sum_open_interest_value: String,
+        sum_open_interest: Decimal,
+        sum_open_interest_value: Decimal,
         ts_event: UnixNanos,
     ) -> Self {
         Self {
@@ -155,6 +156,11 @@ impl BinanceFuturesOpenInterestHistPoint {
 }
 
 /// Binance Futures historical open interest batch.
+///
+/// For COIN-M requests, the current Binance adapter support is limited to
+/// perpetual instruments. Although Binance also exposes quarter-delivery
+/// contract types on the historical OI endpoint, the futures instrument
+/// parsing/symbology path in this adapter is still perpetual-only.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
@@ -379,6 +385,8 @@ mod tests {
     #[cfg(feature = "python")]
     use pyo3::{prelude::*, types::PyList};
     use rstest::rstest;
+    #[cfg(feature = "python")]
+    use rust_decimal::Decimal;
 
     use super::*;
 
@@ -398,13 +406,13 @@ mod tests {
             let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
             let points = vec![
                 BinanceFuturesOpenInterestHistPoint::new(
-                    "100.0".to_string(),
-                    "1000.0".to_string(),
+                    Decimal::from_str_exact("100.0").unwrap(),
+                    Decimal::from_str_exact("1000.0").unwrap(),
                     UnixNanos::from_millis(1_700_000_000_000),
                 ),
                 BinanceFuturesOpenInterestHistPoint::new(
-                    "101.0".to_string(),
-                    "1005.0".to_string(),
+                    Decimal::from_str_exact("101.0").unwrap(),
+                    Decimal::from_str_exact("1005.0").unwrap(),
                     UnixNanos::from_millis(1_700_000_300_000),
                 ),
             ];
@@ -462,8 +470,14 @@ mod tests {
                 .extract::<BinanceFuturesOpenInterestHistPoint>()
                 .unwrap();
 
-            assert_eq!(point0.sum_open_interest, "100.0");
-            assert_eq!(point1.sum_open_interest_value, "1005.0");
+            assert_eq!(
+                point0.sum_open_interest,
+                Decimal::from_str_exact("100.0").unwrap()
+            );
+            assert_eq!(
+                point1.sum_open_interest_value,
+                Decimal::from_str_exact("1005.0").unwrap()
+            );
         });
     }
 }

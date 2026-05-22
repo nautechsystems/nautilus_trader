@@ -59,6 +59,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -319,6 +320,8 @@ impl BinanceFuturesDataClient {
         Ok(period.to_string())
     }
 
+    /// Returns COIN-M historical OI request parameters for the current
+    /// perpetual-only Binance futures instrument surface.
     fn coinm_open_interest_hist_params(
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<(String, String)> {
@@ -330,6 +333,17 @@ impl BinanceFuturesDataClient {
         };
 
         Ok((pair.to_string(), "PERPETUAL".to_string()))
+    }
+
+    fn parse_open_interest_decimal(field: &str, value: &str) -> anyhow::Result<Decimal> {
+        Decimal::from_str_exact(value)
+            .with_context(|| format!("invalid Binance open interest `{field}` value `{value}`"))
+    }
+
+    fn unix_nanos_from_millis_i64(field: &str, value: i64) -> anyhow::Result<UnixNanos> {
+        let millis = u64::try_from(value)
+            .with_context(|| format!("invalid Binance open interest `{field}` value `{value}`"))?;
+        Ok(UnixNanos::from_millis(millis))
     }
 
     fn liquidation_data_type(instrument_id: InstrumentId) -> DataType {
@@ -2173,6 +2187,10 @@ impl DataClient for BinanceFuturesDataClient {
         Ok(())
     }
 
+    /// Requests Binance futures custom data.
+    ///
+    /// Spawned fetch failures are logged and no response is emitted, matching
+    /// the existing request-path behavior for other Binance adapter requests.
     fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
         let data_type = request.data_type.clone();
         let data_type_name = data_type.type_name().to_string();
@@ -2212,136 +2230,172 @@ impl DataClient for BinanceFuturesDataClient {
         let end_ms = request.end.map(|dt| dt.timestamp_millis());
 
         get_runtime().spawn(async move {
-            let response = match data_type_name.as_str() {
-                "BinanceFuturesOpenInterest" => {
-                    let response_data_type = data_type.clone();
-                    let query = BinanceOpenInterestParams {
-                        symbol: format_binance_symbol(&instrument_id),
-                    };
+            let response = if data_type_name == "BinanceFuturesOpenInterest" {
+                let response_data_type = data_type.clone();
+                let query = BinanceOpenInterestParams {
+                    symbol: format_binance_symbol(&instrument_id),
+                };
 
-                    match http
-                        .open_interest(&query)
-                        .await
-                        .context("failed to request current open interest from Binance Futures")
-                    {
-                        Ok(open_interest) => {
-                            let ts_init = clock.get_time_ns();
-                            let payload = Arc::new(BinanceFuturesOpenInterest::new(
-                                instrument_id,
-                                open_interest.open_interest,
-                                UnixNanos::from_millis(open_interest.time as u64),
-                                ts_init,
-                            ));
-                            let custom = CustomData::new(payload, response_data_type.clone());
+                match http
+                    .open_interest(&query)
+                    .await
+                    .context("failed to request current open interest from Binance Futures")
+                {
+                    Ok(open_interest) => {
+                        let ts_init = clock.get_time_ns();
+                        let open_interest_value = match Self::parse_open_interest_decimal(
+                            "open_interest",
+                            &open_interest.open_interest,
+                        ) {
+                            Ok(value) => value,
+                            Err(e) => {
+                                log::error!(
+                                    "Current open interest request failed for {instrument_id}: {e:?}"
+                                );
+                                return;
+                            }
+                        };
+                        let ts_event =
+                            match Self::unix_nanos_from_millis_i64("time", open_interest.time) {
+                                Ok(value) => value,
+                                Err(e) => {
+                                    log::error!(
+                                        "Current open interest request failed for {instrument_id}: {e:?}"
+                                    );
+                                    return;
+                                }
+                            };
+                        let payload = Arc::new(BinanceFuturesOpenInterest::new(
+                            instrument_id,
+                            open_interest_value,
+                            ts_event,
+                            ts_init,
+                        ));
+                        let custom = CustomData::new(payload, response_data_type.clone());
 
-                            Some(DataResponse::Data(CustomDataResponse::new(
-                                request_id,
-                                client_id,
-                                Some(venue),
-                                response_data_type,
-                                custom,
-                                start_nanos,
-                                end_nanos,
-                                ts_init,
-                                params,
-                            )))
-                        }
-                        Err(e) => {
-                            log::error!("Current open interest request failed for {instrument_id}: {e:?}");
-                            None
-                        }
+                        Some(DataResponse::Data(CustomDataResponse::new(
+                            request_id,
+                            client_id,
+                            Some(venue),
+                            response_data_type,
+                            custom,
+                            start_nanos,
+                            end_nanos,
+                            ts_init,
+                            params,
+                        )))
+                    }
+                    Err(e) => {
+                        log::error!("Current open interest request failed for {instrument_id}: {e:?}");
+                        None
                     }
                 }
-                "BinanceFuturesOpenInterestHist" => {
-                    let response_data_type = data_type.clone();
-                    let period = period.expect("period required for historical open interest");
-                    let query = match http.product_type() {
-                        BinanceProductType::UsdM => BinanceOpenInterestHistParams {
-                            symbol: Some(format_binance_symbol(&instrument_id)),
-                            pair: None,
-                            contract_type: None,
+            } else {
+                let response_data_type = data_type.clone();
+                let period = period.expect("period required for historical open interest");
+                let query = match http.product_type() {
+                    BinanceProductType::UsdM => BinanceOpenInterestHistParams {
+                        symbol: Some(format_binance_symbol(&instrument_id)),
+                        pair: None,
+                        contract_type: None,
+                        period: period.clone(),
+                        start_time: start_ms,
+                        end_time: end_ms,
+                        limit,
+                    },
+                    BinanceProductType::CoinM => {
+                        let (pair, contract_type) =
+                            match Self::coinm_open_interest_hist_params(&instrument_id) {
+                                Ok(values) => values,
+                                Err(e) => {
+                                    log::error!(
+                                        "Historical open interest request failed for {instrument_id}: {e:?}"
+                                    );
+                                    return;
+                                }
+                            };
+                        BinanceOpenInterestHistParams {
+                            symbol: None,
+                            pair: Some(pair),
+                            contract_type: Some(contract_type),
                             period: period.clone(),
                             start_time: start_ms,
                             end_time: end_ms,
                             limit,
-                        },
-                        BinanceProductType::CoinM => {
-                            let (pair, contract_type) =
-                                match Self::coinm_open_interest_hist_params(&instrument_id) {
-                                    Ok(values) => values,
-                                    Err(e) => {
-                                        log::error!(
-                                            "Historical open interest request failed for {instrument_id}: {e:?}"
-                                        );
-                                        return;
-                                    }
-                                };
-                            BinanceOpenInterestHistParams {
-                                symbol: None,
-                                pair: Some(pair),
-                                contract_type: Some(contract_type),
-                                period: period.clone(),
-                                start_time: start_ms,
-                                end_time: end_ms,
-                                limit,
-                            }
-                        }
-                        product_type => {
-                            log::error!(
-                                "Historical open interest request failed for {instrument_id}: unsupported product type {product_type:?}"
-                            );
-                            return;
-                        }
-                    };
-
-                    match http
-                        .open_interest_hist(&query)
-                        .await
-                        .context("failed to request historical open interest from Binance Futures")
-                    {
-                        Ok(history) => {
-                            let ts_init = clock.get_time_ns();
-                            let points: Vec<BinanceFuturesOpenInterestHistPoint> = history
-                                .into_iter()
-                                .map(|point| {
-                                    BinanceFuturesOpenInterestHistPoint::new(
-                                        point.sum_open_interest,
-                                        point.sum_open_interest_value,
-                                        UnixNanos::from_millis(point.timestamp as u64),
-                                    )
-                                })
-                                .collect();
-                            let ts_event = points.last().map_or(ts_init, |point| point.ts_event);
-                            let payload = Arc::new(BinanceFuturesOpenInterestHist::new(
-                                instrument_id,
-                                period,
-                                points,
-                                ts_event,
-                                ts_init,
-                            ));
-                            let custom = CustomData::new(payload, response_data_type.clone());
-
-                            Some(DataResponse::Data(CustomDataResponse::new(
-                                request_id,
-                                client_id,
-                                Some(venue),
-                                response_data_type,
-                                custom,
-                                start_nanos,
-                                end_nanos,
-                                ts_init,
-                                params,
-                            )))
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Historical open interest request failed for {instrument_id}: {e:?}"
-                            );
-                            None
                         }
                     }
+                    product_type => {
+                        log::error!(
+                            "Historical open interest request failed for {instrument_id}: unsupported product type {product_type:?}"
+                        );
+                        return;
+                    }
+                };
+
+                match http
+                    .open_interest_hist(&query)
+                    .await
+                    .context("failed to request historical open interest from Binance Futures")
+                {
+                    Ok(history) => {
+                        let ts_init = clock.get_time_ns();
+                        let points: Vec<BinanceFuturesOpenInterestHistPoint> = match history
+                            .into_iter()
+                            .map(|point| -> anyhow::Result<_> {
+                                Ok(BinanceFuturesOpenInterestHistPoint::new(
+                                    Self::parse_open_interest_decimal(
+                                        "sum_open_interest",
+                                        &point.sum_open_interest,
+                                    )?,
+                                    Self::parse_open_interest_decimal(
+                                        "sum_open_interest_value",
+                                        &point.sum_open_interest_value,
+                                    )?,
+                                    Self::unix_nanos_from_millis_i64(
+                                        "timestamp",
+                                        point.timestamp,
+                                    )?,
+                                ))
+                            })
+                            .collect()
+                        {
+                            Ok(points) => points,
+                            Err(e) => {
+                                log::error!(
+                                    "Historical open interest request failed for {instrument_id}: {e:?}"
+                                );
+                                return;
+                            }
+                        };
+                        let ts_event = points.last().map_or(ts_init, |point| point.ts_event);
+                        let payload = Arc::new(BinanceFuturesOpenInterestHist::new(
+                            instrument_id,
+                            period,
+                            points,
+                            ts_event,
+                            ts_init,
+                        ));
+                        let custom = CustomData::new(payload, response_data_type.clone());
+
+                        Some(DataResponse::Data(CustomDataResponse::new(
+                            request_id,
+                            client_id,
+                            Some(venue),
+                            response_data_type,
+                            custom,
+                            start_nanos,
+                            end_nanos,
+                            ts_init,
+                            params,
+                        )))
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Historical open interest request failed for {instrument_id}: {e:?}"
+                        );
+                        None
+                    }
                 }
-                _ => None,
             };
 
             if let Some(response) = response

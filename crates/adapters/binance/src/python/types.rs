@@ -251,8 +251,8 @@ impl BinanceFuturesOpenInterest {
 
     #[getter]
     #[pyo3(name = "open_interest")]
-    fn py_open_interest(&self) -> String {
-        self.open_interest.clone()
+    fn py_open_interest(&self) -> Decimal {
+        self.open_interest
     }
 
     #[getter]
@@ -273,14 +273,14 @@ impl BinanceFuturesOpenInterest {
 impl BinanceFuturesOpenInterestHistPoint {
     #[getter]
     #[pyo3(name = "sum_open_interest")]
-    fn py_sum_open_interest(&self) -> String {
-        self.sum_open_interest.clone()
+    fn py_sum_open_interest(&self) -> Decimal {
+        self.sum_open_interest
     }
 
     #[getter]
     #[pyo3(name = "sum_open_interest_value")]
-    fn py_sum_open_interest_value(&self) -> String {
-        self.sum_open_interest_value.clone()
+    fn py_sum_open_interest_value(&self) -> Decimal {
+        self.sum_open_interest_value
     }
 
     #[getter]
@@ -307,14 +307,14 @@ impl BinanceFuturesOpenInterestHist {
 
     #[getter]
     #[pyo3(name = "points")]
-    fn py_points(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn py_points(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
         let points = self
             .points
             .iter()
             .cloned()
             .map(|point| point.into_py_any_unwrap(py))
             .collect::<Vec<_>>();
-        Ok(PyList::new(py, points)?.into_py_any_unwrap(py))
+        Ok(PyList::new(py, points)?.into())
     }
 
     #[getter]
