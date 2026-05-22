@@ -76,6 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from("0.01");
+
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
@@ -86,7 +88,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(Quantity::from("0.01"))
+        .order_qty(order_qty)
+        .open_position_on_start_qty(order_qty.as_decimal())
         .log_data(false)
         // .enable_limit_buys(false)
         // .enable_limit_sells(false)

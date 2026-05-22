@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Added Deribit `subscribe_combo_legs` opt-in for combo leg trade streams
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
+- Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert

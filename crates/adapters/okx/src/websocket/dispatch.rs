@@ -20,14 +20,15 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    hash::Hash,
+    sync::{Arc, Mutex},
 };
 
 use ahash::AHashMap;
-use dashmap::{DashMap, DashSet};
-use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
+use dashmap::DashMap;
+use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType},
@@ -66,8 +67,92 @@ use crate::{
     },
 };
 
-/// Maximum entries in the dedup sets before they are cleared.
+/// Maximum entries held by the dedup sets before the oldest is evicted.
 const DEDUP_CAPACITY: usize = 10_000;
+
+/// Bounded deduplication set with FIFO eviction.
+///
+/// Insertions are tagged with a sequence number so a stale marker left
+/// behind by `remove` or by re-insertion of the same key cannot evict the
+/// live entry when it reaches the front of the queue.
+#[derive(Debug)]
+pub struct BoundedDedup<K> {
+    inner: Mutex<BoundedDedupInner<K>>,
+    capacity: usize,
+}
+
+#[derive(Debug)]
+struct BoundedDedupInner<K> {
+    set: AHashMap<K, u64>,
+    queue: VecDeque<(K, u64)>,
+    next_seq: u64,
+}
+
+impl<K> BoundedDedup<K>
+where
+    K: Eq + Hash + Clone,
+{
+    /// Creates a new dedup set with the given maximum capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            inner: Mutex::new(BoundedDedupInner {
+                set: AHashMap::with_capacity(capacity),
+                queue: VecDeque::with_capacity(capacity),
+                next_seq: 0,
+            }),
+            capacity,
+        }
+    }
+
+    /// Returns `true` if the key is currently present.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn contains(&self, key: &K) -> bool {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .set
+            .contains_key(key)
+    }
+
+    /// Inserts the key. Returns `true` when the key was already present
+    /// (duplicate) and `false` when this call was the first insertion.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn check_and_insert(&self, key: K) -> bool {
+        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        if inner.set.contains_key(&key) {
+            return true;
+        }
+        let seq = inner.next_seq;
+        inner.next_seq = inner.next_seq.wrapping_add(1);
+        inner.set.insert(key.clone(), seq);
+        inner.queue.push_back((key, seq));
+        while inner.queue.len() > self.capacity
+            && let Some((old_key, old_seq)) = inner.queue.pop_front()
+        {
+            // Skip if a fresher insertion has superseded this marker.
+            if inner.set.get(&old_key) == Some(&old_seq) {
+                inner.set.remove(&old_key);
+            }
+        }
+        false
+    }
+
+    /// Inserts the key without reporting whether it was already present.
+    pub fn insert(&self, key: K) {
+        let _ = self.check_and_insert(key);
+    }
+
+    /// Drops the key from the set if present. Returns `true` if it was found.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn remove(&self, key: &K) -> bool {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .set
+            .remove(key)
+            .is_some()
+    }
+}
 
 /// Order identity context stored at submission time, used by the WS dispatch
 /// task to produce proper order events without Cache access.
@@ -85,34 +170,29 @@ pub struct OrderIdentity {
 
 /// Shared state for cross-stream event deduplication between the private
 /// and business WebSocket dispatch loops.
-///
-/// Uses `DashMap`/`DashSet` for concurrent access from both stream tasks
-/// and the main thread without mutex contention.
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
-    pub emitted_accepted: DashSet<ClientOrderId>,
-    pub triggered_orders: DashSet<ClientOrderId>,
-    pub filled_orders: DashSet<ClientOrderId>,
-    pub emitted_trades: DashSet<TradeId>,
+    pub emitted_accepted: BoundedDedup<ClientOrderId>,
+    pub triggered_orders: BoundedDedup<ClientOrderId>,
+    pub filled_orders: BoundedDedup<ClientOrderId>,
+    pub emitted_trades: BoundedDedup<TradeId>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
-    clearing: AtomicBool,
 }
 
 impl Default for WsDispatchState {
     fn default() -> Self {
         Self {
             order_identities: DashMap::new(),
-            emitted_accepted: DashSet::default(),
-            triggered_orders: DashSet::default(),
-            filled_orders: DashSet::default(),
-            emitted_trades: DashSet::default(),
+            emitted_accepted: BoundedDedup::new(DEDUP_CAPACITY),
+            triggered_orders: BoundedDedup::new(DEDUP_CAPACITY),
+            filled_orders: BoundedDedup::new(DEDUP_CAPACITY),
+            emitted_trades: BoundedDedup::new(DEDUP_CAPACITY),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
-            clearing: AtomicBool::new(false),
         }
     }
 }
@@ -135,50 +215,22 @@ impl WsDispatchState {
 }
 
 impl WsDispatchState {
-    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
-        if set.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            set.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
-    }
-
     pub(crate) fn insert_accepted(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.emitted_accepted);
         self.emitted_accepted.insert(cid);
     }
 
     pub(crate) fn insert_filled(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
     }
 
     pub(crate) fn insert_triggered(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
     }
 
     /// Returns `true` if this trade was already emitted (duplicate).
     /// Uses atomic insert to avoid TOCTOU races between concurrent streams.
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
-        self.evict_if_full_trades();
-        !self.emitted_trades.insert(trade_id)
-    }
-
-    fn evict_if_full_trades(&self) {
-        if self.emitted_trades.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            self.emitted_trades.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
+        self.emitted_trades.check_and_insert(trade_id)
     }
 }
 
@@ -194,12 +246,15 @@ pub fn dispatch_ws_message(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     account_id: AccountId,
-    instruments: &AHashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     fee_cache: &mut AHashMap<Ustr, Money>,
     filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     clock: &AtomicTime,
 ) {
+    let guard = instruments.load();
+    let instruments: &AHashMap<Ustr, InstrumentAny> = &guard;
+
     match message {
         OKXWsMessage::Orders(order_msgs) => {
             let ts_init = clock.get_time_ns();
@@ -1064,7 +1119,7 @@ pub fn emit_batch_cancel_failure(
 mod tests {
     use rstest::rstest;
 
-    use super::format_order_response_reason;
+    use super::{BoundedDedup, format_order_response_reason};
 
     #[rstest]
     #[case("51000", "Rejected", "", "Rejected")]
@@ -1083,5 +1138,79 @@ mod tests {
             format_order_response_reason(s_code, s_msg, sub_code),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_check_and_insert_returns_false_on_first_insert() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        assert!(!dedup.check_and_insert(1));
+        assert!(dedup.contains(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_check_and_insert_returns_true_on_duplicate() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        dedup.insert(1);
+        assert!(dedup.check_and_insert(1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_evicts_oldest_on_overflow() {
+        let dedup = BoundedDedup::<u32>::new(3);
+        dedup.insert(1);
+        dedup.insert(2);
+        dedup.insert(3);
+        dedup.insert(4);
+
+        assert!(!dedup.contains(&1));
+        assert!(dedup.contains(&2));
+        assert!(dedup.contains(&3));
+        assert!(dedup.contains(&4));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_evicted_key_is_not_treated_as_duplicate() {
+        let dedup = BoundedDedup::<u32>::new(2);
+        dedup.insert(1);
+        dedup.insert(2);
+        dedup.insert(3);
+
+        assert!(!dedup.check_and_insert(1));
+        assert!(dedup.contains(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_remove_drops_entry() {
+        let dedup = BoundedDedup::<u32>::new(4);
+        dedup.insert(1);
+        assert!(dedup.remove(&1));
+        assert!(!dedup.contains(&1));
+        assert!(!dedup.remove(&1));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_remove_then_reinsert_does_not_double_count() {
+        let dedup = BoundedDedup::<u32>::new(2);
+        for k in 0u32..1000 {
+            dedup.insert(k);
+            dedup.remove(&k);
+        }
+        assert!(!dedup.contains(&0));
+        assert!(!dedup.contains(&500));
+    }
+
+    #[rstest]
+    fn test_bounded_dedup_reinsert_survives_stale_marker_eviction() {
+        let dedup = BoundedDedup::<u32>::new(3);
+        dedup.insert(1);
+        dedup.remove(&1);
+
+        dedup.insert(2);
+        dedup.insert(3);
+        dedup.insert(1);
+
+        assert!(dedup.contains(&1));
+        assert!(dedup.contains(&2));
+        assert!(dedup.contains(&3));
     }
 }
