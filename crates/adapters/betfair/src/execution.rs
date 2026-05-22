@@ -495,18 +495,16 @@ impl BetfairExecutionClient {
                             StreamingSide::Back => "BACK",
                             StreamingSide::Lay => "LAY",
                         };
-                        let dec_to_f64 =
-                            |d: Decimal| -> f64 { d.to_string().parse::<f64>().unwrap_or(0.0) };
                         let voided = BetfairOrderVoided::new(
                             instrument_id,
                             uo.rfo.as_deref().unwrap_or("").to_string(),
                             uo.id.clone(),
-                            dec_to_f64(sv),
-                            dec_to_f64(uo.p),
-                            dec_to_f64(uo.s),
+                            sv,
+                            uo.p,
+                            uo.s,
                             side_str.to_string(),
-                            uo.avp.map_or(f64::NAN, dec_to_f64),
-                            uo.sm.map_or(f64::NAN, dec_to_f64),
+                            uo.avp,
+                            uo.sm,
                             String::new(),
                             ts_event,
                             ts_init,

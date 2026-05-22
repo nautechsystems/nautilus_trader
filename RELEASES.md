@@ -46,6 +46,8 @@ None
 - Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
 - Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
 - Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
+- Fixed Betfair Rust adapter overfill checks for rounded stream matched sizes
+- Fixed Betfair Rust adapter unsupported unsubscribe commands logging above debug
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek

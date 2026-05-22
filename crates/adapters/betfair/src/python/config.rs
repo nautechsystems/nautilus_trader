@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::config::{BetfairDataConfig, BetfairExecConfig};
 
@@ -64,7 +65,7 @@ impl BetfairDataConfig {
         app_key: Option<String>,
         proxy_url: Option<String>,
         request_rate_per_second: u32,
-        default_min_notional: Option<f64>,
+        default_min_notional: Option<Decimal>,
         event_type_ids: Option<Vec<u64>>,
         event_type_names: Option<Vec<String>>,
         event_ids: Option<Vec<u64>>,

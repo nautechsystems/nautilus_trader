@@ -34,15 +34,17 @@ use nautilus_model::{
     data::{InstrumentClose, InstrumentStatus, OrderBookDeltas, TradeTick},
     identifiers::{InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money},
 };
 use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION},
         enums::MarketStatus,
-        parse::{make_instrument_id, parse_market_definition, parse_millis_timestamp},
+        parse::{
+            make_instrument_id, parse_betfair_price, parse_betfair_quantity,
+            parse_market_definition, parse_millis_timestamp,
+        },
     },
     data_types::{
         BetfairBspBookDelta, BetfairRaceProgress, BetfairRaceRunnerData, BetfairSequenceCompleted,
@@ -332,18 +334,14 @@ impl BetfairDataLoader {
                             let trade_volume = pv.volume - prev_volume;
                             self.traded_volumes.insert(key, pv.volume);
 
-                            let price =
-                                match Price::from_decimal_dp(pv.price, BETFAIR_PRICE_PRECISION) {
-                                    Ok(p) => p,
-                                    Err(e) => {
-                                        log::warn!("Invalid trade price: {e}");
-                                        continue;
-                                    }
-                                };
-                            let size = match Quantity::from_decimal_dp(
-                                trade_volume,
-                                BETFAIR_QUANTITY_PRECISION,
-                            ) {
+                            let price = match parse_betfair_price(pv.price) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    log::warn!("Invalid trade price: {e}");
+                                    continue;
+                                }
+                            };
+                            let size = match parse_betfair_quantity(trade_volume) {
                                 Ok(q) => q,
                                 Err(e) => {
                                     log::warn!("Invalid trade size: {e}");
@@ -449,6 +447,7 @@ fn open_reader(filepath: &Path) -> anyhow::Result<Box<dyn BufRead>> {
 mod tests {
     use std::path::PathBuf;
 
+    use nautilus_model::types::Price;
     use rstest::rstest;
 
     use super::*;
