@@ -22,6 +22,7 @@ from nautilus_trader.live import LiveExecClientConfig
 from nautilus_trader.live import LiveExecEngineConfig
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
+from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import RoutingConfig
 
@@ -72,6 +73,28 @@ def test_live_data_client_config_defaults():
     assert config.handle_revised_bars is False
     assert isinstance(config.instrument_provider, InstrumentProviderConfig)
     assert isinstance(config.routing, RoutingConfig)
+
+
+def test_plugin_config_explicit():
+    config = PluginConfig(
+        path="./target/debug/examples/libruntime_smoke_plugin.so",
+        type_name="RuntimeSmokeActor",
+        config={
+            "actor_id": "RuntimeSmokeActor-001",
+            "threshold": 10,
+            "strategy_config": {"strategy_id": "RuntimeSmokeStrategy-001"},
+        },
+        sha256="0" * 64,
+    )
+
+    assert config.path == "./target/debug/examples/libruntime_smoke_plugin.so"
+    assert config.type_name == "RuntimeSmokeActor"
+    assert config.config == {
+        "actor_id": "RuntimeSmokeActor-001",
+        "threshold": 10,
+        "strategy_config": {"strategy_id": "RuntimeSmokeStrategy-001"},
+    }
+    assert config.sha256 == "0" * 64
 
 
 def test_live_data_client_config_explicit():

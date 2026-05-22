@@ -579,6 +579,35 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes instrument expirations due at the given timestamp.
+    pub fn process_instrument_expirations(&mut self, ts_now: UnixNanos) {
+        for matching_engine in self.matching_engines.values_mut() {
+            if matching_engine
+                .instrument
+                .expiration_ns()
+                .is_some_and(|expiration_ns| ts_now >= expiration_ns)
+            {
+                matching_engine.process_instrument_expiration(ts_now);
+            }
+        }
+    }
+
+    /// Returns unprocessed instrument expirations for timer scheduling.
+    #[must_use]
+    pub fn instrument_expirations(&self) -> Vec<(InstrumentId, UnixNanos)> {
+        self.matching_engines
+            .values()
+            .filter(|matching_engine| !matching_engine.is_expiration_processed())
+            .filter_map(|matching_engine| {
+                matching_engine
+                    .instrument
+                    .expiration_ns()
+                    .filter(|expiration_ns| *expiration_ns > UnixNanos::default())
+                    .map(|expiration_ns| (matching_engine.instrument.id(), expiration_ns))
+            })
+            .collect()
+    }
+
     /// Advances the exchange clock to the given timestamp so that any event
     /// generators (modules, account state) see the correct time even when
     /// no commands are pending.

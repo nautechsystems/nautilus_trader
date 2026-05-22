@@ -100,7 +100,6 @@ nautilus-trading = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
-tracing-test = { workspace = true }
 
 # Run live smoke with `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
 # Run embedded config unit tests with `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`.

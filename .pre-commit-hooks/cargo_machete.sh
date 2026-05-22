@@ -5,7 +5,7 @@
 # lists in each crate's Cargo.toml. Known categories:
 #   - Feature-graph plumbing (optional deps referenced only in [features])
 #   - Macro-expansion-only deps (brought into scope by a derive elsewhere)
-#   - Build-script deps (handled by default invocation; do not use --with-metadata)
+#   - Build-script deps (cargo-machete cannot always see feature-gated build.rs uses)
 
 set -euo pipefail
 
@@ -24,8 +24,8 @@ if [ "$installed_version" != "$PINNED_VERSION" ]; then
   echo "         cargo install --locked cargo-machete@${PINNED_VERSION}"
 fi
 
-echo "Running cargo machete..."
-if ! cargo machete; then
+echo "Running cargo machete --with-metadata..."
+if ! cargo machete --with-metadata; then
   echo ""
   echo "If a flagged dependency is a false positive (feature-gate plumbing,"
   echo "macro expansion, etc.), add it to the crate's Cargo.toml with a"

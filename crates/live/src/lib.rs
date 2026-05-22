@@ -72,8 +72,8 @@
 //!
 //! With `plugin` disabled, the `plugin` module is removed, the unsafe FFI
 //! surface that supports it does not link, and `nautilus-plugin` is not pulled
-//! into the dependency graph. `LiveNodeConfig` does not expose a `plugins`
-//! field under this configuration once phase 3 wires the loader.
+//! into the dependency graph. A non-empty `LiveNodeConfig.plugins` list is
+//! rejected at build time under this configuration.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -89,19 +89,23 @@ pub mod runner;
 
 #[cfg(feature = "node")]
 pub mod builder;
+
 #[cfg(feature = "node")]
 pub mod config;
+
 #[cfg(feature = "node")]
 pub mod manager;
+
 #[cfg(feature = "node")]
 pub mod node;
+
 #[cfg(feature = "plugin")]
 pub mod plugin;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports for adapters
 pub use emitter::ExecutionEventEmitter;
 pub use nautilus_common::factories::OrderEventFactory;
 pub use nautilus_execution::client::core::ExecutionClientCore;
-
-#[cfg(feature = "python")]
-pub mod python;

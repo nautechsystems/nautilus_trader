@@ -435,6 +435,11 @@ impl OKXWebSocketClient {
         (**self.instruments_cache.load()).clone()
     }
 
+    /// Returns a shared handle to the live instruments cache.
+    pub fn instruments_cache_arc(&self) -> Arc<AtomicMap<Ustr, InstrumentAny>> {
+        Arc::clone(&self.instruments_cache)
+    }
+
     /// Caches the instIdCode mapping for an instrument.
     ///
     /// The instIdCode is required for WebSocket order operations per OKX API deprecation.
@@ -3109,6 +3114,7 @@ impl OKXWebSocketClient {
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
     use nautilus_network::RECONNECTED;
     use rstest::rstest;
     use tokio_tungstenite::tungstenite::Message;
@@ -3146,6 +3152,22 @@ mod tests {
         let client = OKXWebSocketClient::default();
         assert!(client.credential.is_none());
         assert_eq!(client.api_key(), None);
+    }
+
+    #[rstest]
+    fn test_instruments_cache_arc_observes_post_clone_writes() {
+        let client = OKXWebSocketClient::default();
+        let cache = client.instruments_cache_arc();
+        assert!(cache.load().is_empty());
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let symbol = instrument.symbol().inner();
+        client.cache_instruments(std::slice::from_ref(&instrument));
+
+        let loaded = cache.load();
+        assert_eq!(loaded.len(), 1);
+        let stored = loaded.get(&symbol).expect("instrument not refreshed");
+        assert_eq!(stored.id(), instrument.id());
     }
 
     #[rstest]

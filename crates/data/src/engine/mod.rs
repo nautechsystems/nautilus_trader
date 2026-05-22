@@ -33,6 +33,7 @@ pub mod book;
 mod commands;
 pub mod config;
 mod handlers;
+mod requests;
 
 #[cfg(feature = "defi")]
 pub mod pool;
@@ -50,6 +51,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
 use bar::{BarAggregatorKey, bar_aggregator_key};
 use book::{
@@ -59,29 +61,32 @@ use book::{
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
 use futures::future::join_all;
-use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler};
+use handlers::{
+    BAR_AGGREGATOR_PRIORITY, BarBarHandler, BarQuoteHandler, BarTradeHandler, SpreadQuoteHandler,
+};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        DataCommand, DataResponse, ForwardPricesResponse, RequestCommand, RequestForwardPrices,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, is_parent_subscription,
+        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, RequestBars,
+        RequestCommand, RequestForwardPrices, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeOptionChain, SubscribeQuotes, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes, is_parent_subscription,
     },
     msgbus::{
-        self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
+        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UUID4, WeakCell,
+    Params, UUID4, UnixNanos, WeakCell,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -105,6 +110,12 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
+use requests::{
+    ContinuousFutureRequest, ContinuousFutureRequestState, ContinuousFutureSegment,
+    ContinuousFutureSource, RequestBarAggregation, continuous_future_parent_request_id,
+    continuous_future_request_from_bars, has_continuous_future_params,
+    request_bar_aggregation_from_params, request_params, response_params,
+};
 #[cfg(feature = "streaming")]
 use streaming::CatalogMap;
 use ustr::Ustr;
@@ -125,10 +136,6 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
-// Between built-in handlers (10) and default user handlers (0)
-const BAR_AGGREGATOR_PRIORITY: u32 = 5;
-const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
-
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -137,8 +144,6 @@ pub struct DataEngine {
     pub(crate) external_clients: AHashSet<ClientId>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
-    #[cfg(feature = "streaming")]
-    catalogs: CatalogMap,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
@@ -150,6 +155,8 @@ pub struct DataEngine {
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
+    request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
     spread_quote_aggregators: AHashMap<InstrumentId, Rc<RefCell<SpreadQuoteAggregator>>>,
     spread_quote_handlers: AHashMap<InstrumentId, Vec<(InstrumentId, TypedHandler<QuoteTick>)>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
@@ -167,6 +174,8 @@ pub struct DataEngine {
     response_count: u64,
     pub(crate) msgbus_priority: u32,
     pub(crate) config: DataEngineConfig,
+    #[cfg(feature = "streaming")]
+    catalogs: CatalogMap,
     #[cfg(feature = "defi")]
     pub(crate) pool_updaters: AHashMap<InstrumentId, Rc<PoolUpdater>>,
     #[cfg(feature = "defi")]
@@ -200,8 +209,6 @@ impl DataEngine {
             external_clients,
             clients: IndexMap::new(),
             default_client: None,
-            #[cfg(feature = "streaming")]
-            catalogs: CatalogMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
@@ -213,6 +220,8 @@ impl DataEngine {
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
+            request_bar_aggregations: AHashMap::new(),
+            continuous_future_requests: AHashMap::new(),
             spread_quote_aggregators: AHashMap::new(),
             spread_quote_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
@@ -230,6 +239,8 @@ impl DataEngine {
             response_count: 0,
             msgbus_priority: 10, // High-priority for built-in component
             config,
+            #[cfg(feature = "streaming")]
+            catalogs: CatalogMap::new(),
             #[cfg(feature = "defi")]
             pool_updaters: AHashMap::new(),
             #[cfg(feature = "defi")]
@@ -492,6 +503,9 @@ impl DataEngine {
             }
         }
 
+        self.request_bar_aggregations.clear();
+        self.continuous_future_requests.clear();
+
         let spread_ids: Vec<InstrumentId> = self.spread_quote_aggregators.keys().copied().collect();
         for spread_id in spread_ids {
             self.stop_spread_quote_aggregator(spread_id);
@@ -502,6 +516,7 @@ impl DataEngine {
         for (_, manager) in managers {
             manager.borrow_mut().teardown(&self.clock);
         }
+
         self.option_chain_instrument_index.clear();
         self.pending_option_chain_requests.clear();
 
@@ -519,6 +534,7 @@ impl DataEngine {
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
             msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
         }
+
         self.book_deltas_parent_expansions.clear();
         self.book_depth10_parent_expansions.clear();
 
@@ -1067,26 +1083,429 @@ impl DataEngine {
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(req.client_id(), req.venue()) {
-            match req {
-                RequestCommand::Data(req) => client.request_data(req),
-                RequestCommand::Instrument(req) => client.request_instrument(req),
-                RequestCommand::Instruments(req) => client.request_instruments(req),
-                RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
-                RequestCommand::BookDepth(req) => client.request_book_depth(req),
-                RequestCommand::Quotes(req) => client.request_quotes(req),
-                RequestCommand::Trades(req) => client.request_trades(req),
-                RequestCommand::FundingRates(req) => client.request_funding_rates(req),
-                RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
-                RequestCommand::Bars(req) => client.request_bars(req),
+        if has_continuous_future_params(request_params(&req)) {
+            return self.execute_continuous_future_request(req);
+        }
+
+        let request_id = *req.request_id();
+        self.prepare_request_bar_aggregators(&req)?;
+
+        let result = self.dispatch_request_to_client(req);
+
+        if result.is_err() {
+            self.cleanup_request_bar_aggregators(&request_id);
+        }
+
+        result.map(|_| ())
+    }
+
+    fn dispatch_request_to_client(&mut self, req: RequestCommand) -> anyhow::Result<ClientId> {
+        let client_id = req.client_id().copied();
+        let venue = req.venue().copied();
+        let Some(client) = self.get_client(client_id.as_ref(), venue.as_ref()) else {
+            anyhow::bail!("Cannot handle request: no client found for {client_id:?} {venue:?}");
+        };
+        let resolved_client_id = client.client_id();
+
+        match req {
+            RequestCommand::Data(req) => client.request_data(req),
+            RequestCommand::Instrument(req) => client.request_instrument(req),
+            RequestCommand::Instruments(req) => client.request_instruments(req),
+            RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+            RequestCommand::BookDepth(req) => client.request_book_depth(req),
+            RequestCommand::Quotes(req) => client.request_quotes(req),
+            RequestCommand::Trades(req) => client.request_trades(req),
+            RequestCommand::FundingRates(req) => client.request_funding_rates(req),
+            RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
+            RequestCommand::Bars(req) => client.request_bars(req),
+        }?;
+
+        Ok(resolved_client_id)
+    }
+
+    fn execute_continuous_future_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        let RequestCommand::Bars(parent) = req else {
+            anyhow::bail!("Continuous future requests require `RequestBars`");
+        };
+        let request_id = parent.request_id;
+        let Some(continuous_request) = continuous_future_request_from_bars(&parent)? else {
+            return Ok(());
+        };
+
+        self.ensure_continuous_future_target_instrument(&continuous_request);
+        self.prepare_request_bar_aggregators_from_state(
+            request_id,
+            &continuous_request.request_bar_aggregation,
+        )?;
+
+        let response_client_id = match self.resolve_request_client_id(
+            parent.client_id.as_ref(),
+            Some(&continuous_request.primary_bar_type.instrument_id().venue),
+        ) {
+            Ok(client_id) => client_id,
+            Err(e) => {
+                self.cleanup_request_bar_aggregators(&request_id);
+                return Err(e);
             }
-        } else {
+        };
+        let (cursor_ns, end_ns) = match self.bound_continuous_future_dates(&parent) {
+            Ok(bounds) => bounds,
+            Err(e) => {
+                self.cleanup_request_bar_aggregators(&request_id);
+                return Err(e);
+            }
+        };
+
+        self.continuous_future_requests.insert(
+            request_id,
+            ContinuousFutureRequestState {
+                parent,
+                request: continuous_request,
+                start_ns: cursor_ns,
+                cursor_ns,
+                end_ns,
+                response_client_id,
+                data_count: 0,
+            },
+        );
+
+        if let Err(e) = self.dispatch_next_continuous_future_segment(request_id) {
+            self.continuous_future_requests.remove(&request_id);
+            self.cleanup_request_bar_aggregators(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn resolve_request_client_id(
+        &mut self,
+        client_id: Option<&ClientId>,
+        venue: Option<&Venue>,
+    ) -> anyhow::Result<ClientId> {
+        self.get_client(client_id, venue)
+            .map(|client| client.client_id())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot handle request: no client found for {client_id:?} {venue:?}"
+                )
+            })
+    }
+
+    fn bound_continuous_future_dates(
+        &self,
+        request: &RequestBars,
+    ) -> anyhow::Result<(UnixNanos, UnixNanos)> {
+        let now = self.clock.borrow().timestamp_ns();
+        let start = request
+            .start
+            .map(datetime_to_unix_nanos)
+            .transpose()?
+            .unwrap_or_default();
+        let end = request
+            .end
+            .map(datetime_to_unix_nanos)
+            .transpose()?
+            .unwrap_or(now);
+
+        Ok((start.min(now), end.min(now)))
+    }
+
+    fn ensure_continuous_future_target_instrument(&self, request: &ContinuousFutureRequest) {
+        let target_id = request.primary_bar_type.instrument_id();
+        if self.cache.borrow().instrument(&target_id).is_some() {
+            return;
+        }
+
+        let segment_id = request.first_segment_instrument_id();
+        let segment_instrument = self.cache.borrow().instrument(&segment_id).cloned();
+        let Some(segment_instrument) = segment_instrument else {
+            log::warn!(
+                "Cannot synthesize continuous future instrument {target_id}: first segment {segment_id} not in cache"
+            );
+            return;
+        };
+
+        let InstrumentAny::FuturesContract(mut target) = segment_instrument else {
+            log::warn!(
+                "Cannot synthesize continuous future instrument {target_id}: segment {segment_id} is not a FuturesContract",
+            );
+            return;
+        };
+
+        target.id = target_id;
+        target.raw_symbol = target_id.symbol;
+        target.activation_ns = UnixNanos::default();
+        target.expiration_ns = UnixNanos::default();
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::FuturesContract(target))
+        {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn prepare_request_bar_aggregators_from_state(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        if !self.can_start_request_bar_aggregators(request_id, state) {
             anyhow::bail!(
-                "Cannot handle request: no client found for {:?} {:?}",
-                req.client_id(),
-                req.venue()
+                "Cannot request aggregated bars: one of the aggregators in `bar_types` is already running"
             );
         }
+
+        self.request_bar_aggregations
+            .insert(request_id, state.clone());
+
+        if let Err(e) = self.init_request_bar_aggregators(request_id, state) {
+            self.cleanup_request_bar_aggregators(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    fn dispatch_next_continuous_future_segment(&mut self, request_id: UUID4) -> anyhow::Result<()> {
+        let Some(state) = self.continuous_future_requests.get(&request_id).cloned() else {
+            anyhow::bail!("No active continuous future request for {request_id}");
+        };
+
+        let Some(segment) = state
+            .request
+            .next_segment(state.cursor_ns.as_u64(), state.end_ns.as_u64())
+        else {
+            self.emit_empty_continuous_future_response(request_id);
+            return Ok(());
+        };
+
+        self.apply_continuous_future_adjustment(request_id, &state.request, segment.index)?;
+        let child = self.build_continuous_future_child_request(request_id, &state, segment);
+        if let Some(active) = self.continuous_future_requests.get_mut(&request_id) {
+            active.cursor_ns = UnixNanos::from(segment.end_ns.saturating_add(1));
+        }
+
+        self.dispatch_request_to_client(child).map(|_| ())
+    }
+
+    fn apply_continuous_future_adjustment(
+        &self,
+        request_id: UUID4,
+        request: &ContinuousFutureRequest,
+        segment_index: usize,
+    ) -> anyhow::Result<()> {
+        let adjustment = request.adjustment_for_segment(segment_index);
+        let key = bar_aggregator_key(request.primary_bar_type, Some(request_id));
+        let aggregator = self.bar_aggregators.get(&key).ok_or_else(|| {
+            anyhow::anyhow!("No aggregator for continuous future request {request_id}")
+        })?;
+        aggregator
+            .borrow_mut()
+            .set_adjustment(adjustment, request.adjustment_mode);
+
+        Ok(())
+    }
+
+    fn build_continuous_future_child_request(
+        &self,
+        request_id: UUID4,
+        state: &ContinuousFutureRequestState,
+        segment: ContinuousFutureSegment,
+    ) -> RequestCommand {
+        let source = state.request.source_for_segment(segment.instrument_id);
+        let start = Some(UnixNanos::from(segment.start_ns).to_datetime_utc());
+        let end = Some(UnixNanos::from(segment.end_ns).to_datetime_utc());
+        let child_params = Some(
+            state
+                .request
+                .child_params(state.parent.params.as_ref(), request_id),
+        );
+        let child_request_id = UUID4::new();
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        match source {
+            ContinuousFutureSource::Bars(bar_type) => RequestCommand::Bars(RequestBars::new(
+                bar_type,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+            ContinuousFutureSource::Trades => RequestCommand::Trades(RequestTrades::new(
+                segment.instrument_id,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+            ContinuousFutureSource::Quotes => RequestCommand::Quotes(RequestQuotes::new(
+                segment.instrument_id,
+                start,
+                end,
+                state.parent.limit,
+                state.parent.client_id,
+                child_request_id,
+                ts_init,
+                child_params,
+            )),
+        }
+    }
+
+    fn emit_empty_continuous_future_response(&mut self, request_id: UUID4) {
+        let Some(state) = self.continuous_future_requests.remove(&request_id) else {
+            return;
+        };
+
+        let mut params = state.parent.params.unwrap_or_default();
+        if state.data_count != 0 {
+            params.insert(
+                "data_count".to_string(),
+                serde_json::json!(state.data_count),
+            );
+        }
+
+        let response = DataResponse::Bars(BarsResponse::new(
+            request_id,
+            state.response_client_id,
+            state.parent.bar_type,
+            Vec::new(),
+            Some(state.start_ns),
+            Some(state.end_ns),
+            self.clock.borrow().timestamp_ns(),
+            Some(params),
+        ));
+        self.response(response);
+    }
+
+    fn prepare_request_bar_aggregators(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
+        let request_id = *req.request_id();
+        let Some(state) = request_bar_aggregation_from_params(request_params(req))? else {
+            return Ok(());
+        };
+
+        self.prepare_request_bar_aggregators_from_state(request_id, &state)
+    }
+
+    fn can_start_request_bar_aggregators(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> bool {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+        state.bar_types.iter().all(|bar_type| {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            self.bar_aggregators
+                .get(&key)
+                .is_none_or(|aggregator| !aggregator.borrow().is_running())
+        })
+    }
+
+    fn init_request_bar_aggregators(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            self.create_bar_aggregator_for_key(*bar_type, aggregator_request_id)?;
+            self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
+
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                aggregator.borrow_mut().set_is_running(true);
+            }
+        }
+
+        self.set_request_bar_aggregator_chain_handlers(request_id, state);
+
+        Ok(())
+    }
+
+    fn set_request_bar_aggregator_chain_handlers(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            let Some(aggregator) = self.bar_aggregators.get(&key).cloned() else {
+                continue;
+            };
+
+            let downstream: Vec<_> = state
+                .bar_types
+                .iter()
+                .filter(|candidate| {
+                    candidate.is_composite()
+                        && candidate.composite().standard() == bar_type.standard()
+                })
+                .filter_map(|candidate| {
+                    let key = bar_aggregator_key(*candidate, aggregator_request_id);
+                    self.bar_aggregators.get(&key).cloned()
+                })
+                .collect();
+            let cache = self.cache.clone();
+            let validate_sequence = self.config.validate_data_sequence;
+            let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
+                process_engine_bar(&cache, validate_sequence, false, bar);
+
+                for aggregator in &downstream {
+                    aggregator.borrow_mut().handle_bar(bar);
+                }
+            });
+
+            aggregator.borrow_mut().set_historical_mode(true, handler);
+        }
+    }
+
+    fn cleanup_request_bar_aggregators(&mut self, request_id: &UUID4) -> bool {
+        let Some(state) = self.request_bar_aggregations.remove(request_id) else {
+            return false;
+        };
+        let aggregator_request_id = state.aggregator_request_id(*request_id);
+
+        for bar_type in state.bar_types {
+            let key = bar_aggregator_key(bar_type, aggregator_request_id);
+            let has_live_handlers =
+                state.update_subscriptions && self.bar_aggregator_handlers.contains_key(&key);
+            let keep_running = if has_live_handlers {
+                match self.setup_bar_aggregator(bar_type, false, aggregator_request_id) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::error!(
+                            "Error starting live request bar aggregator for {bar_type}: {e}"
+                        );
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                aggregator.borrow_mut().set_is_running(keep_running);
+            }
+
+            if !state.update_subscriptions
+                && let Err(e) = self.stop_bar_aggregator(bar_type, aggregator_request_id)
+            {
+                log::error!("Error stopping request bar aggregator for {bar_type}: {e}");
+            }
+        }
+
+        true
     }
 
     /// Processes a dynamically-typed data message.
@@ -1145,14 +1564,13 @@ impl DataEngine {
         }
     }
 
-    /// Processes a `Data` instance through the historical pipeline.
+    /// Processes a `Data` instance through the pipeline bus path.
     ///
-    /// Pipeline mode publishes each item on the historical topic family
-    /// (prefixed with `historical.`) and gates cache writes on
-    /// `disable_historical_cache`. None of the live-only side effects
-    /// (synthetic republish, option-chain expiry, depth-derived quotes,
-    /// deferred-command drains) run in this path.
-    pub fn process_historical(&mut self, data: Data) {
+    /// Pipeline mode publishes each item on the `data.pipeline.` topic family and gates cache
+    /// writes on `disable_historical_cache`. None of the live-only side effects (synthetic
+    /// republish, option-chain expiry, depth-derived quotes, deferred-command drains) run in this
+    /// path.
+    pub fn process_pipeline(&mut self, data: Data) {
         self.data_count += 1;
 
         match data {
@@ -1191,6 +1609,11 @@ impl DataEngine {
         self.response_count += 1;
         let correlation_id = *resp.correlation_id();
 
+        if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
+            self.handle_continuous_future_child_response(parent_id, &resp);
+            return;
+        }
+
         match &resp {
             DataResponse::Instrument(r) => {
                 self.handle_instrument_response(r.data.clone());
@@ -1220,12 +1643,221 @@ impl DataEngine {
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
             DataResponse::ForwardPrices(r) => {
+                self.process_request_bar_aggregation_response(&resp);
                 return self.handle_forward_prices_response(&correlation_id, r);
             }
             DataResponse::Data(_) => {}
         }
 
+        self.process_request_bar_aggregation_response(&resp);
+
         msgbus::send_response(&correlation_id, &resp);
+    }
+
+    fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
+        let correlation_id = *resp.correlation_id();
+        let Some(state) = self.request_bar_aggregations.get(&correlation_id).cloned() else {
+            return;
+        };
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                for quote in &r.data {
+                    self.update_request_bar_aggregators_from_quote(&state, correlation_id, *quote);
+                }
+            }
+            DataResponse::Trades(r) => {
+                for trade in &r.data {
+                    self.update_request_bar_aggregators_from_trade(&state, correlation_id, *trade);
+                }
+            }
+            DataResponse::Bars(r) => {
+                for bar in &r.data {
+                    self.update_request_bar_aggregators_from_bar(&state, correlation_id, *bar);
+                }
+            }
+            _ => {}
+        }
+
+        self.cleanup_request_bar_aggregators(&correlation_id);
+    }
+
+    fn handle_continuous_future_child_response(&mut self, parent_id: UUID4, resp: &DataResponse) {
+        if !self.continuous_future_requests.contains_key(&parent_id) {
+            log::error!("No active continuous future request for child response {parent_id}");
+            return;
+        }
+
+        let data_count = response_params(resp)
+            .and_then(|params| params.get("data_count"))
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| resp.record_count().map(|count| count as u64))
+            .unwrap_or(0);
+
+        if let Some(state) = self.continuous_future_requests.get_mut(&parent_id) {
+            state.data_count += data_count;
+        }
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
+                    self.handle_quotes(&r.data);
+                }
+            }
+            DataResponse::Trades(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
+                    self.handle_trades(&r.data);
+                }
+            }
+            DataResponse::Bars(r) => {
+                if !log_if_empty_response(&r.data, &r.bar_type, resp.correlation_id()) {
+                    self.handle_bars(&r.data);
+                }
+            }
+            _ => {
+                log::error!(
+                    "Continuous future child response {parent_id} must contain quotes, trades, or bars"
+                );
+                return;
+            }
+        }
+
+        self.process_continuous_future_aggregation_response(parent_id, resp);
+        if let Err(e) = self.dispatch_next_continuous_future_segment(parent_id) {
+            log::error!("Error dispatching continuous future segment for {parent_id}: {e}");
+            self.emit_empty_continuous_future_response(parent_id);
+        }
+    }
+
+    fn process_continuous_future_aggregation_response(
+        &self,
+        parent_id: UUID4,
+        resp: &DataResponse,
+    ) {
+        let Some(state) = self.continuous_future_requests.get(&parent_id) else {
+            return;
+        };
+        let primary_bar_type = state.request.primary_bar_type;
+        let aggregator_request_id = Some(parent_id);
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                for quote in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_quote(*quote);
+                        },
+                    );
+                }
+            }
+            DataResponse::Trades(r) => {
+                for trade in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_trade(*trade);
+                        },
+                    );
+                }
+            }
+            DataResponse::Bars(r) => {
+                for bar in &r.data {
+                    self.update_request_bar_aggregator(
+                        primary_bar_type,
+                        aggregator_request_id,
+                        |aggregator| {
+                            aggregator.handle_bar(*bar);
+                        },
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn update_request_bar_aggregators_from_quote(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        quote: QuoteTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != quote.instrument_id
+                || bar_type.spec().price_type == PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_quote(quote);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregators_from_trade(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        trade: TradeTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != trade.instrument_id
+                || bar_type.spec().price_type != PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_trade(trade);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregators_from_bar(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        bar: Bar,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if !bar_type.is_composite()
+                || bar_type.composite().standard() != bar.bar_type.standard()
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_bar(bar);
+            });
+        }
+    }
+
+    fn update_request_bar_aggregator<F>(
+        &self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+        update: F,
+    ) where
+        F: FnOnce(&mut dyn BarAggregator),
+    {
+        let key = bar_aggregator_key(bar_type, request_id);
+        let Some(aggregator) = self.bar_aggregators.get(&key) else {
+            log::error!("Cannot update request bar aggregator: no aggregator found for {bar_type}");
+            return;
+        };
+
+        update(aggregator.borrow_mut().as_mut());
     }
 
     #[inline]
@@ -1635,17 +2267,17 @@ impl DataEngine {
     fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
         // Pipeline deltas are not buffered; replays arrive pre-batched
         let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
-        let topic = historical_topic_of(switchboard::get_book_deltas_topic(deltas.instrument_id));
+        let topic = switchboard::get_pipeline_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, &deltas);
     }
 
     fn handle_deltas_pipeline(&self, deltas: &OrderBookDeltas) {
-        let topic = historical_topic_of(switchboard::get_book_deltas_topic(deltas.instrument_id));
+        let topic = switchboard::get_pipeline_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, deltas);
     }
 
     fn handle_depth10_pipeline(&self, depth: OrderBookDepth10) {
-        let topic = historical_topic_of(switchboard::get_book_depth10_topic(depth.instrument_id));
+        let topic = switchboard::get_pipeline_book_depth10_topic(depth.instrument_id);
         msgbus::publish_depth10(topic, &depth);
     }
 
@@ -1656,7 +2288,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_quotes_topic(quote.instrument_id));
+        let topic = switchboard::get_pipeline_quotes_topic(quote.instrument_id);
         msgbus::publish_quote(topic, &quote);
     }
 
@@ -1667,7 +2299,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_trades_topic(trade.instrument_id));
+        let topic = switchboard::get_pipeline_trades_topic(trade.instrument_id);
         msgbus::publish_trade(topic, &trade);
     }
 
@@ -1682,7 +2314,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_bars_topic(bar.bar_type));
+        let topic = switchboard::get_pipeline_bars_topic(bar.bar_type);
         msgbus::publish_bar(topic, &bar);
     }
 
@@ -1693,8 +2325,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic =
-            historical_topic_of(switchboard::get_mark_price_topic(mark_price.instrument_id));
+        let topic = switchboard::get_pipeline_mark_price_topic(mark_price.instrument_id);
         msgbus::publish_mark_price(topic, &mark_price);
     }
 
@@ -1709,9 +2340,7 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_index_price_topic(
-            index_price.instrument_id,
-        ));
+        let topic = switchboard::get_pipeline_index_price_topic(index_price.instrument_id);
         msgbus::publish_index_price(topic, &index_price);
     }
 
@@ -1726,21 +2355,18 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        let topic = historical_topic_of(switchboard::get_instrument_status_topic(
-            status.instrument_id,
-        ));
+        let topic = switchboard::get_pipeline_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
     }
 
     fn handle_instrument_close_pipeline(&self, close: InstrumentClose) {
-        let topic =
-            historical_topic_of(switchboard::get_instrument_close_topic(close.instrument_id));
+        let topic = switchboard::get_pipeline_instrument_close_topic(close.instrument_id);
         msgbus::publish_any(topic, &close);
     }
 
     fn handle_custom_data_pipeline(&self, custom: &CustomData) {
         log::debug!("Pipeline custom data: {}", custom.data.type_name());
-        let topic = historical_topic_of(switchboard::get_custom_topic(&custom.data_type));
+        let topic = switchboard::get_pipeline_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
     }
 
@@ -1912,9 +2538,13 @@ impl DataEngine {
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         match cmd.bar_type.aggregation_source() {
             AggregationSource::Internal => {
-                if !self
+                let key = bar_aggregator_key(cmd.bar_type, None);
+
+                if self
                     .bar_aggregators
-                    .contains_key(&bar_aggregator_key(cmd.bar_type, None))
+                    .get(&key)
+                    .is_none_or(|aggregator| !aggregator.borrow().is_running())
+                    || !self.bar_aggregator_handlers.contains_key(&key)
                 {
                     self.start_bar_aggregator(cmd.bar_type, None)?;
                 }
@@ -2973,15 +3603,16 @@ impl DataEngine {
         }
     }
 
-    // Live-only path: callers must pass `request_id = None`. Handler IDs key
-    // on `bar_type.standard()`; request-scoped aggregators (#5) will consume
-    // response data directly without subscribing to the msgbus
-    fn start_bar_aggregator(
+    fn create_bar_aggregator_for_key(
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
     ) -> anyhow::Result<()> {
-        // Get the instrument for this bar type
+        let key = bar_aggregator_key(bar_type, request_id);
+        if self.bar_aggregators.contains_key(&key) {
+            return Ok(());
+        }
+
         let instrument = {
             let cache = self.cache.borrow();
             cache
@@ -2994,58 +3625,83 @@ impl DataEngine {
                 })?
                 .clone()
         };
+        let aggregator = self.create_bar_aggregator(&instrument, bar_type);
+        self.bar_aggregators
+            .insert(key, Rc::new(RefCell::new(aggregator)));
 
+        Ok(())
+    }
+
+    fn start_bar_aggregator(
+        &mut self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         let bar_type_std = bar_type.standard();
 
-        // Create or retrieve aggregator in Rc<RefCell>
-        let aggregator = if let Some(rc) = self.bar_aggregators.get(&key) {
-            rc.clone()
-        } else {
-            let agg = self.create_bar_aggregator(&instrument, bar_type);
-            let rc = Rc::new(RefCell::new(agg));
-            self.bar_aggregators.insert(key, rc.clone());
-            rc
-        };
+        self.create_bar_aggregator_for_key(bar_type, request_id)?;
+        let aggregator = self
+            .bar_aggregators
+            .get(&key)
+            .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?
+            .clone();
+        let defer_live_activation = request_id.is_none()
+            && aggregator.borrow().is_running()
+            && !self.bar_aggregator_handlers.contains_key(&key);
 
-        // Subscribe to underlying data topics
-        let mut subscriptions = Vec::new();
+        if !self.bar_aggregator_handlers.contains_key(&key) {
+            // Subscribe to underlying data topics
+            let mut subscriptions = Vec::new();
 
-        if bar_type.is_composite() {
-            let topic = switchboard::get_bars_topic(bar_type.composite());
-            let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_bars(topic.into(), handler.clone(), None);
-            subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
-        } else if bar_type.spec().price_type == PriceType::Last {
-            let topic = switchboard::get_trades_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_trades(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
-            subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
-        } else {
-            // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
-            if matches!(
-                bar_type.spec().aggregation,
-                BarAggregation::TickImbalance
-                    | BarAggregation::VolumeImbalance
-                    | BarAggregation::ValueImbalance
-                    | BarAggregation::TickRuns
-                    | BarAggregation::VolumeRuns
-                    | BarAggregation::ValueRuns
-            ) {
-                log::warn!(
-                    "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
-                     data with `aggressor_side`, but `price_type` is not LAST so it will receive \
-                     quote data: bars will not emit correctly",
+            if bar_type.is_composite() {
+                let topic = switchboard::get_bars_topic(bar_type.composite());
+                let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+                subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
+            } else if bar_type.spec().price_type == PriceType::Last {
+                let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_trades(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
                 );
+                subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
+            } else {
+                // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
+                if matches!(
+                    bar_type.spec().aggregation,
+                    BarAggregation::TickImbalance
+                        | BarAggregation::VolumeImbalance
+                        | BarAggregation::ValueImbalance
+                        | BarAggregation::TickRuns
+                        | BarAggregation::VolumeRuns
+                        | BarAggregation::ValueRuns
+                ) {
+                    log::warn!(
+                        "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
+                         data with `aggressor_side`, but `price_type` is not LAST so it will receive \
+                         quote data: bars will not emit correctly",
+                    );
+                }
+
+                let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_quotes(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
+                );
+                subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
             }
 
-            let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
-            let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
-            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
-            subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
+            self.bar_aggregator_handlers.insert(key, subscriptions);
         }
 
-        self.bar_aggregator_handlers.insert(key, subscriptions);
+        if defer_live_activation {
+            return Ok(());
+        }
 
         // Setup time bar aggregator if needed (matches Cython _setup_bar_aggregator)
         self.setup_bar_aggregator(bar_type, false, request_id)?;
@@ -3168,6 +3824,8 @@ fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> 
     }
 }
 
+const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
+
 fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentId, i64)>> {
     if !instrument.is_spread() {
         return None;
@@ -3219,9 +3877,13 @@ fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
 }
 
-#[inline]
-fn historical_topic_of(live: MStr<Topic>) -> MStr<Topic> {
-    MStr::<Topic>::from(format!("historical.{}", live.as_ref()))
+fn datetime_to_unix_nanos(datetime: chrono::DateTime<chrono::Utc>) -> anyhow::Result<UnixNanos> {
+    let timestamp = datetime
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("datetime is outside the supported nanosecond range"))?;
+    let timestamp = u64::try_from(timestamp)
+        .context("datetime is before the UNIX epoch and cannot be represented as UnixNanos")?;
+    Ok(UnixNanos::from(timestamp))
 }
 
 // Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for

@@ -24,14 +24,14 @@ use std::{
     collections::HashMap,
     env,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
 
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_core::{
-    AtomicMap, UUID4, UnixNanos,
+    AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -65,10 +65,11 @@ use crate::{
             HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType,
         },
         parse::{
-            bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
-            determine_order_list_grouping, extract_inner_error, normalize_price,
-            order_to_hyperliquid_request_with_asset, parse_combined_account_balances_and_margins,
-            parse_spot_account_balances, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            bar_type_to_interval, cache_alias_for_symbol, clamp_price_to_precision,
+            derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
+            normalize_price, order_to_hyperliquid_request_with_asset_and_cloid,
+            parse_combined_account_balances_and_margins, parse_spot_account_balances,
+            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -97,7 +98,7 @@ use crate::{
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
             RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,
-            info_base_weight, info_extra_weight,
+            exec_action_weight, info_base_weight, info_extra_weight,
         },
     },
     signing::{
@@ -591,7 +592,8 @@ impl HyperliquidRawHttpClient {
             time_nonce,
             action_type: HyperliquidActionType::L1,
             is_testnet: self.is_testnet(),
-            vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
+            vault_address: self.vault_address,
+            expires_after: None,
         };
 
         let sig = signer.sign(&sign_request)?.signature;
@@ -650,23 +652,12 @@ impl HyperliquidRawHttpClient {
         }
     }
 
-    /// Send a signed action to the exchange using the typed HyperliquidExecAction enum.
-    ///
-    /// This is the preferred method for placing orders as it uses properly typed
-    /// structures that match Hyperliquid's API expectations exactly.
-    pub async fn post_action_exec(
+    /// Build a signed exchange request using the typed HyperliquidExecAction enum.
+    pub fn sign_action_exec_request(
         &self,
         action: &HyperliquidExecAction,
-    ) -> Result<HyperliquidExchangeResponse> {
-        let w = match action {
-            HyperliquidExecAction::Order { orders, .. } => 1 + (orders.len() as u32 / 40),
-            HyperliquidExecAction::Cancel { cancels } => 1 + (cancels.len() as u32 / 40),
-            HyperliquidExecAction::CancelByCloid { cancels } => 1 + (cancels.len() as u32 / 40),
-            HyperliquidExecAction::BatchModify { modifies } => 1 + (modifies.len() as u32 / 40),
-            _ => 1,
-        };
-        self.rest_limiter.acquire(w).await;
-
+        expires_after: Option<u64>,
+    ) -> Result<HyperliquidExchangeRequest<HyperliquidExecAction>> {
         let signer = self
             .signer
             .as_ref()
@@ -693,11 +684,12 @@ impl HyperliquidRawHttpClient {
                 time_nonce,
                 action_type: HyperliquidActionType::L1,
                 is_testnet: self.is_testnet(),
-                vault_address: self.vault_address.as_ref().map(|v| v.to_hex()),
+                vault_address: self.vault_address,
+                expires_after,
             })?
             .signature;
 
-        let request = if let Some(vault) = self.vault_address {
+        let mut request = if let Some(vault) = self.vault_address {
             HyperliquidExchangeRequest::with_vault(
                 action.clone(),
                 time_nonce.as_millis() as u64,
@@ -707,6 +699,22 @@ impl HyperliquidRawHttpClient {
         } else {
             HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
         };
+        request.expires_after = expires_after;
+        Ok(request)
+    }
+
+    /// Send a signed action to the exchange using the typed HyperliquidExecAction enum.
+    ///
+    /// This is the preferred method for placing orders as it uses properly typed
+    /// structures that match Hyperliquid's API expectations exactly.
+    pub async fn post_action_exec(
+        &self,
+        action: &HyperliquidExecAction,
+    ) -> Result<HyperliquidExchangeResponse> {
+        let w = exec_action_weight(action);
+        self.rest_limiter.acquire(w).await;
+
+        let request = self.sign_action_exec_request(action, None)?;
 
         let response = self.http_roundtrip_exchange(&request).await?;
 
@@ -804,6 +812,7 @@ pub struct HyperliquidHttpClient {
     asset_indices: Arc<AtomicMap<Ustr, u32>>,
     /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
     spot_fill_coins: Arc<AtomicMap<Ustr, Ustr>>,
+    client_order_id_cloids: Arc<Mutex<AHashMap<ClientOrderId, Cloid>>>,
     account_id: Option<AccountId>,
     /// Optional override address for queries (agent wallet / API sub-key support).
     /// When set, used for balance queries, position reports, and WS subscriptions
@@ -858,11 +867,71 @@ impl HyperliquidHttpClient {
             instruments_by_coin: Arc::new(AtomicMap::new()),
             asset_indices: Arc::new(AtomicMap::new()),
             spot_fill_coins: Arc::new(AtomicMap::new()),
+            client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
             normalize_prices: true,
             market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
         }
+    }
+
+    /// Returns the cached CLOID for a client order ID, or derives and caches it.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "cloid cache mutex poisoning is not expected"
+    )]
+    #[must_use]
+    pub fn get_or_generate_client_order_id_cloid(&self, client_order_id: ClientOrderId) -> Cloid {
+        let mut cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        *cloids
+            .entry(client_order_id)
+            .or_insert_with(|| Cloid::from_client_order_id(client_order_id))
+    }
+
+    /// Caches a CLOID for a client order ID if one is not already cached.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "cloid cache mutex poisoning is not expected"
+    )]
+    pub fn cache_client_order_id_cloid(&self, client_order_id: ClientOrderId, cloid: Cloid) {
+        self.client_order_id_cloids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .entry(client_order_id)
+            .or_insert(cloid);
+    }
+
+    fn replace_client_order_id_cloid(&self, client_order_id: ClientOrderId, cloid: Cloid) {
+        self.client_order_id_cloids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(client_order_id, cloid);
+    }
+
+    /// Returns the cached CLOID for a client order ID.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "cloid cache mutex poisoning is not expected"
+    )]
+    #[must_use]
+    pub fn cached_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
+        self.client_order_id_cloids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(client_order_id)
+            .copied()
+    }
+
+    /// Removes the cached CLOID for a client order ID.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "cloid cache mutex poisoning is not expected"
+    )]
+    pub fn remove_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
+        self.client_order_id_cloids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id)
     }
 
     /// Overrides the base info URL (for testing with mock servers).
@@ -901,6 +970,7 @@ impl HyperliquidHttpClient {
             instruments_by_coin: Arc::new(AtomicMap::new()),
             asset_indices: Arc::new(AtomicMap::new()),
             spot_fill_coins: Arc::new(AtomicMap::new()),
+            client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
             normalize_prices: true,
@@ -965,6 +1035,7 @@ impl HyperliquidHttpClient {
                     instruments_by_coin: Arc::new(AtomicMap::new()),
                     asset_indices: Arc::new(AtomicMap::new()),
                     spot_fill_coins: Arc::new(AtomicMap::new()),
+                    client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
                     account_id: None,
                     account_address: resolved_account_address,
                     normalize_prices: true,
@@ -1005,6 +1076,7 @@ impl HyperliquidHttpClient {
             instruments_by_coin: Arc::new(AtomicMap::new()),
             asset_indices: Arc::new(AtomicMap::new()),
             spot_fill_coins: Arc::new(AtomicMap::new()),
+            client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
             normalize_prices: true,
@@ -1107,8 +1179,7 @@ impl HyperliquidHttpClient {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
 
-                // Index the leading symbol component (the part before the first
-                // `-`) as a secondary key for two distinct callers:
+                // Secondary alias key for two distinct callers:
                 //
                 // * Spot raw_symbols are either `@{pair_index}` or slash format
                 //   (e.g., "PURR/USDC"); spot balance/position reconciliation
@@ -1121,15 +1192,22 @@ impl HyperliquidHttpClient {
                 //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
                 //   sanitized base lets that lookup resolve.
                 //
+                // For outcomes the alias is the `+<encoding>` token form
+                // (matching the `coin` field on `spotClearinghouseState`);
+                // for perps / spots it is the leading symbol segment.
+                // `cache_alias_for_symbol` keeps the two rules co-located so
+                // every caller derives the same key.
+                //
                 // First-write-wins guards against non-canonical spot pairs that
                 // share a base token overwriting the canonical instrument; the
                 // spot loader sorts canonical pairs first so the alias resolves
                 // to the canonical one. For standard perps `base == coin`, so
                 // the alias is a no-op.
-                if let Some(base) = full_symbol.as_str().split('-').next() {
-                    let base_ustr = Ustr::from(base);
-                    let key = (base_ustr, product_type);
-                    if base_ustr != coin && !m.contains_key(&key) {
+                if let Some(alias_ustr) = cache_alias_for_symbol(full_symbol.as_str())
+                    .map(|alias| Ustr::from(alias.as_str()))
+                {
+                    let key = (alias_ustr, product_type);
+                    if alias_ustr != coin && !m.contains_key(&key) {
                         m.insert(key, instrument.clone());
                     }
                 }
@@ -1542,6 +1620,15 @@ impl HyperliquidHttpClient {
         self.inner.post_action_exec(action).await
     }
 
+    /// Build the signed exchange request used by both HTTP and WebSocket post transports.
+    pub fn sign_action_exec_request(
+        &self,
+        action: &HyperliquidExecAction,
+        expires_after: Option<u64>,
+    ) -> Result<HyperliquidExchangeRequest<HyperliquidExecAction>> {
+        self.inner.sign_action_exec_request(action, expires_after)
+    }
+
     /// Get metadata about available markets (low-level delegation).
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
         self.inner.info_meta().await
@@ -1570,28 +1657,44 @@ impl HyperliquidHttpClient {
             ))
         })?;
 
-        // Create cancel action based on which ID we have
-        let action = if let Some(cloid) = client_order_id {
-            // Hash the client order ID to CLOID (same as order submission)
-            let cloid_hash = Cloid::from_client_order_id(cloid);
-            let cancel_req = HyperliquidExecCancelByCloidRequest {
-                asset: asset_id,
-                cloid: cloid_hash,
-            };
-            HyperliquidExecAction::CancelByCloid {
-                cancels: vec![cancel_req],
+        let action = if let Some(client_order_id) = client_order_id {
+            if let Some(cloid) = self.cached_client_order_id_cloid(&client_order_id) {
+                HyperliquidExecAction::CancelByCloid {
+                    cancels: vec![HyperliquidExecCancelByCloidRequest {
+                        asset: asset_id,
+                        cloid,
+                    }],
+                }
+            } else if let Some(oid) = venue_order_id {
+                let oid_u64 = oid
+                    .as_str()
+                    .parse::<u64>()
+                    .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
+                HyperliquidExecAction::Cancel {
+                    cancels: vec![HyperliquidExecCancelOrderRequest {
+                        asset: asset_id,
+                        oid: oid_u64,
+                    }],
+                }
+            } else {
+                let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
+                HyperliquidExecAction::CancelByCloid {
+                    cancels: vec![HyperliquidExecCancelByCloidRequest {
+                        asset: asset_id,
+                        cloid,
+                    }],
+                }
             }
         } else if let Some(oid) = venue_order_id {
             let oid_u64 = oid
                 .as_str()
                 .parse::<u64>()
                 .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
-            let cancel_req = HyperliquidExecCancelOrderRequest {
-                asset: asset_id,
-                oid: oid_u64,
-            };
             HyperliquidExecAction::Cancel {
-                cancels: vec![cancel_req],
+                cancels: vec![HyperliquidExecCancelOrderRequest {
+                    asset: asset_id,
+                    oid: oid_u64,
+                }],
             }
         } else {
             return Err(Error::bad_request(
@@ -1663,7 +1766,6 @@ impl HyperliquidHttpClient {
         };
 
         let size = quantity.as_decimal().normalize();
-        let cloid = client_order_id.map(Cloid::from_client_order_id);
 
         let kind = match order_type {
             OrderType::Market => HyperliquidExecOrderKind::Limit {
@@ -1713,6 +1815,7 @@ impl HyperliquidHttpClient {
                 )));
             }
         };
+        let cloid = client_order_id.map(|id| self.get_or_generate_client_order_id_cloid(id));
 
         let order = HyperliquidExecPlaceOrderRequest {
             asset: asset_id,
@@ -2013,6 +2116,8 @@ impl HyperliquidHttpClient {
             timestamp: entry.order.timestamp,
             orig_sz: entry.order.orig_sz,
             cloid: entry.order.cloid,
+            tif: None,
+            reduce_only: None,
             trigger_px: None,
             is_market: None,
             tpsl: None,
@@ -2045,7 +2150,8 @@ impl HyperliquidHttpClient {
     /// Request a single order status report by client order ID.
     ///
     /// Searches `info_frontend_open_orders` for an order whose cloid matches the
-    /// keccak256 hash of the given client order ID. Only finds open orders.
+    /// deterministic CLOID for the given client order ID, falling back to the
+    /// legacy unmarked CLOID. Only finds open orders.
     ///
     /// # Errors
     ///
@@ -2061,7 +2167,12 @@ impl HyperliquidHttpClient {
 
         let ts_init = self.clock.get_time_ns();
 
-        let cloid_hex = Cloid::from_client_order_id(*client_order_id).to_hex();
+        let cloid = self
+            .cached_client_order_id_cloid(client_order_id)
+            .unwrap_or_else(|| Cloid::from_client_order_id(*client_order_id));
+        let cloid_hex = cloid.to_hex();
+        let legacy_cloid = Cloid::from_legacy_client_order_id(*client_order_id);
+        let legacy_cloid_hex = legacy_cloid.to_hex();
 
         let response = self.info_frontend_open_orders(user).await?;
         let orders: Vec<WsBasicOrderData> = match serde_json::from_value(response) {
@@ -2072,13 +2183,18 @@ impl HyperliquidHttpClient {
             }
         };
 
-        let order = match orders
-            .into_iter()
-            .find(|o| o.cloid.as_ref().is_some_and(|c| c == &cloid_hex))
-        {
+        let order = match orders.into_iter().find(|o| {
+            o.cloid
+                .as_ref()
+                .is_some_and(|c| c == &cloid_hex || c == &legacy_cloid_hex)
+        }) {
             Some(o) => o,
             None => return Ok(None),
         };
+
+        if order.cloid.as_ref() == Some(&legacy_cloid_hex) {
+            self.replace_client_order_id_cloid(*client_order_id, legacy_cloid);
+        }
 
         let instrument = match self.get_or_create_instrument(&order.coin, None) {
             Some(inst) => inst,
@@ -2443,17 +2559,15 @@ impl HyperliquidHttpClient {
 
         let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
 
-        // Extract base currency for lookup, then use raw_symbol for the API call
-        let base = Ustr::from(
-            symbol
-                .as_str()
-                .split('-')
-                .next()
-                .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?,
-        );
+        // `cache_alias_for_symbol` mirrors how `cache_instrument` stores the
+        // secondary key (token form `+<encoding>` for outcomes, leading
+        // segment for perps / spots), so this lookup stays in sync.
+        let alias = cache_alias_for_symbol(symbol.as_str())
+            .map(|alias| Ustr::from(alias.as_str()))
+            .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
 
         let instrument = self
-            .get_or_create_instrument(&base, product_type)
+            .get_or_create_instrument(&alias, product_type)
             .ok_or_else(|| {
                 Error::bad_request(format!("Instrument not found in cache: {instrument_id}"))
             })?;
@@ -2659,6 +2773,7 @@ impl HyperliquidHttpClient {
             }
         };
 
+        let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
         let hyperliquid_order = HyperliquidExecPlaceOrderRequest {
             asset,
             is_buy,
@@ -2666,7 +2781,7 @@ impl HyperliquidHttpClient {
             size: size_decimal,
             reduce_only,
             kind,
-            cloid: Some(Cloid::from_client_order_id(client_order_id)),
+            cloid: Some(cloid),
         };
 
         let builder = self.builder_attribution();
@@ -2703,12 +2818,15 @@ impl HyperliquidHttpClient {
                 let symbol_str = instrument_id.symbol.as_str();
                 let product_type = HyperliquidProductType::from_symbol(symbol_str).ok();
 
-                // Extract base coin from symbol (first segment before '-')
-                let asset_str = symbol_str.split('-').next().unwrap_or(symbol_str);
+                // Mirror the alias `cache_instrument` stored (token form for
+                // outcomes, leading segment for perps / spots) so the lookup
+                // succeeds after the venue accepts an outcome order.
+                let asset_alias =
+                    cache_alias_for_symbol(symbol_str).unwrap_or_else(|| symbol_str.to_string());
                 let instrument = self
-                    .get_or_create_instrument(&Ustr::from(asset_str), product_type)
+                    .get_or_create_instrument(&Ustr::from(asset_alias.as_str()), product_type)
                     .ok_or_else(|| {
-                        Error::bad_request(format!("Instrument not found for {asset_str}"))
+                        Error::bad_request(format!("Instrument not found for {asset_alias}"))
                     })?;
 
                 let account_id = self
@@ -2848,6 +2966,7 @@ impl HyperliquidHttpClient {
     pub async fn submit_orders(&self, orders: &[&OrderAny]) -> Result<Vec<OrderStatusReport>> {
         // Convert orders using asset indices from the cached map
         let mut hyperliquid_orders = Vec::with_capacity(orders.len());
+        let mut client_order_ids = Vec::with_capacity(orders.len());
 
         for order in orders {
             let instrument_id = order.instrument_id();
@@ -2858,15 +2977,21 @@ impl HyperliquidHttpClient {
                 ))
             })?;
             let price_decimals = self.get_price_precision(symbol).unwrap_or(2);
-            let request = order_to_hyperliquid_request_with_asset(
+            let request = order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
                 asset,
                 price_decimals,
                 self.normalize_prices,
                 self.market_order_slippage_bps,
+                None,
             )
             .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
+            client_order_ids.push(order.client_order_id());
             hyperliquid_orders.push(request);
+        }
+
+        for (request, client_order_id) in hyperliquid_orders.iter_mut().zip(client_order_ids) {
+            request.cloid = Some(self.get_or_generate_client_order_id_cloid(client_order_id));
         }
 
         let builder = self.builder_attribution();
@@ -2927,15 +3052,16 @@ impl HyperliquidHttpClient {
                 // status. For grouped submissions the exchange may return
                 // fewer statuses; remaining orders are confirmed via WS.
                 for (order, order_status) in orders.iter().zip(order_response.statuses.iter()) {
-                    // Extract asset from instrument symbol
                     let instrument_id = order.instrument_id();
                     let symbol = instrument_id.symbol.as_str();
                     let product_type = HyperliquidProductType::from_symbol(symbol).ok();
 
-                    // Extract base coin from symbol (first segment before '-')
-                    let asset = symbol.split('-').next().unwrap_or(symbol);
+                    // Mirror the alias `cache_instrument` stored (token form
+                    // for outcomes, leading segment for perps / spots).
+                    let asset =
+                        cache_alias_for_symbol(symbol).unwrap_or_else(|| symbol.to_string());
                     let instrument = self
-                        .get_or_create_instrument(&Ustr::from(asset), product_type)
+                        .get_or_create_instrument(&Ustr::from(asset.as_str()), product_type)
                         .ok_or_else(|| {
                             Error::bad_request(format!("Instrument not found for {asset}"))
                         })?;
@@ -3032,7 +3158,7 @@ mod tests {
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::CurrencyType,
-        identifiers::{InstrumentId, Symbol},
+        identifiers::{ClientOrderId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -3046,7 +3172,7 @@ mod tests {
             consts::HYPERLIQUID_VENUE,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
-        http::query::InfoRequest,
+        http::{models::Cloid, query::InfoRequest},
     };
 
     #[derive(Clone, Default)]
@@ -3124,6 +3250,36 @@ mod tests {
         let pretty = serde_json::to_string_pretty(&val).unwrap();
         assert!(pretty.contains("\"type\": \"l2Book\""));
         assert!(pretty.contains("\"coin\": \"BTC\""));
+    }
+
+    #[rstest]
+    fn test_client_order_id_cloid_cache_is_stable_and_first_write_wins() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        let client_order_id = ClientOrderId::new("O-CLOID-CACHE");
+        let other_client_order_id = ClientOrderId::new("O-CLOID-CACHE-OTHER");
+        let explicit_cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
+
+        let first = client.get_or_generate_client_order_id_cloid(client_order_id);
+        let second = client.get_or_generate_client_order_id_cloid(client_order_id);
+        client.cache_client_order_id_cloid(client_order_id, explicit_cloid);
+        client.cache_client_order_id_cloid(other_client_order_id, explicit_cloid);
+
+        assert_eq!(first, Cloid::from_client_order_id(client_order_id));
+        assert_eq!(first, second);
+        assert_eq!(
+            client.cached_client_order_id_cloid(&client_order_id),
+            Some(first),
+            "cache insert must not overwrite an existing generated CLOID",
+        );
+        assert_eq!(
+            client.cached_client_order_id_cloid(&other_client_order_id),
+            Some(explicit_cloid),
+        );
+        assert_eq!(
+            client.remove_client_order_id_cloid(&client_order_id),
+            Some(first),
+        );
+        assert_eq!(client.cached_client_order_id_cloid(&client_order_id), None);
     }
 
     #[rstest]

@@ -231,13 +231,24 @@ impl DataEngine {
                     log::error!("Failed to add Pool to cache: {e}");
                 }
 
-                // Check if pool profiler creation was deferred
-                if self.pool_updaters_pending.remove(&pool.instrument_id) {
-                    log::info!(
-                        "Pool {} now loaded, creating deferred pool profiler",
-                        pool.instrument_id
-                    );
-                    self.setup_pool_updater(&pool.instrument_id, None);
+                // Check if pool profiler creation was deferred. When a snapshot is also
+                // pending, leave the updater marker in place so a second subscription cannot
+                // race ahead and install a duplicate updater. The snapshot handler clears
+                // both flags and creates the updater once.
+                if self.pool_updaters_pending.contains(&pool.instrument_id) {
+                    if self.pool_snapshot_pending.contains(&pool.instrument_id) {
+                        log::debug!(
+                            "Pool {} loaded; deferring profiler creation to snapshot handler",
+                            pool.instrument_id
+                        );
+                    } else {
+                        self.pool_updaters_pending.remove(&pool.instrument_id);
+                        log::info!(
+                            "Pool {} now loaded, creating deferred pool profiler",
+                            pool.instrument_id
+                        );
+                        self.setup_pool_updater(&pool.instrument_id, None);
+                    }
                 }
 
                 let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
@@ -270,6 +281,24 @@ impl DataEngine {
                         return;
                     }
                 };
+
+                // Defensive: refuse stub snapshots that slipped past the bootstrap-side
+                // guards. Installing one would leave Python actors observing an initialized
+                // profiler with zero liquidity; better to leave the pool without a profiler
+                // so the bad state is visible.
+                if snapshot.positions.is_empty()
+                    && snapshot.ticks.is_empty()
+                    && snapshot.block_position.number == pool.creation_block
+                {
+                    log::warn!(
+                        "Refusing empty stub snapshot for {instrument_id} at pool creation block {}; pool will remain without profiler",
+                        snapshot.block_position.number,
+                    );
+                    self.pool_snapshot_pending.remove(&instrument_id);
+                    self.pool_updaters_pending.remove(&instrument_id);
+                    self.pool_event_buffers.remove(&instrument_id);
+                    return;
+                }
 
                 // Create profiler and restore from snapshot
                 let mut profiler = PoolProfiler::new(pool);
@@ -314,6 +343,7 @@ impl DataEngine {
 
                 // Create updater and subscribe to topics
                 self.pool_snapshot_pending.remove(&instrument_id);
+                self.pool_updaters_pending.remove(&instrument_id);
                 let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache.clone()));
 
                 self.subscribe_pool_updater_topics(instrument_id, updater.clone());

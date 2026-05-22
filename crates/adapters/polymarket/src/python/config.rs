@@ -30,7 +30,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None))]
+    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         base_url_http: Option<String>,
@@ -44,6 +44,9 @@ impl PolymarketDataClientConfig {
         subscribe_new_markets: Option<bool>,
         auto_load_missing_instruments: Option<bool>,
         auto_load_debounce_ms: Option<u64>,
+        auto_load_max_retries: Option<u32>,
+        auto_load_retry_delay_initial_secs: Option<f64>,
+        auto_load_retry_delay_max_secs: Option<f64>,
     ) -> Self {
         let default = Self::default();
         Self {
@@ -60,6 +63,11 @@ impl PolymarketDataClientConfig {
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(default.auto_load_missing_instruments),
             auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
+            auto_load_max_retries: auto_load_max_retries.unwrap_or(default.auto_load_max_retries),
+            auto_load_retry_delay_initial_secs: auto_load_retry_delay_initial_secs
+                .unwrap_or(default.auto_load_retry_delay_initial_secs),
+            auto_load_retry_delay_max_secs: auto_load_retry_delay_max_secs
+                .unwrap_or(default.auto_load_retry_delay_max_secs),
             filters: Vec::new(),
             new_market_filter: None,
             transport_backend: default.transport_backend,

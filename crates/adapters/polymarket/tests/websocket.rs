@@ -601,14 +601,7 @@ async fn test_subscription_count_increments_after_subscribe() {
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count >= 2 }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(5)).await;
 
     assert_eq!(client.subscription_count(), 2);
 
@@ -632,28 +625,14 @@ async fn test_subscription_count_decrements_after_unsubscribe() {
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count >= 2 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
 
     client
         .unsubscribe_market(vec![TEST_ASSET_ID_2.to_string()])
         .await
         .expect("unsubscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count == 1 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 2, Duration::from_secs(2)).await;
 
     assert_eq!(client.subscription_count(), 1);
 
@@ -684,14 +663,7 @@ async fn test_subscription_count_multiple_subscribe_calls() {
         .await
         .expect("second subscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count >= 3 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 2, Duration::from_secs(2)).await;
 
     assert_eq!(client.subscription_count(), 3);
 
@@ -715,28 +687,14 @@ async fn test_subscription_count_unsubscribe_all() {
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count >= 2 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
 
     client
         .unsubscribe_market(vec![TEST_ASSET_ID.to_string(), TEST_ASSET_ID_2.to_string()])
         .await
         .expect("unsubscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count == 0 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 2, Duration::from_secs(2)).await;
 
     assert_eq!(client.subscription_count(), 0);
 
@@ -990,14 +948,7 @@ async fn test_market_client_is_never_authenticated() {
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let count = client.subscription_count();
-            async move { count >= 1 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
 
     // Market channel does not use auth tracker
     assert!(!client.is_authenticated());

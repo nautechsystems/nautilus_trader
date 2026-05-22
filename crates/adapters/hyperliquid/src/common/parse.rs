@@ -288,6 +288,84 @@ fn parse_outcome_symbol_encoding(symbol: &str) -> anyhow::Result<u32> {
         .with_context(|| format!("Invalid Hyperliquid outcome symbol '{symbol}'"))
 }
 
+/// Suffix shared by every Nautilus outcome symbol, mirroring `-PERP` / `-SPOT`.
+pub const OUTCOME_SYMBOL_SUFFIX: &str = "-OUTCOME";
+/// Yes-side label on Nautilus outcome symbols.
+pub const OUTCOME_SIDE_YES: &str = "YES";
+/// No-side label on Nautilus outcome symbols.
+pub const OUTCOME_SIDE_NO: &str = "NO";
+
+/// Parses a Nautilus outcome instrument symbol of the form
+/// `{outcome_index}-{YES|NO}-OUTCOME` into `(outcome_index, side)` where side
+/// is `0` for Yes and `1` for No.
+///
+/// Returns `None` if the symbol does not match the expected shape or if the
+/// `(outcome_index, side)` pair would not encode into a valid HIP-4
+/// `HyperliquidAssetId` (i.e. `100_000_000 + 10 * outcome_index + side`
+/// would overflow `u32`). The legacy `#E` / `+E` wire parser already rejects
+/// out-of-range encodings; this keeps the two paths in parity so downstream
+/// arithmetic on the returned pair cannot overflow.
+#[must_use]
+pub fn parse_outcome_nautilus_symbol(symbol: &str) -> Option<(u32, u8)> {
+    let rest = symbol.strip_suffix(OUTCOME_SYMBOL_SUFFIX)?;
+    let (index_str, side_str) = rest.rsplit_once('-')?;
+    let outcome_index = index_str.parse::<u32>().ok()?;
+    let side = match side_str {
+        OUTCOME_SIDE_YES => 0,
+        OUTCOME_SIDE_NO => 1,
+        _ => return None,
+    };
+    let encoding = outcome_index
+        .checked_mul(10)?
+        .checked_add(u32::from(side))?;
+    HyperliquidAssetId::from_outcome_encoding(encoding)?;
+    Some((outcome_index, side))
+}
+
+/// Formats an `(outcome_index, side)` pair into the Nautilus outcome symbol
+/// form `{outcome_index}-{YES|NO}-OUTCOME`.
+#[must_use]
+pub fn format_outcome_nautilus_symbol(outcome_index: u32, side: u8) -> String {
+    let side_label = match side {
+        0 => OUTCOME_SIDE_YES,
+        _ => OUTCOME_SIDE_NO,
+    };
+    format!("{outcome_index}-{side_label}{OUTCOME_SYMBOL_SUFFIX}")
+}
+
+/// Returns the `+<encoding>` token form for the side token referenced by a
+/// Nautilus outcome symbol, or `None` if the symbol is not an outcome.
+#[must_use]
+pub fn outcome_token_from_nautilus_symbol(symbol: &str) -> Option<String> {
+    let (outcome_index, side) = parse_outcome_nautilus_symbol(symbol)?;
+    let encoding = 10 * outcome_index + u32::from(side);
+    Some(format!("+{encoding}"))
+}
+
+/// Returns the secondary cache-alias key for a Nautilus instrument symbol.
+///
+/// For outcome symbols, this is the `+<encoding>` token form (matching the
+/// `coin` field on `spotClearinghouseState` balances). For perp / spot
+/// symbols it is the leading segment before the first `-` (the base asset
+/// or sanitized base for HIP-3 perps). Returns `None` for an empty symbol.
+///
+/// Used by `cache_instrument`, order-response report builders, and the bar
+/// lookup so all three derive the same alias and stay in sync as the symbol
+/// shape evolves.
+#[must_use]
+pub fn cache_alias_for_symbol(symbol: &str) -> Option<String> {
+    if let Some(token) = outcome_token_from_nautilus_symbol(symbol) {
+        return Some(token);
+    }
+
+    let leading = symbol.split('-').next()?;
+    if leading.is_empty() {
+        None
+    } else {
+        Some(leading.to_string())
+    }
+}
+
 /// Converts a Nautilus `TimeInForce` to Hyperliquid TIF.
 ///
 /// # Errors
@@ -407,6 +485,25 @@ pub fn order_to_hyperliquid_request_with_asset(
     price_decimals: u8,
     should_normalize_prices: bool,
     slippage_bps: u32,
+) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
+    order_to_hyperliquid_request_with_asset_and_cloid(
+        order,
+        asset,
+        price_decimals,
+        should_normalize_prices,
+        slippage_bps,
+        Some(Cloid::from_client_order_id(order.client_order_id())),
+    )
+}
+
+/// Converts a Nautilus order to Hyperliquid request with an explicit CLOID.
+pub fn order_to_hyperliquid_request_with_asset_and_cloid(
+    order: &OrderAny,
+    asset: u32,
+    price_decimals: u8,
+    should_normalize_prices: bool,
+    slippage_bps: u32,
+    cloid: Option<Cloid>,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -538,8 +635,6 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
-
-    let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
 
     Ok(HyperliquidExecPlaceOrderRequest {
         asset,
@@ -1022,6 +1117,84 @@ mod tests {
         assert_eq!(asset_id.to_raw(), raw_asset_id);
         assert_eq!(asset_id.outcome_index(), Some(outcome));
         assert_eq!(asset_id.outcome_side(), Some(side));
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", 25, 0)]
+    #[case("25-NO-OUTCOME", 25, 1)]
+    #[case("0-YES-OUTCOME", 0, 0)]
+    #[case("999-NO-OUTCOME", 999, 1)]
+    fn test_parse_outcome_nautilus_symbol(
+        #[case] symbol: &str,
+        #[case] outcome_index: u32,
+        #[case] side: u8,
+    ) {
+        let parsed = parse_outcome_nautilus_symbol(symbol).unwrap();
+        assert_eq!(parsed, (outcome_index, side));
+    }
+
+    #[rstest]
+    #[case("25-OUTCOME")]
+    #[case("25-MAYBE-OUTCOME")]
+    #[case("25-yes-OUTCOME")]
+    #[case("-YES-OUTCOME")]
+    #[case("YES-25-OUTCOME")]
+    #[case("25-YES-outcome")]
+    #[case("25-YES")]
+    fn test_parse_outcome_nautilus_symbol_rejects_invalid(#[case] symbol: &str) {
+        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+    }
+
+    #[rstest]
+    // outcome_index * 10 overflows u32.
+    #[case("999999999-YES-OUTCOME")]
+    // outcome_index * 10 fits but 100_000_000 + encoding overflows u32.
+    #[case("429496729-YES-OUTCOME")]
+    // u32::MAX itself; rejected on the multiply.
+    #[case("4294967295-NO-OUTCOME")]
+    fn test_parse_outcome_nautilus_symbol_rejects_overflow(#[case] symbol: &str) {
+        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+    }
+
+    #[rstest]
+    #[case(25, 0, "25-YES-OUTCOME")]
+    #[case(25, 1, "25-NO-OUTCOME")]
+    #[case(0, 0, "0-YES-OUTCOME")]
+    fn test_format_outcome_nautilus_symbol(
+        #[case] outcome_index: u32,
+        #[case] side: u8,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            format_outcome_nautilus_symbol(outcome_index, side),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", Some("+250".to_string()))]
+    #[case("25-NO-OUTCOME", Some("+251".to_string()))]
+    #[case("0-YES-OUTCOME", Some("+0".to_string()))]
+    #[case("BTC-USD-PERP", None)]
+    #[case("+250", None)]
+    fn test_outcome_token_from_nautilus_symbol(
+        #[case] symbol: &str,
+        #[case] expected: Option<String>,
+    ) {
+        assert_eq!(outcome_token_from_nautilus_symbol(symbol), expected);
+    }
+
+    #[rstest]
+    #[case("25-YES-OUTCOME", Some("+250".to_string()))]
+    #[case("25-NO-OUTCOME", Some("+251".to_string()))]
+    #[case("BTC-USD-PERP", Some("BTC".to_string()))]
+    #[case("PURR-USDC-SPOT", Some("PURR".to_string()))]
+    #[case("dex:STREAMABCDxxxx-USD-PERP", Some("dex:STREAMABCDxxxx".to_string()))]
+    #[case("+250", Some("+250".to_string()))]
+    #[case("#250", Some("#250".to_string()))]
+    #[case("", None)]
+    fn test_cache_alias_for_symbol(#[case] symbol: &str, #[case] expected: Option<String>) {
+        assert_eq!(cache_alias_for_symbol(symbol), expected);
     }
 
     #[rstest]

@@ -55,7 +55,8 @@ use nautilus_model::{
 use nautilus_plugin::{
     boundary::{BorrowedStr, PluginResult},
     host::{HostContext, HostVTable},
-    surfaces::strategy::{PluginStrategyHandle, StrategyVTable},
+    manifest::ValidatedStrategyVTable,
+    surfaces::strategy::PluginStrategyHandle,
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -71,7 +72,7 @@ pub struct PluginStrategyAdapter {
     core: StrategyCore,
     plugin_name: String,
     type_name: String,
-    vtable: *const StrategyVTable,
+    vtable: ValidatedStrategyVTable,
     handle: *mut PluginStrategyHandle,
     ctx: *const HostContext,
 }
@@ -103,8 +104,8 @@ impl PluginStrategyAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if `vtable` is null, if `strategy_config.strategy_id`
-    /// is `None`, or if the plug-in's `create` thunk returns a null handle.
+    /// Returns an error if `strategy_config.strategy_id` is `None`, or if the
+    /// plug-in's `create` thunk returns a null handle.
     ///
     /// `strategy_config.strategy_id` must be `Some(_)` so that
     /// `Trader::prepare_strategy_for_registration`'s `change_id` call is a
@@ -116,21 +117,16 @@ impl PluginStrategyAdapter {
     ///
     /// # Safety
     ///
-    /// `vtable` must point at a live `StrategyVTable` for the duration of
-    /// the adapter's lifetime, and `host` must be the same vtable pointer
-    /// the host registered with the plug-in at load time.
+    /// `host` must be the same vtable pointer the host registered with the
+    /// plug-in at load time.
     pub unsafe fn new(
         strategy_config: StrategyConfig,
         plugin_name: impl Into<String>,
         type_name: impl Into<String>,
-        vtable: *const StrategyVTable,
+        vtable: ValidatedStrategyVTable,
         host: *const HostVTable,
         config_json: &str,
     ) -> anyhow::Result<Self> {
-        if vtable.is_null() {
-            anyhow::bail!("StrategyVTable pointer is null");
-        }
-
         if strategy_config.strategy_id.is_none() {
             anyhow::bail!(
                 "PluginStrategyAdapter requires StrategyConfig::strategy_id to be set so the \
@@ -140,6 +136,8 @@ impl PluginStrategyAdapter {
 
         let plugin_name = plugin_name.into();
         let type_name = type_name.into();
+        // SAFETY: vtable comes from a validated manifest entry.
+        let create = unsafe { validated_slot!(StrategyVTable, vtable.as_ptr(), create) };
         let core = StrategyCore::new(strategy_config);
         let actor_id = ActorId::from(core.actor_id().inner().as_str());
 
@@ -152,7 +150,7 @@ impl PluginStrategyAdapter {
         // SAFETY: vtable is non-null, host outlives the adapter, ctx + cfg
         // are live across the call.
         let handle = guard_call(&plugin_name, &type_name, "create", || unsafe {
-            ((*vtable).create)(host, ctx, cfg)
+            create(host, ctx, cfg)
         })
         .ok_or_else(|| {
             // SAFETY: ctx came from leak_host_context above.
@@ -194,7 +192,9 @@ impl Drop for PluginStrategyAdapter {
         if !self.handle.is_null() {
             let _ = catch_unwind(AssertUnwindSafe(|| {
                 // SAFETY: vtable + handle are live; drop_handle ignores null.
-                unsafe { ((*self.vtable).drop_handle)(self.handle) };
+                unsafe {
+                    validated_slot!(StrategyVTable, self.vtable.as_ptr(), drop_handle)(self.handle);
+                };
             }));
             self.handle = std::ptr::null_mut();
         }
@@ -296,43 +296,43 @@ impl DataActor for PluginStrategyAdapter {
         // strategy adapter pattern in crates/trading/src/python/strategy.rs.
         Strategy::on_start(self)?;
         invoke_lifecycle(self, "on_start", |adapter| unsafe {
-            ((*adapter.vtable).on_start)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_start)(adapter.handle)
         })
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_stop", |adapter| unsafe {
-            ((*adapter.vtable).on_stop)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_stop)(adapter.handle)
         })
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_resume", |adapter| unsafe {
-            ((*adapter.vtable).on_resume)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_resume)(adapter.handle)
         })
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_reset", |adapter| unsafe {
-            ((*adapter.vtable).on_reset)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_reset)(adapter.handle)
         })
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_dispose", |adapter| unsafe {
-            ((*adapter.vtable).on_dispose)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_dispose)(adapter.handle)
         })
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_degrade", |adapter| unsafe {
-            ((*adapter.vtable).on_degrade)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_degrade)(adapter.handle)
         })
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         invoke_lifecycle(self, "on_fault", |adapter| unsafe {
-            ((*adapter.vtable).on_fault)(adapter.handle)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_fault)(adapter.handle)
         })
     }
 
@@ -342,73 +342,98 @@ impl DataActor for PluginStrategyAdapter {
         // strategy adapter pattern in crates/trading/src/python/strategy.rs.
         Strategy::on_time_event(self, event)?;
         invoke_event(self, "on_time_event", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_time_event)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_time_event)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         invoke_event(self, "on_quote", quote, |adapter, p| unsafe {
-            ((*adapter.vtable).on_quote)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_quote)(adapter.handle, p)
         })
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         invoke_event(self, "on_trade", trade, |adapter, p| unsafe {
-            ((*adapter.vtable).on_trade)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_trade)(adapter.handle, p)
         })
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         invoke_event(self, "on_bar", bar, |adapter, p| unsafe {
-            ((*adapter.vtable).on_bar)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_bar)(adapter.handle, p)
         })
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_mark_price", mark_price, |adapter, p| unsafe {
-            ((*adapter.vtable).on_mark_price)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_mark_price)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_index_price", index_price, |adapter, p| unsafe {
-            ((*adapter.vtable).on_index_price)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_index_price)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_funding_rate", funding_rate, |adapter, p| unsafe {
-            ((*adapter.vtable).on_funding_rate)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_funding_rate)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         invoke_event(self, "on_instrument_status", data, |adapter, p| unsafe {
-            ((*adapter.vtable).on_instrument_status)(adapter.handle, p)
+            validated_slot!(
+                StrategyVTable,
+                adapter.vtable.as_ptr(),
+                on_instrument_status
+            )(adapter.handle, p)
         })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         invoke_event(self, "on_instrument_close", update, |adapter, p| unsafe {
-            ((*adapter.vtable).on_instrument_close)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_instrument_close)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
         invoke_event(self, "on_order_filled", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_filled)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_filled)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
         invoke_event(self, "on_order_canceled", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_canceled)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_canceled)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         invoke_event(self, "on_signal", signal, |adapter, p| unsafe {
-            ((*adapter.vtable).on_signal)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_signal)(adapter.handle, p)
         })
     }
 }
@@ -420,55 +445,83 @@ impl DataActor for PluginStrategyAdapter {
 impl PluginStrategyAdapter {
     fn forward_order_initialized(&self, event: &OrderInitialized) -> anyhow::Result<()> {
         invoke_event(self, "on_order_initialized", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_initialized)(adapter.handle, p)
+            validated_slot!(
+                StrategyVTable,
+                adapter.vtable.as_ptr(),
+                on_order_initialized
+            )(adapter.handle, p)
         })
     }
 
     fn forward_order_submitted(&self, event: &OrderSubmitted) -> anyhow::Result<()> {
         invoke_event(self, "on_order_submitted", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_submitted)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_submitted)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_accepted(&self, event: &OrderAccepted) -> anyhow::Result<()> {
         invoke_event(self, "on_order_accepted", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_accepted)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_accepted)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_rejected(&self, event: &OrderRejected) -> anyhow::Result<()> {
         invoke_event(self, "on_order_rejected", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_rejected)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_rejected)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_expired(&self, event: &OrderExpired) -> anyhow::Result<()> {
         invoke_event(self, "on_order_expired", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_expired)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_expired)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_triggered(&self, event: &OrderTriggered) -> anyhow::Result<()> {
         invoke_event(self, "on_order_triggered", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_triggered)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_triggered)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_denied(&self, event: &OrderDenied) -> anyhow::Result<()> {
         invoke_event(self, "on_order_denied", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_denied)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_denied)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_emulated(&self, event: &OrderEmulated) -> anyhow::Result<()> {
         invoke_event(self, "on_order_emulated", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_emulated)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_emulated)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_order_released(&self, event: &OrderReleased) -> anyhow::Result<()> {
         invoke_event(self, "on_order_released", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_released)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_released)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
@@ -477,7 +530,13 @@ impl PluginStrategyAdapter {
             self,
             "on_order_pending_update",
             event,
-            |adapter, p| unsafe { ((*adapter.vtable).on_order_pending_update)(adapter.handle, p) },
+            |adapter, p| unsafe {
+                validated_slot!(
+                    StrategyVTable,
+                    adapter.vtable.as_ptr(),
+                    on_order_pending_update
+                )(adapter.handle, p)
+            },
         )
     }
 
@@ -486,7 +545,13 @@ impl PluginStrategyAdapter {
             self,
             "on_order_pending_cancel",
             event,
-            |adapter, p| unsafe { ((*adapter.vtable).on_order_pending_cancel)(adapter.handle, p) },
+            |adapter, p| unsafe {
+                validated_slot!(
+                    StrategyVTable,
+                    adapter.vtable.as_ptr(),
+                    on_order_pending_cancel
+                )(adapter.handle, p)
+            },
         )
     }
 
@@ -495,7 +560,13 @@ impl PluginStrategyAdapter {
             self,
             "on_order_modify_rejected",
             event,
-            |adapter, p| unsafe { ((*adapter.vtable).on_order_modify_rejected)(adapter.handle, p) },
+            |adapter, p| unsafe {
+                validated_slot!(
+                    StrategyVTable,
+                    adapter.vtable.as_ptr(),
+                    on_order_modify_rejected
+                )(adapter.handle, p)
+            },
         )
     }
 
@@ -504,31 +575,49 @@ impl PluginStrategyAdapter {
             self,
             "on_order_cancel_rejected",
             event,
-            |adapter, p| unsafe { ((*adapter.vtable).on_order_cancel_rejected)(adapter.handle, p) },
+            |adapter, p| unsafe {
+                validated_slot!(
+                    StrategyVTable,
+                    adapter.vtable.as_ptr(),
+                    on_order_cancel_rejected
+                )(adapter.handle, p)
+            },
         )
     }
 
     fn forward_order_updated(&self, event: &OrderUpdated) -> anyhow::Result<()> {
         invoke_event(self, "on_order_updated", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_order_updated)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_order_updated)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_position_opened(&self, event: &PositionOpened) -> anyhow::Result<()> {
         invoke_event(self, "on_position_opened", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_position_opened)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_position_opened)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_position_changed(&self, event: &PositionChanged) -> anyhow::Result<()> {
         invoke_event(self, "on_position_changed", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_position_changed)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_position_changed)(
+                adapter.handle,
+                p,
+            )
         })
     }
 
     fn forward_position_closed(&self, event: &PositionClosed) -> anyhow::Result<()> {
         invoke_event(self, "on_position_closed", event, |adapter, p| unsafe {
-            ((*adapter.vtable).on_position_closed)(adapter.handle, p)
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_position_closed)(
+                adapter.handle,
+                p,
+            )
         })
     }
 }
@@ -624,25 +713,12 @@ mod tests {
             .build()
     }
 
-    #[rstest]
-    fn new_rejects_null_vtable() {
-        let config = test_strategy_config("PluginStrategyAdapter-Null");
-        // SAFETY: passing null vtable is the documented error path.
-        let r = unsafe {
-            PluginStrategyAdapter::new(
-                config,
-                "plug-in",
-                "TestStrategy",
-                std::ptr::null(),
-                host_vtable(),
-                "{}",
-            )
-        };
-        let err = r.unwrap_err();
-        assert!(
-            err.to_string().contains("null"),
-            "expected null vtable error, was: {err}",
-        );
+    fn drop_test_strategy_vtable() -> ValidatedStrategyVTable {
+        // SAFETY: generated vtables are process-lifetime static and fill
+        // every required strategy slot.
+        unsafe {
+            ValidatedStrategyVTable::from_raw_unchecked(strategy_vtable::<DropTestStrategy>())
+        }
     }
 
     #[rstest]
@@ -663,7 +739,7 @@ mod tests {
                 config,
                 "plug-in",
                 DropTestStrategy::TYPE_NAME,
-                strategy_vtable::<DropTestStrategy>(),
+                drop_test_strategy_vtable(),
                 host_vtable(),
                 "{}",
             )
@@ -680,13 +756,13 @@ mod tests {
         let _guard = host_context_test_lock();
         let before = host_context_live_count();
         let config = test_strategy_config("PluginStrategyAdapter-Drop");
-        // SAFETY: strategy_vtable returns a process-lifetime static vtable.
+        // SAFETY: host_vtable is process-lifetime static.
         let adapter = unsafe {
             PluginStrategyAdapter::new(
                 config,
                 "plug-in",
                 DropTestStrategy::TYPE_NAME,
-                strategy_vtable::<DropTestStrategy>(),
+                drop_test_strategy_vtable(),
                 host_vtable(),
                 "{}",
             )

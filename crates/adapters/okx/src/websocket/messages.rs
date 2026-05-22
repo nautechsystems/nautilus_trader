@@ -33,10 +33,10 @@ use super::enums::{OKXWsChannel, OKXWsOperation};
 use crate::{
     common::{
         enums::{
-            OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType, OKXInstrumentType,
-            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXPriceType,
-            OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSettlementState, OKXSide,
-            OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType,
+            OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide,
+            OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSettlementState,
+            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
@@ -1004,7 +1004,7 @@ pub struct OKXAlgoOrderMsg {
     /// Algo order type (trigger, move_order_stop, oco, iceberg, twap).
     pub ord_type: OKXAlgoOrderType,
     /// Order state.
-    pub state: OKXOrderStatus,
+    pub state: OKXAlgoOrderStatus,
     /// Side.
     pub side: OKXSide,
     /// Position side.

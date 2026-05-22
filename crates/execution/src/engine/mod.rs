@@ -36,7 +36,7 @@ use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
-    cache::{Cache, CacheSnapshotRef},
+    cache::{Cache, CacheSnapshotRef, PositionRef},
     clients::ExecutionClient,
     clock::Clock,
     generators::position_id::PositionIdGenerator,
@@ -572,6 +572,9 @@ impl ExecutionEngine {
     }
 
     /// Registers external order claims for a strategy.
+    ///
+    /// Venue-sourced external orders, fills, and materialized reconciliation activity for matching
+    /// instruments will be associated with the strategy.
     ///
     /// This operation is atomic: either all instruments are registered or none are.
     ///
@@ -1507,17 +1510,23 @@ impl ExecutionEngine {
     ) {
         log::debug!("Reconciling NET position for {}", report.instrument_id);
 
-        let positions_open =
-            cache.positions_open(None, Some(&report.instrument_id), None, None, None);
+        let positions_open = Self::netting_positions_open_for_report(cache, report);
+
+        let position_refs = positions_open
+            .iter()
+            .map(|position| &**position)
+            .collect::<Vec<_>>();
+
+        if let Some(message) =
+            Self::netting_split_position_ownership_message(report, &position_refs)
+        {
+            log::warn!("{message}");
+        }
 
         // Sum up cached position quantities using domain types to avoid f64 precision loss
         let cached_signed_qty: Decimal = positions_open
             .iter()
-            .map(|p| match p.side {
-                PositionSide::Long => p.quantity.as_decimal(),
-                PositionSide::Short => -p.quantity.as_decimal(),
-                _ => Decimal::ZERO,
-            })
+            .map(|position| Self::position_signed_decimal_qty(position))
             .sum();
 
         log::debug!(
@@ -1527,6 +1536,46 @@ impl ExecutionEngine {
         );
 
         let _ = check_position_reconciliation(report, cached_signed_qty, size_precision);
+    }
+
+    fn netting_positions_open_for_report<'a>(
+        cache: &'a Cache,
+        report: &PositionStatusReport,
+    ) -> Vec<PositionRef<'a>> {
+        cache.positions_open(
+            None,
+            Some(&report.instrument_id),
+            None,
+            Some(&report.account_id),
+            None,
+        )
+    }
+
+    fn netting_split_position_ownership_message(
+        report: &PositionStatusReport,
+        positions_open: &[&Position],
+    ) -> Option<String> {
+        let mut strategy_ids = positions_open
+            .iter()
+            .map(|position| position.strategy_id.to_string())
+            .collect::<Vec<_>>();
+        strategy_ids.sort();
+        strategy_ids.dedup();
+
+        if strategy_ids.len() <= 1 {
+            return None;
+        }
+
+        let position_details = Self::position_details(positions_open.iter().copied());
+
+        Some(format!(
+            "NETTING reconciliation found split ownership for account_id={}, instrument_id={}: \
+             strategies=[{}], positions=[{}]",
+            report.account_id,
+            report.instrument_id,
+            strategy_ids.join(", "),
+            position_details
+        ))
     }
 
     /// Reconciles an execution mass status report.
@@ -1620,25 +1669,63 @@ impl ExecutionEngine {
         self.handle_event(event);
     }
 
-    /// Starts the execution engine.
+    /// Starts the execution engine and all registered execution clients.
     pub fn start(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.start() {
+                log::error!("{e}");
+            }
+        }
+
         self.start_snapshot_timer();
         self.start_purge_timers();
 
         log::info!("Started");
     }
 
-    /// Stops the execution engine.
+    /// Stops the execution engine and all registered execution clients.
+    ///
+    /// Adapters are expected to be idempotent on repeated `stop()` calls
+    /// (e.g. via an internal `is_stopped` guard); the backtest teardown
+    /// sequence calls `stop()` more than once per run.
     pub fn stop(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
+        }
+
         self.stop_snapshot_timer();
         self.stop_purge_timers();
 
         log::info!("Stopped");
     }
 
-    /// Resets the execution engine to its initial state.
+    /// Stops all registered execution clients without stopping the engine itself.
+    pub fn stop_clients(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
+        }
+    }
+
+    /// Resets the execution engine and all registered execution clients to initial state.
+    ///
+    /// Cancels engine-owned timers (snapshot, purge) but leaves timers owned by
+    /// other components on the shared clock untouched.
     pub fn reset(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.reset() {
+                log::error!("{e}");
+            }
+        }
+
         self.pos_id_generator.reset();
+
+        self.stop_snapshot_timer();
+        self.stop_purge_timers();
+
         self.command_count.set(0);
         self.event_count = 0;
         self.report_count = 0;
@@ -1646,8 +1733,20 @@ impl ExecutionEngine {
         log::info!("Reset");
     }
 
-    /// Disposes of the execution engine, releasing resources.
+    /// Disposes of the execution engine, releasing resources from all clients and timers.
+    ///
+    /// Cancels engine-owned timers (snapshot, purge) but leaves timers owned by
+    /// other components on the shared clock untouched.
     pub fn dispose(&mut self) {
+        for client in self.get_clients_mut() {
+            if let Err(e) = client.dispose() {
+                log::error!("{e}");
+            }
+        }
+
+        self.stop_snapshot_timer();
+        self.stop_purge_timers();
+
         log::info!("Disposed");
     }
 
@@ -2501,12 +2600,20 @@ impl ExecutionEngine {
 
         match position_opt {
             None => {
+                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                    return;
+                }
+
                 // Position is None - open new position
                 if self.open_position(instrument, None, fill, oms_type).is_ok() {
                     // Position opened successfully
                 }
             }
             Some(pos) if pos.is_closed() => {
+                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                    return;
+                }
+
                 // Position is closed - open new position
                 if self
                     .open_position(instrument, Some(&pos), fill, oms_type)
@@ -2525,6 +2632,55 @@ impl ExecutionEngine {
                 }
             }
         }
+    }
+
+    fn reject_reduce_only_netting_position_open(
+        &self,
+        fill: &OrderFilled,
+        oms_type: OmsType,
+    ) -> bool {
+        if oms_type != OmsType::Netting {
+            return false;
+        }
+
+        let cache = self.cache.borrow();
+        let Some(order) = cache.order_owned(&fill.client_order_id) else {
+            return false;
+        };
+
+        if !order.is_reduce_only() {
+            return false;
+        }
+
+        let positions_open = cache.positions_open(
+            None,
+            Some(&fill.instrument_id),
+            None,
+            Some(&fill.account_id),
+            None,
+        );
+        let position_id = fill
+            .position_id
+            .map_or_else(|| "None".to_string(), |position_id| position_id.to_string());
+        let matching_position_details = Self::position_details(
+            positions_open
+                .iter()
+                .filter(|position| position.is_opposite_side(fill.order_side))
+                .map(|position| &**position),
+        );
+        let open_position_details =
+            Self::position_details(positions_open.iter().map(|position| &**position));
+
+        log::error!(
+            "Cannot open NETTING position {position_id} from reduce-only fill {} for {}; \
+             matching_reduce_positions=[{}], open_positions=[{}]",
+            fill.trade_id,
+            fill.instrument_id,
+            matching_position_details,
+            open_position_details
+        );
+
+        true
     }
 
     fn open_position(
@@ -2642,6 +2798,29 @@ impl ExecutionEngine {
 
     fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
         position.is_opposite_side(fill.order_side) && (fill.last_qty.raw > position.quantity.raw)
+    }
+
+    fn position_signed_decimal_qty(position: &Position) -> Decimal {
+        match position.side {
+            PositionSide::Long => position.quantity.as_decimal(),
+            PositionSide::Short => -position.quantity.as_decimal(),
+            _ => Decimal::ZERO,
+        }
+    }
+
+    fn position_details<'a>(positions: impl IntoIterator<Item = &'a Position>) -> String {
+        positions
+            .into_iter()
+            .map(|position| {
+                format!(
+                    "{} strategy_id={} signed_qty={}",
+                    position.id,
+                    position.strategy_id,
+                    Self::position_signed_decimal_qty(position)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn flip_position(
@@ -2823,5 +3002,165 @@ impl ExecutionEngine {
         }
 
         RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use nautilus_model::{
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
+        identifiers::{AccountId, ClientOrderId, TradeId, TraderId, VenueOrderId},
+        instruments::{InstrumentAny, stubs::audusd_sim},
+        types::Price,
+    };
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn netting_positions_open_for_report_scopes_positions_by_account() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let account1_id = AccountId::from("SIM-001");
+        let account2_id = AccountId::from("SIM-002");
+        let position1 = position_for_account(
+            &instrument,
+            account1_id,
+            StrategyId::from("S-001"),
+            PositionId::from("P-ACC-1"),
+            OrderSide::Buy,
+            Quantity::from(1_000),
+        );
+        let position2 = position_for_account(
+            &instrument,
+            account2_id,
+            StrategyId::from("S-002"),
+            PositionId::from("P-ACC-2"),
+            OrderSide::Buy,
+            Quantity::from(2_000),
+        );
+        let mut cache = Cache::default();
+        cache.add_position(&position1, OmsType::Netting).unwrap();
+        cache.add_position(&position2, OmsType::Netting).unwrap();
+
+        let report = PositionStatusReport::new(
+            account1_id,
+            instrument.id(),
+            PositionSideSpecified::Long,
+            Quantity::from(1_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+            None,
+            None,
+        );
+
+        let positions_open = ExecutionEngine::netting_positions_open_for_report(&cache, &report);
+        let signed_qty: Decimal = positions_open
+            .iter()
+            .map(|position| ExecutionEngine::position_signed_decimal_qty(position))
+            .sum();
+
+        assert_eq!(positions_open.len(), 1);
+        assert_eq!(positions_open[0].id, position1.id);
+        assert_eq!(signed_qty, Decimal::from(1_000));
+    }
+
+    #[rstest]
+    fn netting_split_position_ownership_message_reports_only_split_ownership() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let account_id = AccountId::from("SIM-001");
+        let external_position = position_for_account(
+            &instrument,
+            account_id,
+            StrategyId::from("EXTERNAL"),
+            PositionId::from("P-EXTERNAL"),
+            OrderSide::Buy,
+            Quantity::from(1_000),
+        );
+        let strategy_position = position_for_account(
+            &instrument,
+            account_id,
+            StrategyId::from("S-001"),
+            PositionId::from("P-STRATEGY"),
+            OrderSide::Buy,
+            Quantity::from(500),
+        );
+        let same_strategy_position = position_for_account(
+            &instrument,
+            account_id,
+            StrategyId::from("EXTERNAL"),
+            PositionId::from("P-EXTERNAL-2"),
+            OrderSide::Buy,
+            Quantity::from(250),
+        );
+        let report = PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            PositionSideSpecified::Long,
+            Quantity::from(1_500),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+            None,
+            None,
+        );
+
+        let message = ExecutionEngine::netting_split_position_ownership_message(
+            &report,
+            &[&external_position, &strategy_position],
+        )
+        .expect("split ownership should produce a warning message");
+
+        assert!(message.contains("account_id=SIM-001"));
+        assert!(message.contains(&format!("instrument_id={}", instrument.id())));
+        assert!(message.contains("EXTERNAL"));
+        assert!(message.contains("S-001"));
+        assert!(message.contains("P-EXTERNAL"));
+        assert!(message.contains("P-STRATEGY"));
+        assert!(message.contains("signed_qty=1000"));
+        assert!(message.contains("signed_qty=500"));
+        assert!(
+            ExecutionEngine::netting_split_position_ownership_message(
+                &report,
+                &[&external_position, &same_strategy_position],
+            )
+            .is_none()
+        );
+    }
+
+    fn position_for_account(
+        instrument: &InstrumentAny,
+        account_id: AccountId,
+        strategy_id: StrategyId,
+        position_id: PositionId,
+        order_side: OrderSide,
+        quantity: Quantity,
+    ) -> Position {
+        let client_order_id = ClientOrderId::from(format!("O-{position_id}"));
+        let fill = OrderFilled::new(
+            TraderId::default(),
+            strategy_id,
+            instrument.id(),
+            client_order_id,
+            VenueOrderId::from(format!("V-{position_id}")),
+            account_id,
+            TradeId::new(format!("T-{position_id}")),
+            order_side,
+            OrderType::Market,
+            quantity,
+            Price::from_str("1.0").unwrap(),
+            instrument.quote_currency(),
+            LiquiditySide::Maker,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(position_id),
+            Some(Money::from("2 USD")),
+        );
+
+        Position::new(instrument, fill)
     }
 }

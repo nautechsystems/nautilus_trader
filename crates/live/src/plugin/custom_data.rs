@@ -38,11 +38,13 @@ use nautilus_model::data::{
 };
 use nautilus_plugin::{
     boundary::BorrowedStr,
-    manifest::{CustomDataRegistration, PluginManifest},
-    surfaces::custom_data::{CustomDataHandle, CustomDataVTable},
+    manifest::{
+        ValidatedCustomDataRegistration, ValidatedCustomDataVTable, ValidatedPluginManifest,
+    },
+    surfaces::custom_data::CustomDataHandle,
 };
 
-/// Walks a [`PluginManifest`] and registers a JSON deserializer for every
+/// Walks a [`ValidatedPluginManifest`] and registers a JSON deserializer for every
 /// custom-data type the plug-in publishes.
 ///
 /// Idempotent: re-registering a type the host has already seen is a no-op,
@@ -53,20 +55,13 @@ use nautilus_plugin::{
 /// Returns an error if any registration call into [`nautilus_model::data::registry`]
 /// fails.
 ///
-/// # Safety
-///
-/// `manifest` must originate from a successful [`nautilus_plugin`] load and
-/// remain live for the process lifetime (the loader guarantees this).
-pub unsafe fn register_custom_data_from_manifest(
-    manifest: &PluginManifest,
+pub fn register_custom_data_from_manifest(
+    manifest: ValidatedPluginManifest<'_>,
 ) -> anyhow::Result<usize> {
-    // SAFETY: caller upholds liveness of the manifest's static storage.
-    let entries = unsafe { manifest.custom_data.as_slice() };
     let mut count = 0usize;
 
-    for entry in entries {
-        // SAFETY: each entry's storage is also process-lifetime static.
-        unsafe { register_custom_data_entry(entry)? };
+    for entry in manifest.custom_data() {
+        register_custom_data_entry(entry)?;
         count += 1;
     }
     Ok(count)
@@ -78,29 +73,19 @@ pub unsafe fn register_custom_data_from_manifest(
 ///
 /// Returns an error if [`ensure_json_deserializer_registered`] fails.
 ///
-/// # Safety
-///
-/// `entry` must come from a live, valid [`PluginManifest`].
-pub unsafe fn register_custom_data_entry(entry: &CustomDataRegistration) -> anyhow::Result<()> {
-    // SAFETY: type_name string lives in the plug-in's static storage.
-    let type_name: &'static str = unsafe { entry.type_name.as_str() };
-    let vtable_ptr = entry.vtable;
-    if vtable_ptr.is_null() {
-        anyhow::bail!("custom data registration '{type_name}' has a null vtable");
-    }
-
-    // Address-only capture so the closure stays `Send + Sync`. The vtable
-    // pointer is process-lifetime static and re-cast on each invocation.
-    let vtable_addr = vtable_ptr as usize;
+/// The validated registration guarantees a non-null vtable with every
+/// required slot present.
+pub fn register_custom_data_entry(entry: ValidatedCustomDataRegistration) -> anyhow::Result<()> {
+    let type_name = entry.type_name();
+    let vtable = entry.vtable();
+    // SAFETY: entry comes from a validated manifest registration.
+    let from_json = unsafe { validated_slot!(CustomDataVTable, vtable.as_ptr(), from_json) };
 
     let deserializer: JsonDeserializer = Box::new(move |value| {
-        // Re-cast the address-captured pointer back to the vtable. The
-        // pointer lives for the process lifetime per the plug-in contract.
-        let vtable: *const CustomDataVTable = vtable_addr as *const _;
         let payload = serde_json::to_vec(&value)?;
         let payload_str = std::str::from_utf8(&payload)?;
         // SAFETY: vtable is non-null and live; payload_str outlives the call.
-        let handle_result = unsafe { ((*vtable).from_json)(BorrowedStr::from_str(payload_str)) };
+        let handle_result = unsafe { from_json(BorrowedStr::from_str(payload_str)) };
         let handle = handle_result.into_result().map_err(|e| {
             anyhow::anyhow!(
                 "plug-in '{type_name}' from_json returned error: {}",
@@ -129,7 +114,7 @@ pub unsafe fn register_custom_data_entry(entry: &CustomDataRegistration) -> anyh
 /// the plug-in's concrete type. Dropping the wrapper invokes the plug-in's
 /// `drop_handle` thunk so the cdylib's allocator owns the value.
 pub struct PluginCustomDataValue {
-    vtable: *const CustomDataVTable,
+    vtable: ValidatedCustomDataVTable,
     handle: *mut CustomDataHandle,
     type_name: &'static str,
 }
@@ -153,7 +138,9 @@ impl Drop for PluginCustomDataValue {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             // SAFETY: vtable + handle are live; drop_handle ignores null.
-            unsafe { ((*self.vtable).drop_handle)(self.handle) };
+            unsafe {
+                validated_slot!(CustomDataVTable, self.vtable.as_ptr(), drop_handle)(self.handle);
+            };
             self.handle = std::ptr::null_mut();
         }
     }
@@ -162,7 +149,9 @@ impl Drop for PluginCustomDataValue {
 impl HasTsInit for PluginCustomDataValue {
     fn ts_init(&self) -> UnixNanos {
         // SAFETY: vtable + handle are live.
-        let raw = unsafe { ((*self.vtable).ts_init)(self.handle) };
+        let raw = unsafe {
+            validated_slot!(CustomDataVTable, self.vtable.as_ptr(), ts_init)(self.handle)
+        };
         UnixNanos::from(raw)
     }
 }
@@ -178,13 +167,17 @@ impl CustomDataTrait for PluginCustomDataValue {
 
     fn ts_event(&self) -> UnixNanos {
         // SAFETY: vtable + handle are live.
-        let raw = unsafe { ((*self.vtable).ts_event)(self.handle) };
+        let raw = unsafe {
+            validated_slot!(CustomDataVTable, self.vtable.as_ptr(), ts_event)(self.handle)
+        };
         UnixNanos::from(raw)
     }
 
     fn to_json(&self) -> anyhow::Result<String> {
         // SAFETY: vtable + handle are live.
-        let result = unsafe { ((*self.vtable).to_json)(self.handle) };
+        let result = unsafe {
+            validated_slot!(CustomDataVTable, self.vtable.as_ptr(), to_json)(self.handle)
+        };
         let bytes = result.into_result().map_err(|e| {
             anyhow::anyhow!(
                 "plug-in '{}' to_json returned error: {}",
@@ -200,7 +193,9 @@ impl CustomDataTrait for PluginCustomDataValue {
 
     fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
         // SAFETY: vtable + handle are live.
-        let cloned = unsafe { ((*self.vtable).clone_handle)(self.handle) };
+        let cloned = unsafe {
+            validated_slot!(CustomDataVTable, self.vtable.as_ptr(), clone_handle)(self.handle)
+        };
         Arc::new(Self {
             vtable: self.vtable,
             handle: cloned,
@@ -213,33 +208,52 @@ impl CustomDataTrait for PluginCustomDataValue {
             return false;
         };
 
-        if !std::ptr::eq(self.vtable, rhs.vtable) {
+        if self.vtable != rhs.vtable {
             return false;
         }
         // SAFETY: vtable + handles are live for both sides.
-        unsafe { ((*self.vtable).eq_handles)(self.handle, rhs.handle) }
+        unsafe {
+            validated_slot!(CustomDataVTable, self.vtable.as_ptr(), eq_handles)(
+                self.handle,
+                rhs.handle,
+            )
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_plugin::boundary::BorrowedStr;
+    use nautilus_plugin::{
+        NAUTILUS_PLUGIN_ABI_VERSION,
+        boundary::{BorrowedStr, Slice},
+        manifest::{CustomDataRegistration, PluginBuildId, PluginManifest},
+    };
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    fn register_custom_data_entry_rejects_null_vtable() {
-        let entry = CustomDataRegistration {
+    fn register_custom_data_from_manifest_rejects_null_vtable() {
+        static NULL_VTABLE_CUSTOM_DATA: [CustomDataRegistration; 1] = [CustomDataRegistration {
             type_name: BorrowedStr::from_str("NullVTableTestType"),
             vtable: std::ptr::null(),
+        }];
+        let manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+            plugin_name: BorrowedStr::from_str("test-plugin"),
+            plugin_vendor: BorrowedStr::from_str("nautech"),
+            plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
+            custom_data: Slice::from_slice(&NULL_VTABLE_CUSTOM_DATA),
+            actors: Slice::empty(),
+            strategies: Slice::empty(),
         };
-        // SAFETY: entry has 'static storage in the local stack of this test;
-        // the function only borrows it for the duration of the call.
-        let r = unsafe { register_custom_data_entry(&entry) };
+
+        let r = ValidatedPluginManifest::new(&manifest);
         let err = r.unwrap_err();
         assert!(
-            err.to_string().contains("null vtable"),
+            err.to_string()
+                .contains("custom_data[0].vtable must not be null"),
             "expected null vtable error, was: {err}",
         );
     }

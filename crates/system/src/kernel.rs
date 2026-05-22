@@ -88,6 +88,7 @@ pub struct NautilusKernel {
     pub ts_shutdown: Option<UnixNanos>,
     shutdown_requested: Rc<Cell<bool>>,
     event_store: Option<Box<dyn KernelEventStore>>,
+    event_store_replay: bool,
 }
 
 impl NautilusKernel {
@@ -234,6 +235,7 @@ impl NautilusKernel {
             ts_started: None,
             ts_shutdown: None,
             shutdown_requested,
+            event_store_replay: false,
         })
     }
 
@@ -473,17 +475,25 @@ impl NautilusKernel {
     pub fn start(&mut self) {
         log::info!("Starting");
 
+        self.event_store_replay = false;
+
         if let Some(event_store) = self.event_store.as_deref_mut() {
             self.exec_engine.borrow_mut().set_snapshot_anchorer(None);
 
             let components = Self::collect_registered_components(&self.trader);
             let environment = self.config.environment();
+            let event_store_replay_configured = event_store.is_event_store_replay_configured();
+
+            if event_store_replay_configured && !self.config.load_state() {
+                log::error!("Event-store replay requires load_state=true");
+                return;
+            }
 
             if self.config.load_state()
                 && let Err(e) =
                     event_store.restore_parent_cache(self.instance_id, &mut self.cache.borrow_mut())
             {
-                log::error!("Failed to restore cache from event-store parent run: {e}");
+                log::error!("Failed to restore cache from event-store replay source: {e}");
                 return;
             }
 
@@ -496,6 +506,16 @@ impl NautilusKernel {
             self.exec_engine
                 .borrow_mut()
                 .set_snapshot_anchorer(anchorer);
+            self.event_store_replay = event_store_replay_configured;
+        }
+
+        if self.event_store_replay {
+            log::info!(
+                "Event-store replay loaded; skipping engines, clients, trader startup, and live reconciliation",
+            );
+            self.ts_started = Some(self.clock.borrow().timestamp_ns());
+            log::info!("Started");
+            return;
         }
 
         self.start_engines();
@@ -506,12 +526,7 @@ impl NautilusKernel {
             return;
         }
 
-        log::info!("Starting clients...");
-
-        if let Err(e) = self.start_clients() {
-            log::error!("Error starting clients: {e:?}");
-        }
-        log::info!("Clients started");
+        // Execution and data clients are started by their engines via `start_engines` above
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
         log::info!("Started");
@@ -578,10 +593,7 @@ impl NautilusKernel {
     /// This method should be called after the residual events grace period has elapsed
     /// and all remaining events have been processed. It disconnects clients and stops engines.
     pub async fn finalize_stop(&mut self) {
-        // Stop all adapter clients
-        if let Err(e) = self.stop_all_clients() {
-            log::error!("Error stopping clients: {e:?}");
-        }
+        // Execution and data clients are stopped by their engines via `stop_engines` below
 
         self.stop_engines();
         self.cancel_timers();
@@ -604,6 +616,20 @@ impl NautilusKernel {
     #[must_use]
     pub fn event_store(&self) -> Option<&dyn KernelEventStore> {
         self.event_store.as_deref()
+    }
+
+    /// Returns whether the event-store integration is running an event-store replay start.
+    #[must_use]
+    pub fn is_event_store_replay(&self) -> bool {
+        self.event_store_replay
+    }
+
+    /// Returns whether the event-store integration is configured for an event-store replay start.
+    #[must_use]
+    pub fn is_event_store_replay_configured(&self) -> bool {
+        self.event_store
+            .as_deref()
+            .is_some_and(KernelEventStore::is_event_store_replay_configured)
     }
 
     /// Resets the Nautilus system kernel to its initial state.
@@ -668,58 +694,6 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().stop();
         self.exec_engine.borrow_mut().stop();
         self.risk_engine.borrow_mut().stop();
-    }
-
-    /// Starts all engine clients.
-    ///
-    /// Note: Async connection (connect/disconnect) is handled by LiveNode for live clients.
-    /// This method only handles synchronous start operations on execution clients.
-    fn start_clients(&self) -> Result<(), Vec<anyhow::Error>> {
-        let mut errors = Vec::new();
-
-        {
-            let mut exec_engine = self.exec_engine.borrow_mut();
-            let exec_adapters = exec_engine.get_clients_mut();
-
-            for adapter in exec_adapters {
-                if let Err(e) = adapter.start() {
-                    log::error!("Error starting execution client {}: {e}", adapter.client_id);
-                    errors.push(e);
-                }
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
-    }
-
-    /// Stops all engine clients.
-    ///
-    /// Note: Async disconnection is handled by LiveNode for live clients.
-    /// This method only handles synchronous stop operations on execution clients.
-    fn stop_all_clients(&self) -> Result<(), Vec<anyhow::Error>> {
-        let mut errors = Vec::new();
-
-        {
-            let mut exec_engine = self.exec_engine.borrow_mut();
-            let exec_adapters = exec_engine.get_clients_mut();
-
-            for adapter in exec_adapters {
-                if let Err(e) = adapter.stop() {
-                    log::error!("Error stopping execution client {}: {e}", adapter.client_id);
-                    errors.push(e);
-                }
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
     }
 
     /// Connects data engine clients.

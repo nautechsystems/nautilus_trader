@@ -2370,6 +2370,7 @@ impl<'a> FromCapnp<'a> for OrderDenied {
             event_id,
             ts_event: ts_init.into(), // System event - ts_event = ts_init
             ts_init: ts_init.into(),
+            causation_id: None,
         })
     }
 }
@@ -2428,6 +2429,7 @@ impl<'a> FromCapnp<'a> for OrderEmulated {
             event_id,
             ts_event: ts_init.into(), // System event - ts_event = ts_init
             ts_init: ts_init.into(),
+            causation_id: None,
         })
     }
 }
@@ -2493,6 +2495,7 @@ impl<'a> FromCapnp<'a> for OrderReleased {
             event_id,
             ts_event: ts_init.into(), // System event - ts_event = ts_init
             ts_init: ts_init.into(),
+            causation_id: None,
         })
     }
 }
@@ -2565,6 +2568,7 @@ impl<'a> FromCapnp<'a> for OrderSubmitted {
             event_id,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
+            causation_id: None,
         })
     }
 }
@@ -2648,6 +2652,7 @@ impl<'a> FromCapnp<'a> for OrderAccepted {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -2733,6 +2738,7 @@ impl<'a> FromCapnp<'a> for OrderRejected {
             ts_init: ts_init.into(),
             reconciliation,
             due_post_only,
+            causation_id: None,
         })
     }
 }
@@ -2821,6 +2827,7 @@ impl<'a> FromCapnp<'a> for OrderCanceled {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -2909,6 +2916,7 @@ impl<'a> FromCapnp<'a> for OrderExpired {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -2997,6 +3005,7 @@ impl<'a> FromCapnp<'a> for OrderTriggered {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3087,6 +3096,7 @@ impl<'a> FromCapnp<'a> for OrderPendingUpdate {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3177,6 +3187,7 @@ impl<'a> FromCapnp<'a> for OrderPendingCancel {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3267,6 +3278,7 @@ impl<'a> FromCapnp<'a> for OrderModifyRejected {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3357,6 +3369,7 @@ impl<'a> FromCapnp<'a> for OrderCancelRejected {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3490,6 +3503,7 @@ impl<'a> FromCapnp<'a> for OrderUpdated {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             reconciliation,
+            causation_id: None,
         })
     }
 }
@@ -3641,6 +3655,7 @@ impl<'a> FromCapnp<'a> for OrderFilled {
             reconciliation,
             position_id,
             commission,
+            causation_id: None,
         })
     }
 }
@@ -3992,6 +4007,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
+            causation_id: None,
         })
     }
 }

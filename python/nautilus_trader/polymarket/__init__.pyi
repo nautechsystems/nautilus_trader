@@ -24,6 +24,9 @@ class PolymarketDataClientConfig:
         subscribe_new_markets: bool | None = None,
         auto_load_missing_instruments: bool | None = None,
         auto_load_debounce_ms: int | None = None,
+        auto_load_max_retries: int | None = None,
+        auto_load_retry_delay_initial_secs: float | None = None,
+        auto_load_retry_delay_max_secs: float | None = None,
     ) -> None: ...
 
 @typing.final

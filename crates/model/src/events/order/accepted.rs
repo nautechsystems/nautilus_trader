@@ -69,6 +69,9 @@ pub struct OrderAccepted {
     /// If the event was generated during reconciliation.
     #[serde(deserialize_with = "from_bool_as_u8")]
     pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderAccepted {
@@ -98,6 +101,7 @@ impl OrderAccepted {
             ts_event,
             ts_init,
             reconciliation: u8::from(reconciliation),
+            causation_id: None,
         }
     }
 }

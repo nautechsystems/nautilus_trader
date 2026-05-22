@@ -40,7 +40,7 @@ use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
 use crate::common::{
-    enums::HyperliquidFillDirection,
+    enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
     parse::{
         is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
     },
@@ -295,10 +295,9 @@ pub fn parse_ws_order_status_report(
     let order_side = OrderSide::from(order.order.side);
 
     // Determine order type based on trigger info
-    let order_type = if is_conditional_order_data(
-        order.order.trigger_px.as_deref(),
-        order.order.tpsl.as_ref(),
-    ) {
+    let is_conditional =
+        is_conditional_order_data(order.order.trigger_px.as_deref(), order.order.tpsl.as_ref());
+    let order_type = if is_conditional {
         if let (Some(is_market), Some(tpsl)) = (order.order.is_market, order.order.tpsl.as_ref()) {
             parse_trigger_order_type(is_market, tpsl)
         } else {
@@ -308,7 +307,10 @@ pub fn parse_ws_order_status_report(
         OrderType::Limit // Regular limit order
     };
 
-    let time_in_force = TimeInForce::Gtc;
+    let time_in_force = match order.order.tif {
+        Some(HyperliquidTimeInForce::Ioc) => TimeInForce::Ioc,
+        _ => TimeInForce::Gtc,
+    };
     let order_status = OrderStatus::from(order.status);
 
     // orig_sz is the original order quantity, sz is the remaining quantity
@@ -345,9 +347,17 @@ pub fn parse_ws_order_status_report(
         report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
     }
 
+    if matches!(order.order.tif, Some(HyperliquidTimeInForce::Alo)) {
+        report = report.with_post_only(true);
+    }
+
+    if let Some(reduce_only) = order.order.reduce_only {
+        report = report.with_reduce_only(reduce_only);
+    }
+
     report = report.with_price(price);
 
-    if let Some(ref trigger_px_str) = order.order.trigger_px {
+    if is_conditional && let Some(ref trigger_px_str) = order.order.trigger_px {
         let trigger_price = parse_price(trigger_px_str, instrument, "order.triggerPx")?;
         report = report.with_trigger_price(trigger_price);
     }
@@ -507,6 +517,7 @@ mod tests {
             enums::{
                 HyperliquidFillDirection, HyperliquidLiquidationMethod,
                 HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
+                HyperliquidTimeInForce,
             },
         },
         websocket::messages::{
@@ -563,7 +574,9 @@ mod tests {
                 timestamp: 1704470400000,
                 orig_sz: "1.0".to_string(),
                 cloid: Some("test-order-1".to_string()),
-                trigger_px: None,
+                tif: Some(HyperliquidTimeInForce::Alo),
+                reduce_only: Some(true),
+                trigger_px: Some("0.0".to_string()),
                 is_market: None,
                 tpsl: None,
                 trigger_activated: None,
@@ -580,6 +593,10 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert!(report.post_only);
+        assert!(report.reduce_only);
+        assert!(report.trigger_price.is_none());
     }
 
     #[rstest]
@@ -676,7 +693,7 @@ mod tests {
 
         let defs = parse_outcome_instruments(&meta).unwrap();
         let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
-        assert_eq!(instrument.id().symbol.as_str(), "+990");
+        assert_eq!(instrument.id().symbol.as_str(), "99-YES-OUTCOME");
 
         let fill_data = WsFillData {
             coin: Ustr::from("#990"),

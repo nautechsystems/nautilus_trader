@@ -25,6 +25,9 @@ use ustr::Ustr;
 
 use crate::aggregation::{BarAggregator, SpreadQuoteAggregator};
 
+// Between built-in handlers (10) and default user handlers (0)
+pub(super) const BAR_AGGREGATOR_PRIORITY: u32 = 5;
+
 /// Message handler for processing quote ticks through bar aggregators.
 ///
 /// This handler receives quote tick messages and forwards them to the underlying

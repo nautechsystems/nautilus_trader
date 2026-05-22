@@ -23,12 +23,12 @@
 //! Call [`register_betfair_custom_data`] once (e.g. during client `connect()`)
 //! to register all types for JSON and Arrow encoding.
 //!
-//! Absent optional float values use `f64::NAN` as the sentinel, matching
-//! Betfair's convention for missing starting price values.
+//! Absent optional race telemetry values use `f64::NAN` as the sentinel.
 
 use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_persistence_macros::custom_data;
+use rust_decimal::Decimal;
 
 /// Serde helpers for f64 fields that use NaN as a sentinel for absent values.
 /// Serializes NaN as JSON `null` and deserializes `null` back to NaN,
@@ -51,35 +51,23 @@ mod nan_as_null {
 /// Betfair ticker data from MCM runner changes.
 ///
 /// Carries last traded price, traded volume, and starting price
-/// near/far values per runner. Fields are `f64::NAN` when absent.
+/// near/far values per runner.
 #[custom_data(pyo3)]
 pub struct BetfairTicker {
     /// The instrument ID for this ticker.
     pub instrument_id: InstrumentId,
     /// Last traded price.
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub last_traded_price: f64,
+    #[custom_data_field(json)]
+    pub last_traded_price: Option<Decimal>,
     /// Total traded volume.
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub traded_volume: f64,
+    #[custom_data_field(json)]
+    pub traded_volume: Option<Decimal>,
     /// Starting price near (projected BSP from matched portion).
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub starting_price_near: f64,
+    #[custom_data_field(json)]
+    pub starting_price_near: Option<Decimal>,
     /// Starting price far (projected BSP from unmatched portion).
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub starting_price_far: f64,
+    #[custom_data_field(json)]
+    pub starting_price_far: Option<Decimal>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
@@ -94,7 +82,8 @@ pub struct BetfairStartingPrice {
     /// The instrument ID for this starting price.
     pub instrument_id: InstrumentId,
     /// The realized best starting price value.
-    pub bsp: f64,
+    #[custom_data_field(json)]
+    pub bsp: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
@@ -115,9 +104,11 @@ pub struct BetfairBspBookDelta {
     /// The order side as `OrderSide` u8.
     pub side: u32,
     /// The price level.
-    pub price: f64,
+    #[custom_data_field(json)]
+    pub price: Decimal,
     /// The size at this price level.
-    pub size: f64,
+    #[custom_data_field(json)]
+    pub size: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
@@ -149,25 +140,22 @@ pub struct BetfairOrderVoided {
     /// The venue (Betfair) order ID (bet ID).
     pub venue_order_id: String,
     /// The size that was voided.
-    pub size_voided: f64,
+    #[custom_data_field(json)]
+    pub size_voided: Decimal,
     /// The order price.
-    pub price: f64,
+    #[custom_data_field(json)]
+    pub price: Decimal,
     /// The original order size.
-    pub size: f64,
+    #[custom_data_field(json)]
+    pub size: Decimal,
     /// The order side ("BACK" or "LAY").
     pub side: String,
-    /// The average price matched. `f64::NAN` if absent.
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub avg_price_matched: f64,
-    /// The total size matched. `f64::NAN` if absent.
-    #[serde(
-        serialize_with = "nan_as_null::serialize",
-        deserialize_with = "nan_as_null::deserialize"
-    )]
-    pub size_matched: f64,
+    /// The average price matched.
+    #[custom_data_field(json)]
+    pub avg_price_matched: Option<Decimal>,
+    /// The total size matched.
+    #[custom_data_field(json)]
+    pub size_matched: Option<Decimal>,
     /// The void reason. Empty string if absent.
     pub reason: String,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -288,6 +276,7 @@ pub fn register_betfair_custom_data() {
 mod tests {
     use nautilus_serialization::arrow::ArrowSchemaProvider;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
 
@@ -409,13 +398,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_betfair_ticker_nan_json_roundtrip() {
+    fn test_betfair_ticker_optional_decimal_json_roundtrip() {
         let ticker = BetfairTicker::new(
             InstrumentId::from("1.234-56789-0.0.BETFAIR"),
-            1.5,
-            100.0,
-            f64::NAN,
-            f64::NAN,
+            Some(Decimal::new(15, 1)),
+            Some(Decimal::new(100, 0)),
+            None,
+            None,
             UnixNanos::from(1_000_000_000u64),
             UnixNanos::from(1_000_000_000u64),
         );
@@ -423,11 +412,87 @@ mod tests {
         let json = serde_json::to_string(&ticker).unwrap();
         assert!(json.contains("\"starting_price_near\":null"));
         assert!(json.contains("\"starting_price_far\":null"));
-        assert!(json.contains("\"last_traded_price\":1.5"));
 
         let parsed: BetfairTicker = serde_json::from_str(&json).unwrap();
-        assert!(parsed.starting_price_near.is_nan());
-        assert!(parsed.starting_price_far.is_nan());
-        assert_eq!(parsed.last_traded_price, 1.5);
+        assert!(parsed.starting_price_near.is_none());
+        assert!(parsed.starting_price_far.is_none());
+        assert_eq!(parsed.last_traded_price, Some(Decimal::new(15, 1)));
+        assert_eq!(parsed.traded_volume, Some(Decimal::new(100, 0)));
+    }
+
+    #[rstest]
+    fn test_betfair_starting_price_decimal_json_roundtrip() {
+        let starting_price = BetfairStartingPrice::new(
+            InstrumentId::from("1.234-56789-0.0.BETFAIR"),
+            Decimal::new(573, 2),
+            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        let json = serde_json::to_string(&starting_price).unwrap();
+        let parsed: BetfairStartingPrice = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.instrument_id, starting_price.instrument_id);
+        assert_eq!(parsed.bsp, Decimal::new(573, 2));
+        assert_eq!(parsed.ts_event, starting_price.ts_event);
+        assert_eq!(parsed.ts_init, starting_price.ts_init);
+    }
+
+    #[rstest]
+    fn test_betfair_bsp_book_delta_decimal_json_roundtrip() {
+        let delta = BetfairBspBookDelta::new(
+            InstrumentId::from("1.234-56789-0.0.BETFAIR"),
+            2,
+            1,
+            Decimal::new(1000, 0),
+            Decimal::new(3338, 2),
+            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        let json = serde_json::to_string(&delta).unwrap();
+        let parsed: BetfairBspBookDelta = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.instrument_id, delta.instrument_id);
+        assert_eq!(parsed.action, delta.action);
+        assert_eq!(parsed.side, delta.side);
+        assert_eq!(parsed.price, Decimal::new(1000, 0));
+        assert_eq!(parsed.size, Decimal::new(3338, 2));
+        assert_eq!(parsed.ts_event, delta.ts_event);
+        assert_eq!(parsed.ts_init, delta.ts_init);
+    }
+
+    #[rstest]
+    fn test_betfair_order_voided_decimal_json_roundtrip() {
+        let voided = BetfairOrderVoided::new(
+            InstrumentId::from("1.234-56789-0.0.BETFAIR"),
+            "client-001".to_string(),
+            "430069890490".to_string(),
+            Decimal::new(40, 0),
+            Decimal::new(25, 1),
+            Decimal::new(100, 0),
+            "BACK".to_string(),
+            Some(Decimal::new(25, 1)),
+            Some(Decimal::new(60, 0)),
+            "VAR".to_string(),
+            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        let json = serde_json::to_string(&voided).unwrap();
+        let parsed: BetfairOrderVoided = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.instrument_id, voided.instrument_id);
+        assert_eq!(parsed.client_order_id, voided.client_order_id);
+        assert_eq!(parsed.venue_order_id, voided.venue_order_id);
+        assert_eq!(parsed.size_voided, Decimal::new(40, 0));
+        assert_eq!(parsed.price, Decimal::new(25, 1));
+        assert_eq!(parsed.size, Decimal::new(100, 0));
+        assert_eq!(parsed.side, "BACK");
+        assert_eq!(parsed.avg_price_matched, Some(Decimal::new(25, 1)));
+        assert_eq!(parsed.size_matched, Some(Decimal::new(60, 0)));
+        assert_eq!(parsed.reason, "VAR");
+        assert_eq!(parsed.ts_event, voided.ts_event);
+        assert_eq!(parsed.ts_init, voided.ts_init);
     }
 }

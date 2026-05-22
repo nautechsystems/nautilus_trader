@@ -642,6 +642,24 @@ impl BlockchainCache {
         pool_identifier: &PoolIdentifier,
         snapshot: &PoolSnapshot,
     ) -> anyhow::Result<()> {
+        // Reject stub snapshots at the pool's creation block: empty positions, empty ticks,
+        // and the snapshot block matching pool creation indicates a bootstrap that bailed
+        // before any liquidity events landed. A legitimately empty pool (e.g., fully burned)
+        // would have its last_processed_event at the burn block, not at creation, so the
+        // creation-block check preserves those valid checkpoints.
+        if snapshot.positions.is_empty()
+            && snapshot.ticks.is_empty()
+            && let Some(pool) = self.pools.get(pool_identifier)
+            && snapshot.block_position.number == pool.creation_block
+        {
+            log::warn!(
+                "Refusing to persist empty stub snapshot for {} at pool creation block {}",
+                snapshot.instrument_id,
+                snapshot.block_position.number,
+            );
+            return Ok(());
+        }
+
         if let Some(database) = &self.database {
             // Save snapshot first (required for foreign key constraints)
             database

@@ -48,6 +48,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
+    instruments::InstrumentAny,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Quantity},
@@ -885,7 +886,7 @@ impl ExecutionClient for OKXExecutionClient {
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
-            let instruments = self.ws_private.instruments_snapshot();
+            let instruments = self.ws_private.instruments_cache_arc();
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -922,7 +923,7 @@ impl ExecutionClient for OKXExecutionClient {
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
-            let instruments = self.ws_business.instruments_snapshot();
+            let instruments = self.ws_business.instruments_cache_arc();
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -1106,6 +1107,11 @@ impl ExecutionClient for OKXExecutionClient {
         self.emitter
             .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.ws_private.cache_instrument(instrument.clone());
+        self.ws_business.cache_instrument(instrument);
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -2010,7 +2016,10 @@ fn select_query_order_report(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::OrderStatus;
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::cache::Cache;
+    use nautilus_model::{enums::OrderStatus, instruments::Instrument};
     use rstest::rstest;
     use serde_json::Value;
 
@@ -2331,6 +2340,54 @@ mod tests {
         assert_eq!(
             selected.and_then(|r| r.client_order_id),
             Some(ClientOrderId::from("O-001")),
+        );
+    }
+
+    fn build_test_exec_client() -> OKXExecutionClient {
+        let config = OKXExecClientConfig {
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            api_passphrase: Some("test_pass".to_string()),
+            ..OKXExecClientConfig::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            config.trader_id,
+            ClientId::from("OKX-TEST"),
+            *OKX_VENUE,
+            OmsType::Hedging,
+            config.account_id,
+            AccountType::Cash,
+            None,
+            cache,
+        );
+
+        OKXExecutionClient::new(core, config).expect("failed to build test client")
+    }
+
+    #[rstest]
+    fn test_on_instrument_writes_through_to_ws_caches() {
+        // Bus-delivered instrument updates must land in both the private and
+        // business WebSocket caches so the dispatch loops resolve fresh
+        // tickSz, lotSz, and instIdCode without a session restart.
+        use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
+
+        let mut client = build_test_exec_client();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let symbol = instrument.symbol().inner();
+
+        client.on_instrument(instrument.clone());
+
+        let private_cache = client.ws_private.instruments_cache_arc();
+        let business_cache = client.ws_business.instruments_cache_arc();
+        assert_eq!(
+            private_cache.load().get(&symbol).map(|i| i.id()),
+            Some(instrument.id()),
+        );
+        assert_eq!(
+            business_cache.load().get(&symbol).map(|i| i.id()),
+            Some(instrument.id()),
         );
     }
 }

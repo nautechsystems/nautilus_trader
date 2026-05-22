@@ -7,6 +7,7 @@ set -euo pipefail
 DESIRED_FEATURES=(ffi python high-precision defi)
 PROFILE="${CARGO_CI_PROFILE:-nextest}"
 export HIGH_PRECISION="${HIGH_PRECISION:-1}"
+resolved_changed_base=0
 
 run_full() {
   echo "Running full workspace doc check"
@@ -31,12 +32,18 @@ if [ -z "$changed_files" ] &&
   [ "$CHANGED_BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
   base=$(git merge-base "$CHANGED_BASE_SHA" HEAD 2> /dev/null || true)
   if [ -n "$base" ]; then
+    resolved_changed_base=1
     changed_files=$(git diff --name-only "$base"..HEAD -- '*.rs' '*.toml' 2> /dev/null || true)
   fi
 fi
 
-# Clean checkout (CI --all-files) or no Rust/TOML changes at all
 if [ -z "$changed_files" ]; then
+  if [ "$resolved_changed_base" -eq 1 ]; then
+    echo "No Rust/TOML changes detected; skipping cargo doc"
+    exit 0
+  fi
+
+  # Clean checkout or unresolved changed-file state
   run_full
 fi
 

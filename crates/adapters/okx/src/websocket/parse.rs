@@ -15,11 +15,14 @@
 
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::{LazyLock, Mutex},
+};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use nautilus_core::{UUID4, nanos::UnixNanos};
+use nautilus_core::{MUTEX_POISONED, UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -274,21 +277,6 @@ pub fn parse_order_event(
                 )))
             }
         }
-        OKXOrderStatus::Effective | OKXOrderStatus::OrderPlaced => {
-            let ts_event = parse_millisecond_timestamp(msg.u_time);
-            Ok(ParsedOrderEvent::Triggered(OrderTriggered::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                UUID4::new(),
-                ts_event,
-                ts_init,
-                false,
-                Some(venue_order_id),
-                Some(account_id),
-            )))
-        }
         _ => {
             // PartiallyFilled without new fill or other states - use status report
             parse_order_status_report(msg, instrument, account_id, ts_init)
@@ -335,24 +323,68 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
 }
 
 /// Determines if a Canceled order is actually an Expired order based on cancel reason.
+///
+/// OKX's numeric `cancelSource` enumeration is not fully documented, so
+/// unmapped codes log once via [`log_unknown_cancel_source`] to surface
+/// candidates for the mapping.
 fn is_order_expired_by_reason(msg: &OKXOrderMsg) -> bool {
     if let Some(ref reason) = msg.cancel_source_reason
         && (contains_ignore_ascii_case(reason, "expir")
             || contains_ignore_ascii_case(reason, "gtd")
-            || contains_ignore_ascii_case(reason, "timeout")
-            || contains_ignore_ascii_case(reason, "time_expired"))
+            || contains_ignore_ascii_case(reason, "timeout"))
     {
         return true;
     }
 
-    // OKX cancel source codes that indicate expiration
     if let Some(ref source) = msg.cancel_source
         && (source == "5" || source == "time_expired" || source == "gtd_expired")
     {
         return true;
     }
 
+    log_unknown_cancel_source(msg);
     false
+}
+
+const MAX_TRACKED_CANCEL_SOURCES: usize = 64;
+
+/// Logs each unseen `(cancel_source, cancel_source_reason)` pair once,
+/// capped at [`MAX_TRACKED_CANCEL_SOURCES`].
+fn log_unknown_cancel_source(msg: &OKXOrderMsg) {
+    static SEEN: LazyLock<Mutex<AHashSet<String>>> = LazyLock::new(|| Mutex::new(AHashSet::new()));
+    log_unknown_cancel_source_inner(msg, &SEEN, MAX_TRACKED_CANCEL_SOURCES);
+}
+
+/// Test-injectable variant. Returns `true` when a new entry was recorded.
+fn log_unknown_cancel_source_inner(
+    msg: &OKXOrderMsg,
+    seen: &Mutex<AHashSet<String>>,
+    max_tracked: usize,
+) -> bool {
+    let source = msg.cancel_source.as_deref().unwrap_or("");
+    let reason = msg.cancel_source_reason.as_deref().unwrap_or("");
+
+    if source.is_empty() && reason.is_empty() {
+        return false;
+    }
+
+    if matches!(source, "5" | "31" | "time_expired" | "gtd_expired") {
+        return false;
+    }
+
+    let key = format!("{source}|{reason}");
+    let mut seen = seen.lock().expect(MUTEX_POISONED);
+
+    if seen.len() >= max_tracked {
+        return false;
+    }
+
+    if seen.insert(key) {
+        log::debug!("Observed unmapped OKX cancelSource: source='{source}', reason='{reason}'");
+        true
+    } else {
+        false
+    }
 }
 
 /// Checks if order parameters have been updated compared to previous state.
@@ -2059,8 +2091,8 @@ mod tests {
         OKXPositionSide,
         common::{
             enums::{
-                OKXExecType, OKXInstrumentType, OKXOrderType, OKXPriceType, OKXQuickMarginType,
-                OKXSelfTradePreventionMode, OKXSide, OKXTradeMode,
+                OKXAlgoOrderStatus, OKXExecType, OKXInstrumentType, OKXOrderType, OKXPriceType,
+                OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSide, OKXTradeMode,
             },
             parse::parse_account_state,
             testing::load_test_json,
@@ -3981,7 +4013,7 @@ mod tests {
         let msg = &data[0];
         assert_eq!(msg.algo_id, "706620792746729472");
         assert_eq!(msg.algo_cl_ord_id, "STOP001BTCUSDT20250120");
-        assert_eq!(msg.state, OKXOrderStatus::Live);
+        assert_eq!(msg.state, OKXAlgoOrderStatus::Live);
         assert_eq!(msg.ord_px, "-1"); // Market order indicator
 
         let account_id = AccountId::new("OKX-001");
@@ -4046,7 +4078,7 @@ mod tests {
         // Test second algo order (stop limit buy)
         let msg = &data[1];
         assert_eq!(msg.algo_id, "706620792746729473");
-        assert_eq!(msg.state, OKXOrderStatus::Live);
+        assert_eq!(msg.state, OKXAlgoOrderStatus::Live);
         assert_eq!(msg.ord_px, "106000"); // Limit price
 
         let account_id = AccountId::new("OKX-001");
@@ -5254,49 +5286,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_order_event_effective_returns_triggered() {
-        let instrument = create_stub_instrument();
-        let msg = create_order_msg_for_event_test(
-            OKXOrderStatus::Effective,
-            "test_client_123",
-            "venue_456",
-            "50000.0",
-            "0.01",
-        );
-
-        let client_order_id = ClientOrderId::new("test_client_123");
-        let account_id = AccountId::new("OKX-001");
-        let trader_id = TraderId::new("TRADER-001");
-        let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
-
-        let result = parse_order_event(
-            &msg,
-            client_order_id,
-            account_id,
-            trader_id,
-            strategy_id,
-            &InstrumentAny::CryptoPerpetual(instrument),
-            None,
-            None,
-            None,
-            ts_init,
-        );
-
-        assert!(result.is_ok());
-        match result.unwrap() {
-            ParsedOrderEvent::Triggered(triggered) => {
-                assert_eq!(triggered.client_order_id, client_order_id);
-                assert_eq!(
-                    triggered.venue_order_id,
-                    Some(VenueOrderId::new("venue_456"))
-                );
-            }
-            other => panic!("Expected Triggered, was {other:?}"),
-        }
-    }
-
-    #[rstest]
     fn test_parse_order_event_filled_with_fill_data_returns_fill() {
         let instrument = create_stub_instrument();
         let mut msg = create_order_msg_for_event_test(
@@ -5395,6 +5384,83 @@ mod tests {
         let msg =
             create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
         assert!(!is_order_expired_by_reason(&msg));
+    }
+
+    fn fresh_cancel_source_seen() -> Mutex<AHashSet<String>> {
+        Mutex::new(AHashSet::new())
+    }
+
+    #[rstest]
+    fn test_log_unknown_cancel_source_records_first_observation() {
+        let mut msg =
+            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
+        msg.cancel_source = Some("99".to_string());
+        msg.cancel_source_reason = Some("Unknown reason".to_string());
+
+        let seen = fresh_cancel_source_seen();
+        assert!(log_unknown_cancel_source_inner(&msg, &seen, 8));
+        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), 1);
+    }
+
+    #[rstest]
+    fn test_log_unknown_cancel_source_dedups_repeat_pair() {
+        let mut msg =
+            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
+        msg.cancel_source = Some("99".to_string());
+        msg.cancel_source_reason = Some("Unknown reason".to_string());
+
+        let seen = fresh_cancel_source_seen();
+        assert!(log_unknown_cancel_source_inner(&msg, &seen, 8));
+        assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
+        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), 1);
+    }
+
+    #[rstest]
+    #[case::post_only("31")]
+    #[case::known_expired("5")]
+    #[case::sentinel_time("time_expired")]
+    #[case::sentinel_gtd("gtd_expired")]
+    fn test_log_unknown_cancel_source_skips_known_sources(#[case] source: &str) {
+        let mut msg =
+            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
+        msg.cancel_source = Some(source.to_string());
+
+        let seen = fresh_cancel_source_seen();
+        assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
+        assert!(seen.lock().expect(MUTEX_POISONED).is_empty());
+    }
+
+    #[rstest]
+    fn test_log_unknown_cancel_source_skips_when_source_and_reason_empty() {
+        let msg =
+            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
+        let seen = fresh_cancel_source_seen();
+        assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
+        assert!(seen.lock().expect(MUTEX_POISONED).is_empty());
+    }
+
+    #[rstest]
+    fn test_log_unknown_cancel_source_respects_capacity_cap() {
+        let cap = 4;
+        let seen = fresh_cancel_source_seen();
+
+        for i in 0..cap {
+            let mut msg = create_order_msg_for_event_test(
+                OKXOrderStatus::Canceled,
+                "test",
+                "123",
+                "100",
+                "1",
+            );
+            msg.cancel_source = Some(format!("novel_{i}"));
+            assert!(log_unknown_cancel_source_inner(&msg, &seen, cap));
+        }
+
+        let mut overflow =
+            create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
+        overflow.cancel_source = Some("novel_overflow".to_string());
+        assert!(!log_unknown_cancel_source_inner(&overflow, &seen, cap));
+        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), cap);
     }
 
     // Regression test: PartiallyFilled order with price change should emit Updated, not StatusOnly
@@ -5753,7 +5819,7 @@ mod tests {
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             ord_type: OKXAlgoOrderType::Trigger,
-            state: OKXOrderStatus::Live,
+            state: OKXAlgoOrderStatus::Live,
             side: OKXSide::Buy,
             pos_side: OKXPositionSide::Long,
             sz: "0.01".to_string(),
@@ -5805,7 +5871,7 @@ mod tests {
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             ord_type,
-            state: OKXOrderStatus::Live,
+            state: OKXAlgoOrderStatus::Live,
             side: OKXSide::Sell,
             pos_side: OKXPositionSide::Long,
             sz: "0.01".to_string(),

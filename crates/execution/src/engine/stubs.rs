@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use async_trait::async_trait;
 use nautilus_common::{
@@ -49,6 +52,10 @@ pub struct StubExecutionClient {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     received_instruments: Rc<RefCell<Vec<InstrumentAny>>>,
+    start_count: Rc<Cell<usize>>,
+    stop_count: Rc<Cell<usize>>,
+    reset_count: Rc<Cell<usize>>,
+    dispose_count: Rc<Cell<usize>>,
 }
 
 impl StubExecutionClient {
@@ -70,6 +77,10 @@ impl StubExecutionClient {
             clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(TestClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
             received_instruments: Rc::new(RefCell::new(Vec::new())),
+            start_count: Rc::new(Cell::new(0)),
+            stop_count: Rc::new(Cell::new(0)),
+            reset_count: Rc::new(Cell::new(0)),
+            dispose_count: Rc::new(Cell::new(0)),
         }
     }
 
@@ -77,6 +88,30 @@ impl StubExecutionClient {
     #[must_use]
     pub fn received_instruments(&self) -> Rc<RefCell<Vec<InstrumentAny>>> {
         self.received_instruments.clone()
+    }
+
+    /// Returns the number of times [`ExecutionClient::start`] was invoked.
+    #[must_use]
+    pub fn start_count(&self) -> usize {
+        self.start_count.get()
+    }
+
+    /// Returns the number of times [`ExecutionClient::stop`] was invoked.
+    #[must_use]
+    pub fn stop_count(&self) -> usize {
+        self.stop_count.get()
+    }
+
+    /// Returns the number of times [`ExecutionClient::reset`] was invoked.
+    #[must_use]
+    pub fn reset_count(&self) -> usize {
+        self.reset_count.get()
+    }
+
+    /// Returns the number of times [`ExecutionClient::dispose`] was invoked.
+    #[must_use]
+    pub fn dispose_count(&self) -> usize {
+        self.dispose_count.get()
     }
 }
 
@@ -118,11 +153,23 @@ impl ExecutionClient for StubExecutionClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         self.is_connected = true;
+        self.start_count.set(self.start_count.get() + 1);
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
         self.is_connected = false;
+        self.stop_count.set(self.stop_count.get() + 1);
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.reset_count.set(self.reset_count.get() + 1);
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        self.dispose_count.set(self.dispose_count.get() + 1);
         Ok(())
     }
 

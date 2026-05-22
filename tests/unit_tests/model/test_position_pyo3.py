@@ -120,6 +120,7 @@ def test_position_to_from_dict():
             {
                 "type": "OrderFilled",
                 "account_id": "SIM-000",
+                "causation_id": None,
                 "client_order_id": "O-20210410-022422-001-001-1",
                 "commission": "2.00 USD",
                 "currency": "USD",

@@ -95,7 +95,7 @@ pub trait BarAggregator: Any + Debug {
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
     /// Stop the aggregator, e.g., cancel timers. Default is no-op.
     fn stop(&mut self) {}
-    /// Sets historical mode (default implementation does nothing, `TimeBarAggregator` overrides)
+    /// Sets historical mode and the handler used for completed bars.
     fn set_historical_mode(&mut self, _historical_mode: bool, _handler: Box<dyn FnMut(Bar)>) {}
     /// Sets historical events (default implementation does nothing, `TimeBarAggregator` overrides)
     fn set_historical_events(&mut self, _events: Vec<TimeEvent>) {}
@@ -110,6 +110,8 @@ pub trait BarAggregator: Any + Debug {
     /// Sets the weak reference to the aggregator wrapper (for historical mode).
     /// Default implementation does nothing, `TimeBarAggregator` overrides.
     fn set_aggregator_weak(&mut self, _weak: Weak<RefCell<Box<dyn BarAggregator>>>) {}
+    /// Configures the continuous-future price adjustment for the underlying builder.
+    fn set_adjustment(&mut self, _adjustment: Decimal, _mode: ContinuousFutureAdjustmentType) {}
 }
 
 impl dyn BarAggregator {
@@ -409,6 +411,11 @@ impl BarAggregatorCore {
     pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
     }
+
+    fn set_handler(&mut self, handler: BarHandler) {
+        self.handler = handler;
+    }
+
     fn apply_update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
         self.builder.update(price, size, ts_init);
     }
@@ -422,6 +429,26 @@ impl BarAggregatorCore {
         let bar = self.builder.build(ts_event, ts_init);
         (self.handler)(bar);
     }
+
+    fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+        self.builder.set_adjustment(adjustment, mode);
+    }
+}
+
+macro_rules! impl_set_historical_handler {
+    () => {
+        fn set_historical_mode(&mut self, _historical_mode: bool, handler: Box<dyn FnMut(Bar)>) {
+            self.core.set_handler(handler);
+        }
+    };
+}
+
+macro_rules! impl_set_adjustment {
+    () => {
+        fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+            self.core.set_adjustment(adjustment, mode);
+        }
+    };
 }
 
 /// Provides a means of building tick bars aggregated from quote and trades.
@@ -470,6 +497,9 @@ impl BarAggregator for TickBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -540,6 +570,9 @@ impl BarAggregator for TickImbalanceBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -625,6 +658,9 @@ impl BarAggregator for TickRunsBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -717,6 +753,9 @@ impl BarAggregator for VolumeBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -830,6 +869,9 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
         self.core.set_is_running(value);
     }
 
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
+
     /// Apply the given update to the aggregator.
     ///
     /// Note: side-aware logic lives in `handle_trade`. This method is used for
@@ -932,6 +974,9 @@ impl BarAggregator for VolumeRunsBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -1047,6 +1092,9 @@ impl BarAggregator for ValueBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
@@ -1191,6 +1239,9 @@ impl BarAggregator for ValueImbalanceBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -1358,6 +1409,9 @@ impl BarAggregator for ValueRunsBarAggregator {
         self.core.set_is_running(value);
     }
 
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
+
     /// Apply the given update to the aggregator.
     ///
     /// Note: side-aware logic lives in `handle_trade`. This method is used for
@@ -1496,6 +1550,9 @@ impl BarAggregator for RenkoBarAggregator {
     fn set_is_running(&mut self, value: bool) {
         self.core.set_is_running(value);
     }
+
+    impl_set_historical_handler!();
+    impl_set_adjustment!();
 
     /// Apply the given update to the aggregator.
     ///
@@ -2021,6 +2078,10 @@ impl BarAggregator for TimeBarAggregator {
 
     fn start_timer(&mut self, aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>) {
         self.start_timer_internal(aggregator_rc);
+    }
+
+    fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+        self.core.set_adjustment(adjustment, mode);
     }
 }
 
@@ -3411,6 +3472,252 @@ mod tests {
         assert_eq!(bar2.open, Price::from("1.00003"));
         assert_eq!(bar2.close, Price::from("1.00004"));
         assert_eq!(bar2.volume, Quantity::from(2));
+    }
+
+    #[rstest]
+    fn test_non_time_bar_aggregators_use_historical_handler(
+        equity_aapl: Equity,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let make_sink = |bars: Arc<Mutex<Vec<Bar>>>| {
+            move |bar: Bar| {
+                bars.lock().expect(MUTEX_POISONED).push(bar);
+            }
+        };
+        let make_trade = |price: &str, size: i64, ts: u64| TradeTick {
+            instrument_id,
+            price: Price::from(price),
+            size: Quantity::from(size),
+            aggressor_side: AggressorSide::Buyer,
+            ts_event: UnixNanos::from(ts),
+            ts_init: UnixNanos::from(ts),
+            ..TradeTick::default()
+        };
+
+        macro_rules! assert_historical_sink_receives {
+            ($name:expr, $aggregator:expr, $update:expr) => {{
+                let initial_bars = Arc::new(Mutex::new(Vec::new()));
+                let historical_bars = Arc::new(Mutex::new(Vec::new()));
+                let mut aggregator = $aggregator(Arc::clone(&initial_bars));
+                aggregator
+                    .set_historical_mode(true, Box::new(make_sink(Arc::clone(&historical_bars))));
+                {
+                    let aggregator: &mut dyn BarAggregator = &mut aggregator;
+                    $update(aggregator);
+                }
+
+                assert_eq!(
+                    initial_bars.lock().expect(MUTEX_POISONED).len(),
+                    0,
+                    "{}",
+                    $name,
+                );
+                assert_eq!(
+                    historical_bars.lock().expect(MUTEX_POISONED).len(),
+                    1,
+                    "{}",
+                    $name,
+                );
+            }};
+        }
+
+        let tick_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "TickBarAggregator",
+            |bars| TickBarAggregator::new(
+                tick_type,
+                price_precision,
+                size_precision,
+                make_sink(bars)
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let tick_imbalance_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::TickImbalance, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "TickImbalanceBarAggregator",
+            |bars| TickImbalanceBarAggregator::new(
+                tick_imbalance_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let tick_runs_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::TickRuns, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "TickRunsBarAggregator",
+            |bars| TickRunsBarAggregator::new(
+                tick_runs_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let volume_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Volume, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "VolumeBarAggregator",
+            |bars| VolumeBarAggregator::new(
+                volume_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let volume_imbalance_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::VolumeImbalance, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "VolumeImbalanceBarAggregator",
+            |bars| VolumeImbalanceBarAggregator::new(
+                volume_imbalance_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let volume_runs_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::VolumeRuns, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "VolumeRunsBarAggregator",
+            |bars| VolumeRunsBarAggregator::new(
+                volume_runs_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let value_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(100, BarAggregation::Value, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "ValueBarAggregator",
+            |bars| ValueBarAggregator::new(
+                value_type,
+                price_precision,
+                size_precision,
+                make_sink(bars)
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let value_imbalance_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(100, BarAggregation::ValueImbalance, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "ValueImbalanceBarAggregator",
+            |bars| ValueImbalanceBarAggregator::new(
+                value_imbalance_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let value_runs_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        assert_historical_sink_receives!(
+            "ValueRunsBarAggregator",
+            |bars| ValueRunsBarAggregator::new(
+                value_runs_type,
+                price_precision,
+                size_precision,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.handle_trade(make_trade("100.00", 1, 1_000));
+            }
+        );
+
+        let fx = InstrumentAny::CurrencyPair(audusd_sim);
+        let renko_type = BarType::new(
+            fx.id(),
+            BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid),
+            AggregationSource::Internal,
+        );
+        let fx_price_precision = fx.price_precision();
+        let fx_size_precision = fx.size_precision();
+        let fx_price_increment = fx.price_increment();
+        assert_historical_sink_receives!(
+            "RenkoBarAggregator",
+            |bars| RenkoBarAggregator::new(
+                renko_type,
+                fx_price_precision,
+                fx_size_precision,
+                fx_price_increment,
+                make_sink(bars),
+            ),
+            |aggregator: &mut dyn BarAggregator| {
+                aggregator.update(
+                    Price::from("1.00000"),
+                    Quantity::from(1),
+                    UnixNanos::from(1_000),
+                );
+                aggregator.update(
+                    Price::from("1.00010"),
+                    Quantity::from(1),
+                    UnixNanos::from(2_000),
+                );
+            }
+        );
     }
 
     #[rstest]

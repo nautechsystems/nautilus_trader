@@ -22,6 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, TraderId},
     types::{Currency, Money},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -38,8 +39,11 @@ fn parse_currency(code: &str) -> anyhow::Result<Currency> {
         .map_err(|_| anyhow::anyhow!("Invalid account currency code: {code}"))
 }
 
-fn make_min_notional(value: Option<f64>, currency: Currency) -> Option<Money> {
-    value.map(|amount| Money::new(amount, currency))
+fn make_min_notional(value: Option<Decimal>, currency: Currency) -> anyhow::Result<Option<Money>> {
+    value
+        .map(|amount| Money::from_decimal(amount, currency))
+        .transpose()
+        .map_err(Into::into)
 }
 
 fn validate_market_start_time(label: &str, value: &Option<String>) -> anyhow::Result<()> {
@@ -123,7 +127,7 @@ pub struct BetfairDataConfig {
     #[builder(default = 5)]
     pub request_rate_per_second: u32,
     /// Optional default minimum notional in `account_currency`.
-    pub default_min_notional: Option<f64>,
+    pub default_min_notional: Option<Decimal>,
     /// Optional event type ID filter.
     pub event_type_ids: Option<Vec<String>>,
     /// Optional event type name filter.
@@ -212,7 +216,7 @@ impl BetfairDataConfig {
     /// Returns an error if the account currency code is invalid.
     pub fn min_notional(&self) -> anyhow::Result<Option<Money>> {
         let currency = self.currency()?;
-        Ok(make_min_notional(self.default_min_notional, currency))
+        make_min_notional(self.default_min_notional, currency)
     }
 
     /// Returns the navigation filter for instrument loading.
@@ -631,12 +635,15 @@ mod tests {
     #[rstest]
     fn test_data_config_min_notional() {
         let config = BetfairDataConfig {
-            default_min_notional: Some(2.0),
+            default_min_notional: Some(Decimal::new(2, 0)),
             ..Default::default()
         };
 
         let min_notional = config.min_notional().unwrap();
-        assert_eq!(min_notional, Some(Money::new(2.0, Currency::GBP())));
+        assert_eq!(
+            min_notional,
+            Some(Money::from_decimal(Decimal::new(2, 0), Currency::GBP()).unwrap())
+        );
     }
 
     #[rstest]

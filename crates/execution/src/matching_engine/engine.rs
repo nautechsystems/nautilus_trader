@@ -22,7 +22,7 @@ use std::{
 };
 
 use chrono::TimeDelta;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -1931,45 +1931,51 @@ impl OrderMatchingEngine {
         }
     }
 
+    /// Processes instrument expiration at the given timestamp.
+    pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+        self.check_instrument_expiration(timestamp_ns);
+    }
+
+    /// Returns whether instrument expiration has already been processed.
+    #[must_use]
+    pub const fn is_expiration_processed(&self) -> bool {
+        self.expiration_processed
+    }
+
     fn requires_pending_resolution(&self) -> bool {
         matches!(self.instrument, InstrumentAny::BinaryOption(_))
     }
 
     fn cancel_open_orders_for_expiration(&mut self) {
-        let open_orders: Vec<RestingOrder> = self.get_open_orders();
-        for order_info in &open_orders {
+        // Build a single de-duplicated cancellation set across the matching
+        // core and cache. Resting orders may still only be represented in the
+        // core while inflight orders can remain cache-only during the
+        // submitted/pending transition window.
+        let instrument_id = self.instrument.id();
+        let expiration_order_ids: IndexSet<ClientOrderId> = {
+            let cache = self.cache.borrow();
+            let mut order_ids = IndexSet::new();
+
+            for order_info in self.get_open_orders() {
+                order_ids.insert(order_info.client_order_id);
+            }
+
+            for order in cache.orders(None, Some(&instrument_id), None, None, None) {
+                if order.is_open() || order.is_inflight() {
+                    order_ids.insert(order.client_order_id());
+                }
+            }
+
+            order_ids
+        };
+
+        for client_order_id in expiration_order_ids {
             let order = {
                 let cache = self.cache.borrow();
-                cache.order(&order_info.client_order_id).map(|o| o.clone())
+                cache.order(&client_order_id).map(|order| order.clone())
             };
 
             if let Some(order) = order {
-                self.cancel_order(&order, None);
-            }
-        }
-
-        // Some accepted orders may not currently be represented in the matching
-        // core (e.g. waiting states). Scan all cached orders for this
-        // instrument and cancel any still-open order to enforce
-        // pending-resolution semantics.
-        let instrument_id = self.instrument.id();
-        let cache_open_orders: Vec<OrderAny> = {
-            let cache = self.cache.borrow();
-            cache
-                .orders(None, Some(&instrument_id), None, None, None)
-                .into_iter()
-                .filter_map(|order| {
-                    if order.is_open() {
-                        Some(order.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
-
-        for order in cache_open_orders {
-            if order.is_open() {
                 self.cancel_order(&order, None);
             }
         }
@@ -2534,8 +2540,7 @@ impl OrderMatchingEngine {
                 }
 
                 if let Some(expiration_ns) = self.instrument.expiration_ns()
-                    && std::cmp::max(self.clock.borrow().timestamp_ns(), order.ts_init())
-                        >= expiration_ns
+                    && self.clock.borrow().timestamp_ns() >= expiration_ns
                 {
                     break 'validate Some(
                         format!(

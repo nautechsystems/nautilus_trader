@@ -18,10 +18,12 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.adapters.binance import BinanceFuturesLiquidation
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -332,6 +334,29 @@ def test_binance_mark_price_pickling():
         "ts_event": 1650000000000000001,
         "ts_init": 1650000000000000000,
     }
+
+
+def test_binance_futures_liquidation_type_is_compatible_with_data_type() -> None:
+    # Arrange, Act
+    data_type = DataType(
+        BinanceFuturesLiquidation,
+        metadata={"instrument_id": "ETHUSDT-PERP.BINANCE"},
+    )
+
+    # Assert
+    assert hasattr(BinanceFuturesLiquidation, "ts_event")
+    assert hasattr(BinanceFuturesLiquidation, "ts_init")
+    assert data_type.type == BinanceFuturesLiquidation
+    assert data_type.metadata["instrument_id"] == "ETHUSDT-PERP.BINANCE"
+
+
+def test_binance_futures_liquidation_type_supports_all_market_subscription() -> None:
+    # Arrange, Act
+    data_type = DataType(BinanceFuturesLiquidation)
+
+    # Assert
+    assert data_type.type == BinanceFuturesLiquidation
+    assert data_type.metadata == {}
 
 
 @pytest.fixture

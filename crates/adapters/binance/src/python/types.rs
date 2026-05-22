@@ -21,12 +21,14 @@ use std::{
 use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
 use nautilus_model::{
     data::bar::BarType,
+    enums::OrderSide,
+    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
-use crate::common::bar::BinanceBar;
+use crate::{common::bar::BinanceBar, data_types::BinanceFuturesLiquidation};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -173,5 +175,57 @@ impl BinanceBar {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         Ok(dict.into())
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BinanceFuturesLiquidation {
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "side")]
+    fn py_side(&self) -> OrderSide {
+        self.side
+    }
+
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Price {
+        self.price
+    }
+
+    #[getter]
+    #[pyo3(name = "average_price")]
+    fn py_average_price(&self) -> Price {
+        self.average_price
+    }
+
+    #[getter]
+    #[pyo3(name = "last_filled_qty")]
+    fn py_last_filled_qty(&self) -> Quantity {
+        self.last_filled_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "accumulated_qty")]
+    fn py_accumulated_qty(&self) -> Quantity {
+        self.accumulated_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }

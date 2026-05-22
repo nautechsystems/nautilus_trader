@@ -10979,6 +10979,84 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
 }
 
 #[rstest]
+fn test_binary_option_expiration_check_uses_engine_clock_not_order_ts_init(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let activation_ns = instrument.activation_ns().unwrap();
+    let expiration_ns = instrument.expiration_ns().unwrap();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(activation_ns.as_u64() + 1));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let opening_ask = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("0.400"),
+            Quantity::from("10.00"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&opening_ask).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(ClientOrderId::from("CLOCK-NOT-TSINIT"))
+        .ts_init(UnixNanos::from(expiration_ns.as_u64() + 100))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut order, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id == ClientOrderId::from("CLOCK-NOT-TSINIT")
+        )),
+        "order.ts_init should not cause expiry rejection when engine clock is still pre-expiry",
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id == ClientOrderId::from("CLOCK-NOT-TSINIT")
+        )),
+        "pre-expiry submission should not be rejected solely because order.ts_init is later",
+    );
+}
+
+#[rstest]
 fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());

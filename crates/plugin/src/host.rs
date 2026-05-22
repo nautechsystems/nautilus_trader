@@ -15,16 +15,15 @@
 
 //! Host-side function table given to plug-ins for re-entrant callbacks.
 //!
-//! v1 surface is intentionally minimal (clock + logging). Methods get added as
-//! the first stateful plug points (strategy, actor) drive concrete need; the
-//! design avoids exposing `Arc<MessageBus>` or any `dyn Trait` across the
-//! boundary.
+//! The surface stays explicit and versioned: every host service is a concrete
+//! function pointer, and every added method requires an ABI bump. This avoids
+//! exposing `Arc<MessageBus>` or any `dyn Trait` across the boundary.
 
 #![allow(unsafe_code)]
 
 use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, PluginResult},
+    boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
 };
 
 /// Log levels mirrored from the host's `log` crate without dragging the
@@ -73,6 +72,183 @@ pub struct HostVTable {
         target: BorrowedStr<'_>,
         message: BorrowedStr<'_>,
     ),
+
+    /// Returns the JSON-encoded instrument snapshot for `instrument_id`.
+    ///
+    /// Empty bytes mean the cache had no matching instrument.
+    pub cache_instrument: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded account snapshot for `account_id`.
+    ///
+    /// Empty bytes mean the cache had no matching account.
+    pub cache_account: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        account_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded order snapshot for `client_order_id`.
+    ///
+    /// Empty bytes mean the cache had no matching order.
+    pub cache_order: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        client_order_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the JSON-encoded position snapshot for `position_id`.
+    ///
+    /// Empty bytes mean the cache had no matching position.
+    pub cache_position: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        position_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns JSON-encoded order snapshots for the requested strategy.
+    ///
+    /// Passing an empty `strategy_id` uses the calling strategy's own ID.
+    pub cache_orders_for_strategy: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        strategy_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns JSON-encoded position snapshots for the requested strategy.
+    ///
+    /// Passing an empty `strategy_id` uses the calling strategy's own ID.
+    pub cache_positions_for_strategy: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        strategy_id: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Subscribes the calling actor or strategy to quote ticks.
+    pub subscribe_quotes: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from quote ticks.
+    pub unsubscribe_quotes: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to trade ticks.
+    pub subscribe_trades: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from trade ticks.
+    pub unsubscribe_trades: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to bars.
+    pub subscribe_bars: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from bars.
+    pub unsubscribe_bars: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to order book deltas.
+    ///
+    /// `book_type` uses the `BookType` discriminant. `depth == 0` means no
+    /// depth limit. `managed != 0` requests a managed book subscription.
+    pub subscribe_book_deltas: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        client_id: BorrowedStr<'_>,
+        managed: u8,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from order book deltas.
+    pub unsubscribe_book_deltas: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Subscribes the calling actor or strategy to periodic order book snapshots.
+    ///
+    /// `book_type` uses the `BookType` discriminant. `depth == 0` means no
+    /// depth limit. `interval_ms` must be greater than zero.
+    pub subscribe_book_at_interval: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Unsubscribes the calling actor or strategy from periodic order book snapshots.
+    ///
+    /// `interval_ms` must be greater than zero.
+    pub unsubscribe_book_at_interval: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Publishes an arbitrary byte payload on the host message bus.
+    ///
+    /// The payload is delivered as a `Vec<u8>` to subscribers of `topic`.
+    pub msgbus_publish: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        topic: BorrowedStr<'_>,
+        payload: Slice<'_, u8>,
+    ) -> PluginResult<()>,
+
+    /// Registers a one-shot time alert on the calling actor or strategy clock.
+    pub set_time_alert: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        alert_time_ns: u64,
+        allow_past: u8,
+    ) -> PluginResult<()>,
+
+    /// Registers an interval timer on the calling actor or strategy clock.
+    ///
+    /// `start_time_ns == 0` and `stop_time_ns == 0` mean no explicit bound.
+    pub set_timer: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: u64,
+        allow_past: u8,
+        fire_immediately: u8,
+    ) -> PluginResult<()>,
+
+    /// Cancels a timer on the calling actor or strategy clock.
+    pub cancel_timer:
+        unsafe extern "C" fn(ctx: *const HostContext, name: BorrowedStr<'_>) -> PluginResult<()>,
 
     /// Submits an order on behalf of the calling strategy.
     ///
@@ -146,3 +322,225 @@ impl HostVTable {
 unsafe impl Send for HostVTable {}
 /// SAFETY: see above.
 unsafe impl Sync for HostVTable {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Mutex, MutexGuard, OnceLock,
+        atomic::{AtomicU8, AtomicU64, Ordering},
+    };
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::boundary::{OwnedBytes, PluginResult, Slice};
+
+    static CLOCK_VALUE: AtomicU64 = AtomicU64::new(0);
+    static LOG_LEVEL_OBSERVED: AtomicU8 = AtomicU8::new(0);
+
+    // Serialises tests that mutate and observe `CLOCK_VALUE` /
+    // `LOG_LEVEL_OBSERVED`. cargo test runs cases in parallel by
+    // default, so without this lock a parametrised case can overwrite
+    // the static after another case's reset but before its assertion.
+    fn shared_state_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    unsafe extern "C" fn fixed_clock_now_ns() -> u64 {
+        CLOCK_VALUE.load(Ordering::SeqCst)
+    }
+
+    unsafe extern "C" fn recording_log(
+        level: HostLogLevel,
+        _target: BorrowedStr<'_>,
+        _message: BorrowedStr<'_>,
+    ) {
+        LOG_LEVEL_OBSERVED.store(level as u8, Ordering::SeqCst);
+    }
+
+    macro_rules! stub_bytes {
+        ($name:ident) => {
+            unsafe extern "C" fn $name(
+                _ctx: *const HostContext,
+                _a: BorrowedStr<'_>,
+            ) -> PluginResult<OwnedBytes> {
+                PluginResult::Ok(OwnedBytes::empty())
+            }
+        };
+    }
+
+    macro_rules! stub_unit {
+        ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+            unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
+                $(let _ = $arg;)*
+                PluginResult::Ok(())
+            }
+        };
+    }
+
+    stub_bytes!(stub_cache_instrument);
+    stub_bytes!(stub_cache_account);
+    stub_bytes!(stub_cache_order);
+    stub_bytes!(stub_cache_position);
+    stub_bytes!(stub_cache_orders_for_strategy);
+    stub_bytes!(stub_cache_positions_for_strategy);
+
+    stub_unit!(
+        stub_subscribe,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_subscribe_book_deltas,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            t: u8,
+            d: usize,
+            b: BorrowedStr<'_>,
+            m: u8,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_subscribe_book_at_interval,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            t: u8,
+            d: usize,
+            i: usize,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_unsubscribe_book_at_interval,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            i: usize,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_msgbus_publish,
+        (
+            ctx: *const HostContext,
+            t: BorrowedStr<'_>,
+            p: Slice<'_, u8>,
+        )
+    );
+    stub_unit!(
+        stub_set_time_alert,
+        (
+            ctx: *const HostContext,
+            n: BorrowedStr<'_>,
+            a: u64,
+            p: u8,
+        )
+    );
+    stub_unit!(
+        stub_set_timer,
+        (
+            ctx: *const HostContext,
+            n: BorrowedStr<'_>,
+            i: u64,
+            s: u64,
+            e: u64,
+            p: u8,
+            f: u8,
+        )
+    );
+    stub_unit!(stub_cancel_timer, (ctx: *const HostContext, n: BorrowedStr<'_>));
+    stub_unit!(
+        stub_order_cmd,
+        (ctx: *const HostContext, c: BorrowedStr<'_>)
+    );
+
+    fn build_test_host(abi: u32) -> HostVTable {
+        HostVTable {
+            abi_version: abi,
+            clock_now_ns: fixed_clock_now_ns,
+            log: recording_log,
+            cache_instrument: stub_cache_instrument,
+            cache_account: stub_cache_account,
+            cache_order: stub_cache_order,
+            cache_position: stub_cache_position,
+            cache_orders_for_strategy: stub_cache_orders_for_strategy,
+            cache_positions_for_strategy: stub_cache_positions_for_strategy,
+            subscribe_quotes: stub_subscribe,
+            unsubscribe_quotes: stub_subscribe,
+            subscribe_trades: stub_subscribe,
+            unsubscribe_trades: stub_subscribe,
+            subscribe_bars: stub_subscribe,
+            unsubscribe_bars: stub_subscribe,
+            subscribe_book_deltas: stub_subscribe_book_deltas,
+            unsubscribe_book_deltas: stub_subscribe,
+            subscribe_book_at_interval: stub_subscribe_book_at_interval,
+            unsubscribe_book_at_interval: stub_unsubscribe_book_at_interval,
+            msgbus_publish: stub_msgbus_publish,
+            set_time_alert: stub_set_time_alert,
+            set_timer: stub_set_timer,
+            cancel_timer: stub_cancel_timer,
+            submit_order: stub_order_cmd,
+            cancel_order: stub_order_cmd,
+            modify_order: stub_order_cmd,
+        }
+    }
+
+    #[rstest]
+    fn matches_compiled_abi_accepts_compiled_version() {
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        assert!(host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
+    #[case::zero(0)]
+    #[case::max(u32::MAX)]
+    fn matches_compiled_abi_rejects_mismatch(#[case] abi: u32) {
+        let host = build_test_host(abi);
+        assert!(!host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    fn now_ns_calls_clock_function_pointer() {
+        let _g = shared_state_lock();
+        CLOCK_VALUE.store(42_424_242, Ordering::SeqCst);
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        // SAFETY: clock_now_ns function pointer is non-null and lives for
+        // the test scope.
+        let n = unsafe { host.now_ns() };
+        assert_eq!(n, 42_424_242);
+    }
+
+    #[rstest]
+    #[case::error(HostLogLevel::Error, 1u8)]
+    #[case::warn(HostLogLevel::Warn, 2)]
+    #[case::info(HostLogLevel::Info, 3)]
+    #[case::debug(HostLogLevel::Debug, 4)]
+    #[case::trace(HostLogLevel::Trace, 5)]
+    fn log_message_invokes_log_with_the_right_level(
+        #[case] level: HostLogLevel,
+        #[case] expected_discriminant: u8,
+    ) {
+        let _g = shared_state_lock();
+        LOG_LEVEL_OBSERVED.store(0, Ordering::SeqCst);
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        // SAFETY: log fn pointer is non-null and lives for the test scope.
+        unsafe { host.log_message(level, "target", "message") };
+        assert_eq!(
+            LOG_LEVEL_OBSERVED.load(Ordering::SeqCst),
+            expected_discriminant
+        );
+    }
+}

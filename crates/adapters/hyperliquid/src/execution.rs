@@ -56,18 +56,18 @@ use crate::{
         credential::Secrets,
         enums::HyperliquidProductType,
         parse::{
-            clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
-            derive_limit_from_trigger, derive_market_order_price, extract_error_message,
-            extract_inner_error, extract_inner_errors, normalize_price,
-            order_to_hyperliquid_request_with_asset, parse_combined_account_balances_and_margins,
-            round_to_sig_figs,
+            clamp_price_to_precision, derive_limit_from_trigger, derive_market_order_price,
+            extract_error_message, extract_inner_error, extract_inner_errors, normalize_price,
+            order_to_hyperliquid_request_with_asset_and_cloid,
+            parse_combined_account_balances_and_margins, round_to_sig_figs,
         },
     },
     config::HyperliquidExecClientConfig,
     http::{
         client::HyperliquidHttpClient,
         models::{
-            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
+            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecCancelByCloidRequest,
+            HyperliquidExecCancelOrderRequest, HyperliquidExecGrouping,
             HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind, SpotClearinghouseState,
         },
         parse::derive_outcome_settlements,
@@ -118,7 +118,7 @@ impl HyperliquidExecutionClient {
     /// Returns `true` when every background task spawned via `spawn_task`
     /// has completed.
     ///
-    /// Used in tests to wait for submit / modify / cancel HTTP round-trips
+    /// Used in tests to wait for submit / modify / cancel action round-trips
     /// that fire on the runtime to finish before asserting on dispatch
     /// state, avoiding bare `sleep` calls when a negative condition needs
     /// to be checked after the spawned work is done.
@@ -180,13 +180,14 @@ impl HyperliquidExecutionClient {
         }
 
         let ws_url = config.base_url_ws.clone();
-        let ws_client = HyperliquidWebSocketClient::new(
+        let mut ws_client = HyperliquidWebSocketClient::new(
             ws_url,
             config.environment,
             Some(core.account_id),
             config.transport_backend,
             config.proxy_url.clone(),
         );
+        ws_client.set_post_timeout(Duration::from_secs(config.ws_post_timeout_secs));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -569,12 +570,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Validate order conversion before marking as submitted
         let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
-        let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset(
+        let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset_and_cloid(
             &order,
             asset,
             price_decimals,
             self.config.normalize_prices,
             slippage_bps,
+            None,
         ) {
             Ok(req) => req,
             Err(e) => {
@@ -583,7 +585,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 return Ok(());
             }
         };
-
+        let cloid = http_client.get_or_generate_client_order_id_cloid(order.client_order_id());
+        hyperliquid_order.cloid = Some(cloid);
         // Market orders need a limit price derived from the cached quote
         if order.order_type() == OrderType::Market {
             let instrument_id = order.instrument_id();
@@ -618,8 +621,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         // Cache cloid mapping before emitting submitted so WS handler
-        // can resolve order/fill reports back to this client_order_id
-        let cloid = Cloid::from_client_order_id(order.client_order_id());
+        // can resolve order/fill reports back to this client_order_id.
+        let cloid = hyperliquid_order
+            .cloid
+            .expect("order conversion must set a CLOID");
+        self.http_client
+            .cache_client_order_id_cloid(order.client_order_id(), cloid);
         self.ws_client
             .cache_cloid_mapping(Ustr::from(&cloid.to_hex()), order.client_order_id());
 
@@ -632,7 +639,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let ws_client = self.ws_client.clone();
         let cloid_hex = Ustr::from(&cloid.to_hex());
         let dispatch_state = self.ws_dispatch_state.clone();
-        let client_order_id = order.client_order_id();
 
         let builder = self.http_client.builder_attribution();
 
@@ -643,15 +649,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 builder,
             };
 
-            match http_client.post_action_exec(&action).await {
+            match ws_client.post_action_exec(&http_client, &action).await {
                 Ok(response) => {
+                    let rejection_route = PostRejectionRoute::new(
+                        &emitter,
+                        &ws_client,
+                        &http_client,
+                        dispatch_state.clone(),
+                    );
+
                     if response.is_ok() {
                         if let Some(inner_error) = extract_inner_error(&response) {
                             log::warn!("Order submission rejected by exchange: {inner_error}");
                             let ts = clock.get_time_ns();
-                            emitter.emit_order_rejected(&order, &inner_error, ts, false);
-                            ws_client.remove_cloid_mapping(&cloid_hex);
-                            dispatch_state.cleanup_terminal(&client_order_id);
+                            rejection_route.emit_once(&order, &inner_error, ts, &cloid_hex);
                         } else {
                             log::info!("Order submitted successfully: {response:?}");
                         }
@@ -659,16 +670,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         let error_msg = extract_error_message(&response);
                         log::warn!("Order submission rejected by exchange: {error_msg}");
                         let ts = clock.get_time_ns();
-                        emitter.emit_order_rejected(&order, &error_msg, ts, false);
-                        ws_client.remove_cloid_mapping(&cloid_hex);
-                        dispatch_state.cleanup_terminal(&client_order_id);
+                        rejection_route.emit_once(&order, &error_msg, ts, &cloid_hex);
                     }
                 }
                 Err(e) => {
                     // Don't reject on transport errors: the order may have
                     // landed and WS events will drive the lifecycle. If it
                     // didn't land, reconciliation on reconnect resolves it.
-                    log::error!("Order submission HTTP request failed: {e}");
+                    log::error!("Order submission WebSocket post request failed: {e}");
                 }
             }
 
@@ -712,14 +721,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
 
-            match order_to_hyperliquid_request_with_asset(
+            match order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
                 asset,
                 price_decimals,
                 self.config.normalize_prices,
                 slippage_bps,
+                None,
             ) {
-                Ok(req) => {
+                Ok(mut req) => {
+                    let cloid = self
+                        .http_client
+                        .get_or_generate_client_order_id_cloid(order.client_order_id());
+                    req.cloid = Some(cloid);
                     hyperliquid_orders.push(req);
                     valid_orders.push(order.clone());
                 }
@@ -738,8 +752,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let grouping = determine_order_list_grouping(&valid_orders);
         log::info!("Order list grouping: {grouping:?}");
 
-        for order in &valid_orders {
-            let cloid = Cloid::from_client_order_id(order.client_order_id());
+        for (order, request) in valid_orders.iter().zip(hyperliquid_orders.iter()) {
+            let cloid = request.cloid.expect("order conversion must set a CLOID");
+            self.http_client
+                .cache_client_order_id_cloid(order.client_order_id(), cloid);
             self.ws_client
                 .cache_cloid_mapping(Ustr::from(&cloid.to_hex()), order.client_order_id());
             self.register_order_identity(order);
@@ -752,11 +768,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let dispatch_state = self.ws_dispatch_state.clone();
         let cloid_hexes: Vec<Ustr> = valid_orders
             .iter()
-            .map(|o| Ustr::from(&Cloid::from_client_order_id(o.client_order_id()).to_hex()))
+            .zip(hyperliquid_orders.iter())
+            .map(|(_, request)| {
+                Ustr::from(
+                    &request
+                        .cloid
+                        .expect("order conversion must set a CLOID")
+                        .to_hex(),
+                )
+            })
             .collect();
-        let client_order_ids: Vec<ClientOrderId> =
-            valid_orders.iter().map(|o| o.client_order_id()).collect();
-
         let builder = self.http_client.builder_attribution();
 
         self.spawn_task("submit_order_list", async move {
@@ -766,8 +787,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 builder,
             };
 
-            match http_client.post_action_exec(&action).await {
+            match ws_client.post_action_exec(&http_client, &action).await {
                 Ok(response) => {
+                    let rejection_route = PostRejectionRoute::new(
+                        &emitter,
+                        &ws_client,
+                        &http_client,
+                        dispatch_state.clone(),
+                    );
+
                     if response.is_ok() {
                         let inner_errors = extract_inner_errors(&response);
 
@@ -780,18 +808,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             if let Some(error_msg) = inner_errors.iter().find_map(|e| e.as_ref()) {
                                 let ts = clock.get_time_ns();
 
-                                for ((order, cloid_hex), cid) in valid_orders
-                                    .iter()
-                                    .zip(cloid_hexes.iter())
-                                    .zip(client_order_ids.iter())
+                                for (order, cloid_hex) in
+                                    valid_orders.iter().zip(cloid_hexes.iter())
                                 {
                                     log::warn!(
                                         "Order {} rejected by exchange: {error_msg}",
                                         order.client_order_id(),
                                     );
-                                    emitter.emit_order_rejected(order, error_msg, ts, false);
-                                    ws_client.remove_cloid_mapping(cloid_hex);
-                                    dispatch_state.cleanup_terminal(cid);
+                                    rejection_route.emit_once(order, error_msg, ts, cloid_hex);
                                 }
                             } else {
                                 log::info!("Order list submitted successfully: {response:?}");
@@ -800,22 +824,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             let ts = clock.get_time_ns();
 
                             for (i, error) in inner_errors.iter().enumerate() {
-                                if let Some(error_msg) = error {
-                                    if let Some(order) = valid_orders.get(i) {
-                                        log::warn!(
-                                            "Order {} rejected by exchange: {error_msg}",
-                                            order.client_order_id(),
-                                        );
-                                        emitter.emit_order_rejected(order, error_msg, ts, false);
-                                    }
+                                if let Some(error_msg) = error
+                                    && let Some(order) = valid_orders.get(i)
+                                    && let Some(cloid_hex) = cloid_hexes.get(i)
+                                {
+                                    log::warn!(
+                                        "Order {} rejected by exchange: {error_msg}",
+                                        order.client_order_id(),
+                                    );
 
-                                    if let Some(cloid_hex) = cloid_hexes.get(i) {
-                                        ws_client.remove_cloid_mapping(cloid_hex);
-                                    }
-
-                                    if let Some(cid) = client_order_ids.get(i) {
-                                        dispatch_state.cleanup_terminal(cid);
-                                    }
+                                    rejection_route.emit_once(order, error_msg, ts, cloid_hex);
                                 }
                             }
                         } else {
@@ -825,16 +843,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         let error_msg = extract_error_message(&response);
                         log::warn!("Order list submission rejected by exchange: {error_msg}");
                         let ts = clock.get_time_ns();
-                        for order in &valid_orders {
-                            emitter.emit_order_rejected(order, &error_msg, ts, false);
-                        }
 
-                        for cloid_hex in &cloid_hexes {
-                            ws_client.remove_cloid_mapping(cloid_hex);
-                        }
-
-                        for cid in &client_order_ids {
-                            dispatch_state.cleanup_terminal(cid);
+                        for (order, cloid_hex) in valid_orders.iter().zip(cloid_hexes.iter()) {
+                            rejection_route.emit_once(order, &error_msg, ts, cloid_hex);
                         }
                     }
                 }
@@ -842,7 +853,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     // Don't reject on transport errors: orders may have
                     // landed and WS events will drive the lifecycle. If they
                     // didn't land, reconciliation on reconnect resolves it.
-                    log::error!("Order list submission HTTP request failed: {e}");
+                    log::error!("Order list submission WebSocket post request failed: {e}");
                 }
             }
 
@@ -950,12 +961,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Build base request from cached order (derives slippage-adjusted
         // limit for trigger-market types like StopMarket/MarketIfTouched)
-        let hyperliquid_order = match order_to_hyperliquid_request_with_asset(
+        let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset_and_cloid(
             &order,
             asset,
             price_decimals,
             should_normalize,
             slippage_bps,
+            None,
         ) {
             Ok(mut req) => {
                 // Only override price when explicitly provided
@@ -999,12 +1011,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 return Ok(());
             }
         };
+        let cloid = http_client.get_or_generate_client_order_id_cloid(order.client_order_id());
+        hyperliquid_order.cloid = Some(cloid);
 
         let dispatch_state = self.ws_dispatch_state.clone();
         let client_order_id = cmd.client_order_id;
         let old_venue_order_id = venue_order_id;
+        let ws_client = self.ws_client.clone();
 
-        // Mark before the HTTP await so an early CANCELED(old_voi) on the WS is suppressed.
+        if let Some(cloid) = hyperliquid_order.cloid {
+            http_client.cache_client_order_id_cloid(client_order_id, cloid);
+            ws_client.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
+        }
+
+        // Mark before the post await so an early CANCELED(old_voi) on the WS is suppressed.
         dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id, target_total_qty);
 
         self.spawn_task("modify_order", async move {
@@ -1015,7 +1035,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 },
             };
 
-            match http_client.post_action_exec(&action).await {
+            match ws_client.post_action_exec(&http_client, &action).await {
                 Ok(response) => {
                     if response.is_ok() {
                         if let Some(inner_error) = extract_inner_error(&response) {
@@ -1038,7 +1058,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                              awaiting WS reconciliation",
                         );
                     } else {
-                        log::warn!("Order modification HTTP request failed: {e}");
+                        log::warn!("Order modification WebSocket post request failed: {e}");
                         dispatch_state.clear_pending_modify(&client_order_id);
                     }
                 }
@@ -1057,11 +1077,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let client_order_id = cmd.client_order_id;
-        let client_order_id_str = cmd.client_order_id.to_string();
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
         let symbol = cmd.instrument_id.symbol.to_string();
+        let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_order", async move {
             let asset = match http_client.get_asset_index(&symbol) {
@@ -1079,13 +1099,36 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             };
 
-            let cancel_request =
-                client_order_id_to_cancel_request_with_asset(&client_order_id_str, asset);
-            let action = HyperliquidExecAction::CancelByCloid {
-                cancels: vec![cancel_request],
-            };
+            let action =
+                if let Some(cloid) = http_client.cached_client_order_id_cloid(&client_order_id) {
+                    HyperliquidExecAction::CancelByCloid {
+                        cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                    }
+                } else if let Some(venue_order_id) = venue_order_id {
+                    match venue_order_id.as_str().parse::<u64>() {
+                        Ok(oid) => HyperliquidExecAction::Cancel {
+                            cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
+                        },
+                        Err(_) => {
+                            emitter.emit_order_cancel_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                Some(venue_order_id),
+                                "Invalid venue order ID format",
+                                clock.get_time_ns(),
+                            );
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    let cloid = http_client.get_or_generate_client_order_id_cloid(client_order_id);
+                    HyperliquidExecAction::CancelByCloid {
+                        cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                    }
+                };
 
-            match http_client.post_action_exec(&action).await {
+            match ws_client.post_action_exec(&http_client, &action).await {
                 Ok(response) => {
                     if response.is_ok() {
                         if let Some(inner_error) = extract_inner_error(&response) {
@@ -1123,7 +1166,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             instrument_id,
                             client_order_id,
                             venue_order_id,
-                            &format!("Cancel HTTP request failed: {e}"),
+                            &format!("Cancel WebSocket post request failed: {e}"),
                             clock.get_time_ns(),
                         );
                     }
@@ -1170,6 +1213,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_all_orders", async move {
             let asset = match http_client.get_asset_index(&symbol) {
@@ -1193,87 +1237,25 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             };
 
-            let cancel_requests: Vec<_> = entries
-                .iter()
-                .map(|e| {
-                    client_order_id_to_cancel_request_with_asset(e.client_order_id.as_ref(), asset)
-                })
-                .collect();
+            let mut cancel_dispatch = CancelDispatch::new();
 
-            if cancel_requests.is_empty() {
+            for entry in &entries {
+                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
+            }
+
+            if cancel_dispatch.is_empty() {
                 return Ok(());
             }
 
-            let action = HyperliquidExecAction::CancelByCloid {
-                cancels: cancel_requests,
-            };
-
-            match http_client.post_action_exec(&action).await {
-                Ok(response) => {
-                    if response.is_ok() {
-                        let inner_errors = extract_inner_errors(&response);
-                        let ts = clock.get_time_ns();
-
-                        if inner_errors.is_empty() {
-                            log::info!("Cancel-all submitted successfully: {response:?}");
-                        } else {
-                            for (i, entry) in entries.iter().enumerate() {
-                                if let Some(Some(error_msg)) = inner_errors.get(i) {
-                                    log::warn!(
-                                        "Cancel for {} rejected by exchange: {error_msg}",
-                                        entry.client_order_id,
-                                    );
-                                    emitter.emit_order_cancel_rejected_event(
-                                        entry.strategy_id,
-                                        entry.instrument_id,
-                                        entry.client_order_id,
-                                        entry.venue_order_id,
-                                        error_msg,
-                                        ts,
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        let error_msg = extract_error_message(&response);
-                        log::warn!("Cancel-all rejected by exchange: {error_msg}");
-                        let ts = clock.get_time_ns();
-
-                        for entry in &entries {
-                            emitter.emit_order_cancel_rejected_event(
-                                entry.strategy_id,
-                                entry.instrument_id,
-                                entry.client_order_id,
-                                entry.venue_order_id,
-                                &error_msg,
-                                ts,
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    if e.is_transport_error() {
-                        log::warn!(
-                            "Cancel-all transport failure: {e}; awaiting WS reconciliation",
-                        );
-                    } else {
-                        let reason = format!("Cancel-all HTTP request failed: {e}");
-                        log::warn!("{reason}");
-                        let ts = clock.get_time_ns();
-
-                        for entry in &entries {
-                            emitter.emit_order_cancel_rejected_event(
-                                entry.strategy_id,
-                                entry.instrument_id,
-                                entry.client_order_id,
-                                entry.venue_order_id,
-                                &reason,
-                                ts,
-                            );
-                        }
-                    }
-                }
-            }
+            submit_cancel_dispatch(
+                "Cancel-all",
+                cancel_dispatch,
+                &ws_client,
+                &http_client,
+                &emitter,
+                clock,
+            )
+            .await;
 
             Ok(())
         });
@@ -1304,10 +1286,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let ws_client = self.ws_client.clone();
 
         self.spawn_task("batch_cancel_orders", async move {
-            let mut cancel_requests = Vec::new();
-            let mut sent_entries: Vec<&CancelEntry> = Vec::new();
+            let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
                 let asset = match http_client.get_asset_index(&entry.symbol) {
@@ -1326,88 +1308,24 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         continue;
                     }
                 };
-                cancel_requests.push(client_order_id_to_cancel_request_with_asset(
-                    entry.client_order_id.as_ref(),
-                    asset,
-                ));
-                sent_entries.push(entry);
+
+                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
             }
 
-            if cancel_requests.is_empty() {
+            if cancel_dispatch.is_empty() {
                 log::warn!("No valid cancel requests in batch");
                 return Ok(());
             }
 
-            let action = HyperliquidExecAction::CancelByCloid {
-                cancels: cancel_requests,
-            };
-
-            match http_client.post_action_exec(&action).await {
-                Ok(response) => {
-                    if response.is_ok() {
-                        let inner_errors = extract_inner_errors(&response);
-                        let ts = clock.get_time_ns();
-
-                        if inner_errors.is_empty() {
-                            log::info!("Batch cancel submitted successfully: {response:?}");
-                        } else {
-                            for (i, entry) in sent_entries.iter().enumerate() {
-                                if let Some(Some(error_msg)) = inner_errors.get(i) {
-                                    log::warn!(
-                                        "Cancel for {} rejected by exchange: {error_msg}",
-                                        entry.client_order_id,
-                                    );
-                                    emitter.emit_order_cancel_rejected_event(
-                                        entry.strategy_id,
-                                        entry.instrument_id,
-                                        entry.client_order_id,
-                                        entry.venue_order_id,
-                                        error_msg,
-                                        ts,
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        let error_msg = extract_error_message(&response);
-                        log::warn!("Batch cancel rejected by exchange: {error_msg}");
-                        let ts = clock.get_time_ns();
-
-                        for entry in &sent_entries {
-                            emitter.emit_order_cancel_rejected_event(
-                                entry.strategy_id,
-                                entry.instrument_id,
-                                entry.client_order_id,
-                                entry.venue_order_id,
-                                &error_msg,
-                                ts,
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    if e.is_transport_error() {
-                        log::warn!(
-                            "Batch cancel transport failure: {e}; awaiting WS reconciliation",
-                        );
-                    } else {
-                        let reason = format!("Batch cancel HTTP request failed: {e}");
-                        log::warn!("{reason}");
-                        let ts = clock.get_time_ns();
-
-                        for entry in &sent_entries {
-                            emitter.emit_order_cancel_rejected_event(
-                                entry.strategy_id,
-                                entry.instrument_id,
-                                entry.client_order_id,
-                                entry.venue_order_id,
-                                &reason,
-                                ts,
-                            );
-                        }
-                    }
-                }
-            }
+            submit_cancel_dispatch(
+                "Batch cancel",
+                cancel_dispatch,
+                &ws_client,
+                &http_client,
+                &emitter,
+                clock,
+            )
+            .await;
 
             Ok(())
         });
@@ -1601,15 +1519,24 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Search open orders by cloid first when supplied. Hyperliquid modify
         // produces a new venue oid while preserving cloid, so a cached oid can
         // point at the canceled leg rather than the live replacement.
-        if let Some(client_order_id) = &cmd.client_order_id
-            && let Some(report) = self
+        if let Some(client_order_id) = &cmd.client_order_id {
+            match self
                 .http_client
                 .request_order_status_report_by_client_order_id(&account_address, client_order_id)
                 .await
-                .context("failed to generate order status report by client_order_id")?
-        {
-            log::info!("Generated order status report for {client_order_id}");
-            return Ok(Some(report));
+            {
+                Ok(Some(report)) => {
+                    log::info!("Generated order status report for {client_order_id}");
+                    return Ok(Some(report));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!(
+                        "Failed to generate order status report for {client_order_id}: {e}; \
+                         falling back to oid lookup"
+                    );
+                }
+            }
         }
 
         let oid = match &cmd.venue_order_id {
@@ -1846,6 +1773,7 @@ impl HyperliquidExecutionClient {
 
         let emitter = self.emitter.clone();
         let dispatch_state = self.ws_dispatch_state.clone();
+        let http_client = self.http_client.clone();
         let clock = self.clock;
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
@@ -1873,6 +1801,7 @@ impl HyperliquidExecutionClient {
                                     &dispatch_state,
                                     &emitter,
                                     &ws_client,
+                                    &http_client,
                                     &mut pending_filled_cloids,
                                     clock.get_time_ns(),
                                 );
@@ -1909,10 +1838,7 @@ impl HyperliquidExecutionClient {
     }
 }
 
-/// Registers an order's identity in the dispatch state so its subsequent
-/// WebSocket lifecycle can route through the typed-event path.
-///
-/// Quote-quantity orders submit a quote amount (e.g. 100 USD) but the venue
+#[derive(Clone)]
 struct CancelEntry {
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
@@ -1921,6 +1847,210 @@ struct CancelEntry {
     symbol: String,
 }
 
+struct CancelDispatch {
+    cloid_requests: Vec<HyperliquidExecCancelByCloidRequest>,
+    cloid_entries: Vec<CancelEntry>,
+    oid_requests: Vec<HyperliquidExecCancelOrderRequest>,
+    oid_entries: Vec<CancelEntry>,
+}
+
+impl CancelDispatch {
+    fn new() -> Self {
+        Self {
+            cloid_requests: Vec::new(),
+            cloid_entries: Vec::new(),
+            oid_requests: Vec::new(),
+            oid_entries: Vec::new(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.cloid_requests.is_empty() && self.oid_requests.is_empty()
+    }
+
+    fn push(
+        &mut self,
+        entry: &CancelEntry,
+        asset: u32,
+        http_client: &HyperliquidHttpClient,
+        emitter: &ExecutionEventEmitter,
+        clock: &'static AtomicTime,
+    ) {
+        if let Some(cloid) = http_client.cached_client_order_id_cloid(&entry.client_order_id) {
+            self.cloid_requests
+                .push(HyperliquidExecCancelByCloidRequest { asset, cloid });
+            self.cloid_entries.push(entry.clone());
+        } else if let Some(venue_order_id) = entry.venue_order_id {
+            match venue_order_id.as_str().parse::<u64>() {
+                Ok(oid) => {
+                    self.oid_requests
+                        .push(HyperliquidExecCancelOrderRequest { asset, oid });
+                    self.oid_entries.push(entry.clone());
+                }
+                Err(_) => {
+                    emitter.emit_order_cancel_rejected_event(
+                        entry.strategy_id,
+                        entry.instrument_id,
+                        entry.client_order_id,
+                        Some(venue_order_id),
+                        "Invalid venue order ID format",
+                        clock.get_time_ns(),
+                    );
+                }
+            }
+        } else {
+            let cloid = http_client.get_or_generate_client_order_id_cloid(entry.client_order_id);
+            self.cloid_requests
+                .push(HyperliquidExecCancelByCloidRequest { asset, cloid });
+            self.cloid_entries.push(entry.clone());
+        }
+    }
+}
+
+async fn submit_cancel_dispatch(
+    label: &str,
+    dispatch: CancelDispatch,
+    ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    let CancelDispatch {
+        cloid_requests,
+        cloid_entries,
+        oid_requests,
+        oid_entries,
+    } = dispatch;
+
+    if !cloid_requests.is_empty() {
+        let action = HyperliquidExecAction::CancelByCloid {
+            cancels: cloid_requests,
+        };
+        submit_cancel_action(
+            label,
+            action,
+            &cloid_entries,
+            ws_client,
+            http_client,
+            emitter,
+            clock,
+        )
+        .await;
+    }
+
+    if !oid_requests.is_empty() {
+        let action = HyperliquidExecAction::Cancel {
+            cancels: oid_requests,
+        };
+        submit_cancel_action(
+            label,
+            action,
+            &oid_entries,
+            ws_client,
+            http_client,
+            emitter,
+            clock,
+        )
+        .await;
+    }
+}
+
+async fn submit_cancel_action(
+    label: &str,
+    action: HyperliquidExecAction,
+    sent_entries: &[CancelEntry],
+    ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    match ws_client.post_action_exec(http_client, &action).await {
+        Ok(response) => {
+            if response.is_ok() {
+                let inner_errors = extract_inner_errors(&response);
+                let ts = clock.get_time_ns();
+
+                if inner_errors.is_empty() {
+                    log::info!("{label} submitted successfully: {response:?}");
+                } else if let Some(reason) = cancel_status_count_mismatch_reason(
+                    label,
+                    sent_entries.len(),
+                    inner_errors.len(),
+                ) {
+                    log::warn!("{reason}");
+
+                    for entry in sent_entries {
+                        emitter.emit_order_cancel_rejected_event(
+                            entry.strategy_id,
+                            entry.instrument_id,
+                            entry.client_order_id,
+                            entry.venue_order_id,
+                            &reason,
+                            ts,
+                        );
+                    }
+                } else {
+                    for (i, entry) in sent_entries.iter().enumerate() {
+                        if let Some(Some(error_msg)) = inner_errors.get(i) {
+                            log::warn!(
+                                "Cancel for {} rejected by exchange: {error_msg}",
+                                entry.client_order_id,
+                            );
+                            emitter.emit_order_cancel_rejected_event(
+                                entry.strategy_id,
+                                entry.instrument_id,
+                                entry.client_order_id,
+                                entry.venue_order_id,
+                                error_msg,
+                                ts,
+                            );
+                        }
+                    }
+                }
+            } else {
+                let error_msg = extract_error_message(&response);
+                log::warn!("{label} rejected by exchange: {error_msg}");
+                let ts = clock.get_time_ns();
+
+                for entry in sent_entries {
+                    emitter.emit_order_cancel_rejected_event(
+                        entry.strategy_id,
+                        entry.instrument_id,
+                        entry.client_order_id,
+                        entry.venue_order_id,
+                        &error_msg,
+                        ts,
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            if e.is_transport_error() {
+                log::warn!("{label} transport failure: {e}; awaiting WS reconciliation");
+            } else {
+                let reason = format!("{label} WebSocket post request failed: {e}");
+                log::warn!("{reason}");
+                let ts = clock.get_time_ns();
+
+                for entry in sent_entries {
+                    emitter.emit_order_cancel_rejected_event(
+                        entry.strategy_id,
+                        entry.instrument_id,
+                        entry.client_order_id,
+                        entry.venue_order_id,
+                        &reason,
+                        ts,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Registers an order's identity in the dispatch state so its subsequent
+/// WebSocket lifecycle can route through the typed-event path.
+///
+/// Quote-quantity orders submit a quote amount (e.g. 100 USD) but the venue
 /// reports fills in base units. Comparing those two when deciding whether an
 /// order is fully filled would leave the order stuck "open" forever, so they
 /// flow through the untracked path and the engine reconciles them from
@@ -1956,7 +2086,7 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
     let product_type = HyperliquidProductType::from_symbol(symbol).map_err(|_| {
         anyhow::anyhow!(
             "Unsupported instrument symbol format for Hyperliquid: {symbol} \
-             (expected -PERP, -SPOT, or HIP-4 outcome `+E`/`#E`)"
+             (expected -PERP, -SPOT, or HIP-4 outcome `{{N}}-{{YES|NO}}-OUTCOME`)"
         )
     })?;
 
@@ -2017,6 +2147,72 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cancel_status_count_mismatch_reason(
+    label: &str,
+    expected_count: usize,
+    actual_count: usize,
+) -> Option<String> {
+    (actual_count != 0 && actual_count != expected_count).then(|| {
+        format!(
+            "{label} response status count mismatch: expected {expected_count}, received {actual_count}"
+        )
+    })
+}
+
+struct PostRejectionRoute {
+    emitter: ExecutionEventEmitter,
+    ws_client: HyperliquidWebSocketClient,
+    http_client: HyperliquidHttpClient,
+    dispatch_state: Arc<WsDispatchState>,
+}
+
+impl PostRejectionRoute {
+    fn new(
+        emitter: &ExecutionEventEmitter,
+        ws_client: &HyperliquidWebSocketClient,
+        http_client: &HyperliquidHttpClient,
+        dispatch_state: Arc<WsDispatchState>,
+    ) -> Self {
+        Self {
+            emitter: emitter.clone(),
+            ws_client: ws_client.clone(),
+            http_client: http_client.clone(),
+            dispatch_state,
+        }
+    }
+
+    fn emit_once(
+        &self,
+        order: &OrderAny,
+        reason: &str,
+        ts_event: UnixNanos,
+        cloid_hex: &Ustr,
+    ) -> bool {
+        let client_order_id = order.client_order_id();
+
+        if !self.dispatch_state.insert_filled(client_order_id) {
+            log::debug!(
+                "Skipping duplicate post rejection for terminal order {client_order_id}: {reason}",
+            );
+            self.ws_client.remove_cloid_mapping(cloid_hex);
+            self.http_client
+                .remove_client_order_id_cloid(&client_order_id);
+            return false;
+        }
+
+        self.emitter
+            .emit_order_rejected(order, reason, ts_event, false);
+        self.dispatch_state
+            .insert_terminal_cloid(Ustr::from(cloid_hex.as_str()));
+        self.dispatch_state.cleanup_terminal(&client_order_id);
+        self.ws_client.remove_cloid_mapping(cloid_hex);
+        self.http_client
+            .remove_client_order_id_cloid(&client_order_id);
+
+        true
+    }
+}
+
 /// Routes a single execution report through the two-tier dispatch.
 ///
 /// For tracked orders this emits typed `OrderEventAny` events via the
@@ -2028,6 +2224,7 @@ fn handle_execution_report(
     dispatch_state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
     ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
     pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
     ts_init: UnixNanos,
 ) {
@@ -2063,8 +2260,7 @@ fn handle_execution_report(
                         pending_filled_cloids.add(id);
                     }
                     DispatchOutcome::Tracked | DispatchOutcome::External => {
-                        let cloid = Cloid::from_client_order_id(id);
-                        ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
+                        remove_cloid_mapping_for_client_order_id(ws_client, http_client, &id);
                     }
                 }
             }
@@ -2085,17 +2281,34 @@ fn handle_execution_report(
                 && dispatch_state.buffered_fill_count(&id) == 0
             {
                 pending_filled_cloids.remove(&id);
-                let cloid = Cloid::from_client_order_id(id);
-                ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
+                remove_cloid_mapping_for_client_order_id(ws_client, http_client, &id);
             }
         }
     }
+}
+
+fn remove_cloid_mapping_for_client_order_id(
+    ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
+    client_order_id: &ClientOrderId,
+) {
+    if let Some(cloid) = http_client.remove_client_order_id_cloid(client_order_id) {
+        ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
+    } else {
+        let cloid = Cloid::from_client_order_id(*client_order_id);
+        ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
+    }
+
+    let legacy_cloid = Cloid::from_legacy_client_order_id(*client_order_id);
+    ws_client.remove_cloid_mapping(&Ustr::from(&legacy_cloid.to_hex()));
 }
 
 use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
@@ -2117,11 +2330,14 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        Cloid, ExecutionReport, FifoCache, HyperliquidWebSocketClient, OrderIdentity,
-        WsDispatchState, determine_order_list_grouping, handle_execution_report,
-        register_order_identity_into, validate_order_for_hyperliquid,
+        ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
+        OrderIdentity, PostRejectionRoute, WsDispatchState, determine_order_list_grouping,
+        handle_execution_report, register_order_identity_into, validate_order_for_hyperliquid,
     };
-    use crate::{common::enums::HyperliquidEnvironment, http::models::HyperliquidExecGrouping};
+    use crate::{
+        common::enums::HyperliquidEnvironment,
+        http::models::{Cloid, HyperliquidExecGrouping},
+    };
 
     const TEST_INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
 
@@ -2163,6 +2379,10 @@ mod tests {
             TransportBackend::default(),
             None,
         )
+    }
+
+    fn make_http_client() -> HyperliquidHttpClient {
+        HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap()
     }
 
     fn test_identity() -> OrderIdentity {
@@ -2476,6 +2696,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2513,6 +2734,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2528,6 +2750,98 @@ mod tests {
             None
         );
         assert!(state.filled_orders.contains(&cid));
+    }
+
+    #[rstest]
+    fn test_post_rejection_skips_after_ws_terminal() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-WS-REJ");
+        state.register_identity(cid, test_identity());
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-WS-REJ"), cid);
+
+        let report = make_status_report(Some("O-HER-WS-REJ"), "v-rej", OrderStatus::Rejected);
+        handle_execution_report(
+            ExecutionReport::Order(report),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Rejected(_))
+        ));
+
+        let order = limit_order_with_quote_quantity("O-HER-WS-REJ", false);
+        let http_client = make_http_client();
+        let rejection_route =
+            PostRejectionRoute::new(&emitter, &ws_client, &http_client, state.clone());
+        let emitted = rejection_route.emit_once(
+            &order,
+            "Post only order would have immediately matched",
+            UnixNanos::default(),
+            &cloid_for("O-HER-WS-REJ"),
+        );
+
+        assert!(!emitted);
+        assert!(drain_events(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_post_rejection_suppresses_late_raw_cloid_reject() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-POST-REJ");
+        let cloid = cloid_for("O-HER-POST-REJ");
+        let order = limit_order_with_quote_quantity("O-HER-POST-REJ", false);
+        state.register_identity(cid, test_identity());
+        ws_client.cache_cloid_mapping(cloid, cid);
+
+        let http_client = make_http_client();
+        let rejection_route =
+            PostRejectionRoute::new(&emitter, &ws_client, &http_client, state.clone());
+        let emitted = rejection_route.emit_once(
+            &order,
+            "Post only order would have immediately matched",
+            UnixNanos::default(),
+            &cloid,
+        );
+
+        let events = drain_events(&mut rx);
+        assert!(emitted);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Rejected(_))
+        ));
+        assert_eq!(ws_client.get_cloid_mapping(&cloid), None);
+        assert!(state.filled_orders.contains(&cid));
+        assert!(state.terminal_cloid_seen(&cloid));
+
+        let late_reject = make_status_report(Some(cloid.as_str()), "v-rej", OrderStatus::Rejected);
+        handle_execution_report(
+            ExecutionReport::Order(late_reject),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        assert!(drain_events(&mut rx).is_empty());
     }
 
     #[rstest]
@@ -2553,6 +2867,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2570,6 +2885,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2610,6 +2926,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2628,6 +2945,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2678,6 +2996,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2737,6 +3056,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2770,6 +3090,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2801,11 +3122,12 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
 
-        // Accepted is open → no cloid eviction regardless of outcome.
+        // Accepted is open, so no cloid eviction occurs regardless of outcome.
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-OPEN")),
             Some(cid)
@@ -2832,6 +3154,7 @@ mod tests {
             &state,
             &emitter,
             &ws_client,
+            &make_http_client(),
             &mut pending_cloids,
             UnixNanos::default(),
         );
@@ -2862,7 +3185,7 @@ mod tests {
         OrderAny::Limit(LimitOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
-            InstrumentId::from("+10.HYPERLIQUID"),
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
             ClientOrderId::from(id),
             OrderSide::Buy,
             Quantity::from("1"),
@@ -2892,7 +3215,7 @@ mod tests {
         OrderAny::StopMarket(StopMarketOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
-            InstrumentId::from("+10.HYPERLIQUID"),
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
             ClientOrderId::from(id),
             OrderSide::Sell,
             Quantity::from("1"),

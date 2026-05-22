@@ -16,6 +16,22 @@ Messages exchanged via the `MessageBus` fall into three categories:
 - Events
 - Commands
 
+## Topic hierarchy
+
+Nautilus keeps market data topics under the `data` root. Live data publications use the direct
+`data.<kind>...` topics, for example `data.book.deltas.XCME.ESZ24`.
+
+When requested, replayed, or workflow-generated data flows over the message bus as
+topic-addressable data, the `DataEngine` publishes it under `data.pipeline.<kind>...`.
+Long requests, grouped requests, and aggregation chains can split, transform, and fan data back in
+before the parent request completes. These messages are still data messages, but they do not claim
+the same live ordering and timing semantics as normal real-time publications. For example, book
+deltas on the pipeline path use
+`data.pipeline.book.deltas.XCME.ESZ24`.
+
+Correlated request responses are delivered through response handlers keyed by correlation ID. The
+`data.response` topic is a capture channel for response publications, not the pipeline data path.
+
 ## Message integrity
 
 Once a message is created, its fields must not be mutated. This includes container fields such as

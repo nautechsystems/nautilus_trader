@@ -82,6 +82,9 @@ pub struct OrderFilled {
     pub position_id: Option<PositionId>,
     /// The commission generated from this execution.
     pub commission: Option<Money>,
+    /// The causation ID associated with the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl OrderFilled {
@@ -129,6 +132,7 @@ impl OrderFilled {
             reconciliation,
             position_id,
             commission,
+            causation_id: None,
         }
     }
 
@@ -512,6 +516,22 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderFilled = serde_json::from_str(&json).unwrap();
 
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_filled_serialization_with_causation_id() {
+        let causation_id = UUID4::new();
+        let original = OrderFilled {
+            causation_id: Some(causation_id),
+            ..create_test_order_filled()
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderFilled = serde_json::from_str(&json).unwrap();
+
+        assert!(json.contains("\"causation_id\""));
+        assert_eq!(deserialized.causation_id, Some(causation_id));
         assert_eq!(original, deserialized);
     }
 }

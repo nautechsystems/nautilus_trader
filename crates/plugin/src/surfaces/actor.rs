@@ -83,6 +83,10 @@ pub struct PluginActorHandle {
 /// [`crate::panic::guard`]. The infallible `create`/`drop` callbacks run
 /// inside [`crate::panic::guard_infallible`], which aborts the host on
 /// panic since their signatures cannot carry an error.
+///
+/// Slots are nullable at the ABI type level so the host can reject malformed
+/// manifests with null callbacks before constructing an actor. Macro-generated
+/// vtables fill every required slot.
 #[repr(C)]
 pub struct ActorVTable {
     /// Constructs a fresh actor instance bound to the supplied host vtable
@@ -91,75 +95,102 @@ pub struct ActorVTable {
     /// `config_json` carries the per-instance configuration the host
     /// constructed from the user's TOML or builder API. Empty when the
     /// host has no instance-specific configuration to pass.
-    pub create: unsafe extern "C" fn(
-        host: *const HostVTable,
-        ctx: *const HostContext,
-        config_json: BorrowedStr<'_>,
-    ) -> *mut PluginActorHandle,
+    pub create: Option<
+        unsafe extern "C" fn(
+            host: *const HostVTable,
+            ctx: *const HostContext,
+            config_json: BorrowedStr<'_>,
+        ) -> *mut PluginActorHandle,
+    >,
 
     /// Drops the actor instance and releases all of its resources.
-    pub drop_handle: unsafe extern "C" fn(handle: *mut PluginActorHandle),
+    pub drop_handle: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle)>,
 
     /// Returns the canonical type name for this actor.
-    pub type_name: unsafe extern "C" fn() -> BorrowedStr<'static>,
+    pub type_name: Option<unsafe extern "C" fn() -> BorrowedStr<'static>>,
 
-    pub on_start: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_stop: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_resume: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_reset: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_dispose: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_degrade: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
-    pub on_fault: unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>,
+    pub on_start: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_stop: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_resume: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_reset: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_dispose:
+        Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_degrade:
+        Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
+    pub on_fault: Option<unsafe extern "C" fn(handle: *mut PluginActorHandle) -> PluginResult<()>>,
 
-    pub on_time_event: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        event: *const TimeEvent,
-    ) -> PluginResult<()>,
+    pub on_time_event: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            event: *const TimeEvent,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_quote: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        quote: *const QuoteTick,
-    ) -> PluginResult<()>,
-    pub on_trade: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        trade: *const TradeTick,
-    ) -> PluginResult<()>,
-    pub on_bar:
+    pub on_quote: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            quote: *const QuoteTick,
+        ) -> PluginResult<()>,
+    >,
+    pub on_trade: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            trade: *const TradeTick,
+        ) -> PluginResult<()>,
+    >,
+    pub on_bar: Option<
         unsafe extern "C" fn(handle: *mut PluginActorHandle, bar: *const Bar) -> PluginResult<()>,
-    pub on_mark_price: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        mark_price: *const MarkPriceUpdate,
-    ) -> PluginResult<()>,
-    pub on_index_price: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        index_price: *const IndexPriceUpdate,
-    ) -> PluginResult<()>,
-    pub on_funding_rate: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        funding_rate: *const FundingRateUpdate,
-    ) -> PluginResult<()>,
-    pub on_instrument_status: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        status: *const InstrumentStatus,
-    ) -> PluginResult<()>,
-    pub on_instrument_close: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        close: *const InstrumentClose,
-    ) -> PluginResult<()>,
+    >,
+    pub on_mark_price: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            mark_price: *const MarkPriceUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_index_price: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            index_price: *const IndexPriceUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_funding_rate: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            funding_rate: *const FundingRateUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_instrument_status: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            status: *const InstrumentStatus,
+        ) -> PluginResult<()>,
+    >,
+    pub on_instrument_close: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            close: *const InstrumentClose,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_order_filled: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        event: *const OrderFilled,
-    ) -> PluginResult<()>,
-    pub on_order_canceled: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        event: *const OrderCanceled,
-    ) -> PluginResult<()>,
+    pub on_order_filled: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            event: *const OrderFilled,
+        ) -> PluginResult<()>,
+    >,
+    pub on_order_canceled: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            event: *const OrderCanceled,
+        ) -> PluginResult<()>,
+    >,
 
-    pub on_signal: unsafe extern "C" fn(
-        handle: *mut PluginActorHandle,
-        signal: *const Signal,
-    ) -> PluginResult<()>,
+    pub on_signal: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            signal: *const Signal,
+        ) -> PluginResult<()>,
+    >,
 }
 
 /// Author-facing trait for a plug-in actor.
@@ -294,28 +325,28 @@ where
     T: PluginActor,
 {
     const VTABLE: ActorVTable = ActorVTable {
-        create: create_thunk::<T>,
-        drop_handle: drop_handle_thunk::<T>,
-        type_name: type_name_thunk::<T>,
-        on_start: on_start_thunk::<T>,
-        on_stop: on_stop_thunk::<T>,
-        on_resume: on_resume_thunk::<T>,
-        on_reset: on_reset_thunk::<T>,
-        on_dispose: on_dispose_thunk::<T>,
-        on_degrade: on_degrade_thunk::<T>,
-        on_fault: on_fault_thunk::<T>,
-        on_time_event: on_time_event_thunk::<T>,
-        on_quote: on_quote_thunk::<T>,
-        on_trade: on_trade_thunk::<T>,
-        on_bar: on_bar_thunk::<T>,
-        on_mark_price: on_mark_price_thunk::<T>,
-        on_index_price: on_index_price_thunk::<T>,
-        on_funding_rate: on_funding_rate_thunk::<T>,
-        on_instrument_status: on_instrument_status_thunk::<T>,
-        on_instrument_close: on_instrument_close_thunk::<T>,
-        on_order_filled: on_order_filled_thunk::<T>,
-        on_order_canceled: on_order_canceled_thunk::<T>,
-        on_signal: on_signal_thunk::<T>,
+        create: Some(create_thunk::<T>),
+        drop_handle: Some(drop_handle_thunk::<T>),
+        type_name: Some(type_name_thunk::<T>),
+        on_start: Some(on_start_thunk::<T>),
+        on_stop: Some(on_stop_thunk::<T>),
+        on_resume: Some(on_resume_thunk::<T>),
+        on_reset: Some(on_reset_thunk::<T>),
+        on_dispose: Some(on_dispose_thunk::<T>),
+        on_degrade: Some(on_degrade_thunk::<T>),
+        on_fault: Some(on_fault_thunk::<T>),
+        on_time_event: Some(on_time_event_thunk::<T>),
+        on_quote: Some(on_quote_thunk::<T>),
+        on_trade: Some(on_trade_thunk::<T>),
+        on_bar: Some(on_bar_thunk::<T>),
+        on_mark_price: Some(on_mark_price_thunk::<T>),
+        on_index_price: Some(on_index_price_thunk::<T>),
+        on_funding_rate: Some(on_funding_rate_thunk::<T>),
+        on_instrument_status: Some(on_instrument_status_thunk::<T>),
+        on_instrument_close: Some(on_instrument_close_thunk::<T>),
+        on_order_filled: Some(on_order_filled_thunk::<T>),
+        on_order_canceled: Some(on_order_canceled_thunk::<T>),
+        on_signal: Some(on_signal_thunk::<T>),
     };
 }
 

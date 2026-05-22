@@ -462,6 +462,7 @@ impl TestDefault for OrderAccepted {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         }
     }
 }
@@ -485,6 +486,7 @@ impl TestDefault for OrderCanceled {
             reconciliation: 0,
             venue_order_id: None,
             account_id: None,
+            causation_id: None,
         }
     }
 }
@@ -509,6 +511,7 @@ impl TestDefault for OrderCancelRejected {
             reconciliation: 0,
             venue_order_id: None,
             account_id: None,
+            causation_id: None,
         }
     }
 }
@@ -530,6 +533,7 @@ impl TestDefault for OrderDenied {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         }
     }
 }
@@ -550,6 +554,7 @@ impl TestDefault for OrderEmulated {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         }
     }
 }
@@ -573,6 +578,7 @@ impl TestDefault for OrderExpired {
             reconciliation: 0,
             venue_order_id: None,
             account_id: None,
+            causation_id: None,
         }
     }
 }
@@ -619,6 +625,7 @@ impl TestDefault for OrderInitialized {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         }
     }
 }
@@ -643,6 +650,7 @@ impl TestDefault for OrderModifyRejected {
             reconciliation: 0,
             venue_order_id: None,
             account_id: None,
+            causation_id: None,
         }
     }
 }
@@ -666,6 +674,7 @@ impl TestDefault for OrderPendingCancel {
             reconciliation: 0,
             venue_order_id: None,
             account_id: AccountId::test_default(),
+            causation_id: None,
         }
     }
 }
@@ -689,6 +698,7 @@ impl TestDefault for OrderPendingUpdate {
             reconciliation: 0,
             venue_order_id: None,
             account_id: AccountId::test_default(),
+            causation_id: None,
         }
     }
 }
@@ -713,6 +723,7 @@ impl TestDefault for OrderRejected {
             ts_init: UnixNanos::default(),
             reconciliation: 0,
             due_post_only: 0,
+            causation_id: None,
         }
     }
 }
@@ -734,6 +745,7 @@ impl TestDefault for OrderReleased {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         }
     }
 }
@@ -755,6 +767,7 @@ impl TestDefault for OrderSubmitted {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            causation_id: None,
         }
     }
 }
@@ -778,6 +791,7 @@ impl TestDefault for OrderTriggered {
             reconciliation: 0,
             venue_order_id: None,
             account_id: None,
+            causation_id: None,
         }
     }
 }
@@ -806,6 +820,7 @@ impl TestDefault for OrderUpdated {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         }
     }
 }

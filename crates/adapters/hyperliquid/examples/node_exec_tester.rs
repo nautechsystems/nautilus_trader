@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
             external_order_claims: Some(vec![instrument_id]),
-            // Hyperliquid supports hyphens in client order IDs (they're hashed to cloid)
+            // Hyperliquid supports hyphens in client order IDs.
             use_hyphens_in_client_order_ids: true,
             ..Default::default()
         })

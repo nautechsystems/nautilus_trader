@@ -45,16 +45,13 @@ use super::{
     enums::{OKXSubscriptionEvent, OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
-        OKXAlgoOrderMsg, OKXOrderMsg, OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg,
-        OKXWebSocketError, OKXWsFrame, OKXWsMessage,
+        OKXOrderMsg, OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError,
+        OKXWsFrame, OKXWsMessage,
     },
     subscription::topic_from_websocket_arg,
 };
 use crate::{
-    common::{
-        consts::{OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE, should_retry_error_code},
-        models::OKXInstrument,
-    },
+    common::consts::{OKX_FIELD_SMSG, OKX_SUCCESS_CODE, should_retry_error_code},
     websocket::client::OKX_RATE_LIMIT_KEY_SUBSCRIPTION,
 };
 
@@ -333,29 +330,13 @@ impl OKXWsFeedHandler {
         match channel {
             OKXWsChannel::Account => Some(OKXWsMessage::Account(data)),
             OKXWsChannel::Positions => Some(OKXWsMessage::Positions(data)),
-            OKXWsChannel::Orders => match serde_json::from_value::<Vec<OKXOrderMsg>>(data) {
-                Ok(orders) => Some(OKXWsMessage::Orders(orders)),
-                Err(e) => {
-                    log::error!("Failed to parse orders data: {e}");
-                    None
-                }
-            },
+            OKXWsChannel::Orders => parse_array_items(data, "orders").map(OKXWsMessage::Orders),
             OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
-                match serde_json::from_value::<Vec<OKXAlgoOrderMsg>>(data) {
-                    Ok(orders) => Some(OKXWsMessage::AlgoOrders(orders)),
-                    Err(e) => {
-                        log::error!("Failed to parse algo orders data: {e}");
-                        None
-                    }
-                }
+                parse_array_items(data, "algo orders").map(OKXWsMessage::AlgoOrders)
             }
-            OKXWsChannel::Instruments => match serde_json::from_value::<Vec<OKXInstrument>>(data) {
-                Ok(instruments) => Some(OKXWsMessage::Instruments(instruments)),
-                Err(e) => {
-                    log::error!("Failed to parse instruments data: {e}");
-                    None
-                }
-            },
+            OKXWsChannel::Instruments => {
+                parse_array_items(data, "instruments").map(OKXWsMessage::Instruments)
+            }
             _ => Some(OKXWsMessage::ChannelData {
                 channel,
                 inst_id,
@@ -578,31 +559,6 @@ impl OKXWsFeedHandler {
     }
 }
 
-/// Returns `true` when an OKX WebSocket error payload represents a post-only rejection.
-pub fn is_post_only_rejection(code: &str, data: &[Value]) -> bool {
-    use crate::common::consts::OKX_POST_ONLY_ERROR_CODE;
-
-    if code == OKX_POST_ONLY_ERROR_CODE {
-        return true;
-    }
-
-    for entry in data {
-        if let Some(s_code) = entry.get(OKX_FIELD_SCODE).and_then(|value| value.as_str())
-            && s_code == OKX_POST_ONLY_ERROR_CODE
-        {
-            return true;
-        }
-
-        if let Some(inner_code) = entry.get("code").and_then(|value| value.as_str())
-            && inner_code == OKX_POST_ONLY_ERROR_CODE
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
 /// Returns `true` when an OKX WebSocket order message represents a post-only auto-cancel.
 pub fn is_post_only_auto_cancel(msg: &OKXOrderMsg) -> bool {
     use crate::common::{consts::OKX_POST_ONLY_CANCEL_SOURCE, enums::OKXOrderStatus};
@@ -630,6 +586,28 @@ pub fn is_post_only_auto_cancel(msg: &OKXOrderMsg) -> bool {
         .is_none_or(|filled| filled == "0" || filled.is_empty())
 }
 
+// Per-item deserialization so one malformed entry does not drop the batch.
+fn parse_array_items<T: serde::de::DeserializeOwned>(data: Value, label: &str) -> Option<Vec<T>> {
+    let Value::Array(items) = data else {
+        log::error!("Expected {label} payload to be a JSON array");
+        return None;
+    };
+
+    let mut parsed = Vec::with_capacity(items.len());
+    for (idx, item) in items.into_iter().enumerate() {
+        match serde_json::from_value::<T>(item) {
+            Ok(value) => parsed.push(value),
+            Err(e) => log::error!("Failed to parse {label} item at index {idx}: {e}"),
+        }
+    }
+
+    if parsed.is_empty() {
+        None
+    } else {
+        Some(parsed)
+    }
+}
+
 #[inline]
 fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
     haystack
@@ -638,16 +616,28 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
+// Specific phrases rather than bare "connection"/"network", which appear
+// in permanent errors too (e.g. "no active WebSocket client connection").
+const RETRYABLE_CLIENT_ERROR_PHRASES: &[&str] = &[
+    "timeout",
+    "timed out",
+    "connection reset",
+    "connection refused",
+    "connection closed",
+    "connection aborted",
+    "broken pipe",
+    "network unreachable",
+    "network is unreachable",
+    "no route to host",
+];
+
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
         OKXWsError::TungsteniteError(_) => true,
-        OKXWsError::ClientError(msg) => {
-            contains_ignore_ascii_case(msg, "timeout")
-                || contains_ignore_ascii_case(msg, "timed out")
-                || contains_ignore_ascii_case(msg, "connection")
-                || contains_ignore_ascii_case(msg, "network")
-        }
+        OKXWsError::ClientError(msg) => RETRYABLE_CLIENT_ERROR_PHRASES
+            .iter()
+            .any(|phrase| contains_ignore_ascii_case(msg, phrase)),
         OKXWsError::AuthenticationError(_)
         | OKXWsError::JsonError(_)
         | OKXWsError::ParsingError(_) => false,
@@ -666,19 +656,50 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_is_post_only_rejection_detects_by_code() {
-        assert!(is_post_only_rejection("51019", &[]));
+    #[case("Connection reset by peer", true)]
+    #[case("send timeout after 30s", true)]
+    #[case("Connection closed unexpectedly", true)]
+    #[case("Broken pipe", true)]
+    #[case("Network unreachable", true)]
+    #[case("No active WebSocket client connection", false)]
+    #[case("network protocol upgrade required", false)]
+    #[case("invalid frame format", false)]
+    fn test_should_retry_client_error(#[case] msg: &str, #[case] expected: bool) {
+        let err = OKXWsError::ClientError(msg.to_string());
+        assert_eq!(should_retry_okx_error(&err), expected);
+    }
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct ParseArrayItem {
+        value: i64,
     }
 
     #[rstest]
-    fn test_is_post_only_rejection_detects_by_inner_code() {
-        let data = vec![json!({ "sCode": "51019" })];
-        assert!(is_post_only_rejection("50000", &data));
+    fn test_parse_array_items_keeps_good_items_when_one_fails() {
+        let data = json!([
+            {"value": 1},
+            {"value": "not a number"},
+            {"value": 3},
+        ]);
+
+        let parsed: Vec<ParseArrayItem> = parse_array_items(data, "test").expect("non-empty");
+        assert_eq!(
+            parsed,
+            vec![ParseArrayItem { value: 1 }, ParseArrayItem { value: 3 }],
+        );
     }
 
     #[rstest]
-    fn test_is_post_only_rejection_false_for_unrelated_error() {
-        let data = vec![json!({ "sMsg": "Insufficient balance" })];
-        assert!(!is_post_only_rejection("50000", &data));
+    fn test_parse_array_items_returns_none_when_payload_not_array() {
+        let data = json!({"not": "an array"});
+        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test");
+        assert!(parsed.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_array_items_returns_none_when_all_items_fail() {
+        let data = json!([{"value": "bad"}]);
+        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test");
+        assert!(parsed.is_none());
     }
 }

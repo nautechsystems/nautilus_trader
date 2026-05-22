@@ -319,3 +319,47 @@ def test_order_expired():
         == "OrderExpired(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
         "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
+
+
+def test_order_event_dicts_include_none_causation_id():
+    events = (
+        (OrderDenied, TestEventsProviderPyo3.order_denied_max_submit_rate()),
+        (OrderFilled, TestEventsProviderPyo3.order_filled_buy_limit()),
+        (OrderInitialized, TestEventsProviderPyo3.order_initialized()),
+        (OrderRejected, TestEventsProviderPyo3.order_rejected_insufficient_margin()),
+        (OrderTriggered, TestEventsProviderPyo3.order_triggered()),
+        (OrderSubmitted, TestEventsProviderPyo3.order_submitted()),
+        (OrderEmulated, TestEventsProviderPyo3.order_emulated()),
+        (OrderReleased, TestEventsProviderPyo3.order_released()),
+        (OrderUpdated, TestEventsProviderPyo3.order_updated()),
+        (OrderPendingUpdate, TestEventsProviderPyo3.order_pending_update()),
+        (OrderPendingCancel, TestEventsProviderPyo3.order_pending_cancel()),
+        (OrderModifyRejected, TestEventsProviderPyo3.order_modified_rejected()),
+        (OrderAccepted, TestEventsProviderPyo3.order_accepted()),
+        (OrderCancelRejected, TestEventsProviderPyo3.order_cancel_rejected()),
+        (OrderCanceled, TestEventsProviderPyo3.order_canceled()),
+        (OrderExpired, TestEventsProviderPyo3.order_expired()),
+    )
+
+    for event_type, event in events:
+        assert event_type.to_dict(event)["causation_id"] is None
+
+
+def test_order_denied_from_dict_preserves_causation_id():
+    causation_id = "38e6a9e5-59a4-4e92-bc1f-2ed5790f9a4b"
+    values = OrderDenied.to_dict(TestEventsProviderPyo3.order_denied_max_submit_rate())
+    values["causation_id"] = causation_id
+
+    event = OrderDenied.from_dict(values)
+
+    assert OrderDenied.to_dict(event)["causation_id"] == causation_id
+
+
+def test_order_filled_from_dict_preserves_causation_id():
+    causation_id = "38e6a9e5-59a4-4e92-bc1f-2ed5790f9a4b"
+    values = OrderFilled.to_dict(TestEventsProviderPyo3.order_filled_buy_limit())
+    values["causation_id"] = causation_id
+
+    event = OrderFilled.from_dict(values)
+
+    assert OrderFilled.to_dict(event)["causation_id"] == causation_id

@@ -68,9 +68,9 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory,
-        OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode,
-        OKXTriggerType, OKXVipLevel,
+        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode,
+        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -836,7 +836,7 @@ pub struct OKXOrderAlgo {
     /// Algo order type.
     pub ord_type: OKXAlgoOrderType,
     /// Current order state.
-    pub state: OKXOrderStatus,
+    pub state: OKXAlgoOrderStatus,
     /// Order side.
     pub side: OKXSide,
     /// Position side.

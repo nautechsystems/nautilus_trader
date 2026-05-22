@@ -46,8 +46,8 @@ use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
         enums::{
-            OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode,
-            OKXTriggerType,
+            OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXPositionMode,
+            OKXTradeMode, OKXTriggerType,
         },
         models::OKXInstrument,
     },
@@ -2318,7 +2318,7 @@ async fn test_http_get_order_algo_history_returns_data() {
 
     assert!(!orders.is_empty());
     assert_eq!(orders[0].algo_id, "987654321");
-    assert_eq!(orders[0].state, OKXOrderStatus::Effective);
+    assert_eq!(orders[0].state, OKXAlgoOrderStatus::Effective);
 }
 
 #[rstest]

@@ -48,6 +48,11 @@ The event types that drive the system: order events, position events, account
 events, and time events. Covers handler dispatch, the causal chain from order
 fills to position events, and tracing orders to positions.
 
+## Event Sourcing
+
+The durable event-store log for state-affecting messages, including capture boundaries,
+correlation headers, replay modes, recovery anchors, and verifier behavior.
+
 ## Options
 
 Option instrument types, venue-provided Greeks streaming, option chain subscriptions
@@ -129,6 +134,12 @@ convention, builder patterns, and common fields shared across adapters and engin
 
 Deploying backtested strategies in real-time without code changes, and the key differences
 between backtesting and live trading.
+
+## Plugins
+
+The Rust plug-in system loaded by a live node, covering the C-ABI boundary, manifest validation,
+plug-point surfaces (custom data, actors, strategies), host callback routing, configuration, and
+the lifecycle from `dlopen` through adapter registration.
 
 ## Adapters
 

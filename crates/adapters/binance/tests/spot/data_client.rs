@@ -416,6 +416,10 @@ fn create_test_data_client(
     let config = BinanceDataClientConfig {
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
+        api_key: Some("test-api-key".to_string()),
+        api_secret: Some(
+            "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".to_string(),
+        ),
         ..Default::default()
     };
 

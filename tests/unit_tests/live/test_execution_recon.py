@@ -2474,6 +2474,41 @@ class TestReconciliationEdgeCases:
         assert generated_order.tags == ["RECONCILIATION"]
 
     @pytest.mark.asyncio
+    async def test_position_reconciliation_with_external_order_claim_uses_claiming_strategy(
+        self,
+        live_exec_engine,
+    ):
+        # Arrange
+        instrument = AUDUSD_SIM
+        strategy_id = StrategyId("S-CLAIM")
+        self.cache.add_instrument(instrument)
+        live_exec_engine.generate_missing_orders = True
+        live_exec_engine._external_order_claims[instrument.id] = strategy_id
+
+        report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(report)
+
+        # Assert
+        assert result is True
+
+        generated_orders = self.cache.orders()
+        assert len(generated_orders) == 1
+
+        generated_order = generated_orders[0]
+        assert generated_order.strategy_id == strategy_id
+        assert generated_order.tags is None
+
+    @pytest.mark.asyncio
     async def test_position_reconciliation_fallback_to_market_order_when_no_price_available(
         self,
         live_exec_engine,
@@ -3780,6 +3815,76 @@ async def test_reconcile_position_report_netting_scopes_cached_positions_by_acco
 
     assert result is True
     assert reconcile_calls == []
+
+
+def test_netting_split_position_ownership_message_names_positions(live_exec_engine, cache):
+    account_id = AccountId("SIM-001")
+
+    order_external = TestExecStubs.limit_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(1000),
+        strategy_id=StrategyId("EXTERNAL"),
+    )
+    fill_external = TestEventStubs.order_filled(
+        order_external,
+        instrument=AUDUSD_SIM,
+        account_id=account_id,
+        last_qty=Quantity.from_int(1000),
+        last_px=Price.from_str("1.00000"),
+        position_id=PositionId("P-EXTERNAL"),
+    )
+    position_external = Position(instrument=AUDUSD_SIM, fill=fill_external)
+    cache.add_position(position_external, OmsType.NETTING)
+
+    order_strategy = TestExecStubs.limit_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(500),
+        strategy_id=StrategyId("S-001"),
+    )
+    fill_strategy = TestEventStubs.order_filled(
+        order_strategy,
+        instrument=AUDUSD_SIM,
+        account_id=account_id,
+        last_qty=Quantity.from_int(500),
+        last_px=Price.from_str("1.00000"),
+        position_id=PositionId("P-STRATEGY"),
+    )
+    position_strategy = Position(instrument=AUDUSD_SIM, fill=fill_strategy)
+    cache.add_position(position_strategy, OmsType.NETTING)
+
+    report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1500),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    message = live_exec_engine._netting_split_position_ownership_message(
+        report,
+        [position_external, position_strategy],
+    )
+
+    assert message is not None
+    assert "account_id=SIM-001" in message
+    assert f"instrument_id={AUDUSD_SIM.id}" in message
+    assert "EXTERNAL" in message
+    assert "S-001" in message
+    assert "P-EXTERNAL" in message
+    assert "P-STRATEGY" in message
+    assert "signed_qty=1000" in message
+    assert "signed_qty=500" in message
+
+    message = live_exec_engine._netting_split_position_ownership_message(
+        report,
+        [position_external],
+    )
+
+    assert message is None
 
 
 # Tests for _query_and_find_missing_fills

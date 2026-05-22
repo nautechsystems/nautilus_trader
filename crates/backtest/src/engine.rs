@@ -15,7 +15,13 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+use std::{
+    any::Any,
+    cell::RefCell,
+    fmt::Debug,
+    rc::{Rc, Weak},
+    sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
@@ -35,6 +41,7 @@ use nautilus_common::{
         drain_data_cmd_queue, drain_trading_cmd_queue, replace_data_cmd_sender,
         replace_exec_cmd_sender, trading_cmd_queue_is_empty,
     },
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable,
@@ -318,7 +325,7 @@ impl BacktestEngine {
     ///
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
-        if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
+        if let Some(exchange) = self.venues.get(&instrument.id().venue) {
             if matches!(
                 instrument,
                 InstrumentAny::CurrencyPair(_) | InstrumentAny::TokenizedAsset(_)
@@ -330,6 +337,9 @@ impl BacktestEngine {
                 )
             }
             exchange.borrow_mut().add_instrument(instrument.clone())?;
+            if let Some(expiration_ns) = instrument.expiration_ns() {
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
+            }
         } else {
             anyhow::bail!(
                 "Cannot add an `Instrument` object without first adding its associated venue {}",
@@ -627,6 +637,8 @@ impl BacktestEngine {
 
         // First-iteration initialization
         if self.iteration == 0 {
+            self.set_instrument_expiration_timers()?;
+
             self.run_config_id = run_config_id;
             self.run_id = Some(UUID4::new());
             self.run_started = Some(UnixNanos::from(std::time::SystemTime::now()));
@@ -652,8 +664,16 @@ impl BacktestEngine {
             logging_clock_set_static_mode();
             logging_clock_set_static_time(start_ns.as_u64());
 
-            // Start kernel (engines + trader init + clients)
+            // Start kernel, then stop before trader startup for event-store replay
             self.kernel.start();
+            if self.kernel.is_event_store_replay() {
+                self.log_pre_run();
+                return Ok(());
+            }
+
+            if self.kernel.is_event_store_replay_configured() {
+                anyhow::bail!("event-store replay did not start");
+            }
             self.kernel.start_trader();
 
             self.log_pre_run();
@@ -1205,6 +1225,56 @@ impl BacktestEngine {
         }
     }
 
+    fn set_instrument_expiration_timers(&self) -> anyhow::Result<()> {
+        for exchange in self.venues.values() {
+            let expirations = exchange.borrow().instrument_expirations();
+            for (instrument_id, expiration_ns) in expirations {
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_instrument_expiration_timer(
+        &self,
+        exchange: &Rc<RefCell<SimulatedExchange>>,
+        instrument_id: InstrumentId,
+        expiration_ns: UnixNanos,
+    ) -> anyhow::Result<()> {
+        if expiration_ns == UnixNanos::default() {
+            return Ok(());
+        }
+
+        let timer_name = Self::instrument_expiration_timer_name(instrument_id);
+        let exchange: Weak<RefCell<SimulatedExchange>> = Rc::downgrade(exchange);
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event: TimeEvent| {
+            if let Some(exchange) = exchange.upgrade() {
+                exchange
+                    .borrow_mut()
+                    .process_instrument_expirations(event.ts_event);
+            }
+        });
+        let timer_key = ustr::Ustr::from(timer_name.as_str());
+        let mut clock = self.kernel.clock.borrow_mut();
+        if clock.timer_exists(&timer_key) {
+            clock.cancel_timer(&timer_name);
+        }
+
+        clock.set_time_alert_ns(
+            &timer_name,
+            expiration_ns,
+            Some(TimeEventCallback::from(callback)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    fn instrument_expiration_timer_name(instrument_id: InstrumentId) -> String {
+        format!("INSTRUMENT-EXPIRATION:{instrument_id}")
+    }
+
     fn collect_all_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
         let mut clocks = vec![self.kernel.clock.clone()];
         clocks.extend(self.kernel.trader.borrow().get_component_clocks());
@@ -1546,6 +1616,8 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::enums::Environment;
+    use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
         data::{Data, InstrumentStatus},
         enums::{AccountType, BookType, MarketStatus, MarketStatusAction, OmsType},
@@ -1555,9 +1627,60 @@ mod tests {
         },
         types::Money,
     };
+    use nautilus_system::{KernelEventStore, RegisteredComponents};
     use rstest::*;
 
     use super::*;
+
+    #[derive(Debug)]
+    struct BacktestReplayKernelEventStore {
+        fail_restore: bool,
+    }
+
+    impl KernelEventStore for BacktestReplayKernelEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            if self.fail_restore {
+                anyhow::bail!("replay restore failed");
+            }
+
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {}
+
+        fn run_id(&self) -> Option<&str> {
+            Some("replay-child")
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            Some("seed-run")
+        }
+
+        fn is_event_store_replay_configured(&self) -> bool {
+            true
+        }
+
+        fn is_halted(&self) -> bool {
+            false
+        }
+    }
 
     fn create_engine() -> BacktestEngine {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -1570,6 +1693,66 @@ mod tests {
             .build();
         engine.add_venue(venue_config).unwrap();
         engine
+    }
+
+    fn create_engine_with_replay_store(fail_restore: bool) -> BacktestEngine {
+        let config = BacktestEngineConfig {
+            load_state: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config.clone()).unwrap();
+        let event_store_factory = move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
+            Ok::<_, anyhow::Error>(Box::new(BacktestReplayKernelEventStore { fail_restore })
+                as Box<dyn KernelEventStore>)
+        };
+
+        engine.kernel = NautilusKernel::new_with(
+            "BacktestEngine".to_string(),
+            config,
+            None,
+            Some(Box::new(event_store_factory)),
+        )
+        .unwrap();
+        engine.instance_id = engine.kernel.instance_id;
+        engine
+    }
+
+    #[rstest]
+    fn test_run_impl_event_store_replay_skips_trader_start() {
+        let mut engine = create_engine_with_replay_store(false);
+
+        engine
+            .run_impl(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                true,
+            )
+            .unwrap();
+
+        assert!(engine.kernel.is_event_store_replay_configured());
+        assert!(engine.kernel.is_event_store_replay());
+        assert!(!engine.kernel.trader.borrow().is_running());
+    }
+
+    #[rstest]
+    fn test_run_impl_event_store_replay_config_failure_errors() {
+        let mut engine = create_engine_with_replay_store(true);
+
+        let error = engine
+            .run_impl(
+                Some(UnixNanos::from(0)),
+                Some(UnixNanos::from(1)),
+                None,
+                true,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "event-store replay did not start");
+        assert!(engine.kernel.is_event_store_replay_configured());
+        assert!(!engine.kernel.is_event_store_replay());
+        assert!(!engine.kernel.trader.borrow().is_running());
     }
 
     #[rstest]

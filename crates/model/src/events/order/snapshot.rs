@@ -127,6 +127,9 @@ pub struct OrderSnapshot {
     pub ts_init: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the last event occurred.
     pub ts_last: UnixNanos,
+    /// The causation ID associated with the snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<UUID4>,
 }
 
 impl From<OrderAny> for OrderSnapshot {
@@ -174,6 +177,7 @@ impl From<OrderAny> for OrderSnapshot {
             init_id: order.init_id(),
             ts_init: order.ts_init(),
             ts_last: order.ts_last(),
+            causation_id: None,
         }
     }
 }

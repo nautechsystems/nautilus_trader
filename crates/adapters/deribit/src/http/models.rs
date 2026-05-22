@@ -15,6 +15,7 @@
 
 //! Deribit HTTP API models and types.
 
+use ahash::AHashMap;
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,33 @@ pub struct DeribitTickSizeStep {
     /// Tick size to be used above the price
     #[serde(deserialize_with = "deserialize_decimal")]
     pub tick_size: Decimal,
+}
+
+/// Deribit combo definition from `public/get_combos`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitCombo {
+    /// Unique combo identifier, matching the combo instrument name.
+    pub id: Ustr,
+    /// Combo state, e.g. `active`.
+    pub state: String,
+    /// Combo leg makeup.
+    pub legs: Vec<DeribitComboLeg>,
+    /// Combo creation timestamp in milliseconds since UNIX epoch.
+    pub creation_timestamp: i64,
+    /// Numeric Deribit instrument ID.
+    pub instrument_id: i64,
+    /// State timestamp in milliseconds since UNIX epoch.
+    pub state_timestamp: i64,
+}
+
+/// A single leg entry of a Deribit combo definition.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitComboLeg {
+    /// Signed leg amount. Positive is long, negative is short.
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub amount: Decimal,
+    /// Leg instrument name.
+    pub instrument_name: Ustr,
 }
 
 /// Wrapper for the account summaries response.
@@ -432,6 +460,50 @@ pub struct DeribitTradesResponse {
     pub has_more: bool,
     /// Array of trade objects.
     pub trades: Vec<DeribitPublicTrade>,
+}
+
+/// Expiration strings grouped by instrument kind.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeribitExpirationsByKind {
+    /// Future expirations, including `PERPETUAL` when present.
+    #[serde(default)]
+    pub future: Vec<String>,
+    /// Option expirations.
+    #[serde(default)]
+    pub option: Vec<String>,
+    /// Future combo expirations.
+    #[serde(default)]
+    pub future_combo: Vec<String>,
+    /// Option combo expirations.
+    #[serde(default)]
+    pub option_combo: Vec<String>,
+}
+
+/// Response from `public/get_expirations` endpoint.
+///
+/// Deribit returns a currency-keyed object for concrete or `grouped` currencies,
+/// and a direct kind-keyed object for `currency=any`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum DeribitExpirationsResponse {
+    /// Expirations keyed by lowercase currency code.
+    ByCurrency(AHashMap<String, DeribitExpirationsByKind>),
+    /// Expirations returned without currency grouping.
+    Expirations(DeribitExpirationsByKind),
+}
+
+impl DeribitExpirationsResponse {
+    /// Returns expirations for a currency code, or the direct result for `currency=any`.
+    #[must_use]
+    pub fn expirations_for_currency(&self, currency: &str) -> Option<&DeribitExpirationsByKind> {
+        match self {
+            Self::ByCurrency(expirations) => {
+                let key = currency.to_ascii_lowercase();
+                expirations.get(&key)
+            }
+            Self::Expirations(expirations) => Some(expirations),
+        }
+    }
 }
 
 /// Response from `public/get_tradingview_chart_data` endpoint.
@@ -797,5 +869,33 @@ mod tests {
         let trade: DeribitPublicTrade = serde_json::from_str(json).unwrap();
         assert_eq!(trade.index_price, Some(dec!(2967.73)));
         assert_eq!(trade.mark_price, Some(dec!(2968.01)));
+    }
+
+    #[rstest]
+    fn test_deserialize_expirations_currency_keyed_response() {
+        let json = r#"{
+            "btc": {
+                "option": ["20MAY26", "26JUN26"],
+                "future": ["20MAY26", "PERPETUAL"]
+            }
+        }"#;
+
+        let response: DeribitExpirationsResponse = serde_json::from_str(json).unwrap();
+        let expirations = response.expirations_for_currency("BTC").unwrap();
+        assert_eq!(expirations.option, vec!["20MAY26", "26JUN26"]);
+        assert_eq!(expirations.future, vec!["20MAY26", "PERPETUAL"]);
+    }
+
+    #[rstest]
+    fn test_deserialize_expirations_direct_response() {
+        let json = r#"{
+            "option": ["20MAY26", "26JUN26"],
+            "future": ["20MAY26", "PERPETUAL"]
+        }"#;
+
+        let response: DeribitExpirationsResponse = serde_json::from_str(json).unwrap();
+        let expirations = response.expirations_for_currency("any").unwrap();
+        assert_eq!(expirations.option, vec!["20MAY26", "26JUN26"]);
+        assert_eq!(expirations.future, vec!["20MAY26", "PERPETUAL"]);
     }
 }

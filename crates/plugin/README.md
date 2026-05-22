@@ -10,19 +10,23 @@ Plug-in system for [NautilusTrader](https://nautilustrader.io).
 > [!WARNING]
 > **Early alpha**. The ABI and public API are not stable and may change between versions while
 > the host-side adapters, `HostVTable` surface, and `LiveNodeConfig` wiring land. Plug-in builds
-> must be pinned to the matching Nautilus version; `NAUTILUS_PLUGIN_ABI_VERSION` will be bumped
-> freely as the surface evolves and no back-compat shims are provided.
+> must be pinned to the matching Nautilus version.
 
 The `nautilus-plugin` crate defines the C-ABI boundary between a Nautilus host (the live node)
 and independently compiled Rust plug-in cdylibs. The host `dlopen`s a plug-in, calls a single
 `nautilus_plugin_init` entry symbol, and registers every plug point the returned manifest
-enumerates. The boundary is C ABI because Rust's `#[repr(Rust)]` layout is unstable across
-compilations, so cross-cdylib `Box<dyn Trait>` and `async fn` are unsound. C ABI is the layer
-of contract both halves can compile to without sharing a build.
+enumerates after validating that the manifest is structurally well-formed. The boundary is
+C ABI because Rust's `#[repr(Rust)]` layout is unstable across compilations, so cross-cdylib
+`Box<dyn Trait>` and `async fn` are unsound. C ABI is the layer of contract both halves can
+compile to without sharing a build.
 
 Authors write normal Rust. The `nautilus_plugin!` macro emits the `extern "C"` symbol, the
 `#[repr(C)]` manifest, and the per-type vtables; authors never type `extern "C"`,
 `#[repr(C)]`, or `unsafe` themselves.
+
+Vtable slots are nullable in the ABI structs so the host can report malformed
+manifests with missing callbacks. Macro-generated vtables fill every required
+slot, and the loader rejects null slots before registration or instantiation.
 
 The plug-in system supports the following sync trait surfaces. Each lives in its
 own module under `src/` and follows the same pattern: a `#[repr(C)]` vtable, a
@@ -30,15 +34,15 @@ matching author-facing trait, `extern "C"` thunks wired through `panic::guard`,
 and a `Slice<'static, Registration>` field on `PluginManifest`. Adding a plug
 point means adding one module and one `Slice` field.
 
-| Plug point         | Status     | Module                       |
-|--------------------|------------|------------------------------|
-| Custom data type   | Shipped    | `surfaces::custom_data`      |
-| Actor / DataActor  | Shipped    | `surfaces::actor`            |
-| Strategy           | Shipped    | `surfaces::strategy`         |
-| Execution algorithm| Not yet    | `surfaces::exec_algorithm`   |
-| Indicator          | Not yet    | `surfaces::indicator`        |
-| Fill model         | Not yet    | `surfaces::fill_model`       |
-| Pricing / greeks   | Not yet    | `surfaces::pricing`          |
+| Plug point          | Status  | Module                     |
+|---------------------|---------|----------------------------|
+| Custom data type    | Shipped | `surfaces::custom_data`    |
+| Actor / DataActor   | Shipped | `surfaces::actor`          |
+| Strategy            | Shipped | `surfaces::strategy`       |
+| Execution algorithm | Not yet | `surfaces::exec_algorithm` |
+| Indicator           | Not yet | `surfaces::indicator`      |
+| Fill model          | Not yet | `surfaces::fill_model`     |
+| Pricing / greeks    | Not yet | `surfaces::pricing`        |
 
 Out of scope: async client adapters (data and execution), catalog and cache
 backends, pre-trade risk gating, event store backends, and hot reload of any
@@ -78,9 +82,19 @@ Plug-in cdylibs use the platform-native shared-library format:
 `tests/load_example_cdylib.rs` builds and loads a cdylib on all three.
 
 Rust's ABI is unstable across compilations on every platform, so the plug-in build must be
-pinned to the host's Rust toolchain version and Nautilus version. `NAUTILUS_PLUGIN_ABI_VERSION`
-is bumped on every breaking change to any `#[repr(C)]` struct or vtable in this crate; the host
-refuses to load a plug-in whose `PluginManifest::abi_version` does not match.
+pinned to the host's Rust toolchain version and Nautilus version. Each manifest carries a
+versioned `PluginBuildId` with the `nautilus-plugin` crate version, Rust compiler version when
+the build script can read it, target triple, and build profile. The loader includes that build
+identifier in ABI mismatch diagnostics so operators can spot stale or cross-built cdylibs.
+
+The build identifier remains diagnostic; the loader validates only the build-id schema version,
+not the specific crate version, compiler version, target triple, or build profile values.
+
+`NAUTILUS_PLUGIN_ABI_VERSION` stays pinned at `1` while this early-alpha surface is unreleased
+and unstable. During this phase, the value does not promise compatibility between Nautilus
+versions. Once the surface is released, every breaking change to any `#[repr(C)]` struct or
+vtable in this crate must bump it. The host refuses to load a plug-in whose
+`PluginManifest::abi_version` does not match.
 
 ## Documentation
 

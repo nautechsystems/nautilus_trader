@@ -40,17 +40,20 @@ use nautilus_indicators::{
     indicator::{Indicator, MovingAverage},
 };
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType, BookOrder, Data, OrderBookDelta, QuoteTick},
+    data::{Bar, BarSpecification, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, TradeTick},
     enums::{
-        AccountType, AggregationSource, BarAggregation, BookAction, BookType, OmsType, OrderSide,
-        PriceType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
+        BookType, OmsType, OptionKind, OrderSide, PriceType,
     },
     events::OrderFilled,
-    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Venue},
-    instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Symbol, TradeId, Venue},
+    instruments::{
+        CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
+        stubs::crypto_perpetual_ethusdt,
+    },
     orders::{Order, OrderAny},
     position::Position,
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
@@ -58,6 +61,7 @@ use nautilus_trading::{
     ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, nautilus_strategy,
 };
 use rstest::*;
+use ustr::Ustr;
 struct EmptyStrategy {
     core: StrategyCore,
 }
@@ -302,6 +306,64 @@ impl DataActor for SnapshotNettingFlip {
     }
 }
 
+struct OpenOptionOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    opened: bool,
+}
+
+impl OpenOptionOnQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("OPEN-OPTION-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            opened: false,
+        }
+    }
+}
+
+nautilus_strategy!(OpenOptionOnQuote);
+
+impl Debug for OpenOptionOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OpenOptionOnQuote)).finish()
+    }
+}
+
+impl DataActor for OpenOptionOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.opened {
+            return Ok(());
+        }
+        self.opened = true;
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
 #[rstest]
 fn test_add_actor_registers_actor_with_trader() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -461,6 +523,71 @@ fn quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> Data {
         Quantity::from("1.000"),
         ts.into(),
         ts.into(),
+    ))
+}
+
+fn trade(instrument_id: InstrumentId, price: &str, size: &str, ts: u64) -> Data {
+    Data::Trade(TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from(size),
+        AggressorSide::NoAggressor,
+        TradeId::from("T-001"),
+        ts.into(),
+        ts.into(),
+    ))
+}
+
+fn option_underlying_equity(venue: Venue) -> InstrumentAny {
+    InstrumentAny::Equity(Equity::new(
+        InstrumentId::from(format!("AAPL.{venue}").as_str()),
+        Symbol::from("AAPL"),
+        None,
+        Currency::USD(),
+        2,
+        Price::from("0.01"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ))
+}
+
+fn option_contract(venue: Venue, expiration_ns: UnixNanos) -> InstrumentAny {
+    InstrumentAny::OptionContract(OptionContract::new(
+        InstrumentId::from(format!("AAPL240315C00150000.{venue}").as_str()),
+        Symbol::from("AAPL240315C00150000"),
+        AssetClass::Equity,
+        Some(Ustr::from(venue.as_str())),
+        Ustr::from("AAPL"),
+        OptionKind::Call,
+        Price::from("150.00"),
+        Currency::USD(),
+        UnixNanos::default(),
+        expiration_ns,
+        2,
+        Price::from("0.01"),
+        Quantity::from(100),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     ))
 }
 
@@ -2236,6 +2363,178 @@ fn test_iteration_advances_with_data(crypto_perpetual_ethusdt: CryptoPerpetual) 
     engine.run(None, None, None, false).unwrap();
 
     assert_eq!(engine.iteration(), 3);
+}
+
+#[rstest]
+fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
+    let venue = Venue::from("OPRA");
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build(),
+        )
+        .unwrap();
+
+    let underlying = option_underlying_equity(venue);
+    let option = option_contract(venue, expiration_ns);
+    let underlying_id = underlying.id();
+    let option_id = option.id();
+    engine.add_instrument(&underlying).unwrap();
+    engine.add_instrument(&option).unwrap();
+    engine
+        .add_strategy(OpenOptionOnQuote::new(option_id, Quantity::from(1)))
+        .unwrap();
+
+    let data = vec![
+        quote_with_size(
+            option_id,
+            "5.00",
+            "5.10",
+            "1",
+            expiration_ns.as_u64() - 2_000,
+        ),
+        trade(
+            underlying_id,
+            "140.00",
+            "100",
+            expiration_ns.as_u64() - 1_000,
+        ),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine
+        .run(
+            Some(UnixNanos::from(expiration_ns.as_u64() - 3_000)),
+            Some(UnixNanos::from(expiration_ns.as_u64() + 1_000)),
+            None,
+            false,
+        )
+        .unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let open = cache.positions_open(None, Some(&option_id), None, None, None);
+    assert!(
+        open.is_empty(),
+        "expected option expiration timer to close the position, found {}",
+        open.len(),
+    );
+
+    let closed = cache.positions_closed(None, Some(&option_id), None, None, None);
+    assert_eq!(closed.len(), 1);
+}
+
+#[rstest]
+fn test_itm_option_expiry_timer_exercises_without_data_at_expiration() {
+    let (engine, option_id, underlying_id) =
+        run_call_option_expiry_timer("160.00", UnixNanos::from(2_000_001_000u64));
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let option_open = cache.positions_open(None, Some(&option_id), None, None, None);
+    assert!(
+        option_open.is_empty(),
+        "expected option expiration timer to close the option position, found {}",
+        option_open.len(),
+    );
+
+    let option_closed = cache.positions_closed(None, Some(&option_id), None, None, None);
+    assert_eq!(option_closed.len(), 1);
+
+    let underlying_open = cache.positions_open(None, Some(&underlying_id), None, None, None);
+    assert_eq!(underlying_open.len(), 1);
+    assert_eq!(underlying_open[0].quantity, Quantity::from(100));
+    assert_eq!(underlying_open[0].avg_px_open, 150.0);
+}
+
+#[rstest]
+fn test_option_expiry_timer_runs_when_end_equals_expiration() {
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let (engine, option_id, underlying_id) = run_call_option_expiry_timer("140.00", expiration_ns);
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let option_open = cache.positions_open(None, Some(&option_id), None, None, None);
+    assert!(
+        option_open.is_empty(),
+        "expected option position to close at exact backtest end, found {}",
+        option_open.len(),
+    );
+
+    let option_closed = cache.positions_closed(None, Some(&option_id), None, None, None);
+    assert_eq!(option_closed.len(), 1);
+
+    let underlying_open = cache.positions_open(None, Some(&underlying_id), None, None, None);
+    assert!(
+        underlying_open.is_empty(),
+        "expected no underlying position for OTM expiry, found {}",
+        underlying_open.len(),
+    );
+}
+
+fn run_call_option_expiry_timer(
+    underlying_price: &str,
+    end_ns: UnixNanos,
+) -> (BacktestEngine, InstrumentId, InstrumentId) {
+    let venue = Venue::from("OPRA");
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build(),
+        )
+        .unwrap();
+
+    let underlying = option_underlying_equity(venue);
+    let option = option_contract(venue, expiration_ns);
+    let underlying_id = underlying.id();
+    let option_id = option.id();
+    engine.add_instrument(&underlying).unwrap();
+    engine.add_instrument(&option).unwrap();
+    engine
+        .add_strategy(OpenOptionOnQuote::new(option_id, Quantity::from(1)))
+        .unwrap();
+
+    let data = vec![
+        quote_with_size(
+            option_id,
+            "5.00",
+            "5.10",
+            "1",
+            expiration_ns.as_u64() - 2_000,
+        ),
+        trade(
+            underlying_id,
+            underlying_price,
+            "100",
+            expiration_ns.as_u64() - 1_000,
+        ),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine
+        .run(
+            Some(UnixNanos::from(expiration_ns.as_u64() - 3_000)),
+            Some(end_ns),
+            None,
+            false,
+        )
+        .unwrap();
+
+    (engine, option_id, underlying_id)
 }
 
 #[rstest]

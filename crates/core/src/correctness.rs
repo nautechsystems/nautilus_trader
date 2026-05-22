@@ -451,6 +451,23 @@ pub fn check_equal_usize(lhs: usize, rhs: usize, lhs_param: &str, rhs_param: &st
     Ok(())
 }
 
+/// Checks the `usize` value is positive (> 0).
+///
+/// # Errors
+///
+/// Returns an error if the validation check fails.
+#[inline(always)]
+pub fn check_positive_usize(value: usize, param: &str) -> Result<()> {
+    if value == 0 {
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "usize",
+        });
+    }
+    Ok(())
+}
+
 /// Checks the `u64` value is positive (> 0).
 ///
 /// # Errors
@@ -1118,6 +1135,32 @@ mod tests {
     ) {
         let result = check_equal_usize(lhs, rhs, lhs_param, rhs_param).is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(usize::MAX, true)]
+    #[case(0, false)]
+    fn test_check_positive_usize(#[case] value: usize, #[case] expected: bool) {
+        assert_eq!(check_positive_usize(value, "value").is_ok(), expected);
+    }
+
+    #[rstest]
+    fn test_check_positive_usize_returns_not_positive_error_with_stable_display() {
+        let error = check_positive_usize(0, "param").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "param".to_string(),
+                value: "0".to_string(),
+                type_name: "usize",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid usize for 'param' not positive, was 0"
+        );
     }
 
     #[rstest]

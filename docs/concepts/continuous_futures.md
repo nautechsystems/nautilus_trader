@@ -85,8 +85,9 @@ contract on either side.
 
 ## Validation
 
-Both entry points run `engine.pyx::_continuous_future_validate_transitions` before allocating
-any aggregator:
+The Rust request path (`crates/data/src/engine/requests.rs`) and the Cython request and
+subscription paths (`engine.pyx::_continuous_future_validate_transitions`) validate transition
+params before allocating any aggregator:
 
 - `continuous_future_adjustment_mode` must parse as a valid `ContinuousFutureAdjustmentType`.
 - `continuous_future_transitions` must be a list or tuple of dict rows.
@@ -102,24 +103,24 @@ any aggregator:
   the target venue, and appear as a `post_instrument_id` in the transition list. The same
   applies to `first_pre_instrument_id`.
 
-On validation failure the helper logs a specific error and returns. The request handler also
-calls `_abort_request` to drop any workflow state it had begun to set up.
+On validation failure the Rust request returns an error before it allocates child segment state.
+The Cython request handler calls `_abort_request` to drop workflow state it had begun to set up;
+the Cython subscription path logs a specific error and returns.
 
 ## Target instrument auto-synthesis
 
 The continuous root (for example `ES.XCME`) is a synthetic id with no market data of its own,
 but downstream consumers (aggregators, cache lookups, serialization) still expect an `Instrument`
-in the cache. After validation, both entry points call
-`engine.pyx::_continuous_future_ensure_target_instrument`:
+in the cache. After validation, the Rust request path and the Cython request and subscription
+paths ensure the target instrument exists:
 
-- If the target id is already cached, the helper is a no-op. Callers can pre-register a custom
+- If the target id is already cached, the target setup is a no-op. Callers can pre-register a custom
   continuous instrument and the engine respects it.
-- Otherwise the helper fetches the first segment's instrument from the cache and clones it via
-  `FuturesContract.to_dict_c` and `from_dict_c`, overriding only `id`, `raw_symbol`, and
-  clearing `activation_ns` and `expiration_ns` to `0`. Every other field (currency, precision,
-  increment, multiplier, lot size, underlying, fees, margins, exchange, tick scheme, info) is
-  reused from the segment.
-- If the first segment is not yet in the cache or is not a `FuturesContract`, the helper logs
+- Otherwise the target setup fetches the first segment's instrument from the cache and clones it,
+  overriding only `id`, `raw_symbol`, and clearing `activation_ns` and `expiration_ns` to `0`.
+  Every other field (currency, precision, increment, multiplier, lot size, underlying, fees,
+  margins, exchange, tick scheme, info) is reused from the segment.
+- If the first segment is not yet in the cache or is not a `FuturesContract`, the setup logs
   a warning and returns. The caller must then register the continuous instrument manually.
 
 ## Architecture overview
@@ -139,9 +140,10 @@ flowchart TD
     SubReq --> Agg[(Primary aggregator<br/>BarBuilder.set_adjustment)]
     LiveSub --> Agg2[(Live aggregator<br/>BarBuilder.set_adjustment)]
 
-    Agg -->|adjusted bars| Chain[Chain aggregators]
+    Agg -->|Rust request path| ReqAgg[(Request-scoped aggregator chain)]
+    Agg -->|Cython request path| Chain[Cython chain aggregators]
     Agg2 -->|adjusted bars| MsgBus[(msgbus: data.bars.*)]
-    Chain -->|final bars| HistBus[(msgbus: historical.data.bars.*)]
+    Chain -->|final bars| PipelineBus[(Cython msgbus: data.pipeline.bars.*)]
 ```
 
 The design has two entry points, one outer loop shape (walk the segments), two ways to fetch
@@ -158,8 +160,8 @@ segments. Given `transitions[0..N)`:
   `transitions[k].pre_instrument_id`.
 - Segment N: `[transitions[N-1].time, +inf)` on `transitions[N-1].post_instrument_id`.
 
-`engine.pyx::_continuous_future_next_segment` returns the next segment starting at `cursor_ns`,
-clamped to `end_ns`.
+The request and subscription paths return the next segment starting at `cursor_ns`, clamped to
+`end_ns`.
 
 ## Request flow
 
@@ -179,10 +181,10 @@ sequenceDiagram
         Engine->>Agg: BarBuilder.set_adjustment(offset, mode)
         Engine->>Client: inner Request_ for segment contract
         Client-->>Engine: DataResponse
-        Engine->>Agg: process_historical (publishes to segment topic)
+        Engine->>Agg: route child response through request-scoped aggregation
         Engine->>Engine: advance cursor
     end
-    Engine->>User: parent.callback(final response)
+    Engine->>User: terminal parent response
 ```
 
 If the caller sets `time_range_generator` and `durations_seconds` in params, the inner request
@@ -194,11 +196,11 @@ next segment.
 ### Chain aggregators
 
 If the caller sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation,
-the setup creates all aggregators keyed by `parent.id`. The primary (bottom of the chain)
-receives segment source data via a per-segment msgbus subscription. Its emitted bars publish to
-the historical topic that the next level subscribes to, so the chain walks up automatically.
-Only the primary builder has `set_adjustment` called on it. Higher levels re-aggregate already
-adjusted data.
+the setup creates all aggregators keyed by `parent.id`. The Rust request path routes segment
+source responses into the primary continuous target, then forwards emitted bars to matching
+request-scoped downstream aggregators. The Cython path wires pipeline topics between levels so
+the chain walks up automatically. Only the primary builder has `set_adjustment` called on it;
+higher levels re-aggregate already adjusted data in both paths.
 
 ## Subscription flow
 

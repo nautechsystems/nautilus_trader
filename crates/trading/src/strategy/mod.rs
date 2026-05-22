@@ -2006,6 +2006,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             reconciliation: false,
             commission: None,
+            causation_id: None,
         })
     }
 
@@ -2021,6 +2022,7 @@ mod tests {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         })
     }
 
@@ -2037,6 +2039,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             reconciliation: 0,
             due_post_only: 0,
+            causation_id: None,
         })
     }
 
@@ -2052,6 +2055,7 @@ mod tests {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         })
     }
 
@@ -2067,6 +2071,7 @@ mod tests {
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
             reconciliation: 0,
+            causation_id: None,
         })
     }
 
@@ -2310,6 +2315,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             reconciliation: 0,
             due_post_only: 0,
+            causation_id: None,
         });
 
         strategy.handle_order_event(event);

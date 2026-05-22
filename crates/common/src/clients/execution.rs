@@ -72,10 +72,39 @@ pub trait ExecutionClient {
 
     /// Stops the execution client.
     ///
+    /// Implementations must be idempotent: the engine and node teardown paths
+    /// (e.g. backtest `end` -> `reset` -> `dispose`) may call `stop()` more
+    /// than once per run. Guard with an internal `is_stopped` check or
+    /// equivalent so repeated calls are safe.
+    ///
     /// # Errors
     ///
     /// Returns an error if the client fails to stop.
     fn stop(&mut self) -> anyhow::Result<()>;
+
+    /// Resets the execution client to its initial state.
+    ///
+    /// The default implementation is a no-op. Adapters with reconnectable state
+    /// (caches, sequence counters, in-flight orders) should override this.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to reset.
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Disposes of client resources and cleans up.
+    ///
+    /// The default implementation is a no-op. Adapters that hold async tasks,
+    /// background threads, or external handles should override this.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to dispose.
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Connects the client to the execution venue.
     ///

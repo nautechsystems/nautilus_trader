@@ -288,12 +288,20 @@ impl SandboxInner {
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
                 engine.get_engine_mut().process_status(status.action);
             }
+        } else {
+            log::warn!(
+                "Ignoring instrument status for {instrument_id}: instrument missing from cache",
+            );
         }
     }
 
     fn process_instrument_close(&mut self, close: &InstrumentClose) {
         let instrument_id = close.instrument_id;
 
+        // A delayed close belongs to an existing exposure lifecycle. Unlike an
+        // instrument status update, it must not recreate execution state from
+        // cache after rotation/unsubscribe; pending-settlement ownership stays
+        // with the already-initialized matching engine.
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             engine.get_engine_mut().process_instrument_close(*close);
         } else {

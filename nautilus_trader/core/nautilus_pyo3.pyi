@@ -9277,6 +9277,53 @@ class HyperliquidWebSocketClient:
     def url(self) -> str: ...
     def is_active(self) -> bool: ...
     def is_closed(self) -> bool: ...
+    def set_post_timeout(self, timeout_secs: int) -> None: ...
+    async def submit_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+    ) -> None: ...
+    async def submit_orders(
+        self,
+        signer: HyperliquidHttpClient,
+        orders: list[Any],
+    ) -> None: ...
+    async def cancel_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    async def cancel_orders(
+        self,
+        signer: HyperliquidHttpClient,
+        cancels: list[tuple[InstrumentId, ClientOrderId, VenueOrderId | None]],
+    ) -> list[str | None]: ...
+    async def modify_order(
+        self,
+        signer: HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Price | None,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+        client_order_id: ClientOrderId | None,
+    ) -> None: ...
     def cache_spot_fill_coins(self, mapping: dict[str, str]) -> None: ...
     def cache_cloid_mapping(self, cloid: str, client_order_id: ClientOrderId) -> None: ...
     def remove_cloid_mapping(self, cloid: str) -> None: ...

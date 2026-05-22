@@ -8,15 +8,15 @@ members = [
   "crates/adapters/bitmex",
   "crates/adapters/blockchain",
   "crates/adapters/bybit",
+  "crates/adapters/coinbase",
   "crates/adapters/databento",
   "crates/adapters/deribit",
   "crates/adapters/dydx",
-  "crates/adapters/coinbase",
   "crates/adapters/hyperliquid",
-  "crates/adapters/kraken",
-  "crates/adapters/polymarket",
   "crates/adapters/interactive_brokers",
+  "crates/adapters/kraken",
   "crates/adapters/okx",
+  "crates/adapters/polymarket",
   "crates/adapters/sandbox",
   "crates/adapters/tardis",
   "crates/analysis",
@@ -32,9 +32,9 @@ members = [
   "crates/infrastructure",
   "crates/live",
   "crates/model",
-  "crates/persistence/macros",
   "crates/network",
   "crates/persistence",
+  "crates/persistence/macros",
   "crates/plugin",
   "crates/portfolio",
   "crates/pyo3",
@@ -372,7 +372,6 @@ pretty_assertions = "1.4.1"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
 tempfile = "3.27.0"
-tracing-test = "0.2.6"
 turmoil = "0.7.2"
 
 # -----------------------------------------------------------------------------

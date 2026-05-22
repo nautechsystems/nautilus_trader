@@ -40,6 +40,7 @@ use nautilus_common::{
         self, MessageBus, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler,
         switchboard,
     },
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
 use nautilus_execution::engine::{
@@ -5348,6 +5349,357 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
         PositionSide::Long,
         "flipped position should be long"
     );
+}
+
+#[rstest]
+fn test_reduce_only_netting_fill_does_not_open_opposite_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let external_strategy_id = StrategyId::from("EXTERNAL");
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let account = CashAccount::default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account.into())
+        .unwrap();
+
+    let external_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(external_strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-999-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let external_position_id = PositionId::new("P-EXTERNAL");
+    let external_fill = OrderFilled::new(
+        external_order.trader_id(),
+        external_order.strategy_id(),
+        instrument.id(),
+        external_order.client_order_id(),
+        VenueOrderId::from("V-EXTERNAL"),
+        account_id,
+        TradeId::new("E-19700101-000000-001-999-1"),
+        external_order.order_side(),
+        external_order.order_type(),
+        external_order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(external_position_id),
+        Some(Money::from("2 USD")),
+    );
+    let external_position = Position::new(&instrument.clone().into(), external_fill);
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_position(&external_position, OmsType::Netting)
+        .unwrap();
+
+    let reduce_only_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-998-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .reduce_only(true)
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reduce_only_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+
+    let submitted_event = TestOrderEventStubs::submitted(&reduce_only_order, account_id);
+    execution_engine.process(&submitted_event);
+
+    let accepted_event =
+        TestOrderEventStubs::accepted(&reduce_only_order, account_id, VenueOrderId::from("V-001"));
+    execution_engine.process(&accepted_event);
+
+    let filled_event = TestOrderEventStubs::filled(
+        &reduce_only_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("E-19700101-000000-001-998-1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&filled_event);
+
+    let phantom_position_id = PositionId::new(format!("{}-{}", instrument.id, strategy_id));
+    let cache = execution_engine.cache().borrow();
+    let reduce_only_order = cache
+        .order(&reduce_only_order.client_order_id())
+        .expect("reduce-only order should remain cached");
+    let open_positions =
+        cache.positions_open(None, Some(&instrument.id), None, Some(&account_id), None);
+
+    assert_eq!(reduce_only_order.status(), OrderStatus::Filled);
+    assert!(!cache.position_exists(&phantom_position_id));
+    assert_eq!(open_positions.len(), 1);
+    assert_eq!(open_positions[0].id, external_position_id);
+    assert_eq!(open_positions[0].strategy_id, external_strategy_id);
+}
+
+#[rstest]
+fn test_reduce_only_netting_fill_updates_own_open_position(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    register_netting_stub_client(&mut execution_engine, account_id, &instrument);
+
+    let open_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-997-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    add_order_and_process_fill(
+        &mut execution_engine,
+        &open_order,
+        &instrument,
+        account_id,
+        "V-001",
+        "E-19700101-000000-001-997-1",
+    );
+
+    let reduce_only_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-996-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(25_000))
+        .reduce_only(true)
+        .build();
+
+    add_order_and_process_fill(
+        &mut execution_engine,
+        &reduce_only_order,
+        &instrument,
+        account_id,
+        "V-002",
+        "E-19700101-000000-001-996-1",
+    );
+
+    let position_id = PositionId::new(format!("{}-{}", instrument.id, strategy_id));
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&position_id)
+        .expect("own NETTING position should remain cached");
+    let reduce_only_order = cache
+        .order(&reduce_only_order.client_order_id())
+        .expect("reduce-only order should remain cached");
+
+    assert_eq!(reduce_only_order.status(), OrderStatus::Filled);
+    assert_eq!(position.quantity, Quantity::from(75_000));
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(
+        cache
+            .positions_open(None, Some(&instrument.id), None, Some(&account_id), None)
+            .len(),
+        1,
+    );
+}
+
+#[rstest]
+fn test_reduce_only_netting_fill_does_not_reopen_closed_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    register_netting_stub_client(&mut execution_engine, account_id, &instrument);
+
+    let open_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-995-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-994-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    add_order_and_process_fill(
+        &mut execution_engine,
+        &open_order,
+        &instrument,
+        account_id,
+        "V-001",
+        "E-19700101-000000-001-995-1",
+    );
+    add_order_and_process_fill(
+        &mut execution_engine,
+        &close_order,
+        &instrument,
+        account_id,
+        "V-002",
+        "E-19700101-000000-001-994-1",
+    );
+
+    let reduce_only_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-993-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(25_000))
+        .reduce_only(true)
+        .build();
+
+    add_order_and_process_fill(
+        &mut execution_engine,
+        &reduce_only_order,
+        &instrument,
+        account_id,
+        "V-003",
+        "E-19700101-000000-001-993-1",
+    );
+
+    let position_id = PositionId::new(format!("{}-{}", instrument.id, strategy_id));
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&position_id)
+        .expect("closed NETTING position should remain cached");
+    let reduce_only_order = cache
+        .order(&reduce_only_order.client_order_id())
+        .expect("reduce-only order should remain cached");
+
+    assert_eq!(reduce_only_order.status(), OrderStatus::Filled);
+    assert!(position.is_closed());
+    assert_eq!(position.quantity, Quantity::from(0));
+    assert_eq!(
+        cache
+            .positions_open(None, Some(&instrument.id), None, Some(&account_id), None)
+            .len(),
+        0,
+    );
+    assert_eq!(
+        cache
+            .positions_closed(None, Some(&instrument.id), None, Some(&account_id), None)
+            .len(),
+        1,
+    );
+}
+
+fn register_netting_stub_client(
+    execution_engine: &mut ExecutionEngine,
+    account_id: AccountId,
+    instrument: &CurrencyPair,
+) {
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let account = CashAccount::default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account.into())
+        .unwrap();
+}
+
+fn add_order_and_process_fill(
+    execution_engine: &mut ExecutionEngine,
+    order: &OrderAny,
+    instrument: &CurrencyPair,
+    account_id: AccountId,
+    venue_order_id: &str,
+    trade_id: &str,
+) {
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted_event = TestOrderEventStubs::submitted(order, account_id);
+    execution_engine.process(&submitted_event);
+
+    let accepted_event =
+        TestOrderEventStubs::accepted(order, account_id, VenueOrderId::from(venue_order_id));
+    execution_engine.process(&accepted_event);
+
+    let filled_event = TestOrderEventStubs::filled(
+        order,
+        &instrument.clone().into(),
+        Some(TradeId::new(trade_id)),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&filled_event);
 }
 
 //CAN CHECK THIS TEST
@@ -11117,5 +11469,270 @@ fn test_handle_order_fill_oto_links_position_to_contingent_children(
         cache.position_id(&child_id),
         Some(&position_id),
         "Cache index must map the contingent child to the new position id",
+    );
+}
+
+#[rstest]
+fn test_start_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    // Counter handles inside the stub are `Rc<Cell<_>>`, so a pre-registration
+    // clone keeps a view of the boxed-and-moved client's counters.
+    let client_id = stub_client.client_id();
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+
+    let client = execution_engine
+        .get_client(&client_id)
+        .expect("registered client must be discoverable");
+    assert!(
+        client.is_connected(),
+        "engine.start should mark the registered client connected"
+    );
+    assert_eq!(
+        counts.start_count(),
+        1,
+        "engine.start should call client.start exactly once"
+    );
+}
+
+#[rstest]
+fn test_stop_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let client_id = stub_client.client_id();
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop();
+
+    let client = execution_engine
+        .get_client(&client_id)
+        .expect("registered client must be discoverable");
+    assert!(
+        !client.is_connected(),
+        "engine.stop should mark the registered client disconnected"
+    );
+    assert_eq!(counts.start_count(), 1);
+    assert_eq!(
+        counts.stop_count(),
+        1,
+        "engine.stop should call client.stop exactly once"
+    );
+}
+
+#[rstest]
+fn test_stop_clients_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop_clients();
+
+    assert_eq!(
+        counts.stop_count(),
+        1,
+        "stop_clients should call client.stop exactly once"
+    );
+}
+
+#[rstest]
+fn test_reset_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.reset();
+
+    assert_eq!(
+        counts.reset_count(),
+        1,
+        "engine.reset should call client.reset exactly once"
+    );
+}
+
+#[rstest]
+fn test_dispose_propagates_to_registered_clients(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.dispose();
+
+    assert_eq!(
+        counts.dispose_count(),
+        1,
+        "engine.dispose should call client.dispose exactly once"
+    );
+}
+
+#[rstest]
+fn test_lifecycle_propagates_to_default_client(mut execution_engine: ExecutionEngine) {
+    let stub = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("TEST-ACCOUNT"),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let counts = stub.clone();
+    execution_engine.register_default_client(Box::new(stub));
+
+    execution_engine.start();
+    execution_engine.stop();
+    execution_engine.reset();
+    execution_engine.dispose();
+
+    assert_eq!(
+        counts.start_count(),
+        1,
+        "default client should receive start"
+    );
+    assert_eq!(counts.stop_count(), 1, "default client should receive stop");
+    assert_eq!(
+        counts.reset_count(),
+        1,
+        "default client should receive reset"
+    );
+    assert_eq!(
+        counts.dispose_count(),
+        1,
+        "default client should receive dispose"
+    );
+}
+
+#[rstest]
+fn test_repeated_stop_invokes_client_each_time(
+    mut execution_engine: ExecutionEngine,
+    stub_client: StubExecutionClient,
+) {
+    // Mirrors the backtest teardown sequence (end -> reset -> dispose),
+    // where the engine does not guard at the engine level and adapters must
+    // guard internally per the trait contract on `ExecutionClient::stop`.
+    let counts = stub_client.clone();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine.start();
+    execution_engine.stop();
+    execution_engine.stop();
+    execution_engine.dispose();
+
+    assert_eq!(counts.start_count(), 1);
+    assert_eq!(
+        counts.stop_count(),
+        2,
+        "engine.stop should propagate on every call"
+    );
+    assert_eq!(counts.dispose_count(), 1);
+}
+
+#[rstest]
+fn test_reset_leaves_unrelated_clock_timers_intact() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+    assert!(
+        clock
+            .borrow()
+            .timer_names()
+            .contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine purge timer should be registered after start",
+    );
+
+    let callback: TimeEventCallback = TimeEventCallback::from(|_: TimeEvent| {});
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            "EXT_UNRELATED",
+            NANOSECONDS_IN_MINUTE,
+            None,
+            None,
+            Some(callback),
+            None,
+            None,
+        )
+        .unwrap();
+
+    engine.reset();
+
+    let clock_borrow = clock.borrow();
+    let names = clock_borrow.timer_names();
+    assert!(
+        names.contains(&"EXT_UNRELATED"),
+        "engine.reset must not cancel unrelated timers, names={names:?}",
+    );
+    assert!(
+        !names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine.reset should cancel engine-owned purge timers, names={names:?}",
+    );
+}
+
+#[rstest]
+fn test_dispose_leaves_unrelated_clock_timers_intact() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let callback: TimeEventCallback = TimeEventCallback::from(|_: TimeEvent| {});
+    clock
+        .borrow_mut()
+        .set_timer_ns(
+            "EXT_UNRELATED",
+            NANOSECONDS_IN_MINUTE,
+            None,
+            None,
+            Some(callback),
+            None,
+            None,
+        )
+        .unwrap();
+
+    engine.dispose();
+
+    let clock_borrow = clock.borrow();
+    let names = clock_borrow.timer_names();
+    assert!(
+        names.contains(&"EXT_UNRELATED"),
+        "engine.dispose must not cancel unrelated timers, names={names:?}",
+    );
+    assert!(
+        !names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS"),
+        "engine.dispose should cancel engine-owned purge timers, names={names:?}",
     );
 }

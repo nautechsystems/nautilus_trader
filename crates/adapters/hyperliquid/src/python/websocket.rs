@@ -15,18 +15,27 @@
 
 //! Python bindings for the Hyperliquid WebSocket client.
 
+use std::time::Duration;
+
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    orders::OrderAny,
+    python::{
+        data::data_to_pycapsule, instruments::pyobject_to_instrument_any,
+        orders::pyobject_to_order_any,
+    },
+    types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::HyperliquidEnvironment,
+    http::client::HyperliquidHttpClient,
     websocket::{
         HyperliquidWebSocketClient,
         messages::{ExecutionReport, NautilusWsMessage},
@@ -84,6 +93,188 @@ impl HyperliquidWebSocketClient {
         !self.is_active()
     }
 
+    /// Sets the timeout for WebSocket post trading requests.
+    #[pyo3(name = "set_post_timeout")]
+    fn py_set_post_timeout(&mut self, timeout_secs: u64) {
+        self.set_post_timeout(Duration::from_secs(timeout_secs));
+    }
+
+    /// Submit an order through the Hyperliquid WebSocket post API.
+    ///
+    /// The HTTP client supplies signing credentials, builder attribution, and
+    /// cached instrument metadata. The action itself is sent over WebSocket.
+    #[pyo3(name = "submit_order", signature = (
+        signer,
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        price=None,
+        trigger_price=None,
+        post_only=false,
+        reduce_only=false,
+    ))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_submit_order<'py>(
+        &self,
+        py: Python<'py>,
+        signer: &HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: bool,
+        reduce_only: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let signer = signer.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .submit_order(
+                    &signer,
+                    instrument_id,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    trigger_price,
+                    post_only,
+                    reduce_only,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
+    /// Submit multiple orders through the Hyperliquid WebSocket post API.
+    #[pyo3(name = "submit_orders")]
+    fn py_submit_orders<'py>(
+        &self,
+        py: Python<'py>,
+        signer: &HyperliquidHttpClient,
+        orders: Vec<Py<PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let signer = signer.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let order_anys: Vec<OrderAny> = Python::attach(|py| {
+                orders
+                    .into_iter()
+                    .map(|order| pyobject_to_order_any(py, order))
+                    .collect::<PyResult<Vec<_>>>()
+                    .map_err(to_pyvalue_err)
+            })?;
+            let order_refs: Vec<&OrderAny> = order_anys.iter().collect();
+
+            client
+                .submit_orders(&signer, &order_refs)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
+    /// Cancel an order through the Hyperliquid WebSocket post API.
+    #[pyo3(name = "cancel_order", signature = (
+        signer,
+        instrument_id,
+        client_order_id=None,
+        venue_order_id=None,
+    ))]
+    fn py_cancel_order<'py>(
+        &self,
+        py: Python<'py>,
+        signer: &HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let signer = signer.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_order(&signer, instrument_id, client_order_id, venue_order_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
+    /// Cancel multiple orders through one Hyperliquid WebSocket post action.
+    #[pyo3(name = "cancel_orders")]
+    fn py_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        signer: &HyperliquidHttpClient,
+        cancels: Vec<(InstrumentId, ClientOrderId, Option<VenueOrderId>)>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let signer = signer.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_orders(&signer, &cancels)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Modify an order through the Hyperliquid WebSocket post API.
+    #[pyo3(name = "modify_order")]
+    #[expect(clippy::too_many_arguments)]
+    fn py_modify_order<'py>(
+        &self,
+        py: Python<'py>,
+        signer: &HyperliquidHttpClient,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Option<Price>,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+        client_order_id: Option<ClientOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let signer = signer.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .modify_order(
+                    &signer,
+                    instrument_id,
+                    venue_order_id,
+                    order_side,
+                    order_type,
+                    price,
+                    quantity,
+                    trigger_price,
+                    reduce_only,
+                    post_only,
+                    time_in_force,
+                    client_order_id,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
     /// Caches spot fill coin mappings for instrument lookup.
     ///
     /// Hyperliquid WebSocket fills for spot use `@{pair_index}` format (e.g., `@107`),
@@ -98,9 +289,8 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
-    /// Caches a cloid (hex hash) to client_order_id mapping for order/fill resolution.
+    /// Caches a venue CLOID to client_order_id mapping for order/fill resolution.
     ///
-    /// The cloid is a keccak256 hash of the client_order_id that Hyperliquid uses internally.
     /// This mapping allows WebSocket order status and fill reports to be resolved back to
     /// the original client_order_id.
     ///
@@ -134,7 +324,7 @@ impl HyperliquidWebSocketClient {
         self.cloid_cache_len()
     }
 
-    /// Looks up a client_order_id by its cloid hash.
+    /// Looks up a client_order_id by its venue CLOID.
     ///
     /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[pyo3(name = "get_cloid_mapping")]

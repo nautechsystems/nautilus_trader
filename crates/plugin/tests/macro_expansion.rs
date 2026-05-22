@@ -26,8 +26,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use nautilus_model::{data::QuoteTick, events::PositionOpened};
 use nautilus_plugin::{
-    NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, PluginResult, Slice},
+    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
+    boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::PluginManifest,
     surfaces::{
@@ -37,6 +37,14 @@ use nautilus_plugin::{
     },
 };
 use rstest::rstest;
+
+macro_rules! generated_slot {
+    ($vtable:expr, $slot:ident) => {{
+        ($vtable)
+            .$slot
+            .expect(concat!("generated vtable includes ", stringify!($slot)))
+    }};
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct TestTick {
@@ -224,6 +232,164 @@ unsafe extern "C" fn test_log(
 ) {
 }
 
+macro_rules! test_bytes_fn {
+    ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<OwnedBytes> {
+            $(let _ = $arg;)*
+            PluginResult::Ok(OwnedBytes::empty())
+        }
+    };
+}
+
+macro_rules! test_unit_fn {
+    ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+        unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
+            $(let _ = $arg;)*
+            PluginResult::Ok(())
+        }
+    };
+}
+
+test_bytes_fn!(test_cache_instrument, (ctx: *const HostContext, instrument_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_account, (ctx: *const HostContext, account_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_order, (ctx: *const HostContext, client_order_id: BorrowedStr<'_>));
+test_bytes_fn!(test_cache_position, (ctx: *const HostContext, position_id: BorrowedStr<'_>));
+test_bytes_fn!(
+    test_cache_orders_for_strategy,
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+test_bytes_fn!(
+    test_cache_positions_for_strategy,
+    (ctx: *const HostContext, strategy_id: BorrowedStr<'_>)
+);
+test_unit_fn!(
+    test_subscribe_quotes,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_quotes,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_trades,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_trades,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_bars,
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_bars,
+    (
+        ctx: *const HostContext,
+        bar_type: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_book_deltas,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        client_id: BorrowedStr<'_>,
+        managed: u8,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_book_deltas,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_subscribe_book_at_interval,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        book_type: u8,
+        depth: usize,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_unsubscribe_book_at_interval,
+    (
+        ctx: *const HostContext,
+        instrument_id: BorrowedStr<'_>,
+        interval_ms: usize,
+        client_id: BorrowedStr<'_>,
+        params_json: BorrowedStr<'_>,
+    )
+);
+test_unit_fn!(
+    test_msgbus_publish,
+    (
+        ctx: *const HostContext,
+        topic: BorrowedStr<'_>,
+        payload: Slice<'_, u8>,
+    )
+);
+test_unit_fn!(
+    test_set_time_alert,
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        alert_time_ns: u64,
+        allow_past: u8,
+    )
+);
+test_unit_fn!(
+    test_set_timer,
+    (
+        ctx: *const HostContext,
+        name: BorrowedStr<'_>,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: u64,
+        allow_past: u8,
+        fire_immediately: u8,
+    )
+);
+test_unit_fn!(test_cancel_timer, (ctx: *const HostContext, name: BorrowedStr<'_>));
+
 static TEST_HOST_SUBMIT_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_HOST_CANCEL_COUNT: AtomicU64 = AtomicU64::new(0);
 static TEST_HOST_MODIFY_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -267,6 +433,26 @@ static TEST_HOST: HostVTable = HostVTable {
     abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
     clock_now_ns: test_clock_now_ns,
     log: test_log,
+    cache_instrument: test_cache_instrument,
+    cache_account: test_cache_account,
+    cache_order: test_cache_order,
+    cache_position: test_cache_position,
+    cache_orders_for_strategy: test_cache_orders_for_strategy,
+    cache_positions_for_strategy: test_cache_positions_for_strategy,
+    subscribe_quotes: test_subscribe_quotes,
+    unsubscribe_quotes: test_unsubscribe_quotes,
+    subscribe_trades: test_subscribe_trades,
+    unsubscribe_trades: test_unsubscribe_trades,
+    subscribe_bars: test_subscribe_bars,
+    unsubscribe_bars: test_unsubscribe_bars,
+    subscribe_book_deltas: test_subscribe_book_deltas,
+    unsubscribe_book_deltas: test_unsubscribe_book_deltas,
+    subscribe_book_at_interval: test_subscribe_book_at_interval,
+    unsubscribe_book_at_interval: test_unsubscribe_book_at_interval,
+    msgbus_publish: test_msgbus_publish,
+    set_time_alert: test_set_time_alert,
+    set_timer: test_set_timer,
+    cancel_timer: test_cancel_timer,
     submit_order: test_submit_order,
     cancel_order: test_cancel_order,
     modify_order: test_modify_order,
@@ -285,6 +471,9 @@ fn macro_emits_loadable_manifest() {
     // SAFETY: pointer is to a static `LazyLock`-backed manifest in this crate.
     let manifest = unsafe { &*manifest_ptr };
     assert_eq!(manifest.abi_version, NAUTILUS_PLUGIN_ABI_VERSION);
+    manifest
+        .validate()
+        .expect("macro-generated manifest passes validation");
     // SAFETY: name string lives in static storage.
     assert_eq!(
         unsafe { manifest.plugin_name.as_str() },
@@ -292,6 +481,16 @@ fn macro_emits_loadable_manifest() {
     );
     // SAFETY: vendor string lives in static storage.
     assert_eq!(unsafe { manifest.plugin_vendor.as_str() }, "Nautech");
+    assert_eq!(manifest.build_id.schema_version, PLUGIN_BUILD_ID_VERSION);
+    // SAFETY: build id strings live in static storage.
+    assert_eq!(
+        unsafe { manifest.build_id.nautilus_plugin_version.as_str() },
+        env!("CARGO_PKG_VERSION")
+    );
+    // SAFETY: build id strings live in static storage.
+    assert!(!unsafe { manifest.build_id.target_triple.as_str() }.is_empty());
+    // SAFETY: build id strings live in static storage.
+    assert!(!unsafe { manifest.build_id.build_profile.as_str() }.is_empty());
 
     // SAFETY: slice points at static storage owned by the manifest.
     let cd = unsafe { manifest.custom_data.as_slice() };
@@ -325,35 +524,39 @@ fn vtable_round_trips_a_value_through_json() {
     let payload = BorrowedStr::from_str(json_str);
     // SAFETY: calling through the vtable with a borrowed payload that
     // outlives the call.
-    let handle_result = unsafe { (vtable.from_json)(payload) };
+    let handle_result = unsafe { generated_slot!(vtable, from_json)(payload) };
     let handle = handle_result.into_result().expect("from_json failed");
     assert!(!handle.is_null());
 
     // SAFETY: handle was produced by `from_json` and is still live.
-    let ts_event = unsafe { (vtable.ts_event)(handle) };
+    let ts_event = unsafe { generated_slot!(vtable, ts_event)(handle) };
     assert_eq!(ts_event, 10);
 
     // SAFETY: see above.
-    let ts_init = unsafe { (vtable.ts_init)(handle) };
+    let ts_init = unsafe { generated_slot!(vtable, ts_init)(handle) };
     assert_eq!(ts_init, 11);
 
     // SAFETY: see above.
-    let to_json_result = unsafe { (vtable.to_json)(handle) };
+    let to_json_result = unsafe { generated_slot!(vtable, to_json)(handle) };
     let encoded = to_json_result.into_result().expect("to_json failed");
     // SAFETY: payload bytes live until `encoded` is dropped.
     let text = std::str::from_utf8(unsafe { encoded.as_bytes() }).unwrap();
     assert!(text.contains("1.5"));
 
     // SAFETY: handle is still live for the clone.
-    let cloned = unsafe { (vtable.clone_handle)(handle) };
+    let cloned = unsafe { generated_slot!(vtable, clone_handle)(handle) };
     // SAFETY: both handles are live.
-    let eq = unsafe { (vtable.eq_handles)(handle, cloned) };
+    let eq = unsafe { generated_slot!(vtable, eq_handles)(handle, cloned) };
     assert!(eq, "cloned value should compare equal");
 
     // SAFETY: dropping the original live handle.
-    unsafe { (vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(handle);
+    };
     // SAFETY: dropping the cloned live handle.
-    unsafe { (vtable.drop_handle)(cloned) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(cloned);
+    };
 }
 
 #[rstest]
@@ -372,6 +575,26 @@ fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
         abi_version: abi,
         clock_now_ns: test_clock_now_ns,
         log: test_log,
+        cache_instrument: test_cache_instrument,
+        cache_account: test_cache_account,
+        cache_order: test_cache_order,
+        cache_position: test_cache_position,
+        cache_orders_for_strategy: test_cache_orders_for_strategy,
+        cache_positions_for_strategy: test_cache_positions_for_strategy,
+        subscribe_quotes: test_subscribe_quotes,
+        unsubscribe_quotes: test_unsubscribe_quotes,
+        subscribe_trades: test_subscribe_trades,
+        unsubscribe_trades: test_unsubscribe_trades,
+        subscribe_bars: test_subscribe_bars,
+        unsubscribe_bars: test_unsubscribe_bars,
+        subscribe_book_deltas: test_subscribe_book_deltas,
+        unsubscribe_book_deltas: test_unsubscribe_book_deltas,
+        subscribe_book_at_interval: test_subscribe_book_at_interval,
+        unsubscribe_book_at_interval: test_unsubscribe_book_at_interval,
+        msgbus_publish: test_msgbus_publish,
+        set_time_alert: test_set_time_alert,
+        set_timer: test_set_timer,
+        cancel_timer: test_cancel_timer,
         submit_order: test_submit_order,
         cancel_order: test_cancel_order,
         modify_order: test_modify_order,
@@ -429,9 +652,9 @@ fn each_custom_data_type_has_its_own_vtable() {
     // SAFETY: see above.
     let other_vtable = unsafe { &*v_other };
     // SAFETY: type_name returns a static string.
-    let test_name = unsafe { (test_vtable.type_name)() };
+    let test_name = unsafe { generated_slot!(test_vtable, type_name)() };
     // SAFETY: see above.
-    let other_name = unsafe { (other_vtable.type_name)() };
+    let other_name = unsafe { generated_slot!(other_vtable, type_name)() };
     // SAFETY: name strings live in static storage in this binary.
     assert_eq!(unsafe { test_name.as_str() }, "TestTick");
     // SAFETY: see above.
@@ -443,18 +666,20 @@ fn each_custom_data_type_has_its_own_vtable() {
     // match OtherTick's encoding, not TestTick's JSON shape.
     let payload = BorrowedStr::from_str("42");
     // SAFETY: payload outlives the call.
-    let handle = unsafe { (other_vtable.from_json)(payload) }
+    let handle = unsafe { generated_slot!(other_vtable, from_json)(payload) }
         .into_result()
         .expect("OtherTick from_json");
     // SAFETY: handle is live.
-    let encoded = unsafe { (other_vtable.to_json)(handle) }
+    let encoded = unsafe { generated_slot!(other_vtable, to_json)(handle) }
         .into_result()
         .expect("OtherTick to_json");
     // SAFETY: encoded buffer live.
     let bytes = unsafe { encoded.as_bytes() };
     assert_eq!(bytes, b"42", "OtherTick encoding is `value as decimal`");
     // SAFETY: handle is live.
-    unsafe { (other_vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(other_vtable, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -473,25 +698,29 @@ fn decode_batch_round_trips_through_drop_handle_array() {
     let one = BorrowedStr::from_str(r#"{"value":1.0,"ts_event":1,"ts_init":2}"#);
     let two = BorrowedStr::from_str(r#"{"value":2.0,"ts_event":3,"ts_init":4}"#);
     // SAFETY: payloads outlive the calls.
-    let h1 = unsafe { (vtable.from_json)(one) }
+    let h1 = unsafe { generated_slot!(vtable, from_json)(one) }
         .into_result()
         .expect("from_json one");
-    let h2 = unsafe { (vtable.from_json)(two) }
+    let h2 = unsafe { generated_slot!(vtable, from_json)(two) }
         .into_result()
         .expect("from_json two");
 
     let handles: [*const CustomDataHandle; 2] = [h1.cast_const(), h2.cast_const()];
     let handles_slice = Slice::from_slice(&handles);
     // SAFETY: handles slice outlives the call.
-    let encoded = unsafe { (vtable.encode_batch)(handles_slice) }
+    let encoded = unsafe { generated_slot!(vtable, encode_batch)(handles_slice) }
         .into_result()
         .expect("encode_batch");
     // SAFETY: encoded buffer is live.
     let ipc = unsafe { encoded.as_bytes() }.to_vec();
     // SAFETY: dropping live handle h1 before decode (decode allocates new ones).
-    unsafe { (vtable.drop_handle)(h1) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(h1);
+    };
     // SAFETY: dropping live handle h2 before decode.
-    unsafe { (vtable.drop_handle)(h2) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(h2);
+    };
     drop(encoded);
 
     // No metadata for this sentinel encoding.
@@ -499,7 +728,7 @@ fn decode_batch_round_trips_through_drop_handle_array() {
     let ipc_slice = Slice::from_slice(&ipc);
     let md_slice = Slice::from_slice(&md_entries);
     // SAFETY: slices outlive the call.
-    let decoded = unsafe { (vtable.decode_batch)(ipc_slice, md_slice) }
+    let decoded = unsafe { generated_slot!(vtable, decode_batch)(ipc_slice, md_slice) }
         .into_result()
         .expect("decode_batch");
     // SAFETY: buffer is live.
@@ -522,11 +751,13 @@ fn decode_batch_round_trips_through_drop_handle_array() {
         // SAFETY: slot points at a freshly-decoded handle pointer.
         let h = unsafe { slot.read() };
         // SAFETY: handle is live (decode just produced it).
-        let ts_init = unsafe { (vtable.ts_init)(h) };
+        let ts_init = unsafe { generated_slot!(vtable, ts_init)(h) };
         // Decoded order matches encoded order: ts_init was 2 then 4.
         assert_eq!(ts_init, ((i as u64) + 1) * 2);
         // SAFETY: handle is live.
-        unsafe { (vtable.drop_handle)(h) };
+        unsafe {
+            generated_slot!(vtable, drop_handle)(h);
+        };
     }
     drop(decoded);
 }
@@ -540,7 +771,9 @@ fn drop_handle_thunk_ignores_null() {
     // SAFETY: vtable lives for the process lifetime.
     let vtable = unsafe { &*vtable_ptr };
     // SAFETY: the documented contract: drop_handle ignores null pointers.
-    unsafe { (vtable.drop_handle)(std::ptr::null_mut()) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(std::ptr::null_mut());
+    };
 }
 
 #[rstest]
@@ -563,21 +796,23 @@ fn actor_lifecycle_callbacks_dispatch_to_trait() {
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: vtable produces a fresh, exclusively-owned handle.
-    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vtable, create)(host, ctx, BorrowedStr::empty()) };
     assert!(!handle.is_null(), "create returned null");
 
     // SAFETY: handle is live.
-    let r = unsafe { (vtable.on_start)(handle) };
+    let r = unsafe { generated_slot!(vtable, on_start)(handle) };
     r.into_result().expect("on_start");
     assert_eq!(TEST_ACTOR_START_COUNT.load(Ordering::SeqCst), 1);
 
     // SAFETY: handle is live.
-    let r = unsafe { (vtable.on_stop)(handle) };
+    let r = unsafe { generated_slot!(vtable, on_stop)(handle) };
     r.into_result().expect("on_stop");
     assert_eq!(TEST_ACTOR_STOP_COUNT.load(Ordering::SeqCst), 1);
 
     // SAFETY: handle is live.
-    unsafe { (vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -614,9 +849,9 @@ fn actor_on_quote_dispatches_typed_pointer() {
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     let ctx: *const HostContext = std::ptr::null();
     // SAFETY: vtable produces a fresh handle.
-    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vtable, create)(host, ctx, BorrowedStr::empty()) };
     // SAFETY: handle is live and `quote` outlives the call.
-    let r = unsafe { (vtable.on_quote)(handle, &raw const quote) };
+    let r = unsafe { generated_slot!(vtable, on_quote)(handle, &raw const quote) };
     r.into_result().expect("on_quote");
 
     assert_eq!(TEST_ACTOR_QUOTE_COUNT.load(Ordering::SeqCst), 1);
@@ -626,7 +861,9 @@ fn actor_on_quote_dispatches_typed_pointer() {
     );
 
     // SAFETY: handle is live.
-    unsafe { (vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -635,7 +872,9 @@ fn actor_drop_handle_thunk_ignores_null() {
     // SAFETY: vtable lives for the process lifetime.
     let vtable = unsafe { &*vtable_ptr };
     // SAFETY: the documented contract: drop_handle ignores null pointers.
-    unsafe { (vtable.drop_handle)(std::ptr::null_mut()) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(std::ptr::null_mut());
+    };
 }
 
 // Sentinel non-null pointer used as the strategy's host context in tests.
@@ -663,7 +902,7 @@ fn strategy_lifecycle_dispatches_to_trait() {
     let ctx = sentinel_ctx();
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     // SAFETY: vtable produces a fresh, exclusively-owned handle.
-    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vtable, create)(host, ctx, BorrowedStr::empty()) };
     assert!(!handle.is_null(), "create returned null");
 
     // The strategy must have stored the context pointer during `new`.
@@ -674,12 +913,14 @@ fn strategy_lifecycle_dispatches_to_trait() {
     );
 
     // SAFETY: handle is live.
-    let r = unsafe { (vtable.on_start)(handle) };
+    let r = unsafe { generated_slot!(vtable, on_start)(handle) };
     r.into_result().expect("on_start");
     assert_eq!(TEST_STRATEGY_START_COUNT.load(Ordering::SeqCst), 1);
 
     // SAFETY: handle is live.
-    unsafe { (vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -708,7 +949,7 @@ fn strategy_on_position_opened_invokes_host_submit() {
     let ctx = sentinel_ctx();
     let host = (&raw const TEST_HOST).cast::<HostVTable>();
     // SAFETY: vtable produces a fresh handle.
-    let handle = unsafe { (vtable.create)(host, ctx, BorrowedStr::empty()) };
+    let handle = unsafe { generated_slot!(vtable, create)(host, ctx, BorrowedStr::empty()) };
 
     let event = PositionOpened {
         trader_id: TraderId::from("TESTER-001"),
@@ -731,7 +972,7 @@ fn strategy_on_position_opened_invokes_host_submit() {
     };
 
     // SAFETY: handle is live and `event` outlives the call.
-    let r = unsafe { (vtable.on_position_opened)(handle, &raw const event) };
+    let r = unsafe { generated_slot!(vtable, on_position_opened)(handle, &raw const event) };
     r.into_result().expect("on_position_opened");
 
     assert_eq!(
@@ -751,7 +992,9 @@ fn strategy_on_position_opened_invokes_host_submit() {
     );
 
     // SAFETY: handle is live.
-    unsafe { (vtable.drop_handle)(handle) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(handle);
+    };
 }
 
 #[rstest]
@@ -760,7 +1003,9 @@ fn strategy_drop_handle_thunk_ignores_null() {
     // SAFETY: vtable lives for the process lifetime.
     let vtable = unsafe { &*vtable_ptr };
     // SAFETY: the documented contract: drop_handle ignores null pointers.
-    unsafe { (vtable.drop_handle)(std::ptr::null_mut()) };
+    unsafe {
+        generated_slot!(vtable, drop_handle)(std::ptr::null_mut());
+    };
 }
 
 #[rstest]
@@ -794,9 +1039,9 @@ fn each_actor_type_has_its_own_vtable() {
     // SAFETY: see above.
     let b_vt = unsafe { &*b };
     // SAFETY: type_name returns a static string.
-    let a_name = unsafe { (a_vt.type_name)() };
+    let a_name = unsafe { generated_slot!(a_vt, type_name)() };
     // SAFETY: see above.
-    let b_name = unsafe { (b_vt.type_name)() };
+    let b_name = unsafe { generated_slot!(b_vt, type_name)() };
     // SAFETY: name strings live in static storage.
     assert_eq!(unsafe { a_name.as_str() }, "TestActor");
     // SAFETY: see above.
@@ -834,9 +1079,9 @@ fn each_strategy_type_has_its_own_vtable() {
     // SAFETY: see above.
     let b_vt = unsafe { &*b };
     // SAFETY: type_name returns a static string.
-    let a_name = unsafe { (a_vt.type_name)() };
+    let a_name = unsafe { generated_slot!(a_vt, type_name)() };
     // SAFETY: see above.
-    let b_name = unsafe { (b_vt.type_name)() };
+    let b_name = unsafe { generated_slot!(b_vt, type_name)() };
     // SAFETY: name strings live in static storage.
     assert_eq!(unsafe { a_name.as_str() }, "TestStrategy");
     // SAFETY: see above.
@@ -857,7 +1102,7 @@ fn custom_data_vtable_schema_ipc_returns_registered_schema() {
 
     // SAFETY: schema_ipc takes no inputs and returns owned bytes the
     // caller is responsible for dropping.
-    let r = unsafe { (vtable.schema_ipc)() };
+    let r = unsafe { generated_slot!(vtable, schema_ipc)() };
     let bytes = r.into_result().expect("schema_ipc failed");
     // SAFETY: buffer live until `bytes` is dropped.
     assert_eq!(unsafe { bytes.as_bytes() }, b"test-schema");

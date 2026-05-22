@@ -207,6 +207,10 @@ impl OrderUpdated {
             None => dict.set_item("trigger_price", py.None())?,
         }
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
+        match self.causation_id {
+            Some(causation_id) => dict.set_item("causation_id", causation_id.to_string())?,
+            None => dict.set_item("causation_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

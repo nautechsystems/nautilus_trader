@@ -163,6 +163,9 @@ pub struct HyperliquidExecClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Timeout in seconds for WebSocket post trading requests.
+    #[builder(default = 10)]
+    pub ws_post_timeout_secs: u64,
     /// Poll interval in seconds for `outcomeMeta` settlement detection.
     /// Disabled by default; venue `Settlement` fills drive HIP-4 settlement
     /// through the standard user-fills stream. Set to a non-zero value only
@@ -256,6 +259,7 @@ transport_backend = "tungstenite"
             expected.market_order_slippage_bps,
         );
         assert_eq!(config.transport_backend, expected.transport_backend);
+        assert_eq!(config.ws_post_timeout_secs, expected.ws_post_timeout_secs);
         assert_eq!(
             config.outcome_settlement_poll_secs,
             expected.outcome_settlement_poll_secs,

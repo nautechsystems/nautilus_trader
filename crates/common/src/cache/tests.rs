@@ -2286,6 +2286,241 @@ fn test_bars_when_some(mut cache: Cache) {
     assert_eq!(result, Some(bars));
 }
 
+fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
+    let config = CacheConfig::builder()
+        .tick_capacity(tick_capacity)
+        .bar_capacity(bar_capacity)
+        .build();
+
+    Cache::new(Some(config), None)
+}
+
+fn quote_tick_with_ts(ts_event: u64) -> QuoteTick {
+    QuoteTick {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn trade_tick_with_ts(ts_event: u64) -> TradeTick {
+    TradeTick {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn bar_with_ts(ts_event: u64) -> Bar {
+    Bar {
+        ts_event: UnixNanos::from(ts_event),
+        ts_init: UnixNanos::from(ts_event),
+        ..Default::default()
+    }
+}
+
+fn mark_price_with_ts(instrument_id: InstrumentId, ts_event: u64) -> MarkPriceUpdate {
+    MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn index_price_with_ts(instrument_id: InstrumentId, ts_event: u64) -> IndexPriceUpdate {
+    IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn funding_rate_with_ts(instrument_id: InstrumentId, ts_event: u64) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
+fn instrument_status_with_ts(instrument_id: InstrumentId, ts_event: u64) -> InstrumentStatus {
+    InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    )
+}
+
+#[rstest]
+fn test_add_quotes_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = QuoteTick::default().instrument_id;
+    let quotes = (0..5).map(quote_tick_with_ts).collect::<Vec<_>>();
+
+    cache.add_quotes(&quotes).unwrap();
+
+    let cached = cache.quotes(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|quote| quote.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.quote_count(&instrument_id), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_trades_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = TradeTick::default().instrument_id;
+    let trades = (0..5).map(trade_tick_with_ts).collect::<Vec<_>>();
+
+    cache.add_trades(&trades).unwrap();
+
+    let cached = cache.trades(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|trade| trade.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.trade_count(&instrument_id), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_bars_enforces_bar_capacity() {
+    let mut cache = cache_with_data_capacity(10, 3);
+    let bar_type = Bar::default().bar_type;
+    let bars = (0..5).map(bar_with_ts).collect::<Vec<_>>();
+
+    cache.add_bars(&bars).unwrap();
+
+    let cached = cache.bars(&bar_type).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|bar| bar.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cache.bar_count(&bar_type), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_mark_prices_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_mark_price(mark_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.mark_prices(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|mark_price| mark_price.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_index_prices_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_index_price(index_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.index_prices(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|index_price| index_price.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_funding_rates_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+    let funding_rates = (0..5)
+        .map(|ts_event| funding_rate_with_ts(instrument_id, ts_event))
+        .collect::<Vec<_>>();
+
+    cache.add_funding_rates(&funding_rates).unwrap();
+
+    let cached = cache.funding_rates(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|funding_rate| funding_rate.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_instrument_statuses_enforces_tick_capacity() {
+    let mut cache = cache_with_data_capacity(3, 10);
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..5 {
+        cache
+            .add_instrument_status(instrument_status_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    let cached = cache.instrument_statuses(&instrument_id).unwrap();
+    let ts_events = cached
+        .iter()
+        .map(|status| status.ts_event.as_u64())
+        .collect::<Vec<_>>();
+
+    assert_eq!(cached.len(), 3);
+    assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+#[should_panic(expected = "invalid usize for 'tick_capacity' not positive")]
+fn test_new_rejects_zero_tick_capacity() {
+    let config = CacheConfig {
+        tick_capacity: 0,
+        ..Default::default()
+    };
+
+    let _cache = Cache::new(Some(config), None);
+}
+
+#[rstest]
+#[should_panic(expected = "invalid usize for 'bar_capacity' not positive")]
+fn test_new_rejects_zero_bar_capacity() {
+    let config = CacheConfig {
+        bar_capacity: 0,
+        ..Default::default()
+    };
+
+    let _cache = Cache::new(Some(config), None);
+}
+
 // -- ACCOUNT ---------------------------------------------------------------------------------
 
 #[rstest]

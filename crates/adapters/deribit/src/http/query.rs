@@ -20,6 +20,54 @@ use serde::{Deserialize, Serialize};
 
 use super::models::{DeribitCurrency, DeribitProductType};
 
+/// Instrument kind filter for `/public/get_expirations` endpoint.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeribitExpirationKind {
+    /// Future contract expirations.
+    Future,
+    /// Option contract expirations.
+    Option,
+    /// All supported instrument kinds.
+    Any,
+    /// Future combo expirations.
+    FutureCombo,
+    /// Option combo expirations.
+    OptionCombo,
+}
+
+/// Query parameters for `/public/get_expirations` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetExpirationsParams {
+    /// Settlement currency, `any`, or `grouped`.
+    pub currency: String,
+    /// Instrument kind filter.
+    pub kind: DeribitExpirationKind,
+    /// Optional currency pair filter (e.g., "btc_usd").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub currency_pair: Option<String>,
+}
+
+impl GetExpirationsParams {
+    /// Creates a new builder for [`GetExpirationsParams`].
+    #[must_use]
+    pub fn builder() -> GetExpirationsParamsBuilder {
+        GetExpirationsParamsBuilder::default()
+    }
+
+    /// Creates parameters for a settlement currency and product kind.
+    #[must_use]
+    pub fn new(currency: impl Into<String>, kind: DeribitExpirationKind) -> Self {
+        Self {
+            currency: currency.into(),
+            kind,
+            currency_pair: None,
+        }
+    }
+}
+
 /// Query parameters for `/public/get_instruments` endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[builder(setter(into, strip_option))]
@@ -69,6 +117,28 @@ impl GetInstrumentsParams {
 pub struct GetInstrumentParams {
     /// Instrument name (e.g., "BTC-PERPETUAL", "ETH-25MAR23-2000-C")
     pub instrument_name: String,
+}
+
+/// Query parameters for `/public/get_combos` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetCombosParams {
+    /// Currency to query.
+    pub currency: DeribitCurrency,
+}
+
+impl GetCombosParams {
+    /// Creates a new builder for [`GetCombosParams`].
+    #[must_use]
+    pub fn builder() -> GetCombosParamsBuilder {
+        GetCombosParamsBuilder::default()
+    }
+
+    /// Creates parameters for a specific currency.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency) -> Self {
+        Self { currency }
+    }
 }
 
 /// Query parameters for `/private/get_account_summaries` endpoint.
@@ -570,6 +640,46 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    #[rstest]
+    fn test_get_expirations_params_default_payload() {
+        let params = GetExpirationsParams::new("BTC", DeribitExpirationKind::Option);
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(value, json!({"currency": "BTC", "kind": "option"}));
+    }
+
+    #[rstest]
+    fn test_get_expirations_params_full_payload() {
+        let params = GetExpirationsParams::builder()
+            .currency("grouped")
+            .kind(DeribitExpirationKind::Any)
+            .currency_pair("btc_usd")
+            .build()
+            .unwrap();
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "currency": "grouped",
+                "kind": "any",
+                "currency_pair": "btc_usd",
+            }),
+        );
+    }
+
+    #[rstest]
+    fn test_get_expirations_params_combo_kind_serialization() {
+        let params = GetExpirationsParams::new("BTC", DeribitExpirationKind::OptionCombo);
+        let value: Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(value, json!({"currency": "BTC", "kind": "option_combo"}));
+    }
+
+    #[rstest]
+    fn test_get_combos_params_serialization() {
+        let params = GetCombosParams::new(DeribitCurrency::BTC);
+        let value: Value = serde_json::to_value(params).unwrap();
+        assert_eq!(value, json!({"currency": "BTC"}));
+    }
 
     #[rstest]
     fn test_get_last_trades_by_currency_params_default_omits_optionals() {

@@ -63,7 +63,7 @@ impl SnapshotReplayPlan {
 
 /// Read-only handle over an [`EventStore`] backend.
 ///
-/// The reader is the canonical entry point for forensics replay, audit, and verifier
+/// The reader is the canonical entry point for read-only replay, audit, and verifier
 /// scans: it never mutates the backend (no `append_batch` surface) and it tolerates
 /// running and sealed backends uniformly.
 #[derive(Debug)]

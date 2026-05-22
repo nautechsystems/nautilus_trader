@@ -177,6 +177,8 @@ cdef class ExecutionEngine(Component):
     cdef bint _is_leg_fill(self, OrderFilled fill)
     cdef void _send_fill_to_portfolio_before_position_update(self, OrderFilled fill)
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type)
+    cdef bint _reject_reduce_only_netting_position_open(self, OrderFilled fill, OmsType oms_type)
+    cdef str _reduce_only_open_position_details(self, list positions_open)
     cpdef void _handle_leg_fill_without_order(self, OrderFilled fill)
     cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef void _reopen_position(self, Position position, OmsType oms_type)

@@ -89,6 +89,7 @@ class TestHyperliquidExecClientConfig:
         assert config.vault_address is None
         assert config.environment is None
         assert config.http_timeout_secs == 10
+        assert config.ws_post_timeout_secs == 10
 
     def test_with_private_key(self):
         # Arrange & Act
@@ -143,6 +144,13 @@ class TestHyperliquidExecClientConfig:
         assert config.max_retries == 5
         assert config.retry_delay_initial_ms == 100
         assert config.retry_delay_max_ms == 5000
+
+    def test_ws_post_timeout_config(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(ws_post_timeout_secs=7)
+
+        # Assert
+        assert config.ws_post_timeout_secs == 7
 
     def test_custom_base_urls(self):
         # Arrange & Act

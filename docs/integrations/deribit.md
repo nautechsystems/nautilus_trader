@@ -146,6 +146,42 @@ InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
 The adapter models option combos as `OptionSpread`, priced in the base currency under Deribit's
 inverse-option convention.
 
+## Traded expirations
+
+Deribit exposes active traded expirations through the `public/get_expirations` HTTP endpoint.
+Option-chain loaders can use the high-level HTTP client to refresh active option series without
+scanning every instrument.
+
+<Tabs items={['Python', 'Rust']}>
+<Tab value="Python">
+
+```python
+from nautilus_trader.deribit import DeribitCurrency
+from nautilus_trader.deribit import DeribitHttpClient
+
+client = DeribitHttpClient()
+expirations = await client.request_option_expirations(DeribitCurrency.BTC)
+```
+
+</Tab>
+<Tab value="Rust">
+
+```rust
+use nautilus_deribit::http::models::DeribitCurrency;
+
+let expirations = client
+    .request_option_expirations(DeribitCurrency::BTC)
+    .await?;
+```
+
+</Tab>
+</Tabs>
+
+The high-level method returns option expirations only. For lower-level Rust requests, call
+`client.inner().get_expirations(...)` with `GetExpirationsParams`. Deribit returns a
+currency-keyed result for concrete currencies such as `BTC`, and a direct kind-keyed result for
+`currency=any`; the adapter handles both shapes.
+
 ## Combo instruments
 
 The instrument provider loads combos when `product_types` includes
@@ -169,6 +205,11 @@ does not fan out combo parent messages into extra leg ticks; it forwards the ups
 and per-leg messages as separate `TradeTick`s against their respective `InstrumentId`s, so a
 subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
 that combo trade, not duplicate ticks against the same instrument.
+
+To have the Deribit data client open the real leg trade channels alongside a combo trade
+subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trade_ticks`. When
+unsubscribing that combo trade stream, Nautilus also closes the leg subscriptions opened by
+this opt-in.
 
 Deribit already publishes block trades and Block RFQs per leg, so the adapter forwards
 them through the standard 1:1 trade path. See [Trade ID provenance](#trade-id-provenance)

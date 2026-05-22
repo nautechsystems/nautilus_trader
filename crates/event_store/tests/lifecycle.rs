@@ -107,6 +107,7 @@ fn config_with(base_dir: PathBuf) -> EventStoreConfig {
             seed: None,
         },
         retention: RetentionMode::Full,
+        replay_from_run_id: None,
         channel_capacity: 64,
         max_batch_entries: 1,
         max_batch_latency: Duration::from_millis(2),
@@ -506,6 +507,411 @@ fn kernel_start_restores_parent_cache_snapshot_and_replays_tail() {
         kernel.event_store().expect("event store").parent_run_id(),
         Some(parent_run_id)
     );
+}
+
+#[rstest]
+fn kernel_start_replays_configured_run_without_recovered_parent() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let replay_run_id = "seed-run";
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some(replay_run_id.to_string());
+    let instrument = audusd_sim();
+    let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
+    let position_id = PositionId::new("P-KERNEL-CONFIG-REPLAY-1");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument_any,
+        Some(TradeId::new("T-KERNEL-CONFIG-REPLAY-1")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+    let position = Position::new(&instrument_any, fill.into());
+    let mut snapshot_cache = Cache::default();
+    let snapshot_ref = snapshot_cache
+        .snapshot_position(&position)
+        .expect("snapshot position");
+    let anchored_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+    let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, replay_run_id))
+            .expect("open replay source");
+        backend
+            .append_batch(&[append_account_state(1, &anchored_state)])
+            .expect("append anchored state");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(
+                1,
+                snapshot_ref.blob_ref.clone(),
+                compute_snapshot_content_hash(snapshot_ref.blob.as_ref()),
+            ))
+            .expect("record snapshot anchor");
+        backend
+            .append_batch(&[append_account_state(2, &replayed_state)])
+            .expect("append replay tail");
+        backend.seal(RunStatus::Ended).expect("seal replay source");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+    kernel
+        .cache
+        .borrow_mut()
+        .add(&snapshot_ref.blob_ref, snapshot_ref.blob.clone())
+        .expect("seed cache-owned snapshot blob");
+
+    kernel.start();
+
+    {
+        let cache = kernel.cache.borrow();
+        let frames = cache
+            .position_snapshot_bytes(&position.id)
+            .expect("restored position snapshot");
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].as_slice(), snapshot_ref.blob.as_ref());
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    let event_store = kernel.event_store().expect("event store");
+    assert_eq!(event_store.parent_run_id(), Some(replay_run_id));
+    let opened_run_id = event_store
+        .run_id()
+        .expect("configured replay must still open a fresh run after restore")
+        .to_string();
+
+    kernel.dispose();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+    let opened_manifest = manifests
+        .iter()
+        .find(|manifest| manifest.run_id == opened_run_id)
+        .expect("opened run manifest");
+
+    assert_eq!(
+        opened_manifest.parent_run_id.as_deref(),
+        Some(replay_run_id)
+    );
+}
+
+#[rstest]
+fn kernel_start_configured_replay_does_not_start_execution_clients() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let replay_run_id = "seed-run";
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some(replay_run_id.to_string());
+    let replayed_state = cash_account_state_million_usd("200 USD", "0 USD", "200 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, replay_run_id))
+            .expect("open replay source");
+        backend
+            .append_batch(&[append_account_state(1, &replayed_state)])
+            .expect("append replay state");
+        backend.seal(RunStatus::Ended).expect("seal replay source");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store(event_store_factory(config))
+        .build()
+        .expect("kernel");
+    {
+        let stub_client = StubExecutionClient::new(
+            ClientId::from("STUB"),
+            AccountId::test_default(),
+            Venue::test_default(),
+            OmsType::Netting,
+            None,
+        );
+        kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(stub_client))
+            .expect("register stub client");
+    }
+
+    assert!(
+        !kernel.exec_engine.borrow().check_connected(),
+        "stub client must start disconnected",
+    );
+
+    kernel.start();
+
+    {
+        let cache = kernel.cache.borrow();
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    assert!(kernel.is_event_store_replay());
+    assert!(
+        !kernel.exec_engine.borrow().check_connected(),
+        "configured event-store replay must not start execution clients",
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_some(),
+        "replay-only startup still opens a child run for inspection",
+    );
+}
+
+#[rstest]
+fn kernel_start_configured_replay_requires_load_state() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let replay_run_id = "healthy-seed-run";
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some(replay_run_id.to_string());
+    let replayed_state = cash_account_state_million_usd("250 USD", "0 USD", "250 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, replay_run_id))
+            .expect("open replay source");
+        backend
+            .append_batch(&[append_account_state(1, &replayed_state)])
+            .expect("append replay state");
+        backend.seal(RunStatus::Ended).expect("seal replay source");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_load_state(false)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+
+    kernel.start();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+
+    assert!(
+        kernel
+            .cache
+            .borrow()
+            .account_owned(&replayed_state.account_id)
+            .is_none()
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_none()
+    );
+    assert!(kernel.is_event_store_replay_configured());
+    assert!(!kernel.is_event_store_replay());
+    assert_eq!(manifests.len(), 1);
+    assert_eq!(manifests[0].run_id, replay_run_id);
+    assert_eq!(manifests[0].status, RunStatus::Ended);
+}
+
+#[rstest]
+fn kernel_start_configured_replay_overrides_recovered_parent() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let replay_run_id = "seed-run";
+    let recovered_parent_run_id = "recovered-parent-run";
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some(replay_run_id.to_string());
+    let parent_state = cash_account_state_million_usd("900 USD", "0 USD", "900 USD");
+    let replayed_state = cash_account_state_million_usd("300 USD", "0 USD", "300 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, replay_run_id))
+            .expect("open replay source");
+        backend
+            .append_batch(&[append_account_state(1, &replayed_state)])
+            .expect("append replay state");
+        backend.seal(RunStatus::Ended).expect("seal replay source");
+    }
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(
+                &config,
+                instance_id,
+                recovered_parent_run_id,
+            ))
+            .expect("open recovered parent source");
+        backend
+            .append_batch(&[append_account_state(1, &parent_state)])
+            .expect("append parent state");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+
+    kernel.start();
+
+    {
+        let cache = kernel.cache.borrow();
+        let account = cache
+            .account_owned(&replayed_state.account_id)
+            .expect("replayed account");
+
+        assert_eq!(account.events(), vec![replayed_state]);
+    }
+
+    let event_store = kernel.event_store().expect("event store");
+    assert_eq!(event_store.parent_run_id(), Some(replay_run_id));
+    let opened_run_id = event_store
+        .run_id()
+        .expect("configured replay must open a fresh run")
+        .to_string();
+
+    kernel.dispose();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+    let opened_manifest = manifests
+        .iter()
+        .find(|manifest| manifest.run_id == opened_run_id)
+        .expect("opened run manifest");
+    let recovered_parent_manifest = manifests
+        .iter()
+        .find(|manifest| manifest.run_id == recovered_parent_run_id)
+        .expect("recovered parent manifest");
+
+    assert_eq!(
+        opened_manifest.parent_run_id.as_deref(),
+        Some(replay_run_id)
+    );
+    assert_eq!(
+        recovered_parent_manifest.status,
+        RunStatus::CrashedRecovered,
+    );
+}
+
+#[rstest]
+fn kernel_start_missing_configured_replay_run_does_not_open_new_run() {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some("missing-run".to_string());
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+
+    kernel.start();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_none()
+    );
+    assert!(kernel.is_event_store_replay_configured());
+    assert!(!kernel.is_event_store_replay());
+    assert!(manifests.is_empty());
+}
+
+#[rstest]
+#[case::load_state(true)]
+#[case::skip_load_state(false)]
+fn kernel_start_quarantined_configured_replay_run_does_not_open_new_run(#[case] load_state: bool) {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let replay_run_id = "quarantined-run";
+    let mut config = config_with(tmp.path().to_path_buf());
+    config.replay_from_run_id = Some(replay_run_id.to_string());
+    let quarantined_state = cash_account_state_million_usd("100 USD", "0 USD", "100 USD");
+
+    {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(running_manifest(&config, instance_id, replay_run_id))
+            .expect("open quarantined source");
+        backend
+            .append_batch(&[append_account_state(1, &quarantined_state)])
+            .expect("append quarantined state");
+        backend
+            .seal(RunStatus::Quarantined)
+            .expect("seal quarantined source");
+    }
+
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_load_state(load_state)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+
+    kernel.start();
+
+    let manifests =
+        RedbBackend::list_runs(&config.base_dir, &instance_id.to_string()).expect("list runs");
+
+    assert!(
+        kernel
+            .cache
+            .borrow()
+            .account_owned(&quarantined_state.account_id)
+            .is_none()
+    );
+    assert!(
+        kernel
+            .event_store()
+            .expect("event store")
+            .run_id()
+            .is_none()
+    );
+    assert!(kernel.is_event_store_replay_configured());
+    assert!(!kernel.is_event_store_replay());
+    assert_eq!(manifests.len(), 1);
+    assert_eq!(manifests[0].run_id, replay_run_id);
+    assert_eq!(manifests[0].status, RunStatus::Quarantined);
 }
 
 #[rstest]

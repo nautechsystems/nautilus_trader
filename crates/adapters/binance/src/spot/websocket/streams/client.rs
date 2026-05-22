@@ -140,6 +140,12 @@ impl BinanceSpotWebSocketClient {
         })
     }
 
+    /// Returns whether API credentials are configured.
+    #[must_use]
+    pub fn has_credentials(&self) -> bool {
+        self.credential.is_some()
+    }
+
     /// Returns whether any connection in the pool is active.
     #[must_use]
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
