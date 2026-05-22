@@ -923,6 +923,7 @@ async def test_cancel_all_orders_rejects_when_ib_client_not_ready(
         venue_order_id=venue_order_id,
         status=OrderStatus.ACCEPTED,
     )
+    cache.update_order(order)
     command = CancelAllOrders(
         trader_id=order.trader_id,
         strategy_id=order.strategy_id,
