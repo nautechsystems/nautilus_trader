@@ -2325,7 +2325,7 @@ version = "0.29.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_json]]
-version = "1.0.149"
+version = "1.0.150"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_path_to_error]]

@@ -252,7 +252,7 @@ serde = { version = "1.0.228", default-features = false, features = [
   "std",
   "rc",
 ] }
-serde_json = { version = "1.0.149", default-features = false, features = [
+serde_json = { version = "1.0.150", default-features = false, features = [
   "std",
 ] }
 serde_urlencoded = "0.7.1"
@@ -386,7 +386,7 @@ walkdir = "2.5.0"
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
 cargo-audit = "0.22.1"
-cargo-deny = "0.19.6"
+cargo-deny = "0.19.7"
 cargo-edit = "0.13.10"
 cargo-fuzz = "0.13.1"
 cargo-llvm-cov = "0.8.7"
