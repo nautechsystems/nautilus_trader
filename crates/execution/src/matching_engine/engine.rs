@@ -4908,7 +4908,15 @@ impl OrderMatchingEngine {
 
         if order.status() != OrderStatus::Accepted {
             let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-            self.generate_order_accepted(order, venue_order_id);
+            let event = self.create_order_accepted(order, venue_order_id);
+            if let Err(e) = order.apply(event.clone()) {
+                log::error!(
+                    "Failed to apply accepted event for {}: {e}",
+                    order.client_order_id(),
+                );
+                return;
+            }
+            self.dispatch_order_event(event);
 
             // Activate before emitting `OrderUpdated` so `match_info` below
             // carries the activation flag.
@@ -5275,12 +5283,16 @@ impl OrderMatchingEngine {
         );
     }
 
-    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+    fn create_order_accepted(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+    ) -> OrderEventAny {
         let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderEventAny::Accepted(OrderAccepted::new(
+        OrderEventAny::Accepted(OrderAccepted::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -5291,8 +5303,11 @@ impl OrderMatchingEngine {
             ts_now,
             ts_now,
             false,
-        ));
+        ))
+    }
 
+    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+        let event = self.create_order_accepted(order, venue_order_id);
         self.dispatch_order_event(event);
     }
 
