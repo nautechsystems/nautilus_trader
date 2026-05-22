@@ -16,7 +16,7 @@
 use std::{cmp, str::FromStr};
 
 use anyhow::Context;
-use nautilus_common::messages::data::{DataResponse, RequestBars, RequestCommand};
+use nautilus_common::messages::data::{DataResponse, RequestBars, RequestCommand, SubscribeBars};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::BarType,
@@ -321,16 +321,47 @@ pub(super) fn continuous_future_request_from_bars(
     let Some(params) = request.params.as_ref() else {
         return Ok(None);
     };
-    let Some(transitions_value) = params.get(CONTINUOUS_FUTURE_TRANSITIONS) else {
+
+    if !params.contains_key(CONTINUOUS_FUTURE_TRANSITIONS) {
+        return Ok(None);
+    }
+
+    let bar_types = continuous_future_bar_types(request, params)?;
+    parse_continuous_future(bar_types, params).map(Some)
+}
+
+pub(super) fn continuous_future_subscription_from_bars(
+    cmd: &SubscribeBars,
+) -> anyhow::Result<Option<ContinuousFutureRequest>> {
+    let Some(params) = cmd.params.as_ref() else {
         return Ok(None);
     };
 
-    let bar_types = continuous_future_bar_types(request, params)?;
+    if !params.contains_key(CONTINUOUS_FUTURE_TRANSITIONS) {
+        return Ok(None);
+    }
+
+    if params.contains_key(BAR_TYPES) {
+        anyhow::bail!(
+            "Continuous future bar subscriptions must not include `bar_types`; pass the chain in continuous_future_transitions instead"
+        );
+    }
+
+    parse_continuous_future(vec![cmd.bar_type], params).map(Some)
+}
+
+fn parse_continuous_future(
+    bar_types: Vec<BarType>,
+    params: &Params,
+) -> anyhow::Result<ContinuousFutureRequest> {
     let primary_bar_type = bar_types[0];
     if !primary_bar_type.is_internally_aggregated() {
         anyhow::bail!("Continuous future target {primary_bar_type} must be internally aggregated");
     }
 
+    let transitions_value = params
+        .get(CONTINUOUS_FUTURE_TRANSITIONS)
+        .context("missing `continuous_future_transitions`")?;
     let adjustment_mode = parse_adjustment_mode(params.get(CONTINUOUS_FUTURE_ADJUSTMENT_MODE))
         .with_context(|| {
             format!("Invalid continuous future adjustment mode for {primary_bar_type}")
@@ -375,7 +406,7 @@ pub(super) fn continuous_future_request_from_bars(
         );
     }
 
-    Ok(Some(ContinuousFutureRequest {
+    Ok(ContinuousFutureRequest {
         primary_bar_type,
         request_bar_aggregation: RequestBarAggregation {
             bar_types,
@@ -385,7 +416,7 @@ pub(super) fn continuous_future_request_from_bars(
         adjustment_mode,
         first_pre_instrument_id,
         last_post_instrument_id,
-    }))
+    })
 }
 
 fn continuous_future_bar_types(

@@ -2887,6 +2887,645 @@ fn test_continuous_future_params_require_request_bars(
     assert!(result.unwrap_err().to_string().contains("RequestBars"));
 }
 
+fn continuous_future_transitions_params(
+    transition_time_ns: u64,
+    pre_id: InstrumentId,
+    post_id: InstrumentId,
+) -> Params {
+    params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": transition_time_ns,
+                "pre_instrument_id": pre_id.to_string(),
+                "post_instrument_id": post_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            }
+        ]
+    }))
+}
+
+#[allow(clippy::type_complexity)]
+fn register_continuous_future_subscription_engine(
+    cache: Rc<RefCell<Cache>>,
+    initial_ns: u64,
+) -> (
+    Rc<RefCell<DataEngine>>,
+    Rc<RefCell<TestClock>>,
+    Rc<RefCell<Vec<DataCommand>>>,
+) {
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(initial_ns), true);
+    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let data_engine = Rc::new(RefCell::new(DataEngine::new(
+        engine_clock,
+        cache.clone(),
+        None,
+    )));
+    DataEngine::register_msgbus_handlers(&data_engine);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let client_id = ClientId::test_default();
+    let venue = Venue::from("GLBX");
+    let client = MockDataClient::new_with_recorder(
+        test_clock.clone(),
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.borrow_mut().register_client(adapter, None);
+
+    (data_engine, test_clock, recorder)
+}
+
+#[rstest]
+fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache.clone(), 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        parent_id,
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(child)) = recorder.borrow()[0].clone()
+    else {
+        panic!(
+            "expected child SubscribeTrades, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.correlation_id, Some(parent_id));
+    let child_params = child.params.as_ref().unwrap();
+    assert!(!child_params.contains_key("continuous_future_transitions"));
+    assert!(!child_params.contains_key("continuous_future_adjustment_mode"));
+    assert!(!child_params.contains_key("bar_types"));
+
+    // Continuous instrument was synthesized into the cache
+    assert!(
+        cache
+            .borrow()
+            .instrument(&target_bar_type.instrument_id())
+            .is_some()
+    );
+
+    // Timer scheduled for the upcoming transition
+    let timer_names: Vec<String> = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    assert!(
+        timer_names
+            .iter()
+            .any(|name| name.starts_with("continuous-future-roll:")),
+        "expected continuous-future-roll timer, found {timer_names:?}"
+    );
+}
+
+#[rstest]
+fn test_subscribe_continuous_future_bars_external_uses_bar_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Bars(child)) = recorder.borrow()[0].clone() else {
+        panic!(
+            "expected child SubscribeBars, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(
+        child.bar_type,
+        BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
+    );
+}
+
+#[rstest]
+fn test_continuous_future_subscription_transition_swaps_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache.clone(), 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let transition_ns = 10u64;
+    let params = continuous_future_transitions_params(transition_ns, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    // Trade in the pre segment publishes a bar adjusted by the BACKWARD_SPREAD offset,
+    // post_price - pre_price = +5.
+    data_engine
+        .borrow_mut()
+        .process_data(Data::Trade(make_trade(pre_id, "100.00", 1, "pre-1", 1)));
+    let pre_bar = cache
+        .borrow()
+        .bar(&target_bar_type)
+        .copied()
+        .expect("expected pre-transition bar in cache");
+    assert_eq!(pre_bar.open, Price::from("105.00"));
+
+    let events = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(transition_ns), true);
+    let handlers = test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    // Recorder now has unsub(pre) and sub(post)
+    assert_eq!(recorder.borrow().len(), 3);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Trades(unsub)) = recorder.borrow()[1].clone()
+    else {
+        panic!(
+            "expected child UnsubscribeTrades, was {:?}",
+            recorder.borrow()[1]
+        );
+    };
+    assert_eq!(unsub.instrument_id, pre_id);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(sub2)) = recorder.borrow()[2].clone()
+    else {
+        panic!(
+            "expected child SubscribeTrades, was {:?}",
+            recorder.borrow()[2]
+        );
+    };
+    assert_eq!(sub2.instrument_id, post_id);
+
+    // Trade in the post segment now publishes a bar with no adjustment for the final
+    // segment, BACKWARD_SPREAD cumulative offset is zero.
+    data_engine
+        .borrow_mut()
+        .process_data(Data::Trade(make_trade(post_id, "110.00", 1, "post-1", 11)));
+    let post_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();
+    assert_eq!(post_bar.open, Price::from("110.00"));
+}
+
+#[rstest]
+fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    let unsub = UnsubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+
+    assert_eq!(recorder.borrow().len(), 2);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Trades(child)) = recorder.borrow()[1].clone()
+    else {
+        panic!(
+            "expected child UnsubscribeTrades, was {:?}",
+            recorder.borrow()[1]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+
+    let leftover_roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(leftover_roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_idempotent_resubscribe(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let venue = Venue::from("GLBX");
+
+    let subscribe = || {
+        let sub = SubscribeBars::new(
+            target_bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params.clone()),
+        );
+        data_engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    };
+    let unsubscribe = || {
+        let unsub = UnsubscribeBars::new(
+            target_bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params.clone()),
+        );
+        data_engine
+            .borrow_mut()
+            .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+    };
+
+    subscribe();
+    unsubscribe();
+    subscribe();
+
+    assert_eq!(recorder.borrow().len(), 3);
+    let kinds: Vec<&'static str> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(_)) => "sub-trades",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_)) => "unsub-trades",
+            other => panic!("unexpected child command {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, vec!["sub-trades", "unsub-trades", "sub-trades"]);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_rejects_bar_types_param(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": pre_id.to_string(),
+                "post_instrument_id": post_id.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            }
+        ],
+        "bar_types": ["ES.GLBX-1-TICK-LAST-INTERNAL"],
+    }));
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert!(recorder.borrow().is_empty());
+    let roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_walks_multiple_transitions(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let esh = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let esu = add_es_contract(&cache, "ESU24.GLBX", "ESU24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [
+            {
+                "transition_time_ns": 10,
+                "pre_instrument_id": esh.to_string(),
+                "post_instrument_id": esm.to_string(),
+                "pre_price": "100.00",
+                "post_price": "105.00"
+            },
+            {
+                "transition_time_ns": 20,
+                "pre_instrument_id": esm.to_string(),
+                "post_instrument_id": esu.to_string(),
+                "pre_price": "110.00",
+                "post_price": "115.00"
+            }
+        ]
+    }));
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let fire_timers = |clock: &Rc<RefCell<TestClock>>, to_ns: u64| {
+        let events = clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(to_ns), true);
+        let handlers = clock.borrow().match_handlers(events);
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+    };
+
+    fire_timers(&test_clock, 10);
+    fire_timers(&test_clock, 20);
+
+    let kinds: Vec<&'static str> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(_)) => "sub",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_)) => "unsub",
+            other => panic!("unexpected child command {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, vec!["sub", "unsub", "sub", "unsub", "sub"]);
+
+    let ids: Vec<InstrumentId> = recorder
+        .borrow()
+        .iter()
+        .map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::Trades(c)) => c.instrument_id,
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(c)) => c.instrument_id,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(ids, vec![esh, esh, esm, esm, esu]);
+
+    // No more transition timers remain after the last roll
+    let leftover_roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(leftover_roll_timers, 0);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_warns_on_unknown_unsubscribe(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let _ = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let _ = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let unsub = UnsubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+
+    // Standard bar unsubscribe path is taken; no continuous-future subscription state
+    // existed so no child unsubscribe-trades is recorded.
+    assert!(
+        !recorder
+            .borrow()
+            .iter()
+            .any(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_))))
+    );
+}
+
+#[rstest]
+fn test_continuous_future_subscription_uses_quote_source_for_non_last_price_type(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, _test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache, 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-BID-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Quotes(child)) = recorder.borrow()[0].clone()
+    else {
+        panic!(
+            "expected child SubscribeQuotes, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+}
+
+#[rstest]
+fn test_continuous_future_subscription_rejected_when_roller_missing(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let venue = Venue::from("GLBX");
+    register_mock_client(
+        test_clock.clone(),
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    let result = data_engine.execute_subscribe(SubscribeCommand::Bars(sub));
+
+    let err = result.expect_err("expected subscribe to fail without a roller");
+    assert!(
+        err.to_string().contains("roller is not initialized"),
+        "unexpected error: {err}"
+    );
+    assert!(recorder.borrow().is_empty());
+
+    let roll_timers = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("continuous-future-roll:"))
+        .count();
+    assert_eq!(roll_timers, 0);
+}
+
 #[rstest]
 fn test_update_subscriptions_request_aggregator_can_be_started_live_after_response(
     audusd_sim: CurrencyPair,
