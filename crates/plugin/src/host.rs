@@ -322,3 +322,225 @@ impl HostVTable {
 unsafe impl Send for HostVTable {}
 /// SAFETY: see above.
 unsafe impl Sync for HostVTable {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Mutex, MutexGuard, OnceLock,
+        atomic::{AtomicU8, AtomicU64, Ordering},
+    };
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::boundary::{OwnedBytes, PluginResult, Slice};
+
+    static CLOCK_VALUE: AtomicU64 = AtomicU64::new(0);
+    static LOG_LEVEL_OBSERVED: AtomicU8 = AtomicU8::new(0);
+
+    // Serialises tests that mutate and observe `CLOCK_VALUE` /
+    // `LOG_LEVEL_OBSERVED`. cargo test runs cases in parallel by
+    // default, so without this lock a parametrised case can overwrite
+    // the static after another case's reset but before its assertion.
+    fn shared_state_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    unsafe extern "C" fn fixed_clock_now_ns() -> u64 {
+        CLOCK_VALUE.load(Ordering::SeqCst)
+    }
+
+    unsafe extern "C" fn recording_log(
+        level: HostLogLevel,
+        _target: BorrowedStr<'_>,
+        _message: BorrowedStr<'_>,
+    ) {
+        LOG_LEVEL_OBSERVED.store(level as u8, Ordering::SeqCst);
+    }
+
+    macro_rules! stub_bytes {
+        ($name:ident) => {
+            unsafe extern "C" fn $name(
+                _ctx: *const HostContext,
+                _a: BorrowedStr<'_>,
+            ) -> PluginResult<OwnedBytes> {
+                PluginResult::Ok(OwnedBytes::empty())
+            }
+        };
+    }
+
+    macro_rules! stub_unit {
+        ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
+            unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
+                $(let _ = $arg;)*
+                PluginResult::Ok(())
+            }
+        };
+    }
+
+    stub_bytes!(stub_cache_instrument);
+    stub_bytes!(stub_cache_account);
+    stub_bytes!(stub_cache_order);
+    stub_bytes!(stub_cache_position);
+    stub_bytes!(stub_cache_orders_for_strategy);
+    stub_bytes!(stub_cache_positions_for_strategy);
+
+    stub_unit!(
+        stub_subscribe,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_subscribe_book_deltas,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            t: u8,
+            d: usize,
+            b: BorrowedStr<'_>,
+            m: u8,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_subscribe_book_at_interval,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            t: u8,
+            d: usize,
+            i: usize,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_unsubscribe_book_at_interval,
+        (
+            ctx: *const HostContext,
+            a: BorrowedStr<'_>,
+            i: usize,
+            b: BorrowedStr<'_>,
+            c: BorrowedStr<'_>,
+        )
+    );
+    stub_unit!(
+        stub_msgbus_publish,
+        (
+            ctx: *const HostContext,
+            t: BorrowedStr<'_>,
+            p: Slice<'_, u8>,
+        )
+    );
+    stub_unit!(
+        stub_set_time_alert,
+        (
+            ctx: *const HostContext,
+            n: BorrowedStr<'_>,
+            a: u64,
+            p: u8,
+        )
+    );
+    stub_unit!(
+        stub_set_timer,
+        (
+            ctx: *const HostContext,
+            n: BorrowedStr<'_>,
+            i: u64,
+            s: u64,
+            e: u64,
+            p: u8,
+            f: u8,
+        )
+    );
+    stub_unit!(stub_cancel_timer, (ctx: *const HostContext, n: BorrowedStr<'_>));
+    stub_unit!(
+        stub_order_cmd,
+        (ctx: *const HostContext, c: BorrowedStr<'_>)
+    );
+
+    fn build_test_host(abi: u32) -> HostVTable {
+        HostVTable {
+            abi_version: abi,
+            clock_now_ns: fixed_clock_now_ns,
+            log: recording_log,
+            cache_instrument: stub_cache_instrument,
+            cache_account: stub_cache_account,
+            cache_order: stub_cache_order,
+            cache_position: stub_cache_position,
+            cache_orders_for_strategy: stub_cache_orders_for_strategy,
+            cache_positions_for_strategy: stub_cache_positions_for_strategy,
+            subscribe_quotes: stub_subscribe,
+            unsubscribe_quotes: stub_subscribe,
+            subscribe_trades: stub_subscribe,
+            unsubscribe_trades: stub_subscribe,
+            subscribe_bars: stub_subscribe,
+            unsubscribe_bars: stub_subscribe,
+            subscribe_book_deltas: stub_subscribe_book_deltas,
+            unsubscribe_book_deltas: stub_subscribe,
+            subscribe_book_at_interval: stub_subscribe_book_at_interval,
+            unsubscribe_book_at_interval: stub_unsubscribe_book_at_interval,
+            msgbus_publish: stub_msgbus_publish,
+            set_time_alert: stub_set_time_alert,
+            set_timer: stub_set_timer,
+            cancel_timer: stub_cancel_timer,
+            submit_order: stub_order_cmd,
+            cancel_order: stub_order_cmd,
+            modify_order: stub_order_cmd,
+        }
+    }
+
+    #[rstest]
+    fn matches_compiled_abi_accepts_compiled_version() {
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        assert!(host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
+    #[case::zero(0)]
+    #[case::max(u32::MAX)]
+    fn matches_compiled_abi_rejects_mismatch(#[case] abi: u32) {
+        let host = build_test_host(abi);
+        assert!(!host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    fn now_ns_calls_clock_function_pointer() {
+        let _g = shared_state_lock();
+        CLOCK_VALUE.store(42_424_242, Ordering::SeqCst);
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        // SAFETY: clock_now_ns function pointer is non-null and lives for
+        // the test scope.
+        let n = unsafe { host.now_ns() };
+        assert_eq!(n, 42_424_242);
+    }
+
+    #[rstest]
+    #[case::error(HostLogLevel::Error, 1u8)]
+    #[case::warn(HostLogLevel::Warn, 2)]
+    #[case::info(HostLogLevel::Info, 3)]
+    #[case::debug(HostLogLevel::Debug, 4)]
+    #[case::trace(HostLogLevel::Trace, 5)]
+    fn log_message_invokes_log_with_the_right_level(
+        #[case] level: HostLogLevel,
+        #[case] expected_discriminant: u8,
+    ) {
+        let _g = shared_state_lock();
+        LOG_LEVEL_OBSERVED.store(0, Ordering::SeqCst);
+        let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        // SAFETY: log fn pointer is non-null and lives for the test scope.
+        unsafe { host.log_message(level, "target", "message") };
+        assert_eq!(
+            LOG_LEVEL_OBSERVED.load(Ordering::SeqCst),
+            expected_discriminant
+        );
+    }
+}

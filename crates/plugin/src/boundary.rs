@@ -455,4 +455,117 @@ mod tests {
         assert_eq!(e.code, PluginErrorCode::Generic);
         assert_eq!(e.message_string(), "x");
     }
+
+    #[rstest]
+    fn borrowed_str_empty_is_empty_when_borrowed_back() {
+        let b = BorrowedStr::empty();
+        assert!(b.ptr.is_null());
+        assert_eq!(b.len, 0);
+        // SAFETY: an empty BorrowedStr returns "" without dereferencing.
+        assert_eq!(unsafe { b.as_str() }, "");
+    }
+
+    #[rstest]
+    fn borrowed_str_debug_prints_contents() {
+        let b = BorrowedStr::from_str("hello");
+        let rendered = format!("{b:?}");
+        assert!(rendered.contains("hello"));
+    }
+
+    #[rstest]
+    fn slice_empty_descriptor_is_null_and_zero_len() {
+        let s: Slice<u32> = Slice::empty();
+        assert!(s.ptr.is_null());
+        assert_eq!(s.len, 0);
+    }
+
+    #[rstest]
+    fn owned_bytes_empty_is_empty() {
+        let owned = OwnedBytes::empty();
+        assert!(owned.is_empty());
+        assert!(owned.ptr.is_null());
+        assert_eq!(owned.len, 0);
+        assert_eq!(owned.cap, 0);
+        assert!(owned.drop_fn.is_none());
+        // SAFETY: empty OwnedBytes borrows as &[] without dereferencing.
+        assert!(unsafe { owned.as_bytes() }.is_empty());
+    }
+
+    #[rstest]
+    fn owned_bytes_is_empty_for_zero_length_buffer() {
+        let owned = OwnedBytes::from_vec(Vec::new());
+        assert!(owned.is_empty());
+        drop(owned);
+    }
+
+    #[rstest]
+    fn owned_bytes_drop_with_null_ptr_short_circuits() {
+        let owned = OwnedBytes {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+            drop_fn: Some(drop_owned_bytes),
+        };
+        // Should not panic or attempt to free a null pointer.
+        drop(owned);
+    }
+
+    #[rstest]
+    fn drop_owned_bytes_handles_null_ptr_without_panic() {
+        // SAFETY: documented contract: null pointer short-circuits.
+        unsafe {
+            drop_owned_bytes(ptr::null_mut(), 0, 0);
+        };
+    }
+
+    #[rstest]
+    fn drop_owned_bytes_frees_vec_leaked_with_from_vec_layout() {
+        let mut v = core::mem::ManuallyDrop::new(vec![1u8, 2, 3, 4, 5]);
+        let ptr = v.as_mut_ptr();
+        let len = v.len();
+        let cap = v.capacity();
+        // SAFETY: pointer/len/cap originate from a `Vec<u8>` leaked above;
+        // `drop_owned_bytes` reconstructs and drops it with the matching
+        // layout.
+        unsafe {
+            drop_owned_bytes(ptr, len, cap);
+        };
+    }
+
+    #[rstest]
+    fn plugin_error_new_carries_code_and_message() {
+        let err = PluginError::new(PluginErrorCode::InvalidArgument, "bad arg");
+        assert_eq!(err.code, PluginErrorCode::InvalidArgument);
+        assert_eq!(err.message_string(), "bad arg");
+    }
+
+    #[rstest]
+    fn plugin_error_panic_sets_panic_code() {
+        let err = PluginError::panic("oops");
+        assert_eq!(err.code, PluginErrorCode::Panic);
+        assert_eq!(err.message_string(), "oops");
+    }
+
+    #[rstest]
+    fn plugin_error_debug_renders_code_and_message() {
+        let err = PluginError::new(PluginErrorCode::NotImplemented, "todo");
+        let rendered = format!("{err:?}");
+        assert!(rendered.contains("NotImplemented"));
+        assert!(rendered.contains("todo"));
+    }
+
+    #[rstest]
+    #[case::ok(PluginErrorCode::Ok, 0u32)]
+    #[case::generic(PluginErrorCode::Generic, 1)]
+    #[case::panic(PluginErrorCode::Panic, 2)]
+    #[case::invalid_argument(PluginErrorCode::InvalidArgument, 3)]
+    #[case::not_implemented(PluginErrorCode::NotImplemented, 4)]
+    #[case::abi_mismatch(PluginErrorCode::AbiMismatch, 5)]
+    #[case::serialization_failed(PluginErrorCode::SerializationFailed, 6)]
+    fn plugin_error_code_has_stable_discriminant(
+        #[case] code: PluginErrorCode,
+        #[case] expected: u32,
+    ) {
+        assert_eq!(code as u32, expected);
+    }
 }
