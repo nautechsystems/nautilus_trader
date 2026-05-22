@@ -90,7 +90,8 @@ The table below shows the main differences that affect behavior today.
 | Batch submit        | Uses `POST /orders` for batchable `SubmitOrderList` requests                  | Uses `POST /orders` for batchable `SubmitOrderList` requests  | Both batch only independent limit orders, capped at 15 per request. |
 | Batch cancel        | Uses `DELETE /orders`                                                         | Uses `DELETE /orders`                                         | Both align with official Polymarket docs. |
 | Market unsubscribe  | Sends dynamic WebSocket `unsubscribe` messages                                | Sends dynamic WebSocket `unsubscribe` messages                | Both support subscribe and unsubscribe. |
-| Data client config  | Credentials, subscription buffering, quote handling, provider config          | Base URLs, timeouts, filters, new‑market discovery            | Config surfaces differ materially. |
+| Auto‑load retry     | `auto_load_max_retries` (12), `auto_load_retry_delay_*` (5.0/15.0 secs)       | Same knobs, same defaults                                     | Both retry CLOB‑hydration / indexing‑lag misses with bounded exponential backoff plus jitter. |
+| Data client config  | Credentials, subscription buffering, quote handling, provider config          | Base URLs, timeouts, filters, new‑market discovery            | Config surfaces differ materially outside of the auto‑load family. |
 | Exec client config  | Credentials, retries, raw WS logging, experimental trade‑based order recovery | Credentials, retries, account IDs, native timeouts            | Rust does not expose every Python‑only option. |
 
 ## pUSD
@@ -463,8 +464,8 @@ with additional trade events stored in the cache as JSON under a custom key to r
 ### Trade ID derivation
 
 Polymarket does not publish a trade ID on `last_trade_price` market-data events.
-The adapter derives a deterministic `TradeId` by FNV-1a hashing the asset ID,
-side, price, size, and timestamp (`determine_trade_id` in both Rust and Python).
+The adapter derives a deterministic `TradeId` from the asset ID, side, price,
+size, and timestamp via `determine_trade_id` (FNV-1a in Rust, blake2b in Python).
 For CLOB Data API trade history the adapter composes the `TradeId` from a hash
 suffix, an asset suffix, and a per-(transaction, asset) sequence number (format
 `{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}`). A single Polygon transaction
@@ -631,12 +632,15 @@ The feature is enabled by default. Disable it by setting `auto_load_missing_inst
 
 Newly-minted markets pass through a CLOB hydration window of several minutes during which Gamma
 reports `active=true` but `GET /markets/{cid}` returns either a 404 or a 200 with empty
-`token_id` strings. The adapter classifies both states as transient and retries the auto-load
-with bounded exponential backoff. Tune the cadence with `auto_load_max_retries` (default 12),
-`auto_load_retry_delay_initial_secs` (default 5.0), and `auto_load_retry_delay_max_secs`
-(default 15.0); the defaults cap the retry window near 3 minutes. Set `auto_load_max_retries=0`
-to disable retry. 5-minute markets (e.g. updown crypto) can expire before the venue finishes
-hydrating, so budget for that or raise the cap.
+`token_id` strings. Both adapters classify these as transient and retry the auto-load with
+bounded exponential backoff plus jitter. Tune the cadence with `auto_load_max_retries`
+(default 12), `auto_load_retry_delay_initial_secs` (default 5.0), and
+`auto_load_retry_delay_max_secs` (default 15.0); the defaults cap the retry window near 3
+minutes. Set `auto_load_max_retries=0` to disable retry. 5-minute markets (e.g. updown crypto)
+can expire before the venue finishes hydrating, so budget for that or raise the cap. After the
+retry budget is exhausted, a condition still missing on Gamma is logged as a terminal miss. The
+Python adapter then picks it back up on the next `update_instruments_interval_mins` refresh; the
+Rust adapter leaves the subscription unresolved until the caller resubscribes.
 
 ### Purging instruments at runtime
 
@@ -696,13 +700,16 @@ When you attempt to subscribe to 501 or more instruments on a single WebSocket c
 
 NautilusTrader automatically manages WebSocket connections to handle this limitation:
 
-- The adapter defaults to **200 instrument subscriptions per connection** (configurable via `ws_max_subscriptions_per_connection`).
+- The adapter defaults to **200 instrument subscriptions per connection** (configurable via
+  `ws_max_subscriptions_per_connection` in the Python adapter; `ws_max_subscriptions` in the
+  Rust adapter).
 - When the subscription count exceeds this limit, additional WebSocket connections are created automatically.
 - This ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
 
 :::tip
 If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections.
-You can tune the per-connection limit up to 500 via `ws_max_subscriptions_per_connection`.
+You can tune the per-connection limit up to 500 via `ws_max_subscriptions_per_connection`
+(Python) or `ws_max_subscriptions` (Rust).
 :::
 
 ## Rate limiting
@@ -737,8 +744,9 @@ Polymarket changes these quotas over time. As of 2026-05-06, the official limits
 
 The WebSocket quotas are not part of the published REST rate-limits table.
 The adapter ships a configurable per-connection subscription cap
-(`ws_max_subscriptions_per_connection`) defaulting to 200; Polymarket previously
-documented an upper bound of 500 per connection.
+(`ws_max_subscriptions_per_connection` in the Python adapter,
+`ws_max_subscriptions` in the Rust adapter) defaulting to 200; Polymarket
+previously documented an upper bound of 500 per connection.
 
 :::warning
 Exceeding Polymarket rate limits triggers Cloudflare throttling. Requests are queued
@@ -802,6 +810,9 @@ Class: `PolymarketDataClientConfig` in `nautilus_trader.adapters.polymarket.conf
 | `drop_quotes_missing_side`            | `True`       | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
 | `auto_load_missing_instruments`       | `True`       | Load instruments on demand when subscribe or request commands reference uncached instruments. |
 | `auto_load_debounce_ms`               | `100`        | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
+| `auto_load_max_retries`               | `12`         | Maximum retry attempts on transient auto‑load failures (404 or empty `token_id` during CLOB hydration). Set to `0` to disable. |
+| `auto_load_retry_delay_initial_secs`  | `5.0`        | Initial delay (seconds) between transient auto‑load retries. |
+| `auto_load_retry_delay_max_secs`      | `15.0`       | Maximum delay (seconds) between transient auto‑load retries. |
 | `instrument_config`                   | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
 
 ### Execution client options (Python v2)
@@ -834,22 +845,25 @@ Class: `PolymarketExecClientConfig` in `nautilus_trader.adapters.polymarket.conf
 
 Struct: `PolymarketDataClientConfig` in `crates/adapters/polymarket/src/config.rs`.
 
-| Option                             | Default                                    | Description |
-|------------------------------------|--------------------------------------------|-------------|
-| `base_url_http`                    | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
-| `base_url_ws`                      | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
-| `base_url_gamma`                   | `None` (official Gamma endpoint)           | Override for the Gamma API base URL. |
-| `base_url_data_api`                | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |
-| `http_timeout_secs`                | `60`                                       | HTTP request timeout (seconds). |
-| `ws_timeout_secs`                  | `30`                                       | WebSocket connect/idle timeout (seconds). |
-| `ws_max_subscriptions`             | `200`                                      | Maximum instrument subscriptions per WebSocket connection. |
-| `update_instruments_interval_mins` | `60`                                       | Interval (minutes) between instrument catalogue refreshes. |
-| `subscribe_new_markets`            | `false`                                    | Subscribe to new‑market discovery events via WebSocket when `true`. |
-| `auto_load_missing_instruments`    | `true`                                     | Load instruments on demand when subscribe or request commands reference uncached instruments. |
-| `auto_load_debounce_ms`            | `100`                                      | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
-| `filters`                          | `[]`                                       | Instrument filters applied during loading and discovery. |
-| `new_market_filter`                | `None`                                     | Optional filter applied to newly discovered markets before emission. |
-| `transport_backend`                | `Sockudo`                                  | WebSocket transport backend. |
+| Option                               | Default                                    | Description |
+|--------------------------------------|--------------------------------------------|-------------|
+| `base_url_http`                      | `None` (official CLOB endpoint)            | Override for the CLOB REST base URL. |
+| `base_url_ws`                        | `None` (official CLOB endpoint)            | Override for the CLOB WebSocket base URL. |
+| `base_url_gamma`                     | `None` (official Gamma endpoint)           | Override for the Gamma API base URL. |
+| `base_url_data_api`                  | `None` (`https://data-api.polymarket.com`) | Override for the Data API base URL. |
+| `http_timeout_secs`                  | `60`                                       | HTTP request timeout (seconds). |
+| `ws_timeout_secs`                    | `30`                                       | WebSocket connect/idle timeout (seconds). |
+| `ws_max_subscriptions`               | `200`                                      | Maximum instrument subscriptions per WebSocket connection. |
+| `update_instruments_interval_mins`   | `60`                                       | Interval (minutes) between instrument catalogue refreshes. |
+| `subscribe_new_markets`              | `false`                                    | Subscribe to new‑market discovery events via WebSocket when `true`. |
+| `auto_load_missing_instruments`      | `true`                                     | Load instruments on demand when subscribe or request commands reference uncached instruments. |
+| `auto_load_debounce_ms`              | `100`                                      | Debounce window (milliseconds) for coalescing concurrent runtime instrument loads. |
+| `auto_load_max_retries`              | `12`                                       | Maximum retry attempts on transient auto‑load failures (markets in the CLOB hydration window). Set to `0` to disable. |
+| `auto_load_retry_delay_initial_secs` | `5.0`                                      | Initial delay (seconds) between transient auto‑load retries. |
+| `auto_load_retry_delay_max_secs`     | `15.0`                                     | Maximum delay (seconds) between transient auto‑load retries. |
+| `filters`                            | `[]`                                       | Instrument filters applied during loading and discovery. |
+| `new_market_filter`                  | `None`                                     | Optional filter applied to newly discovered markets before emission. |
+| `transport_backend`                  | `Sockudo`                                  | WebSocket transport backend. |
 
 The Rust data client config does not accept account credentials; authentication is handled by
 the execution client. Subscription buffering (`ws_connection_initial_delay_secs`) and quote

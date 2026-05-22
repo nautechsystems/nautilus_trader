@@ -30,13 +30,14 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## API endpoints
 
-The adapter communicates with three Polymarket API surfaces:
+The adapter communicates with four Polymarket API surfaces:
 
 | API            | Base URL                                        | Auth                   | Purpose                                     |
 |----------------|-------------------------------------------------|------------------------|---------------------------------------------|
 | CLOB REST      | `https://clob.polymarket.com`                   | L2 HMAC                | Orders, trades, balances.                   |
 | CLOB WebSocket | `wss://ws-subscriptions-clob.polymarket.com/ws` | L2 HMAC (user channel) | Streaming orderbook, trades, order updates. |
-| Gamma (Data)   | `https://data-api.polymarket.com`               | None                   | Market discovery, positions.                |
+| Gamma          | `https://gamma-api.polymarket.com`              | None                   | Market and event discovery, tags, search.   |
+| Data           | `https://data-api.polymarket.com`               | None                   | Trade history and user positions.           |
 
 ## Authentication
 

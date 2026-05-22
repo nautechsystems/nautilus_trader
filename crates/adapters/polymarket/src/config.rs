@@ -71,6 +71,18 @@ pub struct PolymarketDataClientConfig {
     /// The window (milliseconds) over which concurrent auto-load requests are batched.
     #[builder(default = 100)]
     pub auto_load_debounce_ms: u64,
+    /// Maximum retry attempts on transient auto-load failures (markets in the CLOB
+    /// hydration window that return empty `clob_token_ids` from Gamma, or that are
+    /// absent from the bulk response). Set to `0` to disable retry.
+    #[builder(default = 12)]
+    pub auto_load_max_retries: u32,
+    /// Initial delay (seconds) between transient auto-load retries; backed off
+    /// exponentially with positive jitter up to `auto_load_retry_delay_max_secs`.
+    #[builder(default = 5.0)]
+    pub auto_load_retry_delay_initial_secs: f64,
+    /// Maximum delay (seconds) between transient auto-load retries.
+    #[builder(default = 15.0)]
+    pub auto_load_retry_delay_max_secs: f64,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     #[serde(skip)]

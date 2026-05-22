@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
+- Added Polymarket Rust adapter bounded-retry auto-load (`auto_load_max_retries`, exponential backoff with jitter)
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -59,6 +60,8 @@ None
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
+- Fixed Polymarket Rust adapter dropping auto-load batches on Gamma chunk failures
+- Fixed Polymarket Rust adapter treating encoded-empty `clob_token_ids` as terminal instead of transient
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
@@ -70,6 +73,7 @@ None
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)
+- Added Polymarket `auto_load_retry_delay` helper with exponential backoff and jitter (Rust)
 - Added Polymarket Criterion bench groups for inbound pipeline, exec pipeline, and signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
@@ -87,6 +91,8 @@ None
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
 - Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
+- Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
+- Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 
 ### Deprecations
 None

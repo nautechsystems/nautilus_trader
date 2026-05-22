@@ -1058,6 +1058,8 @@ class GreeksCalculator:
         index_instrument_id: model.InstrumentId | None = None,
         beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> model.GreeksData: ...
     def modify_greeks(
         self,
@@ -1073,6 +1075,11 @@ class GreeksCalculator:
         vol: float = 0.0,
         expiry_in_days: int = 0,
         vega_time_weight_base: int | None = None,
+        unshocked_vol: float = 0.0,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
+        index_price: float | None = None,
+        vol_index_price: float | None = None,
     ) -> tuple[float, float, float]: ...
     def portfolio_greeks(
         self,
@@ -1094,6 +1101,8 @@ class GreeksCalculator:
         beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
         greeks_filter: typing.Any | None = None,
         vega_time_weight_base: int | None = None,
+        vol_index_instrument_id: model.InstrumentId | None = None,
+        vol_beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> model.PortfolioGreeks: ...
     def cache_futures_spread(
         self,

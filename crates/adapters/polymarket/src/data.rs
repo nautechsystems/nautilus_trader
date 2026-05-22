@@ -24,9 +24,12 @@
 //! unchanged side's size carries forward. See
 //! `docs/integrations/polymarket.md` for the full description.
 
-use std::sync::{
-    Arc, Mutex as StdMutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashSet;
@@ -371,6 +374,9 @@ impl PolymarketDataClient {
         let pending = self.pending_auto_loads.clone();
         let scheduled = self.auto_load_scheduled.clone();
         let debounce_ms = self.config.auto_load_debounce_ms;
+        let max_retries = self.config.auto_load_max_retries;
+        let base_secs = self.config.auto_load_retry_delay_initial_secs;
+        let max_secs = self.config.auto_load_retry_delay_max_secs;
         let http = self.provider.http_client().clone();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
@@ -385,34 +391,51 @@ impl PolymarketDataClient {
         let cancellation = self.cancellation_token.clone();
 
         get_runtime().spawn(async move {
-            // Loop until the pending map is quiescent. Each iteration runs one
-            // debounce window, then snapshots, fetches, and applies. A chunk
-            // failure or a late-arriving miss keeps us in the loop; we exit
-            // (releasing `scheduled`) only once `pending` is empty. This means a
-            // transient Gamma failure is retried on the next debounce without
-            // relying on some unrelated future miss to trigger it.
-            loop {
-                tokio::select! {
-                    () = tokio::time::sleep(tokio::time::Duration::from_millis(debounce_ms)) => {}
-                    () = cancellation.cancelled() => {
-                        scheduled.store(false, Ordering::Release);
-                        return;
-                    }
-                }
-
-                let ids: Vec<InstrumentId> = {
-                    let guard = pending.lock().expect("pending_auto_loads mutex poisoned");
-                    guard.iter().copied().collect()
-                };
-
-                if ids.is_empty() {
+            // Coalesce concurrent misses into one Gamma call.
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_millis(debounce_ms)) => {}
+                () = cancellation.cancelled() => {
                     scheduled.store(false, Ordering::Release);
                     return;
                 }
+            }
 
-                log::info!("Auto-loading {} missing instrument(s): {ids:?}", ids.len());
+            // Drain pending and release `scheduled` so new misses spawn a fresh
+            // task in parallel rather than piggybacking on this batch's budget.
+            let mut batch: AHashSet<InstrumentId> = {
+                let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
+                let snapshot = guard.iter().copied().collect();
+                guard.clear();
+                snapshot
+            };
+            scheduled.store(false, Ordering::Release);
 
-                let mut condition_ids: Vec<String> = ids
+            if batch.is_empty() {
+                return;
+            }
+
+            log::info!(
+                "Auto-loading {} missing instrument(s): {batch:?}",
+                batch.len(),
+            );
+
+            for attempt in 0..=max_retries {
+                if cancellation.is_cancelled() {
+                    return;
+                }
+
+                // Drop entries the user has since unsubscribed from.
+                batch.retain(|id| {
+                    active_quote_subs.contains(id)
+                        || active_delta_subs.contains(id)
+                        || active_trade_subs.contains(id)
+                });
+
+                if batch.is_empty() {
+                    return;
+                }
+
+                let mut condition_ids: Vec<String> = batch
                     .iter()
                     .filter_map(|id| extract_condition_id(id).ok())
                     .collect();
@@ -420,20 +443,16 @@ impl PolymarketDataClient {
                 condition_ids.dedup();
 
                 if condition_ids.is_empty() {
-                    log::error!("Auto-load aborted: no condition_ids could be extracted");
-                    // Drop the stranded entries so we do not loop forever.
-                    let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
-                    for id in &ids {
-                        guard.remove(id);
-                    }
-                    continue;
+                    log::error!(
+                        "Auto-load aborted: no condition_ids could be extracted from {} entries",
+                        batch.len(),
+                    );
+                    return;
                 }
 
-                // Gamma rejects condition_id queries larger than ~100, so chunk
-                // the request and merge the results. This matches the provider's
-                // own `_load_ids_using_gamma_markets` chunking policy.
-                let mut loaded: Vec<InstrumentAny> =
-                    Vec::with_capacity(condition_ids.len().min(GAMMA_CONDITION_IDS_BATCH_SIZE));
+                // Gamma caps `condition_ids=` filters at ~100; chunk and merge.
+                let mut loaded: Vec<InstrumentAny> = Vec::new();
+                let mut transient: AHashSet<String> = AHashSet::new();
                 let mut chunk_failed = false;
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
@@ -442,12 +461,18 @@ impl PolymarketDataClient {
                         ..Default::default()
                     };
 
-                    match http.request_instruments_by_params(params).await {
-                        Ok(insts) => loaded.extend(insts),
+                    match http
+                        .request_instruments_by_params_with_transient(params)
+                        .await
+                    {
+                        Ok((insts, trans)) => {
+                            loaded.extend(insts);
+                            transient.extend(trans);
+                        }
                         Err(e) => {
                             log::error!(
                                 "Auto-load batch failed for chunk of {} condition_id(s): {e:?}",
-                                chunk.len()
+                                chunk.len(),
                             );
                             chunk_failed = true;
                             break;
@@ -455,57 +480,108 @@ impl PolymarketDataClient {
                     }
                 }
 
-                if chunk_failed {
-                    // Leave entries in `pending` and loop around; the next
-                    // iteration retries after another debounce window.
-                    continue;
-                }
+                // A chunk failure leaves the batch's state unknown; count it
+                // against the retry budget instead of dropping the subscription.
+                let next_batch: AHashSet<InstrumentId> = if chunk_failed {
+                    batch.clone()
+                } else {
+                    for inst in loaded {
+                        if !filters.iter().all(|f| f.accept(&inst)) {
+                            log::debug!("Auto-loaded instrument {} filtered out", inst.id());
+                            continue;
+                        }
 
-                for inst in loaded {
-                    if !filters.iter().all(|f| f.accept(&inst)) {
-                        log::debug!("Auto-loaded instrument {} filtered out", inst.id());
-                        continue;
+                        cache_instrument(&instruments, &token_meta, &inst);
+
+                        let instrument_id = inst.id();
+                        if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
+                            log::error!(
+                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                            );
+                        }
                     }
 
-                    cache_instrument(&instruments, &token_meta, &inst);
+                    // Snapshot loaded keys so the arc-swap Guard does not span
+                    // the WS reconciliation awaits below.
+                    let loaded_ids: AHashSet<InstrumentId> = {
+                        let cache = instruments.load();
+                        batch
+                            .iter()
+                            .filter(|id| cache.contains_key(id))
+                            .copied()
+                            .collect()
+                    };
+                    let mut next: AHashSet<InstrumentId> = AHashSet::new();
 
-                    let instrument_id = inst.id();
-                    if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
-                        log::error!("Failed to emit auto-loaded instrument {instrument_id}: {e}");
+                    for id in &batch {
+                        let cid = match extract_condition_id(id) {
+                            Ok(c) => c,
+                            Err(_) => continue,
+                        };
+
+                        if loaded_ids.contains(id) {
+                            if let Ok(token_id) = resolve_token_id_from(&instruments, *id) {
+                                sync_ws_subscription_async(
+                                    *id,
+                                    token_id,
+                                    active_quote_subs.clone(),
+                                    active_delta_subs.clone(),
+                                    active_trade_subs.clone(),
+                                    ws_open_tokens.clone(),
+                                    ws_sub_mutex.clone(),
+                                    ws_client.clone(),
+                                )
+                                .await;
+                            }
+                        } else if transient.contains(&cid) {
+                            // CLOB still hydrating: retry within the budget.
+                            next.insert(*id);
+                        } else {
+                            // Absent from bulk response (same observable state as a
+                            // 404 in the single-market path): also transient.
+                            next.insert(*id);
+                        }
                     }
+                    next
+                };
+
+                if next_batch.is_empty() {
+                    return;
                 }
 
-                for instrument_id in ids {
-                    // Pop the pending entry under the lock; if `unsubscribe_*`
-                    // already cleared it, skip.
-                    let was_pending = {
-                        let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
-                        guard.remove(&instrument_id)
+                if attempt >= max_retries {
+                    let reason = if chunk_failed {
+                        "Gamma fetch failed"
+                    } else {
+                        "no usable token_id"
                     };
 
-                    if !was_pending {
-                        continue;
+                    for id in &next_batch {
+                        log::error!(
+                            "Cannot find instrument for {id}: {reason} after {max_retries} retries (CLOB lifecycle race)"
+                        );
                     }
-
-                    let Ok(token_id) = resolve_token_id_from(&instruments, instrument_id) else {
-                        log::error!("Auto-load did not return instrument {instrument_id}");
-                        continue;
-                    };
-
-                    // Reconcile WS state with whichever `active_*_subs` still
-                    // hold intent. A concurrent unsubscribe makes this a no-op.
-                    sync_ws_subscription_async(
-                        instrument_id,
-                        token_id,
-                        active_quote_subs.clone(),
-                        active_delta_subs.clone(),
-                        active_trade_subs.clone(),
-                        ws_open_tokens.clone(),
-                        ws_sub_mutex.clone(),
-                        ws_client.clone(),
-                    )
-                    .await;
+                    return;
                 }
+
+                let delay = crate::common::retry::auto_load_retry_delay(
+                    attempt, base_secs, max_secs,
+                );
+                let kind = if chunk_failed { "chunk failure" } else { "transient" };
+                log::info!(
+                    "Auto-load retry {}/{} for {} {kind} instrument(s) in {:.1}s",
+                    attempt + 1,
+                    max_retries,
+                    next_batch.len(),
+                    delay.as_secs_f64(),
+                );
+
+                tokio::select! {
+                    () = tokio::time::sleep(delay) => {}
+                    () = cancellation.cancelled() => return,
+                }
+
+                batch = next_batch;
             }
         });
     }

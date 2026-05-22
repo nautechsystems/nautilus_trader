@@ -71,6 +71,7 @@ derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
+rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }

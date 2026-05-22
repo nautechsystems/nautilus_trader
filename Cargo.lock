@@ -6449,6 +6449,7 @@ dependencies = [
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
+ "rand 0.10.1",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
