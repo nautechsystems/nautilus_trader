@@ -47,7 +47,8 @@ use nautilus_model::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
-        OrderEventAny, OrderEventType, OrderFilled, OrderRejected, order::spec::OrderRejectedSpec,
+        OrderEmulated, OrderEventAny, OrderEventType, OrderFilled, OrderRejected, OrderReleased,
+        order::spec::OrderRejectedSpec,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
@@ -1261,6 +1262,136 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
     assert_eq!(saved_messages.len(), 2);
     assert_eq!(accepted.client_order_id, client_order_id);
     assert_eq!(rejected.client_order_id, client_order_id);
+}
+
+#[rstest]
+#[case(TimeInForce::Ioc)]
+#[case(TimeInForce::Fok)]
+fn test_process_limit_order_without_immediate_match_cancels(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    #[case] time_in_force: TimeInForce,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(client_order_id)
+        .build();
+
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let accepted = match saved_messages.first().unwrap() {
+        OrderEventAny::Accepted(accepted) => accepted,
+        _ => panic!("Expected OrderAccepted event in first message"),
+    };
+    let canceled = match saved_messages.get(1).unwrap() {
+        OrderEventAny::Canceled(canceled) => canceled,
+        _ => panic!("Expected OrderCanceled event in second message"),
+    };
+
+    assert_eq!(saved_messages.len(), 2);
+    assert_eq!(accepted.client_order_id, client_order_id);
+    assert_eq!(canceled.client_order_id, client_order_id);
+    assert_eq!(canceled.venue_order_id, Some(accepted.venue_order_id));
+}
+
+#[rstest]
+fn test_accept_order_released_dispatches_and_registers(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .emulation_trigger(TriggerType::Default)
+        .client_order_id(client_order_id)
+        .build();
+
+    // Drive the order through `Emulated` -> `Released` so it arrives at the
+    // matching engine in a status that has no transition into `Accepted`.
+    let trader_id = limit_order.trader_id();
+    let strategy_id = limit_order.strategy_id();
+    let instrument_id = limit_order.instrument_id();
+    limit_order
+        .apply(OrderEventAny::Emulated(OrderEmulated::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .unwrap();
+    limit_order
+        .apply(OrderEventAny::Released(OrderReleased::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Price::from("1495.00"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .unwrap();
+    assert_eq!(limit_order.status(), OrderStatus::Released);
+
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let accepted_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::Accepted(_)))
+        .count();
+    assert_eq!(
+        accepted_count, 1,
+        "Released order should still dispatch OrderAccepted",
+    );
+    assert!(
+        engine_l2.order_exists(client_order_id),
+        "Released order should register with the matching core",
+    );
 }
 
 #[rstest]

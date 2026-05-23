@@ -4345,6 +4345,11 @@ impl OrderMatchingEngine {
         };
 
         let mut initial_market_to_limit_fill = false;
+        let mut total_filled = self
+            .cached_filled_qty
+            .get(&order.client_order_id())
+            .copied()
+            .unwrap_or_else(|| order.filled_qty());
 
         for &(fill_px, fill_qty) in fills {
             let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
@@ -4409,6 +4414,13 @@ impl OrderMatchingEngine {
                 return;
             }
 
+            // Mirror `fill_order`'s leaves cap
+            let capped_fill_qty = min(
+                effective_fill_qty,
+                order.quantity().saturating_sub(total_filled),
+            );
+            total_filled = total_filled.add(capped_fill_qty);
+
             self.fill_order(
                 order,
                 fill_px,
@@ -4424,13 +4436,14 @@ impl OrderMatchingEngine {
             }
         }
 
-        if order.time_in_force() == TimeInForce::Ioc && order.is_open() {
-            // IOC order has filled all available size
+        let leaves_remaining = total_filled < order.quantity();
+
+        if order.time_in_force() == TimeInForce::Ioc && leaves_remaining {
             self.cancel_order(order, None);
             return;
         }
 
-        if order.is_open()
+        if leaves_remaining
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
@@ -4984,7 +4997,16 @@ impl OrderMatchingEngine {
 
         if order.status() != OrderStatus::Accepted {
             let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-            self.generate_order_accepted(order, venue_order_id);
+            let event = self.create_order_accepted(order, venue_order_id);
+            // Apply locally so `cancel_order` sees `Accepted`,
+            // dispatch on apply failure so `Released` still registers with the core.
+            if let Err(e) = order.apply(event.clone()) {
+                log::warn!(
+                    "Skipping local apply of accepted event for {}: {e}",
+                    order.client_order_id(),
+                );
+            }
+            self.dispatch_order_event(event);
 
             // Activate before emitting `OrderUpdated` so `match_info` below
             // carries the activation flag.
@@ -5351,12 +5373,16 @@ impl OrderMatchingEngine {
         );
     }
 
-    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+    fn create_order_accepted(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+    ) -> OrderEventAny {
         let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderEventAny::Accepted(OrderAccepted::new(
+        OrderEventAny::Accepted(OrderAccepted::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -5367,8 +5393,11 @@ impl OrderMatchingEngine {
             ts_now,
             ts_now,
             false,
-        ));
+        ))
+    }
 
+    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+        let event = self.create_order_accepted(order, venue_order_id);
         self.dispatch_order_event(event);
     }
 
