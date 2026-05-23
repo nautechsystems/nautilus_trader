@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Host-side glue between [`nautilus_plugin`] and the live node.
+//! Host-side bridge between the plug-in C ABI and an engine.
 //!
 //! Provides actor and strategy adapters that wrap a cdylib's vtable + handle
-//! as a `DataActor` / `Strategy` the live engine can register, plus the
-//! host-side [`HostVTable`](nautilus_plugin::HostVTable) that routes plug-in
-//! callbacks through the production cache, risk, event, msgbus, and timer
-//! paths.
+//! as a `DataActor` / `Strategy` an engine can register, plus the
+//! host-side [`HostVTable`](crate::HostVTable) that routes plug-in
+//! callbacks through the engine's cache, risk, event, msgbus, and timer
+//! paths. Used by both the live node and the backtest engine via the
+//! crate's `host` feature.
 //!
 //! [plug-in roadmap]: https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/plugin/README.md
 //!
@@ -27,11 +28,13 @@
 //!
 //! - [`actor`]: [`PluginActorAdapter`] for plug-in actors.
 //! - [`strategy`]: [`PluginStrategyAdapter`] for plug-in strategies.
-//! - [`host`]: host-side `HostVTable` construction with live-node callback routing.
+//! - [`host`]: host-side `HostVTable` construction with engine callback routing.
 //! - [`commands`]: JSON command envelopes the plug-in posts to the host.
 //! - [`registry`]: the per-instance opaque context the host attaches to each
 //!   plug-in instance so host callbacks can be attributed to the calling
 //!   adapter.
+//! - [`configured`]: config-resolved adapter construction from a loaded
+//!   plug-in manifest, used by engine startup code.
 
 #![allow(unsafe_code)]
 
@@ -53,13 +56,11 @@ pub mod host;
 pub mod registry;
 pub mod strategy;
 
-pub(crate) mod configured;
+pub mod configured;
 
 pub use actor::PluginActorAdapter;
 pub use commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand};
-pub(crate) use configured::{
-    ConfiguredPluginEntry, configured_entry, register_manifest_custom_data,
-};
+pub use configured::{ConfiguredPluginEntry, configured_entry, register_manifest_custom_data};
 pub use custom_data::{PluginCustomDataValue, register_custom_data_from_manifest};
 pub use host::{host_vtable, plugin_loader};
 pub use registry::HostContextInner;

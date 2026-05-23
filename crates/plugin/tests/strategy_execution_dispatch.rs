@@ -63,16 +63,22 @@ macro_rules! generated_slot {
 
 // One variant per [`HostVTable`] order-command slot that a strategy can
 // invoke. Indexed into the counter and last-context arrays.
-#[allow(clippy::enum_variant_names)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 enum ExecHook {
     Submit,
     Cancel,
     Modify,
+    SubmitList,
+    CancelOrders,
+    CancelAll,
+    ClosePosition,
+    CloseAll,
+    QueryAccount,
+    QueryOrder,
 }
 
-const HOOK_COUNT: usize = ExecHook::Modify as usize + 1;
+const HOOK_COUNT: usize = ExecHook::QueryOrder as usize + 1;
 static HOOK_CALLS: [AtomicU64; HOOK_COUNT] = [const { AtomicU64::new(0) }; HOOK_COUNT];
 static LAST_CTX: [AtomicPtr<HostContext>; HOOK_COUNT] =
     [const { AtomicPtr::new(std::ptr::null_mut()) }; HOOK_COUNT];
@@ -123,7 +129,9 @@ fn assert_ctx(hook: ExecHook, expected: *const HostContext) {
 }
 
 // Stub handlers for every non-execution slot in [`HostVTable`]. The
-// strategy under test only invokes the three execution slots, so the
+// strategy under test invokes the ten execution slots (submit/cancel/
+// modify order, submit_order_list, cancel_orders, cancel_all_orders,
+// close_position, close_all_positions, query_account, query_order); the
 // others stay as no-ops returning empty results. They still need
 // non-null function pointers because [`HostVTable`] fields are
 // unconditional `unsafe extern "C" fn`.
@@ -275,6 +283,62 @@ unsafe extern "C" fn recording_modify_order(
     PluginResult::Ok(())
 }
 
+unsafe extern "C" fn recording_submit_order_list(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::SubmitList);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_cancel_orders(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::CancelOrders);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_cancel_all_orders(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::CancelAll);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_close_position(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::ClosePosition);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_close_all_positions(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::CloseAll);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_query_account(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::QueryAccount);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn recording_query_order(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, ExecHook::QueryOrder);
+    PluginResult::Ok(())
+}
+
 static TEST_HOST: HostVTable = HostVTable {
     abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
     clock_now_ns: stub_clock_now_ns,
@@ -302,16 +366,28 @@ static TEST_HOST: HostVTable = HostVTable {
     submit_order: recording_submit_order,
     cancel_order: recording_cancel_order,
     modify_order: recording_modify_order,
+    submit_order_list: recording_submit_order_list,
+    cancel_orders: recording_cancel_orders,
+    cancel_all_orders: recording_cancel_all_orders,
+    close_position: recording_close_position,
+    close_all_positions: recording_close_all_positions,
+    query_account: recording_query_account,
+    query_order: recording_query_order,
 };
 
-// Strategy whose callbacks each invoke one execution method through its
-// stored `(host, ctx)`. Mapping callback -> execution method:
-//
-// - `on_start`  -> `host.submit_order`
-// - `on_stop`   -> `host.cancel_order`
-// - `on_resume` -> `host.modify_order`
-//
-// The mapping is arbitrary; only the routing through `(host, ctx)` matters.
+// Strategy whose `on_start` dispatches to the [`HostVTable`] slot named
+// by a thread-local target. Each parametrised test case sets the target
+// before driving `on_start`, so a single callback exercises every
+// execution slot the strategy can invoke through its bound
+// `(host, ctx)`. The mapping is arbitrary; only the routing matters.
+thread_local! {
+    static TARGET: std::cell::Cell<ExecHook> = const { std::cell::Cell::new(ExecHook::Submit) };
+}
+
+fn set_target(hook: ExecHook) {
+    TARGET.with(|t| t.set(hook));
+}
+
 struct ExecStrategy {
     host: *const HostVTable,
     ctx: *const HostContext,
@@ -331,26 +407,23 @@ impl PluginStrategy for ExecStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
         // SAFETY: the host commits to keeping the vtable live for the strategy.
         let host = unsafe { &*self.host };
-        // SAFETY: ctx is the value the host supplied at create time.
-        let r = unsafe { (host.submit_order)(self.ctx, BorrowedStr::from_str(r#"{"k":"s"}"#)) };
-        r.into_result()
-            .map_err(|e| anyhow::anyhow!(e.message_string()))
-    }
-
-    fn on_stop(&mut self) -> anyhow::Result<()> {
-        // SAFETY: see on_start.
-        let host = unsafe { &*self.host };
-        // SAFETY: see on_start.
-        let r = unsafe { (host.cancel_order)(self.ctx, BorrowedStr::from_str(r#"{"k":"c"}"#)) };
-        r.into_result()
-            .map_err(|e| anyhow::anyhow!(e.message_string()))
-    }
-
-    fn on_resume(&mut self) -> anyhow::Result<()> {
-        // SAFETY: see on_start.
-        let host = unsafe { &*self.host };
-        // SAFETY: see on_start.
-        let r = unsafe { (host.modify_order)(self.ctx, BorrowedStr::from_str(r#"{"k":"m"}"#)) };
+        let payload = BorrowedStr::from_str(r#"{"k":"v"}"#);
+        // Each arm is a single unsafe call into the host's function-pointer
+        // slot. SAFETY: ctx is the value the host supplied at create time
+        // and the host keeps every fn pointer live for the strategy
+        // lifetime.
+        let r = match TARGET.with(std::cell::Cell::get) {
+            ExecHook::Submit => unsafe { (host.submit_order)(self.ctx, payload) },
+            ExecHook::Cancel => unsafe { (host.cancel_order)(self.ctx, payload) },
+            ExecHook::Modify => unsafe { (host.modify_order)(self.ctx, payload) },
+            ExecHook::SubmitList => unsafe { (host.submit_order_list)(self.ctx, payload) },
+            ExecHook::CancelOrders => unsafe { (host.cancel_orders)(self.ctx, payload) },
+            ExecHook::CancelAll => unsafe { (host.cancel_all_orders)(self.ctx, payload) },
+            ExecHook::ClosePosition => unsafe { (host.close_position)(self.ctx, payload) },
+            ExecHook::CloseAll => unsafe { (host.close_all_positions)(self.ctx, payload) },
+            ExecHook::QueryAccount => unsafe { (host.query_account)(self.ctx, payload) },
+            ExecHook::QueryOrder => unsafe { (host.query_order)(self.ctx, payload) },
+        };
         r.into_result()
             .map_err(|e| anyhow::anyhow!(e.message_string()))
     }
@@ -377,9 +450,17 @@ fn sentinel_ctx() -> *const HostContext {
 #[case::submit_order(ExecHook::Submit)]
 #[case::cancel_order(ExecHook::Cancel)]
 #[case::modify_order(ExecHook::Modify)]
+#[case::submit_order_list(ExecHook::SubmitList)]
+#[case::cancel_orders(ExecHook::CancelOrders)]
+#[case::cancel_all_orders(ExecHook::CancelAll)]
+#[case::close_position(ExecHook::ClosePosition)]
+#[case::close_all_positions(ExecHook::CloseAll)]
+#[case::query_account(ExecHook::QueryAccount)]
+#[case::query_order(ExecHook::QueryOrder)]
 fn strategy_callback_invokes_bound_execution_method_with_stored_context(#[case] hook: ExecHook) {
     let _g = dispatch_lock();
     reset_all();
+    set_target(hook);
 
     let vt_ptr = strategy_vtable::<ExecStrategy>();
     // SAFETY: vtable lives for the process lifetime.
@@ -391,12 +472,9 @@ fn strategy_callback_invokes_bound_execution_method_with_stored_context(#[case] 
     let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
     assert!(!handle.is_null(), "create returned null");
 
-    // SAFETY: handle is live for the matching callback below.
-    let r = match hook {
-        ExecHook::Submit => unsafe { generated_slot!(vt, on_start)(handle) },
-        ExecHook::Cancel => unsafe { generated_slot!(vt, on_stop)(handle) },
-        ExecHook::Modify => unsafe { generated_slot!(vt, on_resume)(handle) },
-    };
+    // SAFETY: handle is live; on_start reads TARGET and dispatches to the
+    // matching execution slot through the strategy's bound (host, ctx).
+    let r = unsafe { generated_slot!(vt, on_start)(handle) };
     r.into_result().expect("strategy callback");
 
     assert_only_hook(hook);
@@ -430,14 +508,16 @@ fn distinct_strategy_instances_carry_distinct_contexts_to_the_host() {
     // SAFETY: see above.
     let h_b = unsafe { generated_slot!(vt, create)(host, ctx_b, BorrowedStr::empty()) };
 
+    set_target(ExecHook::Submit);
     // SAFETY: h_a is live; on_start forwards to submit_order with ctx_a.
     let r = unsafe { generated_slot!(vt, on_start)(h_a) };
     r.into_result().expect("on_start on instance A");
     assert_ctx(ExecHook::Submit, ctx_a);
 
-    // SAFETY: h_b is live; on_resume forwards to modify_order with ctx_b.
-    let r = unsafe { generated_slot!(vt, on_resume)(h_b) };
-    r.into_result().expect("on_resume on instance B");
+    set_target(ExecHook::Modify);
+    // SAFETY: h_b is live; on_start forwards to modify_order with ctx_b.
+    let r = unsafe { generated_slot!(vt, on_start)(h_b) };
+    r.into_result().expect("on_start on instance B");
     assert_ctx(ExecHook::Modify, ctx_b);
 
     // SAFETY: h_a is live.

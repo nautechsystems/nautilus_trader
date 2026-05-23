@@ -37,13 +37,18 @@
 //! - Lifecycle: `start`, `stop`, `resume`, `reset`, `dispose`, `degrade`, `fault`
 //! - Market data: quotes, trades, bars, mark/index/funding prices,
 //!   instrument status, instrument close
+//! - Historical market data: bulk historical quotes, trades, bars,
+//!   funding rates, mark prices, index prices delivered as
+//!   [`crate::boundary::Slice`] payloads
 //! - Order events: filled, canceled
 //! - Other: signal, time event
 //!
 //! Deferred: `on_book_deltas` (non-`#[repr(C)]` envelope, see README),
 //! `on_book` (stateful), `on_instrument` (non-`#[repr(C)]` enum),
-//! `on_data` (CustomData routing through actors), DeFi pool/block events,
-//! historical-data callbacks.
+//! `on_data` (CustomData routing through actors), `on_historical_data`
+//! (`&dyn Any` payload), `on_option_greeks` / `on_option_chain`
+//! (non-`#[repr(C)]` payloads), DeFi pool/block events. The authoritative
+//! list lives in `tests/surface_alignment.rs`.
 
 #![allow(unsafe_code)]
 
@@ -59,7 +64,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
+    boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
     host::{HostContext, HostVTable},
     panic::{guard, guard_infallible},
 };
@@ -191,6 +196,43 @@ pub struct ActorVTable {
             signal: *const Signal,
         ) -> PluginResult<()>,
     >,
+
+    pub on_historical_quotes: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            quotes: Slice<'_, QuoteTick>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_trades: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            trades: Slice<'_, TradeTick>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_bars: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            bars: Slice<'_, Bar>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_funding_rates: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            funding_rates: Slice<'_, FundingRateUpdate>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_mark_prices: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            mark_prices: Slice<'_, MarkPriceUpdate>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_index_prices: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            index_prices: Slice<'_, IndexPriceUpdate>,
+        ) -> PluginResult<()>,
+    >,
 }
 
 /// Author-facing trait for a plug-in actor.
@@ -304,6 +346,42 @@ pub trait PluginActor: 'static + Send + Sized {
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
+
+    #[allow(unused_variables)]
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_index_prices(
+        &mut self,
+        index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Returns a `*const ActorVTable` for the given [`PluginActor`] type.
@@ -347,6 +425,12 @@ where
         on_order_filled: Some(on_order_filled_thunk::<T>),
         on_order_canceled: Some(on_order_canceled_thunk::<T>),
         on_signal: Some(on_signal_thunk::<T>),
+        on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
+        on_historical_trades: Some(on_historical_trades_thunk::<T>),
+        on_historical_bars: Some(on_historical_bars_thunk::<T>),
+        on_historical_funding_rates: Some(on_historical_funding_rates_thunk::<T>),
+        on_historical_mark_prices: Some(on_historical_mark_prices_thunk::<T>),
+        on_historical_index_prices: Some(on_historical_index_prices_thunk::<T>),
     };
 }
 
@@ -447,3 +531,39 @@ event_thunk!(
 event_thunk!(on_order_filled_thunk, on_order_filled, OrderFilled);
 event_thunk!(on_order_canceled_thunk, on_order_canceled, OrderCanceled);
 event_thunk!(on_signal_thunk, on_signal, Signal);
+
+macro_rules! slice_thunk {
+    ($name:ident, $method:ident, $ty:ty) => {
+        unsafe extern "C" fn $name<T: PluginActor>(
+            handle: *mut PluginActorHandle,
+            values: Slice<'_, $ty>,
+        ) -> PluginResult<()> {
+            guard(|| {
+                // SAFETY: host keeps the slice storage live for the call;
+                // the plug-in only borrows it for the trait-method invocation.
+                let v = unsafe { values.as_slice() };
+                let actor = handle_as_mut::<T>(handle);
+                ok_or_err(actor.$method(v))
+            })
+        }
+    };
+}
+
+slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
+slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);
+slice_thunk!(on_historical_bars_thunk, on_historical_bars, Bar);
+slice_thunk!(
+    on_historical_funding_rates_thunk,
+    on_historical_funding_rates,
+    FundingRateUpdate
+);
+slice_thunk!(
+    on_historical_mark_prices_thunk,
+    on_historical_mark_prices,
+    MarkPriceUpdate
+);
+slice_thunk!(
+    on_historical_index_prices_thunk,
+    on_historical_index_prices,
+    IndexPriceUpdate
+);

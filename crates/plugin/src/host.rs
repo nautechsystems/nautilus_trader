@@ -277,6 +277,88 @@ pub struct HostVTable {
         ctx: *const HostContext,
         command_json: BorrowedStr<'_>,
     ) -> PluginResult<()>,
+
+    /// Submits a list of orders as a single batch on behalf of the calling
+    /// strategy.
+    ///
+    /// `command_json` carries the serialised order list plus optional
+    /// position id, client id, and routing params. The host expands the
+    /// payload into the in-engine `SubmitOrderList` shape and dispatches
+    /// the batch atomically through the execution engine.
+    pub submit_order_list: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Cancels every order named in the supplied list on behalf of the
+    /// calling strategy.
+    ///
+    /// `command_json` carries the `client_order_id` list plus optional
+    /// client id and routing params.
+    pub cancel_orders: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Cancels every open order matching the supplied filter on behalf of
+    /// the calling strategy.
+    ///
+    /// `command_json` carries the `instrument_id` and optional `order_side`,
+    /// `client_id`, and routing params. The host scans its cache for
+    /// matching open orders and issues the cancels.
+    pub cancel_all_orders: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Closes the position identified by the command on behalf of the
+    /// calling strategy.
+    ///
+    /// `command_json` carries the `position_id` plus optional `client_id`,
+    /// `tags`, `time_in_force`, `reduce_only`, and `quote_quantity`. The
+    /// host reads the position from its cache and submits a closing market
+    /// order through the strategy's order factory.
+    pub close_position: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Closes every open position matching the supplied filter on behalf
+    /// of the calling strategy.
+    ///
+    /// `command_json` carries the `instrument_id` plus optional
+    /// `position_side`, `client_id`, `tags`, `time_in_force`,
+    /// `reduce_only`, and `quote_quantity`. The host scans its cache for
+    /// matching open positions and submits closing market orders.
+    pub close_all_positions: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Queries the venue for the latest snapshot of `account_id` on
+    /// behalf of the calling strategy.
+    ///
+    /// `command_json` carries the `account_id` plus optional `client_id`
+    /// and routing params. The result is delivered asynchronously through
+    /// the host's normal account-state event flow; this call only fires
+    /// the query, it does not return the snapshot inline.
+    pub query_account: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
+
+    /// Queries the venue for the latest snapshot of `client_order_id` on
+    /// behalf of the calling strategy.
+    ///
+    /// `command_json` carries the `client_order_id` plus optional
+    /// `client_id` and routing params. The result is delivered
+    /// asynchronously through the host's normal order-status event flow;
+    /// this call only fires the query, it does not return the snapshot
+    /// inline.
+    pub query_order: unsafe extern "C" fn(
+        ctx: *const HostContext,
+        command_json: BorrowedStr<'_>,
+    ) -> PluginResult<()>,
 }
 
 impl HostVTable {
@@ -494,6 +576,13 @@ mod tests {
             submit_order: stub_order_cmd,
             cancel_order: stub_order_cmd,
             modify_order: stub_order_cmd,
+            submit_order_list: stub_order_cmd,
+            cancel_orders: stub_order_cmd,
+            cancel_all_orders: stub_order_cmd,
+            close_position: stub_order_cmd,
+            close_all_positions: stub_order_cmd,
+            query_account: stub_order_cmd,
+            query_order: stub_order_cmd,
         }
     }
 

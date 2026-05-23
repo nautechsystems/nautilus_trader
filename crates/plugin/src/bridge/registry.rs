@@ -34,7 +34,8 @@ use std::sync::{
 };
 
 use nautilus_model::identifiers::ActorId;
-use nautilus_plugin::host::HostContext;
+
+use crate::host::HostContext;
 
 #[cfg(test)]
 static HOST_CONTEXT_LIVE: AtomicUsize = AtomicUsize::new(0);

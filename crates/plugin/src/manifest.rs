@@ -333,6 +333,12 @@ fn validate_actor_vtable(
             on_order_filled,
             on_order_canceled,
             on_signal,
+            on_historical_quotes,
+            on_historical_trades,
+            on_historical_bars,
+            on_historical_funding_rates,
+            on_historical_mark_prices,
+            on_historical_index_prices,
         ]
     );
 }
@@ -391,6 +397,13 @@ fn validate_strategy_vtable(
             on_position_opened,
             on_position_changed,
             on_position_closed,
+            on_market_exit,
+            on_historical_quotes,
+            on_historical_trades,
+            on_historical_bars,
+            on_historical_funding_rates,
+            on_historical_mark_prices,
+            on_historical_index_prices,
         ]
     );
 }
@@ -1071,6 +1084,12 @@ mod tests {
             on_order_filled: valid.on_order_filled,
             on_order_canceled: valid.on_order_canceled,
             on_signal: valid.on_signal,
+            on_historical_quotes: valid.on_historical_quotes,
+            on_historical_trades: valid.on_historical_trades,
+            on_historical_bars: valid.on_historical_bars,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
+            on_historical_mark_prices: valid.on_historical_mark_prices,
+            on_historical_index_prices: valid.on_historical_index_prices,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1102,6 +1121,12 @@ mod tests {
             on_order_filled: valid.on_order_filled,
             on_order_canceled: valid.on_order_canceled,
             on_signal: valid.on_signal,
+            on_historical_quotes: valid.on_historical_quotes,
+            on_historical_trades: valid.on_historical_trades,
+            on_historical_bars: valid.on_historical_bars,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
+            on_historical_mark_prices: valid.on_historical_mark_prices,
+            on_historical_index_prices: valid.on_historical_index_prices,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1150,6 +1175,13 @@ mod tests {
             on_position_opened: valid.on_position_opened,
             on_position_changed: valid.on_position_changed,
             on_position_closed: None,
+            on_market_exit: valid.on_market_exit,
+            on_historical_quotes: valid.on_historical_quotes,
+            on_historical_trades: valid.on_historical_trades,
+            on_historical_bars: valid.on_historical_bars,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
+            on_historical_mark_prices: valid.on_historical_mark_prices,
+            on_historical_index_prices: valid.on_historical_index_prices,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1198,6 +1230,13 @@ mod tests {
             on_position_opened: valid.on_position_opened,
             on_position_changed: valid.on_position_changed,
             on_position_closed: valid.on_position_closed,
+            on_market_exit: valid.on_market_exit,
+            on_historical_quotes: valid.on_historical_quotes,
+            on_historical_trades: valid.on_historical_trades,
+            on_historical_bars: valid.on_historical_bars,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
+            on_historical_mark_prices: valid.on_historical_mark_prices,
+            on_historical_index_prices: valid.on_historical_index_prices,
         }));
         std::ptr::from_ref(&*vtable)
     }

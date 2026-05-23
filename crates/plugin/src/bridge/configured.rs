@@ -18,31 +18,33 @@
 #![allow(unsafe_code)]
 
 use nautilus_model::identifiers::ActorId;
-use nautilus_plugin::manifest::{
-    ValidatedActorRegistration, ValidatedActorVTable, ValidatedPluginManifest,
-    ValidatedStrategyRegistration, ValidatedStrategyVTable,
-};
 use nautilus_trading::strategy::StrategyConfig;
 
-use crate::plugin::{
-    PluginActorAdapter, PluginStrategyAdapter, host_vtable, register_custom_data_from_manifest,
+use crate::{
+    bridge::{
+        PluginActorAdapter, PluginStrategyAdapter, host_vtable, register_custom_data_from_manifest,
+    },
+    manifest::{
+        ValidatedActorRegistration, ValidatedActorVTable, ValidatedPluginManifest,
+        ValidatedStrategyRegistration, ValidatedStrategyVTable,
+    },
 };
 
 /// Config-resolved plug-in component entry.
-pub(crate) enum ConfiguredPluginEntry {
+pub enum ConfiguredPluginEntry {
     Actor(ConfiguredActorEntry),
     Strategy(ConfiguredStrategyEntry),
 }
 
 /// Actor entry copied from a loaded manifest.
-pub(crate) struct ConfiguredActorEntry {
+pub struct ConfiguredActorEntry {
     plugin_name: String,
     type_name: String,
     vtable: ValidatedActorVTable,
 }
 
 /// Strategy entry copied from a loaded manifest.
-pub(crate) struct ConfiguredStrategyEntry {
+pub struct ConfiguredStrategyEntry {
     plugin_name: String,
     type_name: String,
     vtable: ValidatedStrategyVTable,
@@ -54,7 +56,7 @@ impl ConfiguredActorEntry {
     /// # Errors
     ///
     /// Returns an error if the plug-in vtable rejects construction.
-    pub(crate) fn create_adapter(
+    pub fn create_adapter(
         &self,
         actor_id: ActorId,
         config_json: &str,
@@ -80,7 +82,7 @@ impl ConfiguredStrategyEntry {
     /// # Errors
     ///
     /// Returns an error if the plug-in vtable rejects construction.
-    pub(crate) fn create_adapter(
+    pub fn create_adapter(
         &self,
         strategy_config: StrategyConfig,
         config_json: &str,
@@ -105,7 +107,7 @@ impl ConfiguredStrategyEntry {
 /// # Errors
 ///
 /// Returns an error if the host-side custom-data registry rejects an entry.
-pub(crate) fn register_manifest_custom_data(
+pub fn register_manifest_custom_data(
     manifest: ValidatedPluginManifest<'_>,
 ) -> anyhow::Result<usize> {
     register_custom_data_from_manifest(manifest)
@@ -116,7 +118,7 @@ pub(crate) fn register_manifest_custom_data(
 /// # Errors
 ///
 /// Returns an error when the type is missing or ambiguous.
-pub(crate) fn configured_entry(
+pub fn configured_entry(
     manifest: ValidatedPluginManifest<'_>,
     path: &str,
     type_name: &str,
@@ -167,7 +169,10 @@ fn find_strategy_entry(
 mod tests {
     use std::sync::LazyLock;
 
-    use nautilus_plugin::{
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
         host::{HostContext, HostVTable},
@@ -177,9 +182,6 @@ mod tests {
             strategy::{PluginStrategy, strategy_vtable},
         },
     };
-    use rstest::rstest;
-
-    use super::*;
 
     struct ExampleActor;
 

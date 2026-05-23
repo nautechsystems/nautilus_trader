@@ -68,6 +68,9 @@ pub mod panic;
 pub mod surfaces;
 
 #[cfg(feature = "host")]
+pub mod bridge;
+
+#[cfg(feature = "host")]
 pub mod loader;
 
 mod macros;

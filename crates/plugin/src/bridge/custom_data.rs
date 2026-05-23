@@ -36,7 +36,8 @@ use nautilus_model::data::{
     CustomDataTrait, HasTsInit,
     registry::{JsonDeserializer, ensure_json_deserializer_registered},
 };
-use nautilus_plugin::{
+
+use crate::{
     boundary::BorrowedStr,
     manifest::{
         ValidatedCustomDataRegistration, ValidatedCustomDataVTable, ValidatedPluginManifest,
@@ -223,14 +224,14 @@ impl CustomDataTrait for PluginCustomDataValue {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_plugin::{
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
         manifest::{CustomDataRegistration, PluginBuildId, PluginManifest},
     };
-    use rstest::rstest;
-
-    use super::*;
 
     #[rstest]
     fn register_custom_data_from_manifest_rejects_null_vtable() {

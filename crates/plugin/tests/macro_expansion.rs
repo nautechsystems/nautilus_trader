@@ -456,6 +456,13 @@ static TEST_HOST: HostVTable = HostVTable {
     submit_order: test_submit_order,
     cancel_order: test_cancel_order,
     modify_order: test_modify_order,
+    submit_order_list: test_submit_order,
+    cancel_orders: test_submit_order,
+    cancel_all_orders: test_submit_order,
+    close_position: test_submit_order,
+    close_all_positions: test_submit_order,
+    query_account: test_submit_order,
+    query_order: test_submit_order,
 };
 
 unsafe extern "C" {
@@ -598,6 +605,13 @@ fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
         submit_order: test_submit_order,
         cancel_order: test_cancel_order,
         modify_order: test_modify_order,
+        submit_order_list: test_submit_order,
+        cancel_orders: test_submit_order,
+        cancel_all_orders: test_submit_order,
+        close_position: test_submit_order,
+        close_all_positions: test_submit_order,
+        query_account: test_submit_order,
+        query_order: test_submit_order,
     };
     let m = unsafe { nautilus_plugin_init(&raw const bad_host) };
     assert!(m.is_null(), "init should reject ABI {abi}");

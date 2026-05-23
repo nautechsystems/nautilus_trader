@@ -16,7 +16,7 @@
 //! JSON command envelopes posted from plug-ins to the host.
 //!
 //! Plug-ins hand the host opaque JSON for order commands via
-//! [`HostVTable::submit_order`](nautilus_plugin::HostVTable::submit_order) and
+//! [`HostVTable::submit_order`](crate::HostVTable::submit_order) and
 //! friends. The host deserializes the payload into one of the structs below
 //! and dispatches to the matching [`Strategy`](nautilus_trading::strategy::Strategy)
 //! method on the calling adapter. JSON is the boundary format so the command

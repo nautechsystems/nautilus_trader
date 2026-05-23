@@ -16,7 +16,7 @@
 //! Host-side adapter that wraps a plug-in actor cdylib as a [`DataActor`].
 //!
 //! Owns the plug-in's opaque handle plus a pointer to its static
-//! [`nautilus_plugin::surfaces::actor::ActorVTable`] and forwards every callback
+//! [`crate::surfaces::actor::ActorVTable`] and forwards every callback
 //! the surface ships in v1 through the vtable. The live engine sees a normal
 //! `DataActor`; the plug-in never crosses the FFI boundary except as the typed
 //! event payload pointer the engine already has from the cache.
@@ -47,14 +47,14 @@ use nautilus_model::{
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
 };
-use nautilus_plugin::{
-    boundary::{BorrowedStr, PluginResult},
+
+use crate::{
+    boundary::{BorrowedStr, PluginResult, Slice},
+    bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
     host::{HostContext, HostVTable},
     manifest::ValidatedActorVTable,
     surfaces::actor::PluginActorHandle,
 };
-
-use crate::plugin::registry::{HostContextInner, drop_host_context, leak_host_context};
 
 /// Adapts a plug-in actor (vtable + handle from a cdylib) into a host-side
 /// [`DataActor`] the live node can register and dispatch into.
@@ -312,6 +312,84 @@ impl DataActor for PluginActorAdapter {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_signal)(adapter.handle, p)
         })
     }
+
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        invoke_slice(self, "on_historical_quotes", quotes, |adapter, s| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_historical_quotes)(
+                adapter.handle,
+                s,
+            )
+        })
+    }
+
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        invoke_slice(self, "on_historical_trades", trades, |adapter, s| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_historical_trades)(
+                adapter.handle,
+                s,
+            )
+        })
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        invoke_slice(self, "on_historical_bars", bars, |adapter, s| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_historical_bars)(
+                adapter.handle,
+                s,
+            )
+        })
+    }
+
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_funding_rates",
+            funding_rates,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_funding_rates
+                )(adapter.handle, s)
+            },
+        )
+    }
+
+    fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_mark_prices",
+            mark_prices,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_mark_prices
+                )(adapter.handle, s)
+            },
+        )
+    }
+
+    fn on_historical_index_prices(
+        &mut self,
+        index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_index_prices",
+            index_prices,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_index_prices
+                )(adapter.handle, s)
+            },
+        )
+    }
 }
 
 /// Wraps a call into the plug-in cdylib in `catch_unwind` so a plug-in panic
@@ -355,6 +433,19 @@ fn invoke_event<T>(
     finish(result, &plugin_name, &type_name, method)
 }
 
+fn invoke_slice<T>(
+    adapter: &PluginActorAdapter,
+    method: &str,
+    payload: &[T],
+    f: impl FnOnce(&PluginActorAdapter, Slice<'_, T>) -> PluginResult<()>,
+) -> anyhow::Result<()> {
+    let plugin_name = adapter.plugin_name.clone();
+    let type_name = adapter.type_name.clone();
+    let slice = Slice::from_slice(payload);
+    let result = guard_call(&plugin_name, &type_name, method, || f(adapter, slice));
+    finish(result, &plugin_name, &type_name, method)
+}
+
 fn finish(
     result: Option<PluginResult<()>>,
     plugin_name: &str,
@@ -374,13 +465,15 @@ fn finish(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_plugin::surfaces::actor::{PluginActor, actor_vtable};
     use rstest::rstest;
 
     use super::*;
-    use crate::plugin::{
-        host::host_vtable,
-        registry::{host_context_live_count, host_context_test_lock},
+    use crate::{
+        bridge::{
+            host::host_vtable,
+            registry::{host_context_live_count, host_context_test_lock},
+        },
+        surfaces::actor::{PluginActor, actor_vtable},
     };
 
     struct DropTestActor;

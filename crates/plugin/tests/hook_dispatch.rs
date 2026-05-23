@@ -62,7 +62,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
-    boundary::BorrowedStr,
+    boundary::{BorrowedStr, Slice},
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
@@ -105,9 +105,15 @@ enum ActorHook {
     OnOrderFilled,
     OnOrderCanceled,
     OnSignal,
+    OnHistoricalQuotes,
+    OnHistoricalTrades,
+    OnHistoricalBars,
+    OnHistoricalFundingRates,
+    OnHistoricalMarkPrices,
+    OnHistoricalIndexPrices,
 }
 
-const ACTOR_HOOK_COUNT: usize = ActorHook::OnSignal as usize + 1;
+const ACTOR_HOOK_COUNT: usize = ActorHook::OnHistoricalIndexPrices as usize + 1;
 static ACTOR_HOOK_CALLS: [AtomicU64; ACTOR_HOOK_COUNT] =
     [const { AtomicU64::new(0) }; ACTOR_HOOK_COUNT];
 
@@ -249,6 +255,36 @@ impl PluginActor for HookCountingActor {
         bump_actor(ActorHook::OnSignal);
         Ok(())
     }
+
+    fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalQuotes);
+        Ok(())
+    }
+
+    fn on_historical_trades(&mut self, _t: &[TradeTick]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalTrades);
+        Ok(())
+    }
+
+    fn on_historical_bars(&mut self, _b: &[Bar]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalBars);
+        Ok(())
+    }
+
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalFundingRates);
+        Ok(())
+    }
+
+    fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalMarkPrices);
+        Ok(())
+    }
+
+    fn on_historical_index_prices(&mut self, _p: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalIndexPrices);
+        Ok(())
+    }
 }
 
 // See note above on ActorHook regarding the `On` prefix lint.
@@ -292,9 +328,16 @@ enum StrategyHook {
     OnPositionOpened,
     OnPositionChanged,
     OnPositionClosed,
+    OnMarketExit,
+    OnHistoricalQuotes,
+    OnHistoricalTrades,
+    OnHistoricalBars,
+    OnHistoricalFundingRates,
+    OnHistoricalMarkPrices,
+    OnHistoricalIndexPrices,
 }
 
-const STRATEGY_HOOK_COUNT: usize = StrategyHook::OnPositionClosed as usize + 1;
+const STRATEGY_HOOK_COUNT: usize = StrategyHook::OnHistoricalIndexPrices as usize + 1;
 static STRATEGY_HOOK_CALLS: [AtomicU64; STRATEGY_HOOK_COUNT] =
     [const { AtomicU64::new(0) }; STRATEGY_HOOK_COUNT];
 
@@ -510,6 +553,41 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_position_closed(&mut self, _e: &PositionClosed) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnPositionClosed);
+        Ok(())
+    }
+
+    fn on_market_exit(&mut self) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnMarketExit);
+        Ok(())
+    }
+
+    fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalQuotes);
+        Ok(())
+    }
+
+    fn on_historical_trades(&mut self, _t: &[TradeTick]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalTrades);
+        Ok(())
+    }
+
+    fn on_historical_bars(&mut self, _b: &[Bar]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalBars);
+        Ok(())
+    }
+
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalFundingRates);
+        Ok(())
+    }
+
+    fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalMarkPrices);
+        Ok(())
+    }
+
+    fn on_historical_index_prices(&mut self, _p: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalIndexPrices);
         Ok(())
     }
 }
@@ -1013,6 +1091,76 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
 }
 
 #[rstest]
+#[case::on_historical_quotes(ActorHook::OnHistoricalQuotes)]
+#[case::on_historical_trades(ActorHook::OnHistoricalTrades)]
+#[case::on_historical_bars(ActorHook::OnHistoricalBars)]
+#[case::on_historical_funding_rates(ActorHook::OnHistoricalFundingRates)]
+#[case::on_historical_mark_prices(ActorHook::OnHistoricalMarkPrices)]
+#[case::on_historical_index_prices(ActorHook::OnHistoricalIndexPrices)]
+fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    // Each match arm constructs a small Vec of the typed payload, wraps it
+    // as a Slice descriptor, and calls the corresponding slice thunk. The
+    // backing Vec lives until the end of the arm.
+    let r = match hook {
+        ActorHook::OnHistoricalQuotes => {
+            let v = vec![quote_tick_value(), quote_tick_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_quotes)(handle, s) }
+        }
+        ActorHook::OnHistoricalTrades => {
+            let v = vec![stub_trade_ethusdt_buyer(), stub_trade_ethusdt_buyer()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_trades)(handle, s) }
+        }
+        ActorHook::OnHistoricalBars => {
+            let v = vec![stub_bar(), stub_bar()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
+        }
+        ActorHook::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
+        }
+        ActorHook::OnHistoricalMarkPrices => {
+            let v = vec![mark_price_value(), mark_price_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_mark_prices)(handle, s) }
+        }
+        ActorHook::OnHistoricalIndexPrices => {
+            let v = vec![index_price_value(), index_price_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        _ => panic!("non-historical hook"),
+    };
+    r.into_result().expect("historical slice thunk failed");
+    assert_only_actor_hook(hook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
 #[case::on_start(StrategyHook::OnStart)]
 #[case::on_stop(StrategyHook::OnStop)]
 #[case::on_resume(StrategyHook::OnResume)]
@@ -1020,6 +1168,7 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
 #[case::on_dispose(StrategyHook::OnDispose)]
 #[case::on_degrade(StrategyHook::OnDegrade)]
 #[case::on_fault(StrategyHook::OnFault)]
+#[case::on_market_exit(StrategyHook::OnMarketExit)]
 fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     let _g = dispatch_lock();
     reset_strategy_counters();
@@ -1041,6 +1190,7 @@ fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook)
         StrategyHook::OnDispose => unsafe { generated_slot!(vt, on_dispose)(handle) },
         StrategyHook::OnDegrade => unsafe { generated_slot!(vt, on_degrade)(handle) },
         StrategyHook::OnFault => unsafe { generated_slot!(vt, on_fault)(handle) },
+        StrategyHook::OnMarketExit => unsafe { generated_slot!(vt, on_market_exit)(handle) },
         _ => panic!("non-lifecycle hook"),
     };
     r.into_result().expect("lifecycle thunk failed");
@@ -1251,6 +1401,73 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
         _ => panic!("non-event hook"),
     };
     r.into_result().expect("event thunk failed");
+    assert_only_strategy_hook(hook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+#[case::on_historical_quotes(StrategyHook::OnHistoricalQuotes)]
+#[case::on_historical_trades(StrategyHook::OnHistoricalTrades)]
+#[case::on_historical_bars(StrategyHook::OnHistoricalBars)]
+#[case::on_historical_funding_rates(StrategyHook::OnHistoricalFundingRates)]
+#[case::on_historical_mark_prices(StrategyHook::OnHistoricalMarkPrices)]
+#[case::on_historical_index_prices(StrategyHook::OnHistoricalIndexPrices)]
+fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let r = match hook {
+        StrategyHook::OnHistoricalQuotes => {
+            let v = vec![quote_tick_value(), quote_tick_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_quotes)(handle, s) }
+        }
+        StrategyHook::OnHistoricalTrades => {
+            let v = vec![stub_trade_ethusdt_buyer(), stub_trade_ethusdt_buyer()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_trades)(handle, s) }
+        }
+        StrategyHook::OnHistoricalBars => {
+            let v = vec![stub_bar(), stub_bar()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
+        }
+        StrategyHook::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
+        }
+        StrategyHook::OnHistoricalMarkPrices => {
+            let v = vec![mark_price_value(), mark_price_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_mark_prices)(handle, s) }
+        }
+        StrategyHook::OnHistoricalIndexPrices => {
+            let v = vec![index_price_value(), index_price_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        _ => panic!("non-historical hook"),
+    };
+    r.into_result().expect("historical slice thunk failed");
     assert_only_strategy_hook(hook);
 
     // SAFETY: handle is live.

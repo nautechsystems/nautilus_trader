@@ -409,6 +409,13 @@ fn host_vtable() -> *const HostVTable {
         submit_order: host_submit_order_unbound,
         cancel_order: host_cancel_order_unbound,
         modify_order: host_modify_order_unbound,
+        submit_order_list: host_submit_order_list_unbound,
+        cancel_orders: host_cancel_orders_unbound,
+        cancel_all_orders: host_cancel_all_orders_unbound,
+        close_position: host_close_position_unbound,
+        close_all_positions: host_close_all_positions_unbound,
+        query_account: host_query_account_unbound,
+        query_order: host_query_order_unbound,
     }))
 }
 
@@ -641,6 +648,76 @@ unsafe extern "C" fn host_modify_order_unbound(
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
         "modify_order is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_submit_order_list_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "submit_order_list is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_cancel_orders_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "cancel_orders is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_cancel_all_orders_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "cancel_all_orders is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_close_position_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "close_position is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_close_all_positions_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "close_all_positions is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_query_account_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "query_account is not wired into this host vtable",
+    ))
+}
+
+unsafe extern "C" fn host_query_order_unbound(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "query_order is not wired into this host vtable",
     ))
 }
 
@@ -1005,6 +1082,13 @@ mod tests {
     #[case::submit("submit_order is not wired into this host vtable")]
     #[case::cancel("cancel_order is not wired into this host vtable")]
     #[case::modify("modify_order is not wired into this host vtable")]
+    #[case::submit_list("submit_order_list is not wired into this host vtable")]
+    #[case::cancel_list("cancel_orders is not wired into this host vtable")]
+    #[case::cancel_all("cancel_all_orders is not wired into this host vtable")]
+    #[case::close_position("close_position is not wired into this host vtable")]
+    #[case::close_all("close_all_positions is not wired into this host vtable")]
+    #[case::query_account("query_account is not wired into this host vtable")]
+    #[case::query_order("query_order is not wired into this host vtable")]
     fn host_order_command_stubs_return_not_implemented(#[case] expected: &str) {
         // The default loader's host vtable installs NotImplemented stubs for
         // callbacks that need live-node state.
@@ -1015,15 +1099,36 @@ mod tests {
         let payload = BorrowedStr::from_str("{}");
 
         let r = match expected {
-            s if s.starts_with("submit_order") =>
+            s if s.starts_with("submit_order_list") =>
             // SAFETY: stub does not deref ctx; payload outlives the call.
+            unsafe { (v.submit_order_list)(ctx, payload) },
+            s if s.starts_with("submit_order") =>
+            // SAFETY: see above.
             unsafe { (v.submit_order)(ctx, payload) },
+            s if s.starts_with("cancel_orders") =>
+            // SAFETY: see above.
+            unsafe { (v.cancel_orders)(ctx, payload) },
+            s if s.starts_with("cancel_all_orders") =>
+            // SAFETY: see above.
+            unsafe { (v.cancel_all_orders)(ctx, payload) },
             s if s.starts_with("cancel_order") =>
             // SAFETY: see above.
             unsafe { (v.cancel_order)(ctx, payload) },
             s if s.starts_with("modify_order") =>
             // SAFETY: see above.
             unsafe { (v.modify_order)(ctx, payload) },
+            s if s.starts_with("close_position") =>
+            // SAFETY: see above.
+            unsafe { (v.close_position)(ctx, payload) },
+            s if s.starts_with("close_all_positions") =>
+            // SAFETY: see above.
+            unsafe { (v.close_all_positions)(ctx, payload) },
+            s if s.starts_with("query_account") =>
+            // SAFETY: see above.
+            unsafe { (v.query_account)(ctx, payload) },
+            s if s.starts_with("query_order") =>
+            // SAFETY: see above.
+            unsafe { (v.query_order)(ctx, payload) },
             _ => unreachable!(),
         };
 

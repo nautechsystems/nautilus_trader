@@ -41,14 +41,8 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // Historical bulk callbacks need a slice boundary contract first
+    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
     "on_historical_data",
-    "on_historical_quotes",
-    "on_historical_trades",
-    "on_historical_funding_rates",
-    "on_historical_bars",
-    "on_historical_mark_prices",
-    "on_historical_index_prices",
 ];
 
 const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
@@ -69,34 +63,18 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // Historical bulk callbacks need a slice boundary contract first
+    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
     "on_historical_data",
-    "on_historical_quotes",
-    "on_historical_trades",
-    "on_historical_funding_rates",
-    "on_historical_bars",
-    "on_historical_mark_prices",
-    "on_historical_index_prices",
-    // Market exit is a host-side workflow hook for now
-    "on_market_exit",
 ];
 
 const PLUGIN_STRATEGY_DEFERRED_EXECUTION_METHODS: &[&str] = &[
-    // Multi-order commands need a boundary command shape first
-    "submit_order_list",
-    "cancel_orders",
-    "cancel_all_orders",
-    // Local state methods mutate host cache state before commands leave the strategy
+    // Local state methods mutate host cache state before commands leave the
+    // strategy; the host adapter, not the plug-in, is the authority for
+    // staging these transitions in v1.
     "mark_order_pending_update",
     "mark_order_pending_cancel",
     "generate_order_pending_update",
     "generate_order_pending_cancel",
-    // Position-closing workflows depend on host order factories and cache scans
-    "close_position",
-    "close_all_positions",
-    // Query commands are outside the v1 host command surface
-    "query_account",
-    "query_order",
 ];
 
 const PLUGIN_STRATEGY_HOST_OWNED_METHODS: &[&str] = &[

@@ -42,11 +42,26 @@
 //! - Order lifecycle events: initialized, submitted, accepted, rejected,
 //!   expired, triggered, denied, emulated, released, pending update,
 //!   pending cancel, modify rejected, cancel rejected, updated.
-//! - Order commands via [`HostVTable`]: submit, cancel, modify.
+//! - Market exit lifecycle: `on_market_exit`.
+//! - Historical market data: bulk historical quotes, trades, bars,
+//!   funding rates, mark prices, index prices delivered as
+//!   [`crate::boundary::Slice`] payloads.
+//! - Order commands via [`HostVTable`]: `submit_order`, `cancel_order`,
+//!   `modify_order`, `submit_order_list`, `cancel_orders`,
+//!   `cancel_all_orders`, `close_position`, `close_all_positions`,
+//!   `query_account`, `query_order`. The plug-in crate publishes these
+//!   slots; the live adapter wires `submit_order` / `cancel_order` /
+//!   `modify_order` to typed `Strategy::*` commands today, and exposes
+//!   the other seven as `NotImplemented` stubs until the typed-command
+//!   deserialisation lands (tracked separately).
 //!
-//! Deferred: `submit_order_list`, `batch_cancel_orders`, `query_order`,
-//! `query_account`, `on_book` (stateful), `on_instrument`,
-//! `on_market_exit`, DeFi pool/block events, historical-data callbacks.
+//! Deferred: `on_book` (stateful), `on_instrument`
+//! (non-`#[repr(C)]` enum), `on_data` (CustomData routing through
+//! actors), `on_historical_data` (`&dyn Any` payload), `on_option_greeks`
+//! / `on_option_chain` (non-`#[repr(C)]` payloads), DeFi pool/block
+//! events, and the cache-state-mutation methods (`mark_order_pending_*`,
+//! `generate_order_pending_*`). The authoritative list lives in
+//! `tests/surface_alignment.rs`.
 
 #![allow(unsafe_code)]
 
@@ -67,7 +82,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
+    boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
     host::{HostContext, HostVTable},
     panic::{guard, guard_infallible},
 };
@@ -311,6 +326,46 @@ pub struct StrategyVTable {
             event: *const PositionClosed,
         ) -> PluginResult<()>,
     >,
+
+    pub on_market_exit:
+        Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
+
+    pub on_historical_quotes: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            quotes: Slice<'_, QuoteTick>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_trades: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            trades: Slice<'_, TradeTick>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_bars: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            bars: Slice<'_, Bar>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_funding_rates: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            funding_rates: Slice<'_, FundingRateUpdate>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_mark_prices: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            mark_prices: Slice<'_, MarkPriceUpdate>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_index_prices: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            index_prices: Slice<'_, IndexPriceUpdate>,
+        ) -> PluginResult<()>,
+    >,
 }
 
 /// Author-facing trait for a plug-in strategy.
@@ -514,6 +569,47 @@ pub trait PluginStrategy: 'static + Send + Sized {
     fn on_position_closed(&mut self, event: &PositionClosed) -> anyhow::Result<()> {
         Ok(())
     }
+
+    #[allow(unused_variables)]
+    fn on_market_exit(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_index_prices(
+        &mut self,
+        index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Returns a `*const StrategyVTable` for the given [`PluginStrategy`] type.
@@ -574,6 +670,13 @@ where
         on_position_opened: Some(on_position_opened_thunk::<T>),
         on_position_changed: Some(on_position_changed_thunk::<T>),
         on_position_closed: Some(on_position_closed_thunk::<T>),
+        on_market_exit: Some(on_market_exit_thunk::<T>),
+        on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
+        on_historical_trades: Some(on_historical_trades_thunk::<T>),
+        on_historical_bars: Some(on_historical_bars_thunk::<T>),
+        on_historical_funding_rates: Some(on_historical_funding_rates_thunk::<T>),
+        on_historical_mark_prices: Some(on_historical_mark_prices_thunk::<T>),
+        on_historical_index_prices: Some(on_historical_index_prices_thunk::<T>),
     };
 }
 
@@ -636,6 +739,7 @@ lifecycle_thunk!(on_reset_thunk, on_reset);
 lifecycle_thunk!(on_dispose_thunk, on_dispose);
 lifecycle_thunk!(on_degrade_thunk, on_degrade);
 lifecycle_thunk!(on_fault_thunk, on_fault);
+lifecycle_thunk!(on_market_exit_thunk, on_market_exit);
 
 macro_rules! event_thunk {
     ($name:ident, $method:ident, $ty:ty) => {
@@ -717,3 +821,39 @@ event_thunk!(
     PositionChanged
 );
 event_thunk!(on_position_closed_thunk, on_position_closed, PositionClosed);
+
+macro_rules! slice_thunk {
+    ($name:ident, $method:ident, $ty:ty) => {
+        unsafe extern "C" fn $name<T: PluginStrategy>(
+            handle: *mut PluginStrategyHandle,
+            values: Slice<'_, $ty>,
+        ) -> PluginResult<()> {
+            guard(|| {
+                // SAFETY: host keeps the slice storage live for the call;
+                // the plug-in only borrows it for the trait-method invocation.
+                let v = unsafe { values.as_slice() };
+                let strategy = handle_as_mut::<T>(handle);
+                ok_or_err(strategy.$method(v))
+            })
+        }
+    };
+}
+
+slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
+slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);
+slice_thunk!(on_historical_bars_thunk, on_historical_bars, Bar);
+slice_thunk!(
+    on_historical_funding_rates_thunk,
+    on_historical_funding_rates,
+    FundingRateUpdate
+);
+slice_thunk!(
+    on_historical_mark_prices_thunk,
+    on_historical_mark_prices,
+    MarkPriceUpdate
+);
+slice_thunk!(
+    on_historical_index_prices_thunk,
+    on_historical_index_prices,
+    IndexPriceUpdate
+);

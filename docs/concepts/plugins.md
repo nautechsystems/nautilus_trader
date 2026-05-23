@@ -62,27 +62,20 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Hot reload (plug-ins load at process startup and stay loaded).
 - `OrderBookDeltas`, `OrderBook`, `Instrument`, and arbitrary `CustomData` on the actor or
   strategy callback surface (payload shapes are not `#[repr(C)]`-clean).
-- Backtest engine integration (plug-in loading is a live-node-only path).
 
 ## ABI boundary
 
-Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. The
-boundary primitives live in `nautilus_plugin::boundary`:
+Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. Two
+patterns cover the v1 surface:
 
-- `BorrowedStr<'a>`: pointer plus length into producer-owned UTF-8 storage.
-- `Slice<'a, T>`: pointer plus length into producer-owned `[T]` storage.
-- `OwnedBytes`: a producer-allocated byte buffer with its own drop thunk.
-- `PluginError` and `PluginResult<T>`: tagged error envelope returned across the boundary.
+- Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
+  model types. No serialisation, no per-event allocation.
+- Order commands flow out of the plug-in as opaque JSON. The host deserialises into the matching
+  `Strategy` command and dispatches. JSON keeps the command schema free to evolve without breaking
+  the in-engine `TradingCommand` shape.
 
-Data-bearing callbacks cross the boundary as `*const T` pointers into the host's already-`#[repr(C)]`
-model types. The host keeps the value alive for the call; the plug-in thunk dereferences once and
-hands an `&T` to the trait method. No serialisation per event, no per-event allocation.
-
-Order commands flow the other direction as opaque JSON. The plug-in posts a JSON payload to
-`HostVTable::submit_order`, `cancel_order`, or `modify_order`; the host deserialises into
-`SubmitOrderCommand`, `CancelOrderCommand`, or `ModifyOrderCommand` and dispatches to the matching
-`Strategy` method. JSON keeps the command schema free to evolve without breaking the in-engine
-`TradingCommand` shape.
+The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
+documented in `nautilus_plugin::boundary`.
 
 ## Manifest
 
@@ -150,26 +143,15 @@ flowchart LR
     Resolve --> Live["Strategy::submit_order, cache reads, msgbus publish, timers"]
 ```
 
-Forward calls (engine to plug-in) start in the adapter, which holds the plug-in's opaque handle and
-its validated vtable. Two panic-guard layers sit between the engine and the plug-in code: the
-adapter wraps each FFI call in its own `catch_unwind`-based `guard_call` as defence in depth, and
-the macro-generated plug-in thunks wrap their bodies in `nautilus_plugin::panic::guard` (fallible
-thunks, which surface a panic as `PluginError::Panic`) or `guard_infallible` (infallible thunks
-such as `create`, `drop_handle`, and custom-data `ts_event`/`ts_init`/`clone_handle`/`eq_handles`,
-which log and abort because there is no sentinel that would not silently corrupt downstream state).
-
-Reverse calls (plug-in to host) flow through `HostVTable`. The host's static vtable bundles the
-function pointers that route through the production cache, msgbus, clock, timer, and order
-pipelines. The stateful ctx-taking thunks (cache reads, subscriptions, msgbus publishes, timers,
-and order commands) recover the calling adapter from a per-instance `HostContextInner` payload the
-host hands the plug-in at create time; that payload carries the `ActorId` and an `is_strategy`
-flag. Order-command thunks reject calls from actor contexts, because actors must not submit
-orders. The stateless slots (`clock_now_ns`, `log`) take no `HostContext` and do not resolve an
-adapter.
-
-The default `HostVTable` shipped with `nautilus-plugin` returns `NotImplemented` for stateful
-callbacks. The live node installs a populated vtable via `plugin_loader()` so plug-ins running
-inside the node reach the real cache, risk, and execution paths.
+- Forward calls (engine to plug-in) go through the adapter's validated vtable, with two layers
+  of `catch_unwind` guarding the FFI call so a plug-in panic surfaces as a `PluginError` rather
+  than unwinding across the boundary.
+- Reverse calls (plug-in to host) go through `HostVTable`. The host attributes each call to the
+  caller via the per-instance `HostContext` pointer it handed the plug-in at create time and
+  routes through the engine's cache, msgbus, clock, timer, and order pipelines.
+- Order-command slots reject calls from actor contexts; actors cannot submit orders.
+- The default `HostVTable` returns `NotImplemented` for stateful callbacks. Engines install a
+  populated vtable via `plugin_loader()` so plug-ins reach the real execution paths.
 
 ## Lifecycle
 
@@ -292,44 +274,28 @@ Build a cdylib example shipped with the crate:
 cargo build -p nautilus-plugin --example custom_data_plugin
 ```
 
-## Operational use today
+## Operating notes
 
-The current alpha is focused on running Rust-native plug-ins inside a live node:
-
-- Pin every plug-in build to the host's `nautilus-plugin` crate version, `rustc` version, and
-  target triple. The loader enforces only the `abi_version` and `build_id.schema_version` fields:
-  `LoadError::AbiMismatch` fires only when `abi_version` does not match, and only the build-id
-  schema version is checked during validation. The crate version, `rustc`, target triple, and
-  build profile remain diagnostic; the loader logs them and includes them in load-error
-  diagnostics, but two builds with matching ABI and schema versions and differing build metadata
-  still load successfully.
-- Treat the SHA-256 field as the deployment seam for distinguishing a vetted build from any other
-  cdylib at the same path.
-- Inspect loader output under the `nautilus_plugin` log target. The loader logs the resolved
-  plug-in name, ABI version, build identifier, and counts of registered plug points per file.
-- Expect a `LoadError` to abort startup. The node refuses to load plug-ins after leaving the
-  `Idle` state, so a failed load surfaces before any client connects.
-- A plug-in panic in a fallible thunk returns `PluginError::Panic` to the host; a panic in an
-  infallible thunk (e.g. `create`, `drop_handle`, custom-data `ts_event`) aborts the process under
-  `guard_infallible` because any other behaviour would silently corrupt downstream state.
+- Pin every plug-in build to the host's Nautilus version. The loader checks `abi_version` and the
+  build-id schema only; crate version, `rustc`, target triple, and build profile travel as
+  diagnostics in load-error output.
+- Use the optional `sha256` field on a `PluginConfig` entry as a deployment-time integrity check.
+- The node refuses to load plug-ins once it has left the `Idle` state, so any `LoadError` surfaces
+  during startup, before client connections.
+- A plug-in panic in a fallible callback surfaces as `PluginError::Panic`. A panic in an
+  infallible callback (e.g. `create`, `drop_handle`) aborts the process; see
+  `nautilus_plugin::panic` for the rationale.
+- Loader activity logs under the `nautilus_plugin` target.
 
 ## Relationship to compiled-in components
 
-Plug-in actors and strategies share the runtime contract of compiled-in `DataActor` and `Strategy`
-implementations:
+Plug-in actors and strategies behave like any other `DataActor` / `Strategy` once the adapter is
+registered:
 
-- The trader registers `PluginActorAdapter` and `PluginStrategyAdapter` through the same APIs
-  it uses for in-tree components.
-- Order commands (`submit_order`, `cancel_order`, `modify_order`) route through the production
-  `Strategy` methods on the adapter, so risk gates, OMS conventions, and event-store capture all
-  apply. Cache reads call `adapter.cache()` directly, msgbus publishes call `msgbus::publish_any`,
-  and timer callbacks drive `adapter.clock()` directly; those paths bypass the `Strategy` layer
-  by design.
-- The plug-in author writes plain Rust trait impls. The macro hides `extern "C"` and `#[repr(C)]`
-  declarations; `unsafe` is only required when the plug-in stores the raw host pointers or calls
-  `HostVTable` slots directly. In-tree component patterns transfer once the author accepts those
-  boundary-only obligations.
+- Same trader registration APIs.
+- Same risk, OMS, and event-store paths for order commands routed through the adapter.
+- Cache reads, msgbus publishes, and timer callbacks bypass the `Strategy` layer by design and go
+  through the engine services directly.
 
-The boundary itself is the only difference: a plug-in lives in a separate cdylib, ships its own
-manifest, and gives up the compiler's `#[repr(Rust)]` flexibility in exchange for being able to
-ship out-of-tree without recompiling the host.
+The only difference is structural: plug-ins ship as separate cdylibs with their own manifest, in
+exchange for being deployable out-of-tree without recompiling the host.

@@ -79,9 +79,16 @@ enum HostHook {
     SubmitOrder,
     CancelOrder,
     ModifyOrder,
+    SubmitOrderList,
+    CancelOrders,
+    CancelAllOrders,
+    ClosePosition,
+    CloseAllPositions,
+    QueryAccount,
+    QueryOrder,
 }
 
-const HOOK_COUNT: usize = HostHook::ModifyOrder as usize + 1;
+const HOOK_COUNT: usize = HostHook::QueryOrder as usize + 1;
 static HOOK_CALLS: [AtomicU64; HOOK_COUNT] = [const { AtomicU64::new(0) }; HOOK_COUNT];
 static LAST_CTX: [AtomicPtr<HostContext>; HOOK_COUNT] =
     [const { AtomicPtr::new(std::ptr::null_mut()) }; HOOK_COUNT];
@@ -337,6 +344,62 @@ unsafe extern "C" fn test_modify_order(
     PluginResult::Ok(())
 }
 
+unsafe extern "C" fn test_submit_order_list(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::SubmitOrderList);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_cancel_orders(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::CancelOrders);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_cancel_all_orders(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::CancelAllOrders);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_close_position(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::ClosePosition);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_close_all_positions(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::CloseAllPositions);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_query_account(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::QueryAccount);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_query_order(
+    ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    record(ctx, HostHook::QueryOrder);
+    PluginResult::Ok(())
+}
+
 static TEST_HOST: HostVTable = HostVTable {
     abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
     clock_now_ns: test_clock_now_ns,
@@ -364,6 +427,13 @@ static TEST_HOST: HostVTable = HostVTable {
     submit_order: test_submit_order,
     cancel_order: test_cancel_order,
     modify_order: test_modify_order,
+    submit_order_list: test_submit_order_list,
+    cancel_orders: test_cancel_orders,
+    cancel_all_orders: test_cancel_all_orders,
+    close_position: test_close_position,
+    close_all_positions: test_close_all_positions,
+    query_account: test_query_account,
+    query_order: test_query_order,
 };
 
 // Sentinel non-null pointer used as the plug-in's host context in tests.
@@ -791,4 +861,95 @@ fn modify_order_slot_invokes_bound_handler() {
     r.into_result().expect("modify_order");
     assert_only_hook(HostHook::ModifyOrder);
     assert_ctx(HostHook::ModifyOrder, ctx);
+}
+
+#[rstest]
+fn submit_order_list_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"submit_list"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.submit_order_list)(ctx, cmd) };
+    r.into_result().expect("submit_order_list");
+    assert_only_hook(HostHook::SubmitOrderList);
+    assert_ctx(HostHook::SubmitOrderList, ctx);
+}
+
+#[rstest]
+fn cancel_orders_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"cancel_list"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.cancel_orders)(ctx, cmd) };
+    r.into_result().expect("cancel_orders");
+    assert_only_hook(HostHook::CancelOrders);
+    assert_ctx(HostHook::CancelOrders, ctx);
+}
+
+#[rstest]
+fn cancel_all_orders_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"cancel_all"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.cancel_all_orders)(ctx, cmd) };
+    r.into_result().expect("cancel_all_orders");
+    assert_only_hook(HostHook::CancelAllOrders);
+    assert_ctx(HostHook::CancelAllOrders, ctx);
+}
+
+#[rstest]
+fn close_position_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"close_position"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.close_position)(ctx, cmd) };
+    r.into_result().expect("close_position");
+    assert_only_hook(HostHook::ClosePosition);
+    assert_ctx(HostHook::ClosePosition, ctx);
+}
+
+#[rstest]
+fn close_all_positions_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"close_all"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.close_all_positions)(ctx, cmd) };
+    r.into_result().expect("close_all_positions");
+    assert_only_hook(HostHook::CloseAllPositions);
+    assert_ctx(HostHook::CloseAllPositions, ctx);
+}
+
+#[rstest]
+fn query_account_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"query_account"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.query_account)(ctx, cmd) };
+    r.into_result().expect("query_account");
+    assert_only_hook(HostHook::QueryAccount);
+    assert_ctx(HostHook::QueryAccount, ctx);
+}
+
+#[rstest]
+fn query_order_slot_invokes_bound_handler() {
+    let _g = dispatch_lock();
+    reset_all();
+    let ctx = sentinel_ctx();
+    let cmd = BorrowedStr::from_str(r#"{"kind":"query_order"}"#);
+    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
+    let r = unsafe { (TEST_HOST.query_order)(ctx, cmd) };
+    r.into_result().expect("query_order");
+    assert_only_hook(HostHook::QueryOrder);
+    assert_ctx(HostHook::QueryOrder, ctx);
 }

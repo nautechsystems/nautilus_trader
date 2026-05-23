@@ -41,20 +41,20 @@ use nautilus_model::{
     enums::{BookType, FromU8},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
 };
-use nautilus_plugin::{
-    NAUTILUS_PLUGIN_ABI_VERSION,
-    boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice},
-    host::{HostContext, HostLogLevel, HostVTable},
-    loader::PluginLoader,
-};
 use nautilus_trading::strategy::Strategy;
 use serde::Serialize;
 
-use crate::plugin::{
-    actor::PluginActorAdapter,
-    commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand},
-    registry::{HostContextInner, host_context_inner},
-    strategy::PluginStrategyAdapter,
+use crate::{
+    NAUTILUS_PLUGIN_ABI_VERSION,
+    boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice},
+    bridge::{
+        actor::PluginActorAdapter,
+        commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand},
+        registry::{HostContextInner, host_context_inner},
+        strategy::PluginStrategyAdapter,
+    },
+    host::{HostContext, HostLogLevel, HostVTable},
+    loader::PluginLoader,
 };
 
 /// Returns the process-wide `HostVTable` configured for the live node.
@@ -92,6 +92,13 @@ pub fn host_vtable() -> *const HostVTable {
         submit_order: host_submit_order,
         cancel_order: host_cancel_order,
         modify_order: host_modify_order,
+        submit_order_list: host_submit_order_list,
+        cancel_orders: host_cancel_orders,
+        cancel_all_orders: host_cancel_all_orders,
+        close_position: host_close_position,
+        close_all_positions: host_close_all_positions,
+        query_account: host_query_account,
+        query_order: host_query_order,
     }))
 }
 
@@ -795,6 +802,86 @@ unsafe extern "C" fn host_modify_order(
     })
 }
 
+// The plug-in crate exposes the slots below so plug-ins can call them
+// through the static `HostVTable`. Deserialising each into the
+// corresponding `Strategy::*` signature is per-command design work: the
+// JSON command shape, batched-command atomicity (`submit_order_list`,
+// `cancel_orders`), and the cache lookups `close_position` /
+// `query_order` need to materialise `&Position` and `&OrderAny` from
+// `position_id` / `client_order_id`. Until that lands the live host
+// returns `NotImplemented` so plug-in callers see a clear "not wired"
+// error instead of a workspace build break.
+
+unsafe extern "C" fn host_submit_order_list(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "submit_order_list is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_cancel_orders(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "cancel_orders is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_cancel_all_orders(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "cancel_all_orders is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_close_position(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "close_position is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_close_all_positions(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "close_all_positions is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_query_account(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "query_account is not wired into the live host vtable yet",
+    ))
+}
+
+unsafe extern "C" fn host_query_order(
+    _ctx: *const HostContext,
+    _command_json: BorrowedStr<'_>,
+) -> PluginResult<()> {
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        "query_order is not wired into the live host vtable yet",
+    ))
+}
+
 fn dispatch_command(
     ctx: *const HostContext,
     command_json: BorrowedStr<'_>,
@@ -1267,7 +1354,7 @@ mod tests {
         // actor contexts with InvalidArgument.
         use nautilus_model::identifiers::ActorId;
 
-        use crate::plugin::registry::{
+        use crate::bridge::registry::{
             HostContextInner, drop_host_context, host_context_test_lock, leak_host_context,
         };
 
@@ -1300,7 +1387,7 @@ mod tests {
         // host vtable's try_get_actor_unchecked lookup returns None.
         use nautilus_model::identifiers::ActorId;
 
-        use crate::plugin::registry::{
+        use crate::bridge::registry::{
             HostContextInner, drop_host_context, host_context_test_lock, leak_host_context,
         };
 
