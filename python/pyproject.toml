@@ -23,7 +23,7 @@ classifiers = [
 license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
 requires-python = ">=3.12,<3.15"
-dependencies = ["pandas>=2.3.3,<3.0.0", "python-dotenv>=1.2.2", "pytz>=2026.2"]
+dependencies = []
 
 [project.urls]
 homepage = "https://nautilustrader.io"
@@ -70,39 +70,25 @@ no-build-package = [
   "maturin",
   "mypy",
   "mypy-extensions",
-  "numpy",
   "packaging",
-  "pandas",
   "pathspec",
   "pluggy",
   "psutil",
-  "py-cpuinfo",
-  "pyarrow",
   "pygments",
   "pytest",
   "pytest-asyncio",
-  "pytest-benchmark",
   "pytest-cov",
-  "pytest-mock",
   "pytest-xdist",
-  "python-dateutil",
-  "python-dotenv",
-  "pytz",
   "ruff",
-  "six",
   "typing-extensions",
-  "tzdata",
 ]
 
 [dependency-groups]
 dev = ["maturin>=1.13.3", "mypy>=1.20.2,<2.0.0", "ruff>=0.15.12"]
 test = [
-  "pyarrow>=23.0.1",
   "pytest>=9.0.3",
   "pytest-asyncio>=1.3.0",
-  "pytest-benchmark>=5.2.3",
   "pytest-cov>=7.1.0",
-  "pytest-mock>=3.15.1",
   "pytest-xdist[psutil]>=3.8.0",
 ]
 

@@ -467,8 +467,17 @@ impl Position {
     }
 }
 
-/// PyO3 wrapper for [`crate::position::fold_net_position`]. Each leg is
-/// `(signed_qty, avg_px_open, ts_opened_ns)`.
+/// Replays position legs onto a hypothetical NETTING position in `ts_opened`
+/// order, returning `(net_signed_qty, net_avg_px_open)`.
+///
+/// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`. Rules follow
+/// `Position.apply`:
+/// - Same-side legs produce a quantity-weighted average open price.
+/// - Opposite-side legs partial-close at the existing average.
+/// - A leg that crosses zero makes the residual take that leg's price.
+///
+/// Zero-quantity legs are skipped. Sort is stable on `ts_opened`; the caller
+/// orders ties (e.g. by `position_id`).
 #[must_use]
 #[pyfunction]
 #[pyo3(name = "fold_net_position")]
