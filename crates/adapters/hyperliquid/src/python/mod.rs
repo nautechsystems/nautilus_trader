@@ -42,7 +42,9 @@ use crate::{
         },
     },
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
-    data_types::{HyperliquidAllMids, register_hyperliquid_custom_data},
+    data_types::{
+        HyperliquidAllMids, HyperliquidOpenInterestData, register_hyperliquid_custom_data,
+    },
     factories::{
         HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
         HyperliquidExecutionClientFactory,
@@ -156,9 +158,11 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HyperliquidDataClientFactory>()?;
     m.add_class::<HyperliquidExecutionClientFactory>()?;
     m.add_class::<HyperliquidAllMids>()?;
+    m.add_class::<HyperliquidOpenInterestData>()?;
 
     register_hyperliquid_custom_data();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllMids>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidOpenInterestData>();
 
     let registry = get_global_pyo3_registry();
 

@@ -531,17 +531,18 @@ instrument_provider=InstrumentProviderConfig(
 The adapter supports the following data subscriptions. All perpetual data types
 (mark prices, index prices, funding rates) apply to both standard and HIP-3 perps.
 
-| Data type         | Sub. | Snapshot | Hist. | Nautilus type        | Notes                        |
-|-------------------|------|----------|-------|----------------------|------------------------------|
-| Trade ticks       | ✓    | -        | -     | `TradeTick`          | WebSocket trades.            |
-| Quote ticks       | ✓    | -        | -     | `QuoteTick`          | Best bid/offer.              |
-| Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`     | L2 snapshots.                |
-| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`   | Top-10 L2 snapshots.         |
-| Bars              | ✓    | -        | ✓     | `Bar`                | Supported intervals below.   |
-| Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`    | Perpetual mark price ticks.  |
-| Index prices      | ✓    | -        | -     | `IndexPriceUpdate`   | Underlying reference prices. |
-| Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`  | `fundingHistory` endpoint.   |
-| All mids          | ✓    | -        | -     | `HyperliquidAllMids` | Custom data from `allMids`.  |
+| Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                 |
+|-------------------|------|----------|-------|-------------------------------|---------------------------------------|
+| Trade ticks       | ✓    | -        | -     | `TradeTick`                   | WebSocket trades.                     |
+| Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                       |
+| Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                         |
+| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                  |
+| Bars              | ✓    | -        | ✓     | `Bar`                         | Supported intervals below.            |
+| Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.           |
+| Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.          |
+| Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.            |
+| Open interest     | ✓    | -        | -     | `HyperliquidOpenInterestData` | Custom data from `activeAssetCtx`.    |
+| All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.           |
 
 :::note
 Historical quote and trade requests are not supported. Hyperliquid does not publish
@@ -569,8 +570,12 @@ Omitting both params subscribes to the full-depth book.
 
 ### Hyperliquid specific data
 
-The adapter emits `HyperliquidAllMids` custom data from the WebSocket `allMids`
-feed. Each update carries all currently reported mid prices in one payload.
+The adapter emits two Hyperliquid-specific custom data types:
+
+- `HyperliquidAllMids` from the WebSocket `allMids` feed. Each update carries
+  all currently reported mid prices in one payload.
+- `HyperliquidOpenInterestData` from the shared `activeAssetCtx` feed used by
+  mark prices, index prices, and funding rates.
 
 | Field      | Type             | Description                                              |
 |------------|------------------|----------------------------------------------------------|
@@ -590,6 +595,50 @@ self.subscribe_data(
     data_type=DataType(HyperliquidAllMids, metadata={"dex": "hyperliquid"}),
     client_id=HYPERLIQUID_CLIENT_ID,
 )
+```
+
+`HyperliquidOpenInterestData` carries the latest open interest for one
+perpetual instrument. Subscribe with the canonical Nautilus `instrument_id`
+in `metadata["instrument_id"]`:
+
+| Field           | Type  | Description                                             |
+|----------------|-------|---------------------------------------------------------|
+| `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.            |
+| `open_interest` | `Decimal` | Open interest parsed for direct arithmetic use. |
+| `ts_event`      | `int` | UNIX timestamp in nanoseconds when the update occurred. |
+| `ts_init`       | `int` | UNIX timestamp in nanoseconds when the object was built. |
+
+```python
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterestData
+from nautilus_trader.model.data import DataType
+
+self.subscribe_data(
+    data_type=DataType(
+        HyperliquidOpenInterestData,
+        metadata={"instrument_id": str(self.instrument_id)},
+    ),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+```
+
+`HyperliquidOpenInterestData` reuses the same single underlying
+`activeAssetCtx` venue subscription that already backs mark prices, index
+prices, and funding rates for the same coin. Adding OI does not open a second
+parallel `activeAssetCtx` subscription.
+
+In a Python strategy running inside a `TradingNode`, the payload arrives via
+`CustomData.data` and can be downcast by `isinstance`:
+
+```python
+from decimal import Decimal
+
+from nautilus_trader.model.data import CustomData
+
+def on_data(self, data: CustomData) -> None:
+    if isinstance(data.data, HyperliquidOpenInterestData):
+        if data.data.open_interest > Decimal("1000"):
+            self.log.info(f"OI {data.data.instrument_id} -> {data.data.open_interest}")
 ```
 
 ### Supported bar intervals

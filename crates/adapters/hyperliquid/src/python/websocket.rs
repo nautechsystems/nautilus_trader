@@ -943,6 +943,24 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to open interest updates for an instrument.
+    #[pyo3(name = "subscribe_open_interest")]
+    fn py_subscribe_open_interest<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_open_interest(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Unsubscribe from funding rate updates for an instrument.
     #[pyo3(name = "unsubscribe_funding_rates")]
     fn py_unsubscribe_funding_rates<'py>(
@@ -955,6 +973,24 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_funding_rates(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from open interest updates for an instrument.
+    #[pyo3(name = "unsubscribe_open_interest")]
+    fn py_unsubscribe_open_interest<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_open_interest(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

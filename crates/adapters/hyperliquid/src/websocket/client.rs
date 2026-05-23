@@ -95,6 +95,7 @@ pub(super) enum AssetContextDataType {
     MarkPrice,
     IndexPrice,
     FundingRate,
+    OpenInterest,
 }
 
 /// Hyperliquid WebSocket client following the BitMEX pattern.
@@ -1308,6 +1309,12 @@ impl HyperliquidWebSocketClient {
             .await
     }
 
+    /// Subscribe to open interest updates for an instrument.
+    pub async fn subscribe_open_interest(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_asset_context_data(instrument_id, AssetContextDataType::OpenInterest)
+            .await
+    }
+
     /// Subscribe to order updates for a specific user address.
     pub async fn subscribe_order_updates(&self, user: &str) -> anyhow::Result<()> {
         let subscription = SubscriptionRequest::OrderUpdates {
@@ -1476,6 +1483,15 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<()> {
         self.unsubscribe_asset_context_data(instrument_id, AssetContextDataType::FundingRate)
+            .await
+    }
+
+    /// Unsubscribe from open interest updates for an instrument.
+    pub async fn unsubscribe_open_interest(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        self.unsubscribe_asset_context_data(instrument_id, AssetContextDataType::OpenInterest)
             .await
     }
 

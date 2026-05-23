@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{identifiers::InstrumentId, types::Price};
 use nautilus_persistence_macros::custom_data;
+use rust_decimal::Decimal;
 
 /// Hyperliquid all mid prices snapshot from the `allMids` WebSocket channel.
 #[cfg_attr(
@@ -43,15 +44,44 @@ pub struct HyperliquidAllMids {
     pub ts_init: UnixNanos,
 }
 
+/// Hyperliquid open interest update from the `activeAssetCtx` WebSocket channel.
+#[cfg_attr(
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
+)]
+#[cfg_attr(
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
+)]
+pub struct HyperliquidOpenInterestData {
+    /// The instrument ID for this open interest update.
+    pub instrument_id: InstrumentId,
+    /// The current open interest for the perpetual instrument.
+    #[custom_data_field(json)]
+    pub open_interest: Decimal,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
 /// Registers Hyperliquid custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_hyperliquid_custom_data() {
     #[cfg(feature = "arrow")]
-    nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
+    {
+        nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
+        nautilus_serialization::ensure_custom_data_registered::<HyperliquidOpenInterestData>();
+    }
 
     #[cfg(not(feature = "arrow"))]
-    let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
+    {
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<
+            HyperliquidOpenInterestData,
+        >();
+    }
 }
 
 #[cfg(test)]
@@ -81,5 +111,30 @@ mod tests {
         assert_eq!(schema.field(1).data_type(), &DataType::UInt64);
         assert_eq!(schema.field(2).name(), "ts_init");
         assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_hyperliquid_open_interest_arrow_schema() {
+        use arrow::datatypes::DataType;
+        use nautilus_serialization::arrow::ArrowSchemaProvider;
+
+        let schema = HyperliquidOpenInterestData::get_schema(None);
+
+        assert_eq!(schema.fields().len(), 4);
+        assert_eq!(schema.field(0).name(), "instrument_id");
+        assert!(matches!(
+            schema.field(0).data_type(),
+            DataType::Utf8 | DataType::Utf8View
+        ));
+        assert_eq!(schema.field(1).name(), "open_interest");
+        assert!(matches!(
+            schema.field(1).data_type(),
+            DataType::Utf8 | DataType::Utf8View
+        ));
+        assert_eq!(schema.field(2).name(), "ts_event");
+        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(3).name(), "ts_init");
+        assert_eq!(schema.field(3).data_type(), &DataType::UInt64);
     }
 }
