@@ -1203,9 +1203,13 @@ cdef class BacktestEngine:
 
         self._kernel.data_engine.reset()
 
-        # Reset ExecEngine
         if self._kernel.exec_engine.is_running:
             self._kernel.exec_engine.stop()
+
+        # Reset exchanges before ExecEngine wipes the cache so the conditional
+        # in exchange.reset() can see the prior run's account.
+        for exchange in self._venues.values():
+            exchange.reset()
 
         self._kernel.exec_engine.reset()
 
@@ -1222,9 +1226,6 @@ cdef class BacktestEngine:
         self._kernel.emulator.reset()
 
         self._kernel.trader.reset()
-
-        for exchange in self._venues.values():
-            exchange.reset()
 
         # Clear accumulated timer events from previous run
         if self._accumulator._0 != NULL:
@@ -3674,10 +3675,11 @@ cdef class SimulatedExchange:
         """
         self._log.debug(f"Resetting")
 
+        if not self._account_at_starting_balances():
+            self._generate_fresh_account_state()
+
         for module in self.modules:
             module.reset()
-
-        self._generate_fresh_account_state()
 
         for matching_engine in self._matching_engines.values():
             matching_engine.reset()
@@ -3806,6 +3808,19 @@ cdef class SimulatedExchange:
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
+
+    cdef bint _account_at_starting_balances(self):
+        cdef Account account = self.get_account()
+        if account is None:
+            return False
+
+        cdef Money starting_money
+        for starting_money in self.starting_balances:
+            if account.balance_total(starting_money.currency) != starting_money:
+                return False
+            if account.balance_free(starting_money.currency) != starting_money:
+                return False
+        return True
 
     cdef void _generate_fresh_account_state(self):
         cdef list[AccountBalance] balances = [

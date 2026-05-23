@@ -867,9 +867,8 @@ impl BacktestEngine {
             log::error!("Error resetting trader: {e:?}");
         }
 
-        // `exchange.reset()` re-emits a fresh account state event; the cache
-        // reset that follows drops it so the next run starts with the same
-        // event count as the first.
+        // Reset exchanges before the cache is wiped so the conditional in
+        // exchange.reset() can see the prior run's account.
         for exchange in self.venues.values() {
             exchange.borrow_mut().reset();
         }

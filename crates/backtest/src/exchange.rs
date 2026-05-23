@@ -986,11 +986,13 @@ impl SimulatedExchange {
 
     /// Resets the exchange to its initial state.
     pub fn reset(&mut self) {
+        if !self.account_at_starting_balances() {
+            self.generate_fresh_account_state();
+        }
+
         for module in &self.modules {
             module.reset();
         }
-
-        self.generate_fresh_account_state();
 
         for matching_engine in self.matching_engines.values_mut() {
             matching_engine.reset();
@@ -1058,6 +1060,26 @@ impl SimulatedExchange {
                 command.instrument_id()
             );
         }
+    }
+
+    fn account_at_starting_balances(&self) -> bool {
+        let Some(account) = self.get_account() else {
+            return false;
+        };
+
+        let balances = account.balances();
+
+        for starting in &self.starting_balances {
+            let Some(balance) = balances.get(&starting.currency) else {
+                return false;
+            };
+
+            if balance.total != *starting || balance.free != *starting {
+                return false;
+            }
+        }
+
+        true
     }
 
     fn generate_fresh_account_state(&self) {

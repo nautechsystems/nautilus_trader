@@ -48,6 +48,7 @@ None
 - Fixed unbounded Cache `VecDeque` memory leak in Rust (#4107), thanks @filipmacek
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
+- Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a

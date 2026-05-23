@@ -354,6 +354,7 @@ cdef class SimulatedExchange:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
+    cdef bint _account_at_starting_balances(self)
     cdef void _generate_fresh_account_state(self)
 
 
