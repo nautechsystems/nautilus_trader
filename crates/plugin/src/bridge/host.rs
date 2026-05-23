@@ -49,7 +49,11 @@ use crate::{
     boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice},
     bridge::{
         actor::PluginActorAdapter,
-        commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand},
+        commands::{
+            CancelAllOrdersCommand, CancelOrderCommand, CancelOrdersCommand,
+            CloseAllPositionsCommand, ClosePositionCommand, ModifyOrderCommand,
+            QueryAccountCommand, QueryOrderCommand, SubmitOrderCommand, SubmitOrderListCommand,
+        },
         registry::{HostContextInner, host_context_inner},
         strategy::PluginStrategyAdapter,
     },
@@ -802,84 +806,118 @@ unsafe extern "C" fn host_modify_order(
     })
 }
 
-// The plug-in crate exposes the slots below so plug-ins can call them
-// through the static `HostVTable`. Deserialising each into the
-// corresponding `Strategy::*` signature is per-command design work: the
-// JSON command shape, batched-command atomicity (`submit_order_list`,
-// `cancel_orders`), and the cache lookups `close_position` /
-// `query_order` need to materialise `&Position` and `&OrderAny` from
-// `position_id` / `client_order_id`. Until that lands the live host
-// returns `NotImplemented` so plug-in callers see a clear "not wired"
-// error instead of a workspace build break.
-
 unsafe extern "C" fn host_submit_order_list(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "submit_order_list is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "submit_order_list", |adapter, json| {
+        let cmd: SubmitOrderListCommand = serde_json::from_str(json)?;
+        if cmd.orders.is_empty() {
+            anyhow::bail!("Cannot submit empty order list");
+        }
+        Strategy::submit_order_list(
+            adapter,
+            cmd.orders,
+            cmd.position_id,
+            cmd.client_id,
+            cmd.params,
+        )
+    })
 }
 
 unsafe extern "C" fn host_cancel_orders(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "cancel_orders is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "cancel_orders", |adapter, json| {
+        let cmd: CancelOrdersCommand = serde_json::from_str(json)?;
+        Strategy::cancel_orders(adapter, cmd.client_order_ids, cmd.client_id, cmd.params)
+    })
 }
 
 unsafe extern "C" fn host_cancel_all_orders(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "cancel_all_orders is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "cancel_all_orders", |adapter, json| {
+        let cmd: CancelAllOrdersCommand = serde_json::from_str(json)?;
+        Strategy::cancel_all_orders(
+            adapter,
+            cmd.instrument_id,
+            cmd.order_side,
+            cmd.client_id,
+            cmd.params,
+        )
+    })
 }
 
 unsafe extern "C" fn host_close_position(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "close_position is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "close_position", |adapter, json| {
+        let cmd: ClosePositionCommand = serde_json::from_str(json)?;
+        let position = {
+            let cache = adapter.cache();
+            cache.position(&cmd.position_id).map(|p| p.cloned())
+        };
+        let position = position
+            .ok_or_else(|| anyhow::anyhow!("position '{}' not found in cache", cmd.position_id))?;
+        Strategy::close_position(
+            adapter,
+            &position,
+            cmd.client_id,
+            cmd.tags,
+            cmd.time_in_force,
+            cmd.reduce_only,
+            cmd.quote_quantity,
+        )
+    })
 }
 
 unsafe extern "C" fn host_close_all_positions(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "close_all_positions is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "close_all_positions", |adapter, json| {
+        let cmd: CloseAllPositionsCommand = serde_json::from_str(json)?;
+        Strategy::close_all_positions(
+            adapter,
+            cmd.instrument_id,
+            cmd.position_side,
+            cmd.client_id,
+            cmd.tags,
+            cmd.time_in_force,
+            cmd.reduce_only,
+            cmd.quote_quantity,
+        )
+    })
 }
 
 unsafe extern "C" fn host_query_account(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "query_account is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "query_account", |adapter, json| {
+        let cmd: QueryAccountCommand = serde_json::from_str(json)?;
+        Strategy::query_account(adapter, cmd.account_id, cmd.client_id, cmd.params)
+    })
 }
 
 unsafe extern "C" fn host_query_order(
-    _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    ctx: *const HostContext,
+    command_json: BorrowedStr<'_>,
 ) -> PluginResult<()> {
-    PluginResult::Err(PluginError::new(
-        PluginErrorCode::NotImplemented,
-        "query_order is not wired into the live host vtable yet",
-    ))
+    dispatch_command(ctx, command_json, "query_order", |adapter, json| {
+        let cmd: QueryOrderCommand = serde_json::from_str(json)?;
+        let order = {
+            let cache = adapter.cache();
+            cache.order(&cmd.client_order_id).map(|o| o.cloned())
+        };
+        let order = order
+            .ok_or_else(|| anyhow::anyhow!("order '{}' not found in cache", cmd.client_order_id))?;
+        Strategy::query_order(adapter, &order, cmd.client_id, cmd.params)
+    })
 }
 
 fn dispatch_command(

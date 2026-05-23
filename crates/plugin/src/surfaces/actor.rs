@@ -46,9 +46,9 @@
 //! Deferred: `on_book_deltas` (non-`#[repr(C)]` envelope, see README),
 //! `on_book` (stateful), `on_instrument` (non-`#[repr(C)]` enum),
 //! `on_data` (CustomData routing through actors), `on_historical_data`
-//! (`&dyn Any` payload), `on_option_greeks` / `on_option_chain`
-//! (non-`#[repr(C)]` payloads), DeFi pool/block events. The authoritative
-//! list lives in `tests/surface_alignment.rs`.
+//! (`&dyn Any` payload), `on_option_chain` (non-`#[repr(C)]` payload),
+//! DeFi pool/block events. The authoritative list lives in
+//! `tests/surface_alignment.rs`.
 
 #![allow(unsafe_code)]
 
@@ -58,7 +58,7 @@ use nautilus_common::{signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
 };
@@ -162,6 +162,12 @@ pub struct ActorVTable {
         unsafe extern "C" fn(
             handle: *mut PluginActorHandle,
             funding_rate: *const FundingRateUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_option_greeks: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            greeks: *const OptionGreeks,
         ) -> PluginResult<()>,
     >,
     pub on_instrument_status: Option<
@@ -323,6 +329,11 @@ pub trait PluginActor: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_instrument_status(&mut self, status: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
@@ -420,6 +431,7 @@ where
         on_mark_price: Some(on_mark_price_thunk::<T>),
         on_index_price: Some(on_index_price_thunk::<T>),
         on_funding_rate: Some(on_funding_rate_thunk::<T>),
+        on_option_greeks: Some(on_option_greeks_thunk::<T>),
         on_instrument_status: Some(on_instrument_status_thunk::<T>),
         on_instrument_close: Some(on_instrument_close_thunk::<T>),
         on_order_filled: Some(on_order_filled_thunk::<T>),
@@ -518,6 +530,7 @@ event_thunk!(on_bar_thunk, on_bar, Bar);
 event_thunk!(on_mark_price_thunk, on_mark_price, MarkPriceUpdate);
 event_thunk!(on_index_price_thunk, on_index_price, IndexPriceUpdate);
 event_thunk!(on_funding_rate_thunk, on_funding_rate, FundingRateUpdate);
+event_thunk!(on_option_greeks_thunk, on_option_greeks, OptionGreeks);
 event_thunk!(
     on_instrument_status_thunk,
     on_instrument_status,

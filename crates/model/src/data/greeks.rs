@@ -290,6 +290,7 @@ pub fn refine_vol_and_greeks(
     }
 }
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",

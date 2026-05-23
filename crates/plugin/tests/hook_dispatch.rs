@@ -44,12 +44,12 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buyer,
         },
     },
-    enums::{OrderSide, PositionSide},
+    enums::{GreeksConvention, OrderSide, PositionSide},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
@@ -100,6 +100,7 @@ enum ActorHook {
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
+    OnOptionGreeks,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnOrderFilled,
@@ -231,6 +232,11 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnOptionGreeks);
+        Ok(())
+    }
+
     fn on_instrument_status(&mut self, _s: &InstrumentStatus) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnInstrumentStatus);
         Ok(())
@@ -306,6 +312,7 @@ enum StrategyHook {
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
+    OnOptionGreeks,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnSignal,
@@ -443,6 +450,11 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_funding_rate(&mut self, _f: &FundingRateUpdate) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnFundingRate);
+        Ok(())
+    }
+
+    fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnOptionGreeks);
         Ok(())
     }
 
@@ -663,6 +675,21 @@ fn funding_rate_value() -> FundingRateUpdate {
         UnixNanos::from(1u64),
         UnixNanos::from(2u64),
     )
+}
+
+fn option_greeks_value() -> OptionGreeks {
+    OptionGreeks {
+        instrument_id: instrument_id(),
+        convention: GreeksConvention::BlackScholes,
+        greeks: Default::default(),
+        mark_iv: Some(0.25),
+        bid_iv: Some(0.24),
+        ask_iv: Some(0.26),
+        underlying_price: Some(1500.0),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::from(1u64),
+        ts_init: UnixNanos::from(2u64),
+    }
 }
 
 fn signal_value() -> Signal {
@@ -993,6 +1020,7 @@ fn actor_lifecycle_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
 #[case::on_mark_price(ActorHook::OnMarkPrice)]
 #[case::on_index_price(ActorHook::OnIndexPrice)]
 #[case::on_funding_rate(ActorHook::OnFundingRate)]
+#[case::on_option_greeks(ActorHook::OnOptionGreeks)]
 #[case::on_instrument_status(ActorHook::OnInstrumentStatus)]
 #[case::on_instrument_close(ActorHook::OnInstrumentClose)]
 #[case::on_order_filled(ActorHook::OnOrderFilled)]
@@ -1053,6 +1081,11 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
             let v = funding_rate_value();
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
+        }
+        ActorHook::OnOptionGreeks => {
+            let v = option_greeks_value();
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
         }
         ActorHook::OnInstrumentStatus => {
             let v = instrument_status_value();
@@ -1210,6 +1243,7 @@ fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook)
 #[case::on_mark_price(StrategyHook::OnMarkPrice)]
 #[case::on_index_price(StrategyHook::OnIndexPrice)]
 #[case::on_funding_rate(StrategyHook::OnFundingRate)]
+#[case::on_option_greeks(StrategyHook::OnOptionGreeks)]
 #[case::on_instrument_status(StrategyHook::OnInstrumentStatus)]
 #[case::on_instrument_close(StrategyHook::OnInstrumentClose)]
 #[case::on_signal(StrategyHook::OnSignal)]
@@ -1287,6 +1321,11 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
             let v = funding_rate_value();
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
+        }
+        StrategyHook::OnOptionGreeks => {
+            let v = option_greeks_value();
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
         }
         StrategyHook::OnInstrumentStatus => {
             let v = instrument_status_value();

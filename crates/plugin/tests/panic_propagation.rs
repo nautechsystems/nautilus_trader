@@ -47,12 +47,12 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buyer,
         },
     },
-    enums::{OrderSide, PositionSide},
+    enums::{GreeksConvention, OrderSide, PositionSide},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
@@ -208,6 +208,11 @@ impl PluginActor for MisbehavingActor {
     fn on_funding_rate(&mut self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         fail()
     }
+
+    fn on_option_greeks(&mut self, _greeks: &OptionGreeks) -> anyhow::Result<()> {
+        fail()
+    }
+
     fn on_instrument_status(&mut self, _status: &InstrumentStatus) -> anyhow::Result<()> {
         fail()
     }
@@ -300,6 +305,11 @@ impl PluginStrategy for MisbehavingStrategy {
     fn on_funding_rate(&mut self, _f: &FundingRateUpdate) -> anyhow::Result<()> {
         fail()
     }
+
+    fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
+        fail()
+    }
+
     fn on_instrument_status(&mut self, _s: &InstrumentStatus) -> anyhow::Result<()> {
         fail()
     }
@@ -550,6 +560,7 @@ enum ActorThunkUnderTest {
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
+    OnOptionGreeks,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnOrderFilled,
@@ -619,6 +630,11 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = funding_rate_value();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnOptionGreeks => {
+            let v = option_greeks_value();
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnInstrumentStatus => {
             let v = stub_instrument_status();
@@ -719,6 +735,8 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_index_price_err(ActorThunkUnderTest::OnIndexPrice, Mode::Err)]
 #[case::on_funding_rate_panic(ActorThunkUnderTest::OnFundingRate, Mode::Panic)]
 #[case::on_funding_rate_err(ActorThunkUnderTest::OnFundingRate, Mode::Err)]
+#[case::on_option_greeks_panic(ActorThunkUnderTest::OnOptionGreeks, Mode::Panic)]
+#[case::on_option_greeks_err(ActorThunkUnderTest::OnOptionGreeks, Mode::Err)]
 #[case::on_instrument_status_panic(ActorThunkUnderTest::OnInstrumentStatus, Mode::Panic)]
 #[case::on_instrument_status_err(ActorThunkUnderTest::OnInstrumentStatus, Mode::Err)]
 #[case::on_instrument_close_panic(ActorThunkUnderTest::OnInstrumentClose, Mode::Panic)]
@@ -769,6 +787,7 @@ enum StrategyThunkUnderTest {
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
+    OnOptionGreeks,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnSignal,
@@ -856,6 +875,11 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = funding_rate_value();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_funding_rate)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnOptionGreeks => {
+            let v = option_greeks_value();
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnInstrumentStatus => {
             let v = stub_instrument_status();
@@ -1045,6 +1069,8 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_index_price_err(StrategyThunkUnderTest::OnIndexPrice, Mode::Err)]
 #[case::on_funding_rate_panic(StrategyThunkUnderTest::OnFundingRate, Mode::Panic)]
 #[case::on_funding_rate_err(StrategyThunkUnderTest::OnFundingRate, Mode::Err)]
+#[case::on_option_greeks_panic(StrategyThunkUnderTest::OnOptionGreeks, Mode::Panic)]
+#[case::on_option_greeks_err(StrategyThunkUnderTest::OnOptionGreeks, Mode::Err)]
 #[case::on_instrument_status_panic(StrategyThunkUnderTest::OnInstrumentStatus, Mode::Panic)]
 #[case::on_instrument_status_err(StrategyThunkUnderTest::OnInstrumentStatus, Mode::Err)]
 #[case::on_instrument_close_panic(StrategyThunkUnderTest::OnInstrumentClose, Mode::Panic)]
@@ -1169,6 +1195,21 @@ fn funding_rate_value() -> FundingRateUpdate {
         UnixNanos::from(1u64),
         UnixNanos::from(2u64),
     )
+}
+
+fn option_greeks_value() -> OptionGreeks {
+    OptionGreeks {
+        instrument_id: instrument_id(),
+        convention: GreeksConvention::BlackScholes,
+        greeks: Default::default(),
+        mark_iv: Some(0.25),
+        bid_iv: Some(0.24),
+        ask_iv: Some(0.26),
+        underlying_price: Some(1500.0),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::from(1u64),
+        ts_init: UnixNanos::from(2u64),
+    }
 }
 
 fn signal_value() -> Signal {

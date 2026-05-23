@@ -49,17 +49,17 @@
 //! - Order commands via [`HostVTable`]: `submit_order`, `cancel_order`,
 //!   `modify_order`, `submit_order_list`, `cancel_orders`,
 //!   `cancel_all_orders`, `close_position`, `close_all_positions`,
-//!   `query_account`, `query_order`. The plug-in crate publishes these
-//!   slots; the live adapter wires `submit_order` / `cancel_order` /
-//!   `modify_order` to typed `Strategy::*` commands today, and exposes
-//!   the other seven as `NotImplemented` stubs until the typed-command
-//!   deserialisation lands (tracked separately).
+//!   `query_account`, `query_order`. The live adapter deserialises each
+//!   JSON payload into the matching `Strategy::*` call so the production
+//!   cache / risk / event pipeline runs unchanged; `close_position` and
+//!   `query_order` resolve their `&Position` / `&OrderAny` arguments via
+//!   the host cache before dispatch.
 //!
 //! Deferred: `on_book` (stateful), `on_instrument`
 //! (non-`#[repr(C)]` enum), `on_data` (CustomData routing through
-//! actors), `on_historical_data` (`&dyn Any` payload), `on_option_greeks`
-//! / `on_option_chain` (non-`#[repr(C)]` payloads), DeFi pool/block
-//! events, and the cache-state-mutation methods (`mark_order_pending_*`,
+//! actors), `on_historical_data` (`&dyn Any` payload), `on_option_chain`
+//! (non-`#[repr(C)]` payload), DeFi pool/block events, and the
+//! cache-state-mutation methods (`mark_order_pending_*`,
 //! `generate_order_pending_*`). The authoritative list lives in
 //! `tests/surface_alignment.rs`.
 
@@ -71,7 +71,7 @@ use nautilus_common::{signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -190,6 +190,12 @@ pub struct StrategyVTable {
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
             funding_rate: *const FundingRateUpdate,
+        ) -> PluginResult<()>,
+    >,
+    pub on_option_greeks: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            greeks: *const OptionGreeks,
         ) -> PluginResult<()>,
     >,
     pub on_instrument_status: Option<
@@ -461,6 +467,11 @@ pub trait PluginStrategy: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_instrument_status(&mut self, status: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
@@ -648,6 +659,7 @@ where
         on_mark_price: Some(on_mark_price_thunk::<T>),
         on_index_price: Some(on_index_price_thunk::<T>),
         on_funding_rate: Some(on_funding_rate_thunk::<T>),
+        on_option_greeks: Some(on_option_greeks_thunk::<T>),
         on_instrument_status: Some(on_instrument_status_thunk::<T>),
         on_instrument_close: Some(on_instrument_close_thunk::<T>),
         on_signal: Some(on_signal_thunk::<T>),
@@ -765,6 +777,7 @@ event_thunk!(on_bar_thunk, on_bar, Bar);
 event_thunk!(on_mark_price_thunk, on_mark_price, MarkPriceUpdate);
 event_thunk!(on_index_price_thunk, on_index_price, IndexPriceUpdate);
 event_thunk!(on_funding_rate_thunk, on_funding_rate, FundingRateUpdate);
+event_thunk!(on_option_greeks_thunk, on_option_greeks, OptionGreeks);
 event_thunk!(
     on_instrument_status_thunk,
     on_instrument_status,

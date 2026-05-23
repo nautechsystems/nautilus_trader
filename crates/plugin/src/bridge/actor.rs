@@ -42,7 +42,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
@@ -265,6 +265,15 @@ impl DataActor for PluginActorAdapter {
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         invoke_event(self, "on_funding_rate", funding_rate, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_funding_rate)(
+                adapter.handle,
+                p,
+            )
+        })
+    }
+
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        invoke_event(self, "on_option_greeks", greeks, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_option_greeks)(
                 adapter.handle,
                 p,
             )

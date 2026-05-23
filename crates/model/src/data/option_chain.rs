@@ -132,6 +132,7 @@ impl StrikeRange {
 }
 
 /// Exchange-provided option Greeks and implied volatility for a single instrument.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(
     feature = "python",

@@ -59,7 +59,11 @@ pub mod strategy;
 pub mod configured;
 
 pub use actor::PluginActorAdapter;
-pub use commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand};
+pub use commands::{
+    CancelAllOrdersCommand, CancelOrderCommand, CancelOrdersCommand, CloseAllPositionsCommand,
+    ClosePositionCommand, ModifyOrderCommand, QueryAccountCommand, QueryOrderCommand,
+    SubmitOrderCommand, SubmitOrderListCommand,
+};
 pub use configured::{ConfiguredPluginEntry, configured_entry, register_manifest_custom_data};
 pub use custom_data::{PluginCustomDataValue, register_custom_data_from_manifest};
 pub use host::{host_vtable, plugin_loader};
