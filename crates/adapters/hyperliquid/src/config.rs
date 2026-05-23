@@ -123,10 +123,17 @@ pub struct HyperliquidExecClientConfig {
     /// - Testnet: `HYPERLIQUID_TESTNET_PK`
     pub private_key: Option<String>,
     /// Optional vault address for vault operations.
+    ///
+    /// If not provided, falls back to environment variable:
+    /// - Mainnet: `HYPERLIQUID_VAULT`
+    /// - Testnet: `HYPERLIQUID_TESTNET_VAULT`
     pub vault_address: Option<String>,
     /// Optional main account address when using an agent wallet (API sub-key).
     /// When set, used for balance queries, position reports, and WS subscriptions
     /// instead of the address derived from the private key.
+    ///
+    /// If not provided, falls back to the `HYPERLIQUID_ACCOUNT_ADDRESS`
+    /// environment variable.
     pub account_address: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,

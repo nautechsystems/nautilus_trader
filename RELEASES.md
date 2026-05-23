@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Deribit `subscribe_combo_legs` opt-in for combo leg trade streams
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Hyperliquid HIP-4 outcome `BinaryOption.info` with parsed venue description and question metadata
+- Added Hyperliquid `HYPERLIQUID_ACCOUNT_ADDRESS` env var fallback for `HyperliquidExecClientConfig.account_address`
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
 - Added Polymarket Rust adapter bounded-retry auto-load (`auto_load_max_retries`, exponential backoff with jitter)
