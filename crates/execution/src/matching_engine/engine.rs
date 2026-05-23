@@ -2107,6 +2107,7 @@ impl OrderMatchingEngine {
                     LiquiditySide::Taker,
                     Some(position_id),
                     None,
+                    None,
                 );
             } else {
                 self.fill_market_order(client_order_id);
@@ -4070,19 +4071,25 @@ impl OrderMatchingEngine {
         let (mut fills, from_synthetic) = self.determine_market_fill_model_price_and_volume(&order);
 
         // Apply protection price filtering at fill time (trigger-time semantics for stops)
-        if let Some(protection_points) = self.config.price_protection_points
+        let protection_price: Option<Price> = if let Some(protection_points) =
+            self.config.price_protection_points
             && matches!(
                 order.order_type(),
                 OrderType::Market | OrderType::StopMarket
-            )
-            && let Ok(protection_price) = protection_price_calculate(
+            ) {
+            protection_price_calculate(
                 self.instrument.price_increment(),
                 &order,
                 protection_points,
                 self.core.bid,
                 self.core.ask,
             )
-        {
+            .ok()
+        } else {
+            None
+        };
+
+        if let Some(protection_price) = protection_price {
             fills = self.filter_fills_by_protection(fills, &order, protection_price);
         }
 
@@ -4111,6 +4118,7 @@ impl OrderMatchingEngine {
             LiquiditySide::Taker,
             None,
             position.as_ref(),
+            protection_price,
         );
     }
 
@@ -4290,6 +4298,7 @@ impl OrderMatchingEngine {
                     liquidity_side,
                     venue_position_id,
                     position.as_ref(),
+                    None,
                 );
             }
             None => panic!("Limit order must have a price"),
@@ -4303,6 +4312,7 @@ impl OrderMatchingEngine {
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
+        protection_price: Option<Price>,
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
@@ -4350,6 +4360,8 @@ impl OrderMatchingEngine {
             .get(&order.client_order_id())
             .copied()
             .unwrap_or_else(|| order.filled_qty());
+        let initial_total_filled = total_filled;
+        let mut last_fill_px: Option<Price> = None;
 
         for &(fill_px, fill_qty) in fills {
             let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
@@ -4429,6 +4441,7 @@ impl OrderMatchingEngine {
                 venue_position_id,
                 position,
             );
+            last_fill_px = Some(fill_px);
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
                 // Filled initial level
@@ -4437,14 +4450,17 @@ impl OrderMatchingEngine {
         }
 
         let leaves_remaining = total_filled < order.quantity();
+        let filled_in_loop = total_filled > initial_total_filled;
 
         if order.time_in_force() == TimeInForce::Ioc && leaves_remaining {
             self.cancel_order(order, None);
             return;
         }
 
+        // `filled_in_loop` covers the just-partially-filled case where the
+        // local clone's status has not seen the fill events yet.
         if leaves_remaining
-            && order.is_open()
+            && (order.is_open() || filled_in_loop)
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
@@ -4454,10 +4470,38 @@ impl OrderMatchingEngine {
                     | OrderType::TrailingStopMarket
             )
         {
-            // Exhausted simulated book volume (continue aggressive filling into next level)
-            // This is a very basic implementation of slipping by a single tick, in the future
-            // we will implement more detailed fill modeling.
-            todo!("Exhausted simulated book volume")
+            // Exhausted L1 volume: slip remainder by a single price increment
+            let Some(last_fill_px) = last_fill_px else {
+                return;
+            };
+
+            let side = order.order_side().as_specified();
+            let slip_fill_px = match side {
+                OrderSideSpecified::Buy => last_fill_px.add(self.instrument.price_increment()),
+                OrderSideSpecified::Sell => last_fill_px.sub(self.instrument.price_increment()),
+            };
+
+            if let Some(protection_price) = protection_price {
+                let exceeds_boundary = match side {
+                    OrderSideSpecified::Buy => slip_fill_px.raw > protection_price.raw,
+                    OrderSideSpecified::Sell => slip_fill_px.raw < protection_price.raw,
+                };
+
+                if exceeds_boundary {
+                    return;
+                }
+            }
+
+            let leaves_qty = order.quantity().saturating_sub(total_filled);
+
+            self.fill_order(
+                order,
+                slip_fill_px,
+                leaves_qty,
+                liquidity_side,
+                venue_position_id,
+                position,
+            );
         }
     }
 

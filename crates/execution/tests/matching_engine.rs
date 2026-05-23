@@ -11354,3 +11354,254 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
         .expect("Expected cash settlement fill");
     assert_eq!(settlement_fill.last_px, custom);
 }
+
+#[rstest]
+#[case(OrderSide::Buy, "1010.00", "1010.01")]
+#[case(OrderSide::Sell, "1000.00", "999.99")]
+fn test_l1_market_order_slips_remainder_through_next_tick(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] top_of_book_px: &str,
+    #[case] slip_px: &str,
+) {
+    let mut engine = get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .quantity(Quantity::from("1.500"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_px, Price::from(top_of_book_px));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+    assert_eq!(fills[1].last_px, Price::from(slip_px));
+    assert_eq!(fills[1].last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+#[case(OrderSide::Buy, "1010.00")]
+#[case(OrderSide::Sell, "1000.00")]
+fn test_l1_market_order_slip_respects_protection_boundary(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] top_of_book_px: &str,
+) {
+    // Protection points = 0 puts the boundary at top-of-book; the slipped tick exceeds it
+    let config = OrderMatchingEngineConfig::builder()
+        .price_protection_points(0u32)
+        .build();
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .quantity(Quantity::from("1.500"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_px, Price::from(top_of_book_px));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+}
+
+#[rstest]
+#[case(OrderSide::Buy, "1010.00", "1010.01")]
+#[case(OrderSide::Sell, "1000.00", "999.99")]
+fn test_l1_market_order_slip_allowed_at_protection_boundary(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] top_of_book_px: &str,
+    #[case] slip_px: &str,
+) {
+    // Protection points = 1 puts the boundary exactly at the slipped tick;
+    // the strict-inequality check must allow the fill at equality.
+    let config = OrderMatchingEngineConfig::builder()
+        .price_protection_points(1u32)
+        .build();
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .quantity(Quantity::from("1.500"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_px, Price::from(top_of_book_px));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+    assert_eq!(fills[1].last_px, Price::from(slip_px));
+    assert_eq!(fills[1].last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_l1_ioc_market_order_cancels_remainder_instead_of_slipping(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // IOC must cancel the remainder before the slip path runs
+    let mut engine = get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.500"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let canceled_count = saved_messages
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Canceled(_)))
+        .count();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_px, Price::from("1010.00"));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+    assert_eq!(canceled_count, 1);
+}
+
+#[rstest]
+fn test_l1_stop_market_order_slips_remainder_after_trigger(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Trigger price below ask triggers immediately; remainder slips by one tick
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1005.00"))
+        .quantity(Quantity::from("1.500"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].last_px, Price::from("1010.00"));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
+    assert_eq!(fills[1].last_px, Price::from("1010.01"));
+    assert_eq!(fills[1].last_qty, Quantity::from("1.000"));
+}
