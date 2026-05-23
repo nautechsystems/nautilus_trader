@@ -15,6 +15,8 @@
 
 //! Parsing functions for converting Coinbase WebSocket messages to Nautilus domain types.
 
+use std::str::FromStr;
+
 use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -25,6 +27,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
     http::parse::{
@@ -297,10 +300,11 @@ pub fn parse_ws_user_event_to_order_status_report(
     );
 
     if !update.avg_price.is_empty()
-        && let Ok(avg_px) = update.avg_price.parse::<f64>()
-        && avg_px > 0.0
+        && let Ok(avg_decimal) = Decimal::from_str(&update.avg_price)
+        && avg_decimal.is_sign_positive()
+        && !avg_decimal.is_zero()
     {
-        report = report.with_avg_px(avg_px)?;
+        report = report.with_avg_px(avg_decimal.to_f64().unwrap_or_default())?;
     }
 
     Ok(report)

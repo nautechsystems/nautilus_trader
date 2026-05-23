@@ -24,7 +24,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDeltas, QuoteTick, TradeTick},
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     reports::OrderStatusReport,
 };
@@ -33,7 +33,7 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::COINBASE,
+    common::consts::COINBASE_VENUE,
     websocket::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
         messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
@@ -45,7 +45,7 @@ use crate::{
 };
 
 fn instrument_id_from_product(product_id: &Ustr) -> InstrumentId {
-    InstrumentId::from(format!("{product_id}.{COINBASE}").as_str())
+    InstrumentId::new(Symbol::new(*product_id), *COINBASE_VENUE)
 }
 
 fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {

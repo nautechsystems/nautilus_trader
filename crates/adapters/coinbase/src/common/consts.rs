@@ -62,6 +62,18 @@ pub const ACCOUNTS_PAGE_LIMIT: &str = "250";
 /// endpoint; selects orders the venue considers `OPEN`.
 pub const ORDER_STATUS_OPEN: &str = "OPEN";
 
+// Query parameter keys shared across multiple paginated REST endpoints,
+// where the fills endpoint substitutes `*_SEQUENCE_TIMESTAMP` for `*_DATE`.
+pub const QUERY_KEY_LIMIT: &str = "limit";
+pub const QUERY_KEY_CURSOR: &str = "cursor";
+pub const QUERY_KEY_PRODUCT_IDS: &str = "product_ids";
+pub const QUERY_KEY_ORDER_IDS: &str = "order_ids";
+pub const QUERY_KEY_ORDER_STATUS: &str = "order_status";
+pub const QUERY_KEY_START_DATE: &str = "start_date";
+pub const QUERY_KEY_END_DATE: &str = "end_date";
+pub const QUERY_KEY_START_SEQUENCE_TIMESTAMP: &str = "start_sequence_timestamp";
+pub const QUERY_KEY_END_SEQUENCE_TIMESTAMP: &str = "end_sequence_timestamp";
+
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// WebSocket control-frame ping interval, in seconds.
