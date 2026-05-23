@@ -1615,6 +1615,7 @@ impl DataClient for InteractiveBrokersDataClient {
         // Handle batch loading if contracts are provided or force_update is requested
         if !contract_specs_to_load.is_empty() || force_update {
             let contract_specs_to_load_clone = contract_specs_to_load;
+            let return_loaded_only = !contract_specs_to_load_clone.is_empty();
 
             get_runtime().spawn(async move {
                 let mut loaded_instrument_ids = Vec::new();
@@ -1664,7 +1665,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 }
 
                 // If force_update, also reload all existing instruments
-                if force_update {
+                if force_update && !return_loaded_only {
                     let all_instrument_ids: Vec<InstrumentId> = instrument_provider
                         .get_all()
                         .into_iter()
@@ -1680,8 +1681,12 @@ impl DataClient for InteractiveBrokersDataClient {
                     }
                 }
 
-                // Get all instruments from provider after loading
-                let instruments = instrument_provider.get_all();
+                let instruments = if return_loaded_only {
+                    instrument_provider.find_all(&loaded_instrument_ids)
+                } else {
+                    instrument_provider.get_all()
+                };
+                let instruments_count = instruments.len();
 
                 let response = DataResponse::Instruments(InstrumentsResponse::new(
                     request_id,
@@ -1699,7 +1704,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 } else {
                     tracing::info!(
                         "Successfully sent {} instruments response (loaded {} new instruments)",
-                        instrument_provider.count(),
+                        instruments_count,
                         loaded_instrument_ids.len()
                     );
                 }

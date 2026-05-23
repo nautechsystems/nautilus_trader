@@ -20,7 +20,10 @@ mod tests {
     use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
-        instruments::{Instrument, InstrumentAny, stubs::equity_aapl},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{audusd_sim, equity_aapl, gbpusd_sim},
+        },
     };
     use rstest::rstest;
 
@@ -63,6 +66,30 @@ mod tests {
                 .instrument_id_to_ib_contract_details(&instrument_id)
                 .is_none()
         );
+    }
+
+    #[rstest]
+    fn test_find_all_returns_only_requested_cached_instruments() {
+        let provider = create_test_provider();
+        let audusd = audusd_sim();
+        let gbpusd = gbpusd_sim();
+        let aapl = equity_aapl();
+        let audusd_id = audusd.id();
+        let gbpusd_id = gbpusd.id();
+        let aapl_id = aapl.id();
+        let missing_id = InstrumentId::from("MSFT.NASDAQ");
+
+        provider.insert_test_instrument(InstrumentAny::from(audusd), 1, 1);
+        provider.insert_test_instrument(InstrumentAny::from(gbpusd), 2, 1);
+        provider.insert_test_instrument(InstrumentAny::from(aapl), 3, 1);
+
+        let instruments = provider.find_all(&[gbpusd_id, missing_id]);
+        let instrument_ids: Vec<InstrumentId> = instruments.iter().map(Instrument::id).collect();
+
+        assert_eq!(instrument_ids, vec![gbpusd_id]);
+        assert_eq!(provider.count(), 3);
+        assert!(provider.find(&audusd_id).is_some());
+        assert!(provider.find(&aapl_id).is_some());
     }
 
     #[rstest]
