@@ -512,7 +512,7 @@ pub fn parse_ws_open_interest(
     match ctx {
         WsActiveAssetCtxData::Perp { coin: _, ctx } => {
             let open_interest = Decimal::from_str(&ctx.open_interest).with_context(|| {
-                format!("Failed to parse open interest from '{}'", ctx.open_interest)
+                format!("failed to parse open interest from '{}'", ctx.open_interest)
             })?;
 
             Ok(Some(HyperliquidOpenInterestData::new(

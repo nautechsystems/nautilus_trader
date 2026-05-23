@@ -559,6 +559,35 @@ async fn drain_initial_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Data
     while rx.try_recv().is_ok() {}
 }
 
+async fn wait_for_open_interest_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    instrument_id: InstrumentId,
+    data_type: DataType,
+) {
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Data(Data::Custom(custom)) = event else {
+                    return false;
+                };
+
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidOpenInterestData>()
+                    .is_some_and(|open_interest| {
+                        open_interest.instrument_id == instrument_id
+                            && open_interest.open_interest.to_string() == "1500.0"
+                            && custom.data_type == data_type
+                    })
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_data_client_connect_disconnect() {
@@ -772,28 +801,7 @@ async fn test_data_client_subscribe_custom_open_interest() {
     )
     .await;
 
-    wait_until_async(
-        || {
-            let found = rx.try_recv().is_ok_and(|event| {
-                let DataEvent::Data(Data::Custom(custom)) = event else {
-                    return false;
-                };
-
-                custom
-                    .data
-                    .as_any()
-                    .downcast_ref::<HyperliquidOpenInterestData>()
-                    .is_some_and(|open_interest| {
-                        open_interest.instrument_id == instrument_id
-                            && open_interest.open_interest.to_string() == "1500.0"
-                            && custom.data_type == data_type
-                    })
-            });
-            async move { found }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_open_interest_event(&mut rx, instrument_id, data_type.clone()).await;
 
     client
         .unsubscribe(&UnsubscribeCustomData::new(
@@ -889,17 +897,26 @@ async fn test_data_client_shared_asset_context_subscription_with_open_interest()
         ))
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(250)).await;
-    let subscription_count = state
-        .subscriptions
-        .lock()
-        .await
-        .iter()
-        .filter(|subscription| {
-            subscription.get("type").and_then(|value| value.as_str()) == Some("activeAssetCtx")
-        })
-        .count();
-    assert_eq!(subscription_count, 1);
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str())
+                            == Some("activeAssetCtx")
+                    })
+                    .count()
+                    == 1
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client
         .unsubscribe(&UnsubscribeCustomData::new(
@@ -913,17 +930,26 @@ async fn test_data_client_shared_asset_context_subscription_with_open_interest()
         ))
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(250)).await;
-    let unsub_count_before_mark = state
-        .unsubscriptions
-        .lock()
-        .await
-        .iter()
-        .filter(|subscription| {
-            subscription.get("type").and_then(|value| value.as_str()) == Some("activeAssetCtx")
-        })
-        .count();
-    assert_eq!(unsub_count_before_mark, 0);
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .unsubscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str())
+                            == Some("activeAssetCtx")
+                    })
+                    .count()
+                    == 0
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client
         .unsubscribe_mark_prices(&UnsubscribeMarkPrices::new(
@@ -957,6 +983,86 @@ async fn test_data_client_shared_asset_context_subscription_with_open_interest()
         Duration::from_secs(5),
     )
     .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_resubscribe_custom_open_interest_emits_initial_value_again() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let data_type = open_interest_data_type(instrument_id);
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_for_open_interest_event(&mut rx, instrument_id, data_type.clone()).await;
+
+    client
+        .unsubscribe(&UnsubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .unsubscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str())
+                            == Some("activeAssetCtx")
+                    })
+                    .count()
+                    == 1
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_for_open_interest_event(&mut rx, instrument_id, data_type).await;
 
     client.disconnect().await.unwrap();
 }

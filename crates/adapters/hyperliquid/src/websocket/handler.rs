@@ -109,6 +109,42 @@ struct AssetContextCaches {
     open_interest: AHashMap<Ustr, String>,
 }
 
+impl AssetContextCaches {
+    fn clear(&mut self, coin: Ustr, data_type: AssetContextDataType) {
+        match data_type {
+            AssetContextDataType::MarkPrice => {
+                self.mark_price.remove(&coin);
+            }
+            AssetContextDataType::IndexPrice => {
+                self.index_price.remove(&coin);
+            }
+            AssetContextDataType::FundingRate => {
+                self.funding_rate.remove(&coin);
+            }
+            AssetContextDataType::OpenInterest => {
+                self.open_interest.remove(&coin);
+            }
+        }
+    }
+
+    fn clear_removed(
+        &mut self,
+        coin: Ustr,
+        previous_data_types: Option<&AHashSet<AssetContextDataType>>,
+        next_data_types: &AHashSet<AssetContextDataType>,
+    ) {
+        let Some(previous_data_types) = previous_data_types else {
+            return;
+        };
+
+        for data_type in previous_data_types {
+            if !next_data_types.contains(data_type) {
+                self.clear(coin, *data_type);
+            }
+        }
+    }
+}
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -301,6 +337,13 @@ impl FeedHandler {
                             self.bar_cache.remove(&key);
                         }
                         HandlerCommand::UpdateAssetContextSubs { coin, data_types } => {
+                            let previous_data_types = self.asset_context_subs.get(&coin).cloned();
+                            self.asset_context_caches.clear_removed(
+                                coin,
+                                previous_data_types.as_ref(),
+                                &data_types,
+                            );
+
                             if data_types.is_empty() {
                                 self.asset_context_subs.remove(&coin);
                             } else {
@@ -1333,5 +1376,39 @@ mod tests {
 
         assert_eq!(first.len(), 1);
         assert!(second.is_empty());
+    }
+
+    #[rstest]
+    fn asset_context_caches_clear_removed_data_types() {
+        let coin = Ustr::from("BTC");
+        let mut caches = AssetContextCaches::default();
+        caches.mark_price.insert(coin, "98455.5".to_string());
+        caches.index_price.insert(coin, "98460.0".to_string());
+        caches.funding_rate.insert(coin, "0.0001".to_string());
+        caches.open_interest.insert(coin, "1500.0".to_string());
+
+        let previous_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::IndexPrice,
+            AssetContextDataType::FundingRate,
+            AssetContextDataType::OpenInterest,
+        ]);
+        let next_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::FundingRate,
+        ]);
+
+        caches.clear_removed(coin, Some(&previous_data_types), &next_data_types);
+
+        assert_eq!(
+            caches.mark_price.get(&coin).map(String::as_str),
+            Some("98455.5")
+        );
+        assert!(caches.index_price.get(&coin).is_none());
+        assert_eq!(
+            caches.funding_rate.get(&coin).map(String::as_str),
+            Some("0.0001")
+        );
+        assert!(caches.open_interest.get(&coin).is_none());
     }
 }
