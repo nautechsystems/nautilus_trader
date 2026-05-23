@@ -191,6 +191,13 @@ class InteractiveBrokersClient(
         # Start client
         self._request_id_seq: int = 10000
 
+    @property
+    def is_ready(self) -> bool:
+        """
+        Return whether the Interactive Brokers client is ready for requests.
+        """
+        return self._is_client_ready.is_set()
+
     def _start(self) -> None:
         """
         Start the client.
