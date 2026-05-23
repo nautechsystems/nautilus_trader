@@ -56,7 +56,7 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny,
         OptionContract,
-        stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
+        stubs::{binary_option, crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -10816,6 +10816,244 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
         .expect("Expected EXPIRATION close fill from close_price fallback");
     assert_eq!(fill.last_px, close_price);
     let _ = position;
+}
+
+#[rstest]
+fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let activation_ns = instrument.activation_ns().unwrap();
+    let expiration_ns = instrument.expiration_ns().unwrap();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(activation_ns.as_u64() + 1));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock.clone(),
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let opening_ask = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("0.400"),
+            Quantity::from("10.00"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&opening_ask).unwrap();
+
+    let mut opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(ClientOrderId::from("OPEN-BO-1"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(opening_order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut opening_order, account_id);
+
+    let mut opening_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("expected opening fill");
+    opening_fill.position_id = Some(PositionId::from("P-BO-1"));
+    let position = Position::new(&instrument, opening_fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let mut resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(ClientOrderId::from("REST-BO-1"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut resting_order, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(expiration_ns.as_u64() + 1));
+
+    let mut probe_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(ClientOrderId::from("PROBE-BO-1"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(probe_order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut probe_order, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("REST-BO-1")
+        )),
+        "expected resting order cancellation when entering pending resolution"
+    );
+    let reject = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id == ClientOrderId::from("PROBE-BO-1") =>
+            {
+                Some(rejected)
+            }
+            _ => None,
+        })
+        .expect("expected rejection for probe order submitted after expiry");
+    assert!(
+        reject.reason.as_str().contains("pending resolution"),
+        "expected pending resolution rejection, found: {}",
+        reject.reason,
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_instrument_close(close);
+
+    let settlement_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id.as_str().starts_with("EXPIRATION-") =>
+            {
+                Some(fill)
+            }
+            _ => None,
+        })
+        .expect("expected settlement fill from instrument close");
+    assert_eq!(settlement_fill.last_px, Price::from("1.000"));
+    let _ = position;
+}
+
+#[rstest]
+fn test_binary_option_expiration_check_uses_engine_clock_not_order_ts_init(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let activation_ns = instrument.activation_ns().unwrap();
+    let expiration_ns = instrument.expiration_ns().unwrap();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(activation_ns.as_u64() + 1));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let opening_ask = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("0.400"),
+            Quantity::from("10.00"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&opening_ask).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(ClientOrderId::from("CLOCK-NOT-TSINIT"))
+        .ts_init(UnixNanos::from(expiration_ns.as_u64() + 100))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut order, account_id);
+
+    let events = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id == ClientOrderId::from("CLOCK-NOT-TSINIT")
+        )),
+        "order.ts_init should not cause expiry rejection when engine clock is still pre-expiry",
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id == ClientOrderId::from("CLOCK-NOT-TSINIT")
+        )),
+        "pre-expiry submission should not be rejected solely because order.ts_init is later",
+    );
 }
 
 #[rstest]
