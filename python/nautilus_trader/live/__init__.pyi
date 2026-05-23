@@ -184,6 +184,9 @@ class LiveNodeBuilder:
     def add_exec_client(
         self, name: str | None, factory: typing.Any, config: typing.Any
     ) -> LiveNodeBuilder: ...
+    def add_simulated_exec_client(
+        self, name: str | None, factory: typing.Any, config: typing.Any
+    ) -> LiveNodeBuilder: ...
     def build(self) -> LiveNode: ...
 
 @typing.final
