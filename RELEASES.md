@@ -66,6 +66,7 @@ None
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
+- Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
 - Fixed Polymarket Rust adapter dropping auto-load batches on Gamma chunk failures
 - Fixed Polymarket Rust adapter treating encoded-empty `clob_token_ids` as terminal instead of transient
 

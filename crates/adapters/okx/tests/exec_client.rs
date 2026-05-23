@@ -32,12 +32,12 @@ use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::OrderInitialized,
+    events::{OrderEventAny, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
-    orders::OrderList,
+    orders::{OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
@@ -923,6 +923,7 @@ fn create_test_execution_client(
 ) -> (
     OKXExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("OKX-001");
@@ -938,7 +939,7 @@ fn create_test_execution_client(
         account_id,
         AccountType::Margin,
         None,
-        cache,
+        cache.clone(),
     );
 
     let config = OKXExecClientConfig {
@@ -958,7 +959,7 @@ fn create_test_execution_client(
 
     let client = OKXExecutionClient::new(core, config).unwrap();
 
-    (client, rx)
+    (client, rx, cache)
 }
 
 #[rstest]
@@ -967,7 +968,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let (mut client, mut rx) = create_test_execution_client(&base_url);
+    let (mut client, mut rx, _cache) = create_test_execution_client(&base_url);
 
     client.start().unwrap();
 
@@ -994,4 +995,156 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+fn build_test_limit_order(instrument_id: InstrumentId, client_order_id: ClientOrderId) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .build()
+}
+
+fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrderId, String> {
+    let mut by_cid = HashMap::new();
+
+    for event in events {
+        if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
+            by_cid.insert(denied.client_order_id, denied.reason.to_string());
+        }
+    }
+    by_cid
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_denies_when_clord_id_exceeds_32_chars() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    // Clear any startup events emitted by the background bootstrap task.
+    let _ = drain_events(&mut rx);
+
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    // 35-char compact ID matching the shape from the original bug report.
+    let invalid_cid = ClientOrderId::from("O20260522145501532392555aceLTCUSDT5");
+    let order = build_test_limit_order(instrument_id, invalid_cid);
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client
+        .submit_order(cmd)
+        .expect("submit_order should not error");
+
+    let denied = collect_order_denied_events(drain_events(&mut rx));
+    assert_eq!(denied.len(), 1, "denied: {denied:?}");
+    let reason = denied.get(&invalid_cid).expect("missing denied event");
+    assert!(reason.contains("at most 32"), "reason was: {reason}");
+    assert!(reason.contains("was 35"), "reason was: {reason}");
+    assert!(
+        reason.contains("use_uuid_client_order_ids"),
+        "reason was: {reason}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_every_leg_when_any_clord_id_invalid() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+
+    let cid_valid_a = ClientOrderId::from("O20260522145501ABCDEF1");
+    let cid_invalid = ClientOrderId::from("O20260522145501532392555aceLTCUSDT5"); // 35 chars
+    let cid_valid_b = ClientOrderId::from("O20260522145501ABCDEF3");
+
+    let order_a = build_test_limit_order(instrument_id, cid_valid_a);
+    let order_invalid = build_test_limit_order(instrument_id, cid_invalid);
+    let order_b = build_test_limit_order(instrument_id, cid_valid_b);
+
+    for order in [&order_a, &order_invalid, &order_b] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::new("OL-001"),
+        instrument_id,
+        strategy_id,
+        vec![cid_valid_a, cid_invalid, cid_valid_b],
+        UnixNanos::default(),
+    );
+    let order_inits = vec![
+        OrderInitialized::from(&order_a),
+        OrderInitialized::from(&order_invalid),
+        OrderInitialized::from(&order_b),
+    ];
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*OKX_CLIENT_ID),
+        strategy_id,
+        order_list,
+        order_inits,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client
+        .submit_order_list(cmd)
+        .expect("submit_order_list should not error");
+
+    let mut denied = collect_order_denied_events(drain_events(&mut rx));
+    assert_eq!(denied.len(), 3, "denied: {denied:?}");
+
+    let reason_invalid = denied.remove(&cid_invalid).expect("missing invalid leg");
+    assert!(
+        reason_invalid.contains("at most 32") && reason_invalid.contains("was 35"),
+        "invalid-leg reason was: {reason_invalid}"
+    );
+
+    let reason_a = denied.remove(&cid_valid_a).expect("missing valid leg A");
+    assert!(
+        reason_a.contains("OKX order list denied: sibling")
+            && reason_a.contains(cid_invalid.as_str()),
+        "sibling A reason was: {reason_a}"
+    );
+
+    let reason_b = denied.remove(&cid_valid_b).expect("missing valid leg B");
+    assert!(
+        reason_b.contains("OKX order list denied: sibling")
+            && reason_b.contains(cid_invalid.as_str()),
+        "sibling B reason was: {reason_b}"
+    );
 }

@@ -61,7 +61,7 @@ use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
-            resolve_instrument_families,
+            resolve_instrument_families, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         parse::{nanos_to_datetime, okx_instrument_type_from_symbol},
@@ -1562,6 +1562,11 @@ impl ExecutionClient for OKXExecutionClient {
                 return Ok(());
             }
 
+            if let Err(reason) = validate_okx_client_order_id(cmd.client_order_id.as_str()) {
+                self.emitter.emit_order_denied(&order, &reason);
+                return Ok(());
+            }
+
             let order_type = order.order_type();
 
             // OKX trigger/algo orders are not supported for options.
@@ -1594,6 +1599,40 @@ impl ExecutionClient for OKXExecutionClient {
 
         // Validate all orders before emitting any submitted events
         let cache = self.core.cache();
+
+        // Pre-validate every clOrdId so an invalid leg denies the whole list atomically;
+        // otherwise sibling legs would be left in the cache without a terminal event.
+        let invalid: Vec<(ClientOrderId, String)> = cmd
+            .order_list
+            .client_order_ids
+            .iter()
+            .filter_map(|cid| {
+                validate_okx_client_order_id(cid.as_str())
+                    .err()
+                    .map(|r| (*cid, r))
+            })
+            .collect();
+
+        if let Some((first_offender, first_reason)) = invalid.first() {
+            for client_order_id in &cmd.order_list.client_order_ids {
+                let order = cache
+                    .order(client_order_id)
+                    .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
+                let reason = invalid
+                    .iter()
+                    .find(|(cid, _)| cid == client_order_id)
+                    .map_or_else(
+                        || {
+                            format!(
+                                "OKX order list denied: sibling {first_offender} {first_reason}"
+                            )
+                        },
+                        |(_, r)| r.clone(),
+                    );
+                self.emitter.emit_order_denied(&order, &reason);
+            }
+            return Ok(());
+        }
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = cache
