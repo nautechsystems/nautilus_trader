@@ -442,6 +442,30 @@ pub struct BinanceOpenInterest {
     pub time: i64,
 }
 
+/// Historical open interest record from `GET /futures/data/openInterestHist`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceOpenInterestHistRecord {
+    /// Symbol name for USD-M responses.
+    #[serde(default)]
+    pub symbol: Option<Ustr>,
+    /// Trading pair for COIN-M responses.
+    #[serde(default)]
+    pub pair: Option<Ustr>,
+    /// Contract type for COIN-M responses.
+    #[serde(default)]
+    pub contract_type: Option<String>,
+    /// Total open interest for the bucket.
+    pub sum_open_interest: String,
+    /// Total open interest notional value for the bucket.
+    pub sum_open_interest_value: String,
+    /// Bucket timestamp in milliseconds.
+    pub timestamp: i64,
+    /// USD-M-specific optional circulating supply field.
+    #[serde(default, rename = "CMCCirculatingSupply")]
+    pub cmc_circulating_supply: Option<String>,
+}
+
 /// Futures account balance entry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
