@@ -812,9 +812,6 @@ unsafe extern "C" fn host_submit_order_list(
 ) -> PluginResult<()> {
     dispatch_command(ctx, command_json, "submit_order_list", |adapter, json| {
         let cmd: SubmitOrderListCommand = serde_json::from_str(json)?;
-        if cmd.orders.is_empty() {
-            anyhow::bail!("Cannot submit empty order list");
-        }
         Strategy::submit_order_list(
             adapter,
             cmd.orders,

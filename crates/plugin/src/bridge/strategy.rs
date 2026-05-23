@@ -42,7 +42,7 @@ use nautilus_common::{actor::DataActor, signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -62,7 +62,7 @@ use crate::{
     bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
     host::{HostContext, HostVTable},
     manifest::ValidatedStrategyVTable,
-    surfaces::strategy::PluginStrategyHandle,
+    surfaces::{book::OrderBookDeltasHandle, strategy::PluginStrategyHandle},
 };
 
 /// Adapts a plug-in strategy (vtable + handle from a cdylib) into a host-side
@@ -368,6 +368,16 @@ impl DataActor for PluginStrategyAdapter {
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         invoke_event(self, "on_bar", bar, |adapter, p| unsafe {
             validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_bar)(adapter.handle, p)
+        })
+    }
+
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        let handle = OrderBookDeltasHandle::new(deltas.clone());
+        invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_book_deltas)(
+                adapter.handle,
+                p,
+            )
         })
     }
 

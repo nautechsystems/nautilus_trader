@@ -71,7 +71,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{
         Bar, BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        stubs::stub_deltas,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, GreeksConvention,
@@ -119,6 +120,7 @@ static A_TIME: AtomicU64 = AtomicU64::new(0);
 static A_QUOTE: AtomicU64 = AtomicU64::new(0);
 static A_TRADE: AtomicU64 = AtomicU64::new(0);
 static A_BAR: AtomicU64 = AtomicU64::new(0);
+static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
 static A_MARK: AtomicU64 = AtomicU64::new(0);
 static A_INDEX: AtomicU64 = AtomicU64::new(0);
 static A_FUNDING: AtomicU64 = AtomicU64::new(0);
@@ -142,6 +144,7 @@ fn a_reset() {
         &A_QUOTE,
         &A_TRADE,
         &A_BAR,
+        &A_BOOK_DELTAS,
         &A_MARK,
         &A_INDEX,
         &A_FUNDING,
@@ -209,6 +212,10 @@ impl PluginActor for CountingActor {
         A_BAR.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
         A_MARK.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -255,6 +262,7 @@ static S_START: AtomicU64 = AtomicU64::new(0);
 static S_QUOTE: AtomicU64 = AtomicU64::new(0);
 static S_TRADE: AtomicU64 = AtomicU64::new(0);
 static S_BAR: AtomicU64 = AtomicU64::new(0);
+static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_INITIALIZED: AtomicU64 = AtomicU64::new(0);
@@ -282,6 +290,7 @@ fn s_reset() {
         &S_QUOTE,
         &S_TRADE,
         &S_BAR,
+        &S_BOOK_DELTAS,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
         &S_ORDER_INITIALIZED,
@@ -333,6 +342,10 @@ impl PluginStrategy for CountingStrategy {
     }
     fn on_bar(&mut self, _: &Bar) -> anyhow::Result<()> {
         S_BAR.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_filled(&mut self, _: &OrderFilled) -> anyhow::Result<()> {
@@ -752,6 +765,7 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     DataActor::on_quote(&mut a, &make_quote()).unwrap();
     DataActor::on_trade(&mut a, &make_trade()).unwrap();
     DataActor::on_bar(&mut a, &make_bar()).unwrap();
+    DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
     DataActor::on_mark_price(&mut a, &make_mark_price()).unwrap();
     DataActor::on_index_price(&mut a, &make_index_price()).unwrap();
     DataActor::on_funding_rate(&mut a, &make_funding_rate()).unwrap();
@@ -764,6 +778,7 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
     assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
     assert_eq!(A_MARK.load(Ordering::SeqCst), 1);
     assert_eq!(A_INDEX.load(Ordering::SeqCst), 1);
     assert_eq!(A_FUNDING.load(Ordering::SeqCst), 1);
@@ -796,11 +811,13 @@ fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
     let mut s = build_strategy_adapter("CountingStrategy-Data");
 
     DataActor::on_quote(&mut s, &make_quote()).unwrap();
+    DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
     DataActor::on_option_greeks(&mut s, &make_option_greeks()).unwrap();
     DataActor::on_order_filled(&mut s, &make_order_filled()).unwrap();
     DataActor::on_order_canceled(&mut s, &make_order_canceled()).unwrap();
 
     assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_GREEKS.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_FILLED.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_CANCELED.load(Ordering::SeqCst), 1);
@@ -2002,7 +2019,7 @@ fn host_submit_order_list_rejects_empty_orders() {
         .expect_err("empty order list should be rejected");
     assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
     assert!(
-        err.message_string().contains("empty order list"),
+        err.message_string().contains("no orders to submit"),
         "unexpected error: {}",
         err.message_string()
     );

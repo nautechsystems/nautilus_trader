@@ -36,15 +36,15 @@
 //!
 //! - Lifecycle: `start`, `stop`, `resume`, `reset`, `dispose`, `degrade`, `fault`
 //! - Market data: quotes, trades, bars, mark/index/funding prices,
-//!   instrument status, instrument close
+//!   instrument status, instrument close, book deltas (via
+//!   [`crate::surfaces::book::OrderBookDeltasHandle`])
 //! - Historical market data: bulk historical quotes, trades, bars,
 //!   funding rates, mark prices, index prices delivered as
 //!   [`crate::boundary::Slice`] payloads
 //! - Order events: filled, canceled
 //! - Other: signal, time event
 //!
-//! Deferred: `on_book_deltas` (non-`#[repr(C)]` envelope, see README),
-//! `on_book` (stateful), `on_instrument` (non-`#[repr(C)]` enum),
+//! Deferred: `on_book` (stateful), `on_instrument` (non-`#[repr(C)]` enum),
 //! `on_data` (CustomData routing through actors), `on_historical_data`
 //! (`&dyn Any` payload), `on_option_chain` (non-`#[repr(C)]` payload),
 //! DeFi pool/block events. The authoritative list lives in
@@ -58,7 +58,7 @@ use nautilus_common::{signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
 };
@@ -67,6 +67,7 @@ use crate::{
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
     host::{HostContext, HostVTable},
     panic::{guard, guard_infallible},
+    surfaces::book::OrderBookDeltasHandle,
 };
 
 /// Opaque handle to a plug-in actor instance owned by the cdylib.
@@ -145,6 +146,12 @@ pub struct ActorVTable {
     >,
     pub on_bar: Option<
         unsafe extern "C" fn(handle: *mut PluginActorHandle, bar: *const Bar) -> PluginResult<()>,
+    >,
+    pub on_book_deltas: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            deltas: *const OrderBookDeltasHandle,
+        ) -> PluginResult<()>,
     >,
     pub on_mark_price: Option<
         unsafe extern "C" fn(
@@ -314,6 +321,11 @@ pub trait PluginActor: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
@@ -428,6 +440,7 @@ where
         on_quote: Some(on_quote_thunk::<T>),
         on_trade: Some(on_trade_thunk::<T>),
         on_bar: Some(on_bar_thunk::<T>),
+        on_book_deltas: Some(on_book_deltas_thunk::<T>),
         on_mark_price: Some(on_mark_price_thunk::<T>),
         on_index_price: Some(on_index_price_thunk::<T>),
         on_funding_rate: Some(on_funding_rate_thunk::<T>),
@@ -527,6 +540,20 @@ event_thunk!(on_time_event_thunk, on_time_event, TimeEvent);
 event_thunk!(on_quote_thunk, on_quote, QuoteTick);
 event_thunk!(on_trade_thunk, on_trade, TradeTick);
 event_thunk!(on_bar_thunk, on_bar, Bar);
+
+unsafe extern "C" fn on_book_deltas_thunk<T: PluginActor>(
+    handle: *mut PluginActorHandle,
+    deltas: *const OrderBookDeltasHandle,
+) -> PluginResult<()> {
+    guard(|| {
+        // SAFETY: host keeps the handle live for the duration of the call;
+        // the plug-in only borrows the wrapped deltas via the trait method.
+        let v: &OrderBookDeltas = unsafe { (*deltas).deltas() };
+        let actor = handle_as_mut::<T>(handle);
+        ok_or_err(actor.on_book_deltas(v))
+    })
+}
+
 event_thunk!(on_mark_price_thunk, on_mark_price, MarkPriceUpdate);
 event_thunk!(on_index_price_thunk, on_index_price, IndexPriceUpdate);
 event_thunk!(on_funding_rate_thunk, on_funding_rate, FundingRateUpdate);

@@ -27,5 +27,6 @@
 //! orthogonal to the "what plug-ins implement" surface set.
 
 pub mod actor;
+pub mod book;
 pub mod custom_data;
 pub mod strategy;

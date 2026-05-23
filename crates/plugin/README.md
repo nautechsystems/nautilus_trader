@@ -49,10 +49,12 @@ backends, pre-trade risk gating, event store backends, and hot reload of any
 plug-in while the live node is running. Plug-ins load at process startup and
 live for the process lifetime.
 
-`OrderBookDeltas` callbacks are also out of scope for v1. The type owns a
-`Vec<OrderBookDelta>` and cannot be `#[repr(C)]`, so passing a raw pointer
-across the cdylib boundary has no stable layout guarantee. A future revision
-will deliver book deltas through a boundary-owned representation.
+`OrderBookDeltas` cross the boundary via `OrderBookDeltasHandle`, a
+`#[repr(C)]` wrapper owned by the host that boxes the deltas for the
+duration of the callback. The plug-in's thunk dereferences the handle
+once and hands a borrowed `&OrderBookDeltas` to the trait method;
+matches the ownership contract `OrderBookDeltas_API` uses on the Cython
+side.
 
 ## NautilusTrader
 

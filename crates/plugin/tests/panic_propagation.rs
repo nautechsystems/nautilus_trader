@@ -47,9 +47,10 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
         stubs::{
-            stub_bar, stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buyer,
+            stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
+            stub_trade_ethusdt_buyer,
         },
     },
     enums::{GreeksConvention, OrderSide, PositionSide},
@@ -69,6 +70,7 @@ use nautilus_plugin::{
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
+        book::OrderBookDeltasHandle,
         custom_data::{CustomDataHandle, MetadataEntry, PluginCustomData, custom_data_vtable},
         strategy::{PluginStrategy, strategy_vtable},
     },
@@ -199,6 +201,9 @@ impl PluginActor for MisbehavingActor {
     fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
         fail()
     }
+    fn on_book_deltas(&mut self, _deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_mark_price(&mut self, _mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         fail()
     }
@@ -294,6 +299,9 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_bar(&mut self, _b: &Bar) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
         fail()
     }
     fn on_mark_price(&mut self, _p: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -557,6 +565,7 @@ enum ActorThunkUnderTest {
     OnQuote,
     OnTrade,
     OnBar,
+    OnBookDeltas,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -615,6 +624,11 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = stub_bar();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnBookDeltas => {
+            let v = OrderBookDeltasHandle::new(stub_deltas());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -729,6 +743,8 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_trade_err(ActorThunkUnderTest::OnTrade, Mode::Err)]
 #[case::on_bar_panic(ActorThunkUnderTest::OnBar, Mode::Panic)]
 #[case::on_bar_err(ActorThunkUnderTest::OnBar, Mode::Err)]
+#[case::on_book_deltas_panic(ActorThunkUnderTest::OnBookDeltas, Mode::Panic)]
+#[case::on_book_deltas_err(ActorThunkUnderTest::OnBookDeltas, Mode::Err)]
 #[case::on_mark_price_panic(ActorThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(ActorThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(ActorThunkUnderTest::OnIndexPrice, Mode::Panic)]
@@ -784,6 +800,7 @@ enum StrategyThunkUnderTest {
     OnQuote,
     OnTrade,
     OnBar,
+    OnBookDeltas,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -860,6 +877,11 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = stub_bar();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnBookDeltas => {
+            let v = OrderBookDeltasHandle::new(stub_deltas());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -1063,6 +1085,8 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_trade_err(StrategyThunkUnderTest::OnTrade, Mode::Err)]
 #[case::on_bar_panic(StrategyThunkUnderTest::OnBar, Mode::Panic)]
 #[case::on_bar_err(StrategyThunkUnderTest::OnBar, Mode::Err)]
+#[case::on_book_deltas_panic(StrategyThunkUnderTest::OnBookDeltas, Mode::Panic)]
+#[case::on_book_deltas_err(StrategyThunkUnderTest::OnBookDeltas, Mode::Err)]
 #[case::on_mark_price_panic(StrategyThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(StrategyThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(StrategyThunkUnderTest::OnIndexPrice, Mode::Panic)]

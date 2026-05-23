@@ -42,7 +42,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
@@ -53,7 +53,7 @@ use crate::{
     bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
     host::{HostContext, HostVTable},
     manifest::ValidatedActorVTable,
-    surfaces::actor::PluginActorHandle,
+    surfaces::{actor::PluginActorHandle, book::OrderBookDeltasHandle},
 };
 
 /// Adapts a plug-in actor (vtable + handle from a cdylib) into a host-side
@@ -247,6 +247,13 @@ impl DataActor for PluginActorAdapter {
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         invoke_event(self, "on_bar", bar, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_bar)(adapter.handle, p)
+        })
+    }
+
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        let handle = OrderBookDeltasHandle::new(deltas.clone());
+        invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book_deltas)(adapter.handle, p)
         })
     }
 

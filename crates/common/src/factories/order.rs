@@ -18,10 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::{check_equal, check_slice_not_empty},
-};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{
@@ -535,35 +532,25 @@ impl OrderFactory {
     /// Creates a new [`OrderList`] from the given orders, generating a fresh
     /// order list ID and propagating it back to each order.
     ///
+    /// Construction is infallible; the caller is responsible for passing
+    /// orders with a consistent `instrument_id` and the factory's
+    /// `strategy_id`. The returned list's invariants are checked by
+    /// [`OrderList::validate`] at submission time.
+    ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - `orders` is empty.
-    /// - Any order has a different `instrument_id` than the first.
-    /// - Any order has a different `strategy_id` than the factory.
+    /// Panics if `orders` is empty. Callers are expected to guard
+    /// non-empty input; `Strategy::submit_order_list` filters out the
+    /// empty case before reaching this constructor.
+    #[must_use]
     pub fn create_list(&mut self, orders: &mut [OrderAny], ts_init: UnixNanos) -> OrderList {
-        check_slice_not_empty(orders, stringify!(orders)).unwrap();
-        let instrument_id = orders[0].instrument_id();
-        for order in orders.iter().skip(1) {
-            check_equal(
-                &order.instrument_id(),
-                &instrument_id,
-                "instrument_id",
-                "first order instrument_id",
-            )
-            .unwrap();
-            check_equal(
-                &order.strategy_id(),
-                &self.strategy_id,
-                "strategy_id",
-                "factory strategy_id",
-            )
-            .unwrap();
-        }
+        let instrument_id = orders
+            .first()
+            .expect("OrderFactory::create_list requires non-empty orders")
+            .instrument_id();
         let order_list_id = self.generate_order_list_id();
         let order_ids: Vec<ClientOrderId> = orders.iter().map(OrderAny::client_order_id).collect();
 
-        // Propagate list ID back to each order
         for order in orders.iter_mut() {
             order.set_order_list_id(order_list_id);
         }

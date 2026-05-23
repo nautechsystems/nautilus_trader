@@ -44,9 +44,10 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
         stubs::{
-            stub_bar, stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buyer,
+            stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
+            stub_trade_ethusdt_buyer,
         },
     },
     enums::{GreeksConvention, OrderSide, PositionSide},
@@ -66,6 +67,7 @@ use nautilus_plugin::{
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
+        book::OrderBookDeltasHandle,
         strategy::{PluginStrategy, strategy_vtable},
     },
 };
@@ -97,6 +99,7 @@ enum ActorHook {
     OnQuote,
     OnTrade,
     OnBar,
+    OnBookDeltas,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -217,6 +220,11 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnBookDeltas);
+        Ok(())
+    }
+
     fn on_mark_price(&mut self, _p: &MarkPriceUpdate) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnMarkPrice);
         Ok(())
@@ -309,6 +317,7 @@ enum StrategyHook {
     OnQuote,
     OnTrade,
     OnBar,
+    OnBookDeltas,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -435,6 +444,11 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_bar(&mut self, _b: &Bar) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnBar);
+        Ok(())
+    }
+
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnBookDeltas);
         Ok(())
     }
 
@@ -1124,6 +1138,31 @@ fn actor_event_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
 }
 
 #[rstest]
+fn actor_book_deltas_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OrderBookDeltasHandle::new(stub_deltas());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const h) };
+    r.into_result().expect("on_book_deltas thunk failed");
+    assert_only_actor_hook(ActorHook::OnBookDeltas);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
 #[case::on_historical_quotes(ActorHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(ActorHook::OnHistoricalTrades)]
 #[case::on_historical_bars(ActorHook::OnHistoricalBars)]
@@ -1441,6 +1480,31 @@ fn strategy_event_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     };
     r.into_result().expect("event thunk failed");
     assert_only_strategy_hook(hook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn strategy_book_deltas_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OrderBookDeltasHandle::new(stub_deltas());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const h) };
+    r.into_result().expect("on_book_deltas thunk failed");
+    assert_only_strategy_hook(StrategyHook::OnBookDeltas);
 
     // SAFETY: handle is live.
     unsafe {
