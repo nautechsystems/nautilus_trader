@@ -4444,6 +4444,7 @@ impl OrderMatchingEngine {
         }
 
         if leaves_remaining
+            && order.is_open()
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
