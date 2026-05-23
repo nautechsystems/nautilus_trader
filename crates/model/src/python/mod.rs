@@ -181,6 +181,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::reports::mass_status::ExecutionMassStatus>()?;
     // Position
     m.add_class::<crate::position::Position>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::position::py_fold_net_position,
+        m
+    )?)?;
     // Instruments
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
