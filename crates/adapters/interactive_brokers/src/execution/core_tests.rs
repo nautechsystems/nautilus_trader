@@ -7,6 +7,8 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
+use std::{cell::RefCell, rc::Rc};
+
 use ibapi::{
     contracts::{Contract, Currency as IBCurrency, Exchange, SecurityType, Symbol as IBSymbol},
     orders::{
@@ -15,15 +17,16 @@ use ibapi::{
     },
     subscriptions::Subscription,
 };
-use nautilus_common::cache::Cache;
+use nautilus_common::{cache::Cache, live::runner::replace_exec_event_sender};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{AssetClass, LiquiditySide, OrderSide, OrderType},
+    enums::{AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderType},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, Venue,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
+        Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, OptionSpread, stubs::equity_aapl},
-    orders::builder::OrderTestBuilder,
+    orders::{OrderList, builder::OrderTestBuilder},
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -31,10 +34,42 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::*;
+use crate::common::consts::{IB_CLIENT_ID, IB_VENUE};
 
 fn create_test_instrument_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
     let config = crate::config::InteractiveBrokersInstrumentProviderConfig::default();
     Arc::new(InteractiveBrokersInstrumentProvider::new(config))
+}
+
+fn create_test_execution_client() -> (
+    InteractiveBrokersExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("IB-001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *IB_CLIENT_ID,
+        *IB_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+    let instrument_provider = create_test_instrument_provider();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(tx);
+    let client = InteractiveBrokersExecutionClient::new(
+        core,
+        InteractiveBrokersExecClientConfig::default(),
+        instrument_provider,
+    )
+    .unwrap();
+
+    (client, rx, cache)
 }
 
 fn create_test_spread_instrument() -> InstrumentId {
@@ -46,6 +81,30 @@ fn create_test_spread_instrument() -> InstrumentId {
 
 fn create_test_leg_instrument() -> InstrumentId {
     InstrumentId::new(Symbol::from("SPY C400"), Venue::from("SMART"))
+}
+
+fn create_test_stock_instrument() -> InstrumentId {
+    InstrumentId::new(Symbol::from("AAPL"), Venue::from("SMART"))
+}
+
+fn create_test_limit_order(client_order_id: ClientOrderId) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build()
+}
+
+fn next_order_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> OrderEventAny {
+    match rx.try_recv().unwrap() {
+        ExecutionEvent::Order(event) => event,
+        event => panic!("Expected order event, was {event:?}"),
+    }
 }
 
 #[rstest]
@@ -63,6 +122,194 @@ fn apply_client_order_id_floor(
         InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id),
         expected
     );
+}
+
+#[rstest]
+fn submit_order_rejects_when_client_not_ready() {
+    let (client, mut rx, _) = create_test_execution_client();
+    let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let cmd = SubmitOrder::from_order(
+        &order,
+        client.core.trader_id,
+        Some(client.core.client_id),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    match next_order_event(&mut rx) {
+        OrderEventAny::Rejected(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to submit order"
+            );
+        }
+        event => panic!("Expected OrderRejected, was {event:?}"),
+    }
+}
+
+#[rstest]
+fn submit_order_list_rejects_all_orders_when_client_not_ready() {
+    let (client, mut rx, _) = create_test_execution_client();
+    let order1 = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let order2 = create_test_limit_order(ClientOrderId::from("O-IB-002"));
+    let order_list = OrderList::new(
+        OrderListId::from("OL-IB-001"),
+        order1.instrument_id(),
+        order1.strategy_id(),
+        vec![order1.client_order_id(), order2.client_order_id()],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        order1.strategy_id(),
+        order_list,
+        vec![
+            OrderInitialized::from(&order1),
+            OrderInitialized::from(&order2),
+        ],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    for expected_client_order_id in [order1.client_order_id(), order2.client_order_id()] {
+        match next_order_event(&mut rx) {
+            OrderEventAny::Rejected(event) => {
+                assert_eq!(event.client_order_id, expected_client_order_id);
+                assert_eq!(
+                    event.reason.to_string(),
+                    "Interactive Brokers client is not ready; refusing to submit order list"
+                );
+            }
+            event => panic!("Expected OrderRejected, was {event:?}"),
+        }
+    }
+}
+
+#[rstest]
+fn modify_order_rejects_when_client_not_ready() {
+    let (client, mut rx, _) = create_test_execution_client();
+    let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let cmd = ModifyOrder::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("1001")),
+        Some(Quantity::from(2)),
+        Some(Price::from("101.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    match next_order_event(&mut rx) {
+        OrderEventAny::ModifyRejected(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to modify order"
+            );
+        }
+        event => panic!("Expected OrderModifyRejected, was {event:?}"),
+    }
+}
+
+#[rstest]
+fn cancel_order_rejects_when_client_not_ready() {
+    let (client, mut rx, _) = create_test_execution_client();
+    let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let cmd = CancelOrder::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("1001")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    match next_order_event(&mut rx) {
+        OrderEventAny::CancelRejected(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to cancel order"
+            );
+        }
+        event => panic!("Expected OrderCancelRejected, was {event:?}"),
+    }
+}
+
+#[rstest]
+fn cancel_all_orders_rejects_open_orders_when_client_not_ready() {
+    let (client, mut rx, cache) = create_test_execution_client();
+    let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let accepted = OrderEventAny::Accepted(OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from("1001"),
+        client.core.account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    ));
+    {
+        let mut cache = cache.borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(client.core.client_id), false)
+            .unwrap();
+        cache.update_order(&accepted).unwrap();
+    }
+    let cmd = CancelAllOrders::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_all_orders(cmd).unwrap();
+
+    match next_order_event(&mut rx) {
+        OrderEventAny::CancelRejected(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to cancel orders"
+            );
+        }
+        event => panic!("Expected OrderCancelRejected, was {event:?}"),
+    }
 }
 
 fn create_test_execution_data(
