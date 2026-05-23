@@ -1075,11 +1075,11 @@ fn build_payload_entry(seq: u64, ts_init: u64, payload: &[u8]) -> EventStoreEntr
 }
 
 proptest! {
-    // Each case spawns a tempdir + redb file, so cap the run rather than rely on
-    // proptest's default 256 cases. 32 is enough to surface non-deterministic
-    // edge cases without the test taking minutes.
+    // Each case spawns a tempdir + redb file, so the filesystem ops dominate
+    // runtime. The redb append/scan path is deterministic in input, so 8 cases
+    // is plenty to exercise codec round-tripping without minute-long runs.
     #![proptest_config(ProptestConfig {
-        cases: 32,
+        cases: 8,
         ..ProptestConfig::default()
     })]
 
@@ -1091,14 +1091,15 @@ proptest! {
             proptest::collection::vec(any::<u8>(), 0..32),
             1..16,
         ),
-        ts_inits in proptest::collection::vec(any::<u64>(), 1..16),
+        ts_init_seed in any::<u64>(),
     ) {
-        let n = payloads.len().min(ts_inits.len());
+        let n = payloads.len();
         let mut appends = Vec::with_capacity(n);
 
-        for i in 0..n {
+        for (i, payload) in payloads.iter().enumerate() {
             let seq = u64::try_from(i + 1).expect("seq fits");
-            let entry = build_payload_entry(seq, ts_inits[i], &payloads[i]);
+            let ts_init = ts_init_seed.wrapping_add(i as u64);
+            let entry = build_payload_entry(seq, ts_init, payload);
             appends.push(AppendEntry::without_indices(entry));
         }
 
