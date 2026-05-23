@@ -33,8 +33,10 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
-    msgbus::typed_handler::ShareableMessageHandler,
-    msgbus::{self, MStr, MessagingSwitchboard, Pattern, TypedHandler},
+    msgbus::{
+        self, MStr, MessagingSwitchboard, Pattern, TypedHandler,
+        typed_handler::ShareableMessageHandler,
+    },
 };
 use nautilus_core::{UnixNanos, WeakCell};
 use nautilus_execution::{
