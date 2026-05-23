@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
 - Changed Rust command `new` constructors to accept `correlation_id: Option<UUID4>` (pass `None` for old behavior)
 - Changed Hyperliquid HIP-4 outcome `InstrumentId` to `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`
+- Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 
 ### Security
 None
@@ -60,9 +61,11 @@ None
 - Fixed Betfair Rust adapter overfill checks for rounded stream matched sizes
 - Fixed Betfair Rust adapter unsupported unsubscribe commands logging above debug
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
+- Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
+- Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed Polymarket Rust adapter dropping auto-load batches on Gamma chunk failures
 - Fixed Polymarket Rust adapter treating encoded-empty `clob_token_ids` as terminal instead of transient
 

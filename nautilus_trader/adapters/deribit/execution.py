@@ -136,6 +136,8 @@ class DeribitExecutionClient(LiveExecutionClient):
         self._http_client = http_client
         self._ws_client = nautilus_pyo3.DeribitWebSocketClient.with_credentials(
             environment=environment,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
             account_id=self.pyo3_account_id,
             proxy_url=config.proxy_url,
         )

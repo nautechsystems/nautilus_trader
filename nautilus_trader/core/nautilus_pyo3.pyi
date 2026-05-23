@@ -7936,6 +7936,8 @@ class DeribitWebSocketClient:
     @staticmethod
     def with_credentials(
         environment: DeribitEnvironment,
+        api_key: str | None = None,
+        api_secret: str | None = None,
         account_id: AccountId | None = None,
         proxy_url: str | None = None,
     ) -> DeribitWebSocketClient: ...

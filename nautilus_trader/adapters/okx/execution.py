@@ -196,6 +196,9 @@ class OKXExecutionClient(LiveExecutionClient):
         _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(self._environment)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
             url=_private_url,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            api_passphrase=config.api_passphrase,
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
@@ -205,6 +208,9 @@ class OKXExecutionClient(LiveExecutionClient):
 
         self._ws_business_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
             url=nautilus_pyo3.derive_okx_ws_url(_private_url, "business"),
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            api_passphrase=config.api_passphrase,
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
