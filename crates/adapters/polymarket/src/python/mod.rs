@@ -53,6 +53,23 @@ fn getattr_optional<'py>(
     }
 }
 
+fn getattr_optional_option_u64(
+    obj: &Bound<'_, PyAny>,
+    name: &str,
+    default: Option<u64>,
+) -> PyResult<Option<u64>> {
+    if !obj.hasattr(name)? {
+        return Ok(default);
+    }
+
+    let value = obj.getattr(name)?;
+    if value.is_none() {
+        Ok(None)
+    } else {
+        value.extract::<u64>().map(Some)
+    }
+}
+
 fn py_scalar_to_string(value: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(v) = value.extract::<bool>() {
         return Ok(v.to_string().to_lowercase());
@@ -137,7 +154,7 @@ fn extract_provider_config_from_pyobject(
 
 fn extract_data_config_from_pyobject(
     py: Python<'_>,
-    config: Py<PyAny>,
+    config: &Py<PyAny>,
 ) -> PyResult<PolymarketDataClientConfig> {
     if let Ok(config) = config.extract::<PolymarketDataClientConfig>(py) {
         return Ok(config);
@@ -172,11 +189,11 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<usize>())
         .transpose()?
         .unwrap_or(default.ws_max_subscriptions);
-    let update_instruments_interval_mins =
-        getattr_optional(obj, "update_instruments_interval_mins")?
-            .map(|value| value.extract::<u64>())
-            .transpose()?
-            .unwrap_or(default.update_instruments_interval_mins);
+    let update_instruments_interval_mins = getattr_optional_option_u64(
+        obj,
+        "update_instruments_interval_mins",
+        default.update_instruments_interval_mins,
+    )?;
     let subscribe_new_markets = getattr_optional(obj, "subscribe_new_markets")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -255,7 +272,7 @@ fn extract_polymarket_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match extract_data_config_from_pyobject(py, config) {
+    match extract_data_config_from_pyobject(py, &config) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
             "Failed to extract PolymarketDataClientConfig: {e}"
@@ -394,7 +411,7 @@ mod tests {
                 .call((), Some(&config_kwargs))
                 .expect("config namespace");
 
-            let rust_config = extract_data_config_from_pyobject(py, config_obj.unbind())
+            let rust_config = extract_data_config_from_pyobject(py, &config_obj.unbind())
                 .expect("extract rust config");
             let instrument_config = rust_config
                 .instrument_config
@@ -417,7 +434,7 @@ mod tests {
                 Some(&["market-a".to_string()][..])
             );
             assert!(!instrument_config.log_warnings);
-            assert_eq!(rust_config.update_instruments_interval_mins, 1);
+            assert_eq!(rust_config.update_instruments_interval_mins, Some(1));
             assert!(!rust_config.subscribe_new_markets);
             assert_eq!(
                 rust_config.base_url_gamma.as_deref(),
@@ -429,6 +446,27 @@ mod tests {
             );
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
+        });
+    }
+
+    #[test]
+    fn extract_data_config_preserves_none_update_interval() {
+        Python::initialize();
+        Python::attach(|py| {
+            let types = py.import("types").expect("types");
+            let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+            let config_kwargs = PyDict::new(py);
+            config_kwargs
+                .set_item("update_instruments_interval_mins", py.None())
+                .unwrap();
+            let config_obj = namespace
+                .call((), Some(&config_kwargs))
+                .expect("config namespace");
+
+            let rust_config = extract_data_config_from_pyobject(py, &config_obj.unbind())
+                .expect("extract rust config");
+
+            assert_eq!(rust_config.update_instruments_interval_mins, None);
         });
     }
 }

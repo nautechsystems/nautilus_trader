@@ -100,7 +100,7 @@ impl PolymarketDataClientConfig {
             ws_timeout_secs: ws_timeout_secs.unwrap_or(default.ws_timeout_secs),
             ws_max_subscriptions: ws_max_subscriptions.unwrap_or(default.ws_max_subscriptions),
             update_instruments_interval_mins: update_instruments_interval_mins
-                .unwrap_or(default.update_instruments_interval_mins),
+                .or(default.update_instruments_interval_mins),
             subscribe_new_markets: subscribe_new_markets.unwrap_or(false),
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(default.auto_load_missing_instruments),

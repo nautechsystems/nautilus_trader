@@ -649,17 +649,14 @@ impl PolymarketDataClient {
     }
 
     fn spawn_instrument_refresh_task(&mut self) {
-        if self.config.update_instruments_interval_mins == 0
-            || self.config.instrument_config.is_none()
-        {
+        let Some(interval_mins) = self.config.update_instruments_interval_mins else {
+            return;
+        };
+        if interval_mins == 0 || self.config.instrument_config.is_none() {
             return;
         }
 
-        let interval = Duration::from_secs(
-            self.config
-                .update_instruments_interval_mins
-                .saturating_mul(60),
-        );
+        let interval = Duration::from_secs(interval_mins.saturating_mul(60));
         let cancellation = self.cancellation_token.clone();
         let http_client = self.provider.http_client().clone();
         let instrument_config = self.config.instrument_config.clone();
