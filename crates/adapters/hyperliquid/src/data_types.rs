@@ -36,7 +36,7 @@ use rust_decimal::Decimal;
 )]
 pub struct HyperliquidAllMids {
     /// Mapping of instrument ID to mid price for all tradable coins.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub mids: HashMap<InstrumentId, Price>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -60,7 +60,7 @@ pub struct HyperliquidOpenInterest {
     /// The instrument ID for this open interest update.
     pub instrument_id: InstrumentId,
     /// The current open interest for the perpetual instrument.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub open_interest: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
