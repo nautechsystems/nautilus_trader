@@ -901,6 +901,7 @@ The OKX data client provides the following configuration options:
 | `update_instruments_interval_mins` | `60`                        | Background instrument refresh interval.      |
 | `vip_level`                        | `None`                      | Enables higher‑depth books by VIP tier.      |
 | `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.       |
+| `transport_backend`                | `Sockudo`                   | WebSocket transport backend.                 |
 
 `instrument_families` is required for `OPTION`, optional for `FUTURES`, `SWAP`, and
 `EVENTS`, and ignored for `SPOT` and `MARGIN`. For `EVENTS`, pass OKX `seriesId`
@@ -931,6 +932,7 @@ The OKX execution client provides the following configuration options:
 | `retry_delay_max_ms`              | `10,000`                    | Maximum exponential backoff delay.          |
 | `use_spot_cash_position_reports`  | `False`                     | Generates SPOT cash positions from wallet.  |
 | `proxy_url`                       | `None`                      | Optional HTTP and WebSocket proxy URL.      |
+| `transport_backend`               | `Sockudo`                   | WebSocket transport backend.                |
 
 `instrument_families` has the same meaning for execution clients as it does for data
 clients.

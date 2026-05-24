@@ -686,7 +686,7 @@ fill deltas remain correct.
 | `ws_timeout_secs`                  | `30`        | WebSocket timeout (seconds).                                                      |
 | `update_instruments_interval_mins` | `60`        | Interval between instrument catalogue refreshes.                                  |
 | `derivatives_poll_interval_secs`   | `15`        | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
-| `transport_backend`                | `Sockudo`   | WebSocket transport backend (`Sockudo` or `Tungstenite`).                         |
+| `transport_backend`                | `Sockudo`   | WebSocket transport backend.                                                      |
 
 ### Execution client configuration options
 
@@ -706,7 +706,7 @@ fill deltas remain correct.
 | `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.     |
 | `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                         |
 | `retail_portfolio_id`    | `None`    | CDP retail portfolio UUID. Required when the API key is bound to a non‑default portfolio (the venue rejects orders with `account is not available` otherwise). See [Portfolios](#portfolios). |
-| `transport_backend`      | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                                |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend.                                                                             |
 
 Configurations are constructed from Python via the PyO3-exported types:
 

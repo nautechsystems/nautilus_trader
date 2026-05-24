@@ -732,6 +732,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay (milliseconds) between retries. |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. |
 | `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe; see [Lazy‑load on subscribe](#lazy-load-on-subscribe). |
+| `transport_backend`                | `Sockudo`  | WebSocket transport backend. |
 
 #### Lazy-load on subscribe
 
@@ -760,6 +761,7 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |
 | `retry_delay_initial_ms` | `1,000`    | Initial delay (milliseconds) before retrying. |
 | `retry_delay_max_ms`     | `10,000`   | Maximum delay (milliseconds) between retries. |
+| `transport_backend`      | `Sockudo`  | WebSocket transport backend. |
 
 ### Production configuration
 

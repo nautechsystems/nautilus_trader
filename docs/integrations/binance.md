@@ -711,36 +711,38 @@ definitive list of Rust config options.
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes. |
 | `use_agg_trade_ticks`              | `False`   | When `True`, subscribe to aggregated trade ticks instead of raw trades. Futures WebSocket subscriptions always use `@aggTrade` regardless of this flag. |
 | `instrument_status_poll_secs`      | `3600`    | *Rust only.* Interval (seconds) between exchange info polls to detect instrument status changes. Set to `0` to disable. |
+| `transport_backend`                | `Sockudo` | *Rust only.* WebSocket transport backend. |
 
 ### Execution client configuration options
 
-| Option                               | Default   | Description |
-|--------------------------------------|-----------|-------------|
-| `venue`                              | `BINANCE` | Venue identifier used when registering the client. |
-| `api_key`                            | `None`    | Binance API key; loaded from environment variables when omitted. |
-| `api_secret`                         | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
-| `account_type`                       | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
-| `base_url_http`                      | `None`    | Override for the HTTP REST base URL. |
-| `base_url_ws`                        | `None`    | Override for the WebSocket API base URL. |
-| `base_url_ws_stream`                 | `None`    | Override for the WebSocket stream URL (futures user data event delivery). |
-| `proxy_url`                          | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `us`                                 | `False`   | Route requests to Binance US endpoints when `True`. |
-| `environment`                        | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
-| `use_gtd`                            | `True`    | When `False`, remaps GTD orders to GTC for local expiry management. |
-| `use_reduce_only`                    | `True`    | When `True`, passes through `reduce_only` instructions to Binance. |
-| `use_position_ids`                   | `True`    | Enable Binance hedging position IDs; set `False` for virtual hedging. |
-| `use_trade_lite`                     | `False`   | Use TRADE_LITE execution events that include derived fees. |
-| `treat_expired_as_canceled`          | `False`   | Treat `EXPIRED` execution types as `CANCELED` when `True`. |
-| `recv_window_ms`                     | `5,000`   | Receive window (milliseconds) for signed REST requests. |
-| `max_retries`                        | `None`    | Maximum retry attempts for order submission/cancel/modify calls. |
-| `retry_delay_initial_ms`             | `None`    | Initial delay (milliseconds) between retry attempts. |
-| `retry_delay_max_ms`                 | `None`    | Maximum delay (milliseconds) between retry attempts. |
-| `futures_leverages`                  | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
-| `futures_margin_types`               | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
-| `use_ws_trading`                         | `True`  | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used. |
-| `default_taker_fee`                      | `0.0004` | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement). |
-| `log_rejected_due_post_only_as_warning` | `True` | Log post‑only rejections as warnings when `True`; otherwise as errors. |
+| Option                                  | Default   | Description |
+|-----------------------------------------|-----------|-------------|
+| `venue`                                 | `BINANCE` | Venue identifier used when registering the client. |
+| `api_key`                               | `None`    | Binance API key; loaded from environment variables when omitted. |
+| `api_secret`                            | `None`    | Binance API secret; loaded from environment variables when omitted. |
+| `key_type`                              | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
+| `account_type`                          | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
+| `base_url_http`                         | `None`    | Override for the HTTP REST base URL. |
+| `base_url_ws`                           | `None`    | Override for the WebSocket API base URL. |
+| `base_url_ws_stream`                    | `None`    | Override for the WebSocket stream URL (futures user data event delivery). |
+| `proxy_url`                             | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `us`                                    | `False`   | Route requests to Binance US endpoints when `True`. |
+| `environment`                           | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
+| `use_gtd`                               | `True`    | When `False`, remaps GTD orders to GTC for local expiry management. |
+| `use_reduce_only`                       | `True`    | When `True`, passes through `reduce_only` instructions to Binance. |
+| `use_position_ids`                      | `True`    | Enable Binance hedging position IDs; set `False` for virtual hedging. |
+| `use_trade_lite`                        | `False`   | Use TRADE_LITE execution events that include derived fees. |
+| `treat_expired_as_canceled`             | `False`   | Treat `EXPIRED` execution types as `CANCELED` when `True`. |
+| `recv_window_ms`                        | `5,000`   | Receive window (milliseconds) for signed REST requests. |
+| `max_retries`                           | `None`    | Maximum retry attempts for order submission/cancel/modify calls. |
+| `retry_delay_initial_ms`                | `None`    | Initial delay (milliseconds) between retry attempts. |
+| `retry_delay_max_ms`                    | `None`    | Maximum delay (milliseconds) between retry attempts. |
+| `futures_leverages`                     | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
+| `futures_margin_types`                  | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
+| `use_ws_trading`                        | `True`    | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used. |
+| `default_taker_fee`                     | `0.0004`  | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement). |
+| `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors. |
+| `transport_backend`                     | `Sockudo` | *Rust only.* WebSocket transport backend. |
 
 The most common use case is to configure a live `TradingNode` with Binance
 data and execution clients. Add a `BINANCE` section to your client

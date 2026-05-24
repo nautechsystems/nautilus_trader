@@ -1016,32 +1016,34 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 ### Data client configuration options
 
-| Option              | Default | Description                                     |
-|---------------------|---------|-------------------------------------------------|
-| `environment`       | `None`  | Environment enum (`MAINNET` or `TESTNET`).      |
-| `base_url_ws`       | `None`  | Override for the WebSocket base URL.            |
-| `product_types`     | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
-| `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
-| `proxy_url`         | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
+| Option              | Default   | Description |
+|---------------------|-----------|-------------------------------------------------|
+| `environment`       | `None`    | Environment enum (`MAINNET` or `TESTNET`). |
+| `base_url_ws`       | `None`    | Override for the WebSocket base URL. |
+| `product_types`     | `None`    | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
+| `http_timeout_secs` | `10`      | Timeout (seconds) applied to REST calls. |
+| `proxy_url`         | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `transport_backend` | `Sockudo` | WebSocket transport backend. |
 
 ### Execution client configuration options
 
-| Option                         | Default | Description                                                                               |
-|--------------------------------|---------|-------------------------------------------------------------------------------------------|
-| `private_key`                  | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
-| `vault_address`                | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
-| `account_address`              | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
-| `environment`                  | `None`  | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset.              |
-| `base_url_ws`                  | `None`  | Override for the WebSocket base URL.                                                      |
-| `product_types`                | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
-| `max_retries`                  | `None`  | Maximum retry attempts for submit, cancel, or modify order requests. Rust‑only.           |
-| `retry_delay_initial_ms`       | `None`  | Initial delay (milliseconds) between retries. Rust‑only.                                  |
-| `retry_delay_max_ms`           | `None`  | Maximum delay (milliseconds) between retries. Rust‑only.                                  |
-| `http_timeout_secs`            | `10`    | Timeout (seconds) applied to REST calls.                                                  |
-| `normalize_prices`             | `True`  | Normalize order prices to 5 significant figures before submission.                        |
-| `market_order_slippage_bps`    | `50`    | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Rust‑only.          |
-| `outcome_settlement_poll_secs` | `0`     | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
-| `proxy_url`                    | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                     |
+| Option                         | Default   | Description |
+|--------------------------------|-----------|-------------------------------------------------------------------------------------------|
+| `private_key`                  | `None`    | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted. |
+| `vault_address`                | `None`    | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
+| `account_address`              | `None`    | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
+| `environment`                  | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
+| `base_url_ws`                  | `None`    | Override for the WebSocket base URL. |
+| `product_types`                | `None`    | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
+| `max_retries`                  | `None`    | Maximum retry attempts for submit, cancel, or modify order requests. Rust‑only. |
+| `retry_delay_initial_ms`       | `None`    | Initial delay (milliseconds) between retries. Rust‑only. |
+| `retry_delay_max_ms`           | `None`    | Maximum delay (milliseconds) between retries. Rust‑only. |
+| `http_timeout_secs`            | `10`      | Timeout (seconds) applied to REST calls. |
+| `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission. |
+| `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Rust‑only. |
+| `outcome_settlement_poll_secs` | `0`       | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
+| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `transport_backend`            | `Sockudo` | WebSocket transport backend. |
 
 :::note
 "Rust‑only" options apply when the execution client is created through the Rust-native

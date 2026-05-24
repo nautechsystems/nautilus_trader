@@ -308,6 +308,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `recv_window_ms`                   | `5000`    | Receive window (milliseconds) for signed requests.                  |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
 | `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                        |
 
 ### Execution client configuration options
 
@@ -327,6 +328,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
 | `recv_window_ms`          | `5000`    | Receive window (milliseconds) for signed requests.                  |
 | `cancel_on_disconnect`    | `false`   | Cancel all open orders when the orders WebSocket disconnects.       |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
 
 The most common use case is to configure a live `TradingNode` to include AX Exchange
 data and execution clients. To achieve this, add an `AX` section to your client
