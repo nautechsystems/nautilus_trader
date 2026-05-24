@@ -7,7 +7,7 @@ Released on TBD (UTC).
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 - Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
-- Added `correlation_id` field to Rust trading and system command structs for request tracing
+- Added `correlation_id` field to trading and system command structs for request tracing (Rust)
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
 - Added `nautilus-plugin` crate for loading separately compiled Rust cdylibs at live-node startup (Rust)
 - Added custom-data plug point via `PluginCustomData` trait and `nautilus_plugin!` macro (Rust)
@@ -19,14 +19,17 @@ Released on TBD (UTC).
 - Added `host_vtable` and `plugin_loader` helpers binding submit/cancel/modify order to the strategy adapter (Rust)
 - Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
 - Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
-- Added Rust `DataEngine` continuous futures historical bar requests and live bar subscriptions
-- Added Rust `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support
+- Added `DataEngine` continuous futures historical bar requests and live bar subscriptions (Rust)
+- Added `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support (Rust)
+- Added `DataEngine` catalog / client response-side request splitting (Rust)
 - Added support for mixed-instrument `OrderList`s at the same venue (e.g. pairs, calendar spreads, multi-leg legs)
 - Added `OrderList.is_uniform_instrument` and `OrderList.instrument_ids` helpers (Python)
 - Added deny guard for mixed-instrument order lists submitted with a `position_id`
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
+- Added Binance Futures open interest request custom data (Rust) (#4109), thanks @graceyangfan
+- Added pending-resolution settlement pipeline for binary options (Rust) (#4101), thanks @graceyangfan
 - Added Coinbase WebSocket `status` channel subscription emitting `InstrumentStatus` events
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
@@ -37,13 +40,14 @@ Released on TBD (UTC).
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Hyperliquid HIP-4 outcome `BinaryOption.info` with parsed venue description and question metadata
 - Added Hyperliquid `HYPERLIQUID_ACCOUNT_ADDRESS` env var fallback for `HyperliquidExecClientConfig.account_address`
+- Added Hyperliquid live open interest custom data from `activeAssetCtx` (Rust) (#4120), thanks @graceyangfan
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
-- Added Polymarket Rust adapter bounded-retry auto-load (`auto_load_max_retries`, exponential backoff with jitter)
+- Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
-- Changed Rust command `new` constructors to accept `correlation_id: Option<UUID4>` (pass `None` for old behavior)
+- Changed command `new` constructors to accept `correlation_id: Option<UUID4>`, pass `None` for old behavior (Rust)
 - Changed Hyperliquid HIP-4 outcome `InstrumentId` to `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 - Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
@@ -52,7 +56,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
-- Fixed unbounded Cache `VecDeque` memory leak in Rust (#4107), thanks @filipmacek
+- Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
 - Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax
@@ -67,21 +71,24 @@ None
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 - Fixed Python v2 order-book wranglers writing raw fixed-point bytes in big-endian (needed little-endian) (#4111), thanks for reporting @fabz1
-- Fixed Betfair Rust adapter snapshot book deltas emitting zero-volume `Add` entries
-- Fixed Betfair Rust adapter traded volume cache to handle bet voids and non-runner adjustments
-- Fixed Betfair Rust adapter RCM custom data `ts_init` parity between live and historical streams
-- Fixed Betfair Rust adapter overfill checks for rounded stream matched sizes
-- Fixed Betfair Rust adapter unsupported unsubscribe commands logging above debug
+- Fixed Betfair adapter snapshot book deltas emitting zero-volume `Add` entries (Rust)
+- Fixed Betfair adapter traded volume cache to handle bet voids and non-runner adjustments (Rust)
+- Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
+- Fixed Betfair adapter overfill checks for rounded stream matched sizes (Rust)
+- Fixed Betfair adapter unsupported unsubscribe commands logging above debug (Rust)
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
+- Fixed Interactive Brokers order submit to guard on client readiness (#4100), thanks @honvl
+- Fixed Interactive Brokers order requests to guard on client readiness (Rust) (#4125), thanks @faysou
+- Fixed Interactive Brokers `request_instruments` returning cumulative cache (Rust) (#4114), thanks @faysou
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
-- Fixed Polymarket Rust adapter dropping auto-load batches on Gamma chunk failures
-- Fixed Polymarket Rust adapter treating encoded-empty `clob_token_ids` as terminal instead of transient
+- Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
+- Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies

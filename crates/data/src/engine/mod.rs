@@ -1152,6 +1152,15 @@ impl DataEngine {
         let request_id = *req.request_id();
         self.prepare_request_bar_aggregators(&req)?;
 
+        #[cfg(feature = "streaming")]
+        if self.catalogs_registered() && streaming::is_date_range_variant(&req) {
+            let result = self.dispatch_date_range_request(req);
+            if result.is_err() {
+                self.cleanup_request_bar_aggregators(&request_id);
+            }
+            return result;
+        }
+
         let result = self.dispatch_request_to_client(req);
 
         if result.is_err() {
@@ -1161,7 +1170,10 @@ impl DataEngine {
         result.map(|_| ())
     }
 
-    fn dispatch_request_to_client(&mut self, req: RequestCommand) -> anyhow::Result<ClientId> {
+    pub(super) fn dispatch_request_to_client(
+        &mut self,
+        req: RequestCommand,
+    ) -> anyhow::Result<ClientId> {
         let client_id = req.client_id().copied();
         let venue = req.venue().copied();
         let Some(client) = self.get_client(client_id.as_ref(), venue.as_ref()) else {
@@ -1785,6 +1797,7 @@ impl DataEngine {
             leg.trim_to_bounds();
         }
 
+        let (parent_start, parent_end) = parent_request_window(parent.as_ref());
         let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
 
         // If the rebuild failed (mixed-variant or unsupported-variant legs), drop the
@@ -1801,7 +1814,17 @@ impl DataEngine {
             );
         }
 
-        rebuilt
+        // Trim against the parent window only when the parent supplied one. With no
+        // parent window the rebuilt response inherits the first leg's bounds; legs are
+        // already trimmed against their own bounds at the top of `response()`, so a
+        // second pass would discard data from later legs whose bounds the parent never
+        // constrained.
+        rebuilt.map(|mut resp| {
+            if parent_start.is_some() || parent_end.is_some() {
+                resp.trim_to_bounds();
+            }
+            resp
+        })
     }
 
     fn handle_request_join(&mut self, req: RequestJoin) {
@@ -4806,7 +4829,7 @@ fn rebuild_pipeline_response(
         return None;
     }
 
-    let (parent_start, parent_end) = parent_join_window(parent);
+    let (parent_start, parent_end) = parent_request_window(parent);
 
     let mut iter = legs.into_iter();
     let first = iter.next()?;
@@ -4913,14 +4936,30 @@ fn rebuild_pipeline_response(
     }
 }
 
-fn parent_join_window(parent: Option<&RequestCommand>) -> (Option<UnixNanos>, Option<UnixNanos>) {
-    match parent {
-        Some(RequestCommand::Join(join)) => (
-            join.start.map(datetime_to_unix_nanos_or_zero),
-            join.end.map(datetime_to_unix_nanos_or_zero),
-        ),
-        _ => (None, None),
-    }
+fn parent_request_window(
+    parent: Option<&RequestCommand>,
+) -> (Option<UnixNanos>, Option<UnixNanos>) {
+    let Some(parent) = parent else {
+        return (None, None);
+    };
+
+    let (start, end) = match parent {
+        RequestCommand::Data(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Instrument(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Instruments(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookDepth(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Quotes(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Trades(cmd) => (cmd.start, cmd.end),
+        RequestCommand::FundingRates(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Bars(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Join(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookSnapshot(_) | RequestCommand::ForwardPrices(_) => return (None, None),
+    };
+
+    (
+        start.map(datetime_to_unix_nanos_or_zero),
+        end.map(datetime_to_unix_nanos_or_zero),
+    )
 }
 
 fn datetime_to_unix_nanos_or_zero(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
