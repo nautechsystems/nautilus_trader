@@ -231,7 +231,8 @@ impl PolymarketDataClient {
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let provider = PolymarketInstrumentProvider::new(gamma_client);
+        let provider =
+            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
 
         Self {
             clock,
@@ -587,7 +588,7 @@ impl PolymarketDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<()> {
-        self.provider.load_all(None).await?;
+        self.provider.initialize(false).await?;
 
         let all_instruments = self.provider.store().list_all();
         let total = all_instruments.len();

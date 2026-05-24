@@ -40,6 +40,7 @@ use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{credential::Credential, enums::PolymarketOrderType},
+    config::PolymarketInstrumentProviderConfig,
     filters::{
         EventParamsFilter, EventSlugFilter, GammaQueryFilter, MarketSlugFilter, SearchFilter,
         TagFilter,
@@ -876,7 +877,7 @@ async fn test_load_by_slugs_does_not_set_initialized() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     provider
         .load_by_slugs(vec!["test-slug".to_string()])
@@ -914,7 +915,7 @@ async fn test_load_by_slugs_then_load_triggers_load_all_fallback() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     provider
         .load_by_slugs(vec!["slug-a".to_string()])
@@ -1017,7 +1018,8 @@ async fn test_load_all_with_slug_filter() {
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
     let filter = MarketSlugFilter::from_slugs(vec!["filter-slug".to_string()]);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1044,7 +1046,8 @@ async fn test_load_all_with_gamma_query_filter() {
         volume_num_min: Some(1000.0),
         ..Default::default()
     });
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1066,7 +1069,7 @@ async fn test_load_all_without_filter_loads_everything() {
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
     // No filter — should use bulk loading
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     provider.load_all(None).await.unwrap();
 
@@ -1115,7 +1118,8 @@ async fn test_slug_filter_re_evaluated_each_cycle() {
         }
     });
 
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     // First cycle: loads slug-cycle-a
     provider.load_all(None).await.unwrap();
@@ -1151,7 +1155,7 @@ async fn test_set_filter_then_clear_reverts() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     // Set a filter and load
     let filter = MarketSlugFilter::from_slugs(vec!["filtered-slug".to_string()]);
@@ -1192,11 +1196,49 @@ async fn test_load_all_with_event_slug_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = EventSlugFilter::from_slugs(vec!["test-event".to_string()]);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
     // 2 markets × 2 outcomes = 4 instruments
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_provider_initialize_uses_instrument_config_event_slugs() {
+    let state = TestServerState::default();
+
+    let market1 = gamma_market_with_slug(
+        "config-event-market-1",
+        "0xcondition_cfg_evt1",
+        ["61000000000000000001", "61000000000000000002"],
+    );
+    let market2 = gamma_market_with_slug(
+        "config-event-market-2",
+        "0xcondition_cfg_evt2",
+        ["61000000000000000003", "61000000000000000004"],
+    );
+    let event = gamma_event_with_markets("config-event", &[market1, market2]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("config-event".to_string(), json!([event]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        event_slugs: Some(vec!["config-event".to_string()]),
+        load_all: true,
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
     assert_eq!(provider.store().count(), 4);
     assert!(provider.store().is_initialized());
 }
@@ -1238,6 +1280,7 @@ async fn test_composite_filter_combines_market_and_event_slugs() {
     let event_filter = EventSlugFilter::from_slugs(vec!["composite-event".to_string()]);
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
+        None,
         vec![Arc::new(market_filter), Arc::new(event_filter)],
     );
 
@@ -1396,7 +1439,7 @@ async fn test_load_ids_fetches_missing_instruments() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     // InstrumentId format: "{condition_id}-{token_id}.POLYMARKET"
     let instrument_id = InstrumentId::from("0xcondition_ids-93000000000000000001.POLYMARKET");
@@ -1423,7 +1466,7 @@ async fn test_load_ids_skips_already_loaded() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     // Pre-load
     provider
@@ -1448,7 +1491,7 @@ async fn test_load_ids_chunks_at_100_condition_ids() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     let mut instrument_ids = Vec::with_capacity(250);
     let mut expected: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -1498,7 +1541,7 @@ async fn test_load_ids_preserves_caller_filters_in_each_chunk() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     let mut instrument_ids = Vec::with_capacity(150);
 
@@ -1557,7 +1600,7 @@ async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     provider.load_all(None).await.unwrap();
 
@@ -1591,7 +1634,7 @@ async fn test_load_single_instrument_direct_fetch() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     // InstrumentId format: "{condition_id}-{token_id}.POLYMARKET"
     let instrument_id = InstrumentId::from("0xcondition_direct-95000000000000000001.POLYMARKET");
@@ -1623,7 +1666,8 @@ async fn test_load_all_with_event_params_filter() {
         featured: Some(true),
         ..Default::default()
     });
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1641,7 +1685,8 @@ async fn test_load_all_with_search_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = SearchFilter::from_query("bitcoin");
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1666,7 +1711,8 @@ async fn test_load_all_with_tag_filter() {
     let http_client = create_gamma_domain_client(&addr);
 
     let filter = TagFilter::from_tag_id("tag-001");
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
 
     provider.load_all(None).await.unwrap();
 
@@ -1703,6 +1749,7 @@ async fn test_load_filtered_deduplicates_overlapping_results() {
     });
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
+        None,
         vec![Arc::new(slug_filter), Arc::new(query_filter)],
     );
 
@@ -1726,7 +1773,7 @@ async fn test_load_all_with_hashmap_filters() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    let mut provider = PolymarketInstrumentProvider::new(http_client);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     let mut filters = HashMap::new();
     filters.insert("active".to_string(), "true".to_string());

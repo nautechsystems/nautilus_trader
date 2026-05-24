@@ -58,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = PolymarketGammaHttpClient::new(None, 60, RetryConfig::default())?;
     let mut provider = PolymarketInstrumentProvider::with_filters(
         http_client,
+        None,
         vec![Arc::new(event_query), Arc::new(predicate)],
     );
 

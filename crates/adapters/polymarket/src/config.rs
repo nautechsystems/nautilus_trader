@@ -15,7 +15,7 @@
 
 //! Configuration structures for the Polymarket adapter.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
@@ -25,6 +25,80 @@ use crate::{
     common::{enums::SignatureType, urls},
     filters::InstrumentFilter,
 };
+
+/// Configuration for the Polymarket instrument provider.
+///
+/// This mirrors the Python adapter's `instrument_config` layering so scoped
+/// market bootstrap can migrate naturally to the Rust/pyO3 live path.
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+)]
+pub struct PolymarketInstrumentProviderConfig {
+    /// Whether all venue instruments should be loaded on startup.
+    #[builder(default)]
+    pub load_all: bool,
+    /// Optional instrument IDs to load on startup instead of a full bootstrap.
+    pub load_ids: Option<Vec<nautilus_model::identifiers::InstrumentId>>,
+    /// Optional Gamma-style query filters encoded as string key/value pairs.
+    pub filters: Option<HashMap<String, String>>,
+    /// Optional static event slugs to resolve to markets during bootstrap.
+    pub event_slugs: Option<Vec<String>>,
+    /// Optional static market slugs to load directly during bootstrap.
+    pub market_slugs: Option<Vec<String>>,
+    /// Optional fully qualified Python callable path returning event slugs.
+    ///
+    /// This is provided for pyO3 compatibility with the Python Polymarket
+    /// adapter. When used from Rust/pyO3, the callable is resolved and invoked
+    /// from the Python runtime at bootstrap time.
+    pub event_slug_builder: Option<String>,
+    /// Whether provider warnings should be logged.
+    #[builder(default = true)]
+    pub log_warnings: bool,
+    /// Compatibility field matching the Python adapter. The Rust provider
+    /// already uses the Gamma API for bootstrap, so this currently has no
+    /// behavioral effect beyond configuration parity.
+    #[builder(default)]
+    pub use_gamma_markets: bool,
+}
+
+impl Default for PolymarketInstrumentProviderConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
+impl PolymarketInstrumentProviderConfig {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn should_load_all(&self) -> bool {
+        self.load_all
+            || self
+                .event_slug_builder
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self.event_slugs.as_ref().is_some_and(|s| !s.is_empty())
+            || self.market_slugs.as_ref().is_some_and(|s| !s.is_empty())
+    }
+
+    #[must_use]
+    pub fn has_load_ids(&self) -> bool {
+        self.load_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+    }
+}
 
 /// Configuration for the Polymarket data client.
 ///
@@ -45,6 +119,7 @@ use crate::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
 )]
 pub struct PolymarketDataClientConfig {
+    pub instrument_config: Option<PolymarketInstrumentProviderConfig>,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_gamma: Option<String>,
@@ -281,8 +356,33 @@ auto_load_debounce_ms = 250
         assert_eq!(config.update_instruments_interval_mins, 5);
         assert!(config.subscribe_new_markets);
         assert_eq!(config.auto_load_debounce_ms, 250);
+        assert!(config.instrument_config.is_none());
         assert!(config.filters.is_empty());
         assert!(config.new_market_filter.is_none());
+    }
+
+    #[rstest]
+    fn test_data_config_toml_with_instrument_config() {
+        let config: PolymarketDataClientConfig = toml::from_str(
+            r#"
+[instrument_config]
+load_all = true
+event_slugs = ["btc-updown-5m-123", "eth-updown-15m-456"]
+log_warnings = false
+"#,
+        )
+        .unwrap();
+
+        let instrument_config = config.instrument_config.expect("instrument_config");
+        assert!(instrument_config.load_all);
+        assert_eq!(
+            instrument_config.event_slugs,
+            Some(vec![
+                "btc-updown-5m-123".to_string(),
+                "eth-updown-15m-456".to_string(),
+            ]),
+        );
+        assert!(!instrument_config.log_warnings);
     }
 
     #[rstest]

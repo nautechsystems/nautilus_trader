@@ -18,8 +18,48 @@ use pyo3::pymethods;
 
 use crate::{
     common::enums::SignatureType,
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{
+        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+    },
 };
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PolymarketInstrumentProviderConfig {
+    #[new]
+    #[pyo3(signature = (load_all=None, load_ids=None, filters=None, event_slugs=None, market_slugs=None, event_slug_builder=None, log_warnings=None, use_gamma_markets=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_new(
+        load_all: Option<bool>,
+        load_ids: Option<Vec<nautilus_model::identifiers::InstrumentId>>,
+        filters: Option<std::collections::HashMap<String, String>>,
+        event_slugs: Option<Vec<String>>,
+        market_slugs: Option<Vec<String>>,
+        event_slug_builder: Option<String>,
+        log_warnings: Option<bool>,
+        use_gamma_markets: Option<bool>,
+    ) -> Self {
+        let default = Self::default();
+        Self {
+            load_all: load_all.unwrap_or(default.load_all),
+            load_ids,
+            filters,
+            event_slugs,
+            market_slugs,
+            event_slug_builder,
+            log_warnings: log_warnings.unwrap_or(default.log_warnings),
+            use_gamma_markets: use_gamma_markets.unwrap_or(default.use_gamma_markets),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -30,9 +70,10 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        instrument_config: Option<PolymarketInstrumentProviderConfig>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
         base_url_gamma: Option<String>,
@@ -50,6 +91,7 @@ impl PolymarketDataClientConfig {
     ) -> Self {
         let default = Self::default();
         Self {
+            instrument_config,
             base_url_http,
             base_url_ws,
             base_url_gamma,

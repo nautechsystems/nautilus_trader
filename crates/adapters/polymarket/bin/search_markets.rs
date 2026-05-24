@@ -47,7 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = PolymarketGammaHttpClient::new(None, 60, RetryConfig::default())?;
 
     let filter = SearchFilter::from_query(&query);
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();
