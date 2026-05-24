@@ -178,6 +178,7 @@ def default_es_put_spread_instrument_id(
     long_strike: float = 6800.0,
     short_strike: float = 6750.0,
 ) -> str:
+    # IB generic spread IDs encode signed leg ratios in the instrument ID
     leg_ratios = [
         (default_es_put_option_local_symbol(long_strike), 1),
         (default_es_put_option_local_symbol(short_strike), -1),

@@ -32,7 +32,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, Venue},
     instruments::InstrumentAny,
     types::{AccountBalance, MarginBalance},
 };
@@ -56,6 +56,7 @@ pub struct StubExecutionClient {
     stop_count: Rc<Cell<usize>>,
     reset_count: Rc<Cell<usize>>,
     dispose_count: Rc<Cell<usize>>,
+    submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
 }
 
@@ -82,6 +83,7 @@ impl StubExecutionClient {
             stop_count: Rc::new(Cell::new(0)),
             reset_count: Rc::new(Cell::new(0)),
             dispose_count: Rc::new(Cell::new(0)),
+            submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
         }
     }
@@ -97,6 +99,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn received_instruments(&self) -> Rc<RefCell<Vec<InstrumentAny>>> {
         self.received_instruments.clone()
+    }
+
+    /// Returns a shared handle to the submitted order IDs.
+    #[must_use]
+    pub fn submitted_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.submitted_order_ids.clone()
     }
 
     /// Returns the number of times [`ExecutionClient::start`] was invoked.
@@ -186,7 +194,11 @@ impl ExecutionClient for StubExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        self.submitted_order_ids
+            .borrow_mut()
+            .push(cmd.client_order_id);
+
         Ok(()) // Stub implementation always succeeds
     }
 

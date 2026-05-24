@@ -415,6 +415,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         self.core.venue
     }
 
+    // IB uses a broker venue for the client while routing exchange-MIC instruments;
+    // contract transformation remains the authority for actual venue support.
     fn handles_order_venue(&self, _venue: Venue) -> bool {
         true
     }

@@ -114,7 +114,9 @@ fn futures_contract_xcme() -> FuturesContract {
         AssetClass::Index,
         Some(Ustr::from("XCME")),
         Ustr::from("ES"),
+        // Activation: 2026-04-06 00:00:00 UTC
         UnixNanos::from(1_775_433_600_000_000_000),
+        // Expiration: 2026-06-17 16:00:00 UTC
         UnixNanos::from(1_781_712_000_000_000_000),
         Currency::USD(),
         2,
@@ -1554,6 +1556,8 @@ fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
         OmsType::Netting,
         None,
     );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
@@ -1602,15 +1606,16 @@ fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
         assert_eq!(
             denied.reason.as_str(),
-            "Order venue XCME does not match client venue IB",
+            "Client IB does not handle order venue XCME (client venue IB)",
         );
     } else {
         panic!("Expected OrderDenied event");
     }
+    assert!(submitted_order_ids.borrow().is_empty());
 }
 
 #[rstest]
-fn test_submit_order_allows_routing_broker_for_databento_venue(
+fn test_submit_order_allows_routing_broker_for_exchange_mic_venue(
     mut execution_engine: ExecutionEngine,
 ) {
     let trader_id = TraderId::test_default();
@@ -1626,6 +1631,8 @@ fn test_submit_order_allows_routing_broker_for_databento_venue(
         None,
     )
     .with_handles_all_order_venues();
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
@@ -1674,6 +1681,10 @@ fn test_submit_order_allows_routing_broker_for_databento_venue(
     assert_eq!(
         cached_order.instrument_id(),
         InstrumentId::from("ESM6.XCME")
+    );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
     );
 }
 
