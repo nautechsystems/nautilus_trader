@@ -64,11 +64,14 @@ use nautilus_common::{
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::plugin::{
-    CancelAllOrdersCommand, CancelOrdersCommand, CloseAllPositionsCommand, ClosePositionCommand,
-    HostContextInner, PluginActorAdapter, PluginStrategyAdapter, QueryAccountCommand,
-    QueryOrderCommand, SubmitOrderCommand, SubmitOrderListCommand, host_vtable,
+    CancelAllOrdersCommand, CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle,
+    CancelOrdersCommand, CancelOrdersHandle, CloseAllPositionsCommand, CloseAllPositionsHandle,
+    ClosePositionCommand, ClosePositionHandle, HostContextInner, ModifyOrderCommand,
+    ModifyOrderHandle, PluginActorAdapter, PluginStrategyAdapter, QueryAccountCommand,
+    QueryAccountHandle, QueryOrderCommand, QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle,
+    SubmitOrderListCommand, SubmitOrderListHandle, host_vtable,
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -80,7 +83,7 @@ use nautilus_model::{
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, GreeksConvention,
         InstrumentCloseType, LiquiditySide, MarketStatusAction, OmsType, OrderSide, OrderType,
-        PositionSide, PriceType,
+        PositionSide, PriceType, TimeInForce,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -89,8 +92,8 @@ use nautilus_model::{
         OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
-        AccountId, ActorId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
     orders::{Order, OrderAny},
@@ -1009,13 +1012,13 @@ static RISK_COMMAND_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[rstest]
 fn host_submit_order_routes_through_registered_strategy_adapter() {
-    // End-to-end: a registered PluginStrategyAdapter receives a JSON
-    // SubmitOrderCommand through the host vtable, which deserializes,
-    // looks the adapter up by actor_id, and calls Strategy::submit_order.
-    // Strategy::submit_order publishes OrderInitialized and sends the
-    // SubmitOrder TradingCommand to the risk-engine endpoint. We
-    // subscribe a counting handler at that endpoint to assert the
-    // command reached the production pipeline.
+    // End-to-end: a registered PluginStrategyAdapter receives a
+    // SubmitOrderHandle through the host vtable, which derefs the
+    // borrowed command, looks the adapter up by actor_id, and calls
+    // Strategy::submit_order. Strategy::submit_order publishes
+    // OrderInitialized and sends the SubmitOrder TradingCommand to the
+    // risk-engine endpoint. We subscribe a counting handler at that
+    // endpoint to assert the command reached the production pipeline.
     let _lock = lock_counters();
     let strategy_id = "PluginEnd2End-001";
     let mut adapter = build_strategy_adapter(strategy_id);
@@ -1028,26 +1031,32 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
 
-    let risk_handler =
-        TypedIntoHandler::from_with_id("PluginRiskProbe.execute", |command: TradingCommand| {
+    let risk_handler = TypedIntoHandler::from_with_id(
+        "PluginRiskProbe.execute",
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
-        });
+        },
+    );
     msgbus::register_trading_command_endpoint(
         MessagingSwitchboard::risk_engine_queue_execute(),
         risk_handler,
     );
 
     let order = make_initialized_market_order("O-PLUGIN-E2E-1", strategy_id);
-    let cmd = SubmitOrderCommand {
+    let order_client_order_id = order.client_order_id();
+    let expected_position_id = PositionId::from("P-PLUGIN-E2E-POS");
+    let handle = SubmitOrderHandle::new(SubmitOrderCommand::new(
         order,
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        Some(expected_position_id),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -1057,11 +1066,175 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.submit_order)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.submit_order)(ctx, &raw const handle) };
     r.into_result().expect("host submit_order should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.client_order_id, order_client_order_id);
+            assert_eq!(cmd.position_id, Some(expected_position_id));
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cancel_order_rejects_missing_order() {
+    // The plug-in builds a CancelOrderCommand for a non-existent
+    // client_order_id, wraps it in CancelOrderHandle, and hands the host
+    // a `*const CancelOrderHandle`. The host derefs the handle and calls
+    // Strategy::cancel_order, which bails on the cache miss. The
+    // surfaced Generic error is the proof that the handle deref, ctx
+    // lookup, and dispatch all reached Strategy.
+    let _lock = lock_counters();
+    let strategy_id = "PluginCancelOrder-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let handle = CancelOrderHandle::new(CancelOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-CANCEL-MISSING"),
+        None,
+        None,
+    ));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.cancel_order)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("missing order should bail in Strategy::cancel_order");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
+    assert!(
+        err.message_string().contains("not found in cache"),
+        "expected Strategy-level cache miss, was: {}",
+        err.message_string()
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_modify_order_rejects_missing_order() {
+    // Mirror of the cancel_order test using ModifyOrderHandle. With no
+    // matching order in the cache, Strategy::modify_order bails - the
+    // surfaced Generic error is the proof that the handle deref and
+    // dispatch reached Strategy.
+    let _lock = lock_counters();
+    let strategy_id = "PluginModifyOrder-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-MODIFY-MISSING"),
+        Some(Quantity::from("2.0")),
+        None,
+        None,
+        None,
+        None,
+    ));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.modify_order)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("missing order should bail in Strategy::modify_order");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
+    assert!(
+        err.message_string().contains("not found in cache"),
+        "expected Strategy-level cache miss, was: {}",
+        err.message_string()
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+#[case::submit_order("submit_order", |v: &HostVTable, ctx| unsafe {
+    (v.submit_order)(ctx, std::ptr::null())
+})]
+#[case::cancel_order("cancel_order", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_order)(ctx, std::ptr::null())
+})]
+#[case::modify_order("modify_order", |v: &HostVTable, ctx| unsafe {
+    (v.modify_order)(ctx, std::ptr::null())
+})]
+#[case::submit_order_list("submit_order_list", |v: &HostVTable, ctx| unsafe {
+    (v.submit_order_list)(ctx, std::ptr::null())
+})]
+#[case::cancel_orders("cancel_orders", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_orders)(ctx, std::ptr::null())
+})]
+#[case::cancel_all_orders("cancel_all_orders", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_all_orders)(ctx, std::ptr::null())
+})]
+#[case::close_position("close_position", |v: &HostVTable, ctx| unsafe {
+    (v.close_position)(ctx, std::ptr::null())
+})]
+#[case::close_all_positions("close_all_positions", |v: &HostVTable, ctx| unsafe {
+    (v.close_all_positions)(ctx, std::ptr::null())
+})]
+#[case::query_account("query_account", |v: &HostVTable, ctx| unsafe {
+    (v.query_account)(ctx, std::ptr::null())
+})]
+#[case::query_order("query_order", |v: &HostVTable, ctx| unsafe {
+    (v.query_order)(ctx, std::ptr::null())
+})]
+fn host_execution_slot_rejects_null_handle(
+    #[case] slot: &'static str,
+    #[case] invoke: fn(&HostVTable, *const HostContext) -> nautilus_plugin::PluginResult<()>,
+) {
+    // Every execution slot shares the dispatch_handle null-check; this
+    // parametrised case locks parity across all 10 slots so a future
+    // refactor that bypasses the guard for any one slot fails.
+    let _lock = lock_counters();
+    let strategy_id = format!("PluginNullHandle-{slot}");
+    let mut adapter = build_strategy_adapter(&strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    let err = invoke(v, ctx)
+        .into_result()
+        .expect_err("null command handle should be rejected");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+    assert!(
+        err.message_string().contains("null command handle"),
+        "{slot}: unexpected message: {}",
+        err.message_string()
+    );
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -1991,27 +2164,35 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
-    let risk_handler =
-        TypedIntoHandler::from_with_id("PluginRiskProbeList.execute", |command: TradingCommand| {
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let risk_handler = TypedIntoHandler::from_with_id(
+        "PluginRiskProbeList.execute",
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrderList(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
-        });
+        },
+    );
     msgbus::register_trading_command_endpoint(
         MessagingSwitchboard::risk_engine_queue_execute(),
         risk_handler,
     );
 
-    let cmd = SubmitOrderListCommand {
-        orders: vec![
+    let expected_ids = [
+        ClientOrderId::from("O-PLUGIN-LIST-1"),
+        ClientOrderId::from("O-PLUGIN-LIST-2"),
+    ];
+    let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
+        vec![
             make_initialized_market_order("O-PLUGIN-LIST-1", strategy_id),
             make_initialized_market_order("O-PLUGIN-LIST-2", strategy_id),
         ],
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        None,
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2021,12 +2202,22 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.submit_order_list)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.submit_order_list)(ctx, &raw const handle) };
     r.into_result()
         .expect("host submit_order_list should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrderList(cmd) => {
+            assert_eq!(cmd.order_list.client_order_ids.len(), 2);
+            assert_eq!(cmd.order_list.client_order_ids[0], expected_ids[0]);
+            assert_eq!(cmd.order_list.client_order_ids[1], expected_ids[1]);
+            assert_eq!(cmd.order_inits.len(), 2);
+        }
+        other => panic!("expected SubmitOrderList, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2044,14 +2235,8 @@ fn host_submit_order_list_rejects_empty_orders() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = SubmitOrderListCommand {
-        orders: Vec::new(),
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle =
+        SubmitOrderListHandle::new(SubmitOrderListCommand::new(Vec::new(), None, None, None));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2061,8 +2246,8 @@ fn host_submit_order_list_rejects_empty_orders() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.submit_order_list)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.submit_order_list)(ctx, &raw const handle) }
         .into_result()
         .expect_err("empty order list should be rejected");
     assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
@@ -2082,8 +2267,8 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     // id up in the cache and rejects local/emulated orders. Orders added
     // via `cache.add_order` retain `OrderStatus::Initialized`, which the
     // Strategy treats as "active local"; the explicit error from Strategy
-    // is the proof that typed deserialisation, ctx lookup, and dispatch
-    // all succeeded.
+    // is the proof that the handle deref, ctx lookup, and dispatch all
+    // succeeded.
     let _lock = lock_counters();
     let strategy_id = "PluginCancelBatch-001";
     let mut adapter = build_strategy_adapter(strategy_id);
@@ -2099,16 +2284,14 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     }
     let _registered = register_actor(adapter);
 
-    let cmd = CancelOrdersCommand {
-        client_order_ids: vec![
+    let handle = CancelOrdersHandle::new(CancelOrdersCommand::new(
+        vec![
             ClientOrderId::from("O-PLUGIN-BATCH-1"),
             ClientOrderId::from("O-PLUGIN-BATCH-2"),
         ],
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2118,8 +2301,8 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.cancel_orders)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.cancel_orders)(ctx, &raw const handle) }
         .into_result()
         .expect_err("Initialized orders should be rejected as local by Strategy");
     assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
@@ -2138,7 +2321,7 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     // With no open/emulated/inflight orders matching the filter,
     // Strategy::cancel_all_orders returns Ok without sending a command.
     // The successful Ok return (rather than NotImplemented or an
-    // InvalidArgument error) is the proof that typed deserialisation and
+    // InvalidArgument error) is the proof that the handle deref and
     // dispatch reached Strategy.
     let _lock = lock_counters();
     let strategy_id = "PluginCancelAll-001";
@@ -2147,14 +2330,12 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = CancelAllOrdersCommand {
-        instrument_id: instrument_id(),
-        order_side: Some(OrderSide::Buy),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
+        instrument_id(),
+        Some(OrderSide::Buy),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2164,8 +2345,8 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.cancel_all_orders)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.cancel_all_orders)(ctx, &raw const handle) };
     r.into_result()
         .expect("host cancel_all_orders should succeed");
 
@@ -2197,10 +2378,14 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let risk_handler = TypedIntoHandler::from_with_id(
         "PluginRiskProbeClosePos.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2209,16 +2394,15 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
         risk_handler,
     );
 
-    let cmd = ClosePositionCommand {
-        position_id: PositionId::from("P-PLUGIN-CLOSE-1"),
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let expected_tag = ustr::Ustr::from("plugin-exit");
+    let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+        PositionId::from("P-PLUGIN-CLOSE-1"),
+        None,
+        Some(vec![expected_tag]),
+        Some(TimeInForce::Ioc),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2228,11 +2412,24 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.close_position)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.close_position)(ctx, &raw const handle) };
     r.into_result().expect("host close_position should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.position_id, Some(PositionId::from("P-PLUGIN-CLOSE-1")));
+            let order_tags = cmd.order_init.tags.expect("closing order carries tags");
+            assert!(
+                order_tags.contains(&expected_tag),
+                "expected tag {expected_tag} to flow into closing order, was: {order_tags:?}",
+            );
+            assert_eq!(cmd.order_init.time_in_force, TimeInForce::Ioc);
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2247,16 +2444,14 @@ fn host_close_position_rejects_missing_position() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = ClosePositionCommand {
-        position_id: PositionId::from("P-PLUGIN-MISSING"),
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+        PositionId::from("P-PLUGIN-MISSING"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2266,8 +2461,8 @@ fn host_close_position_rejects_missing_position() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.close_position)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.close_position)(ctx, &raw const handle) }
         .into_result()
         .expect_err("missing position should surface as an error");
     assert!(
@@ -2303,10 +2498,14 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let risk_handler = TypedIntoHandler::from_with_id(
         "PluginRiskProbeCloseAll.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2315,17 +2514,16 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
         risk_handler,
     );
 
-    let cmd = CloseAllPositionsCommand {
-        instrument_id: target_instrument_id,
-        position_side: None,
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let expected_tag = ustr::Ustr::from("plugin-flatten");
+    let handle = CloseAllPositionsHandle::new(CloseAllPositionsCommand::new(
+        target_instrument_id,
+        Some(position.side),
+        None,
+        Some(vec![expected_tag]),
+        Some(TimeInForce::Ioc),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2335,12 +2533,25 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.close_all_positions)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.close_all_positions)(ctx, &raw const handle) };
     r.into_result()
         .expect("host close_all_positions should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.instrument_id, target_instrument_id);
+            let order_tags = cmd.order_init.tags.expect("closing order carries tags");
+            assert!(
+                order_tags.contains(&expected_tag),
+                "expected tag {expected_tag} to flow into closing order, was: {order_tags:?}",
+            );
+            assert_eq!(cmd.order_init.time_in_force, TimeInForce::Ioc);
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2356,10 +2567,14 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let exec_handler = TypedIntoHandler::from_with_id(
         "PluginExecProbeQueryAccount.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::QueryAccount(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2368,13 +2583,18 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
         exec_handler,
     );
 
-    let cmd = QueryAccountCommand {
-        account_id: AccountId::from("BINANCE-001"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let mut params = Params::new();
+    params.insert(
+        "marker".to_string(),
+        serde_json::Value::String("plugin-query-account".to_string()),
+    );
+    let expected_client_id = ClientId::from("BINANCE");
+    let expected_params = params.clone();
+    let handle = QueryAccountHandle::new(QueryAccountCommand::new(
+        AccountId::from("BINANCE-001"),
+        Some(expected_client_id),
+        Some(params),
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2384,11 +2604,20 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.query_account)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.query_account)(ctx, &raw const handle) };
     r.into_result().expect("host query_account should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryAccount(cmd) => {
+            assert_eq!(cmd.account_id, AccountId::from("BINANCE-001"));
+            assert_eq!(cmd.client_id, Some(expected_client_id));
+            assert_eq!(cmd.params, Some(expected_params));
+        }
+        other => panic!("expected QueryAccount, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2410,10 +2639,14 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let exec_handler = TypedIntoHandler::from_with_id(
         "PluginExecProbeQueryOrder.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::QueryOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2422,13 +2655,17 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
         exec_handler,
     );
 
-    let cmd = QueryOrderCommand {
-        client_order_id: ClientOrderId::from("O-PLUGIN-QUERY-1"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let mut params = Params::new();
+    params.insert(
+        "marker".to_string(),
+        serde_json::Value::String("plugin-query-order".to_string()),
+    );
+    let expected_params = params.clone();
+    let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-QUERY-1"),
+        None,
+        Some(params),
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2438,11 +2675,19 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.query_order)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.query_order)(ctx, &raw const handle) };
     r.into_result().expect("host query_order should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryOrder(cmd) => {
+            assert_eq!(cmd.client_order_id, ClientOrderId::from("O-PLUGIN-QUERY-1"));
+            assert_eq!(cmd.params, Some(expected_params));
+        }
+        other => panic!("expected QueryOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2457,13 +2702,11 @@ fn host_query_order_rejects_missing_order() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = QueryOrderCommand {
-        client_order_id: ClientOrderId::from("O-PLUGIN-MISSING"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-MISSING"),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2473,8 +2716,8 @@ fn host_query_order_rejects_missing_order() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.query_order)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.query_order)(ctx, &raw const handle) }
         .into_result()
         .expect_err("missing order should surface as an error");
     assert!(

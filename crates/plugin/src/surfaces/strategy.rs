@@ -27,12 +27,14 @@
 //! thunk dereferences once and hands an `&T` to the trait method. No
 //! serialisation per event.
 //!
-//! Order commands go the other direction: the strategy invokes
-//! `HostVTable::submit_order` / `cancel_order` / `modify_order` with a JSON
-//! command. The host attributes each command to the calling strategy via
-//! the [`HostContext`] pointer that was supplied at `create`. JSON is used
-//! for order commands (not events) so the command schema can evolve
-//! independently of the host's internal `SubmitOrder` shape.
+//! Order commands go the other direction as boundary-owned handles. The
+//! plug-in constructs a command struct under
+//! [`crate::surfaces::commands`], wraps it in the matching `*Handle`,
+//! and hands the host a `*const XHandle`. The host derefs the handle
+//! once and routes the borrowed command into the calling strategy. The
+//! host attributes each command to the calling strategy via the
+//! [`HostContext`] pointer that was supplied at `create`. No JSON
+//! crosses the boundary for any per-call command path.
 //!
 //! # Scope (v1)
 //!
@@ -49,11 +51,12 @@
 //! - Order commands via [`HostVTable`]: `submit_order`, `cancel_order`,
 //!   `modify_order`, `submit_order_list`, `cancel_orders`,
 //!   `cancel_all_orders`, `close_position`, `close_all_positions`,
-//!   `query_account`, `query_order`. The live adapter deserialises each
-//!   JSON payload into the matching `Strategy::*` call so the production
-//!   cache / risk / event pipeline runs unchanged; `close_position` and
-//!   `query_order` resolve their `&Position` / `&OrderAny` arguments via
-//!   the host cache before dispatch.
+//!   `query_account`, `query_order`. Each slot takes a boundary-owned
+//!   `*const XHandle` and the live adapter routes the borrowed command
+//!   into the matching `Strategy::*` call so the production cache /
+//!   risk / event pipeline runs unchanged; `close_position` and
+//!   `query_order` resolve their `&Position` / `&OrderAny` arguments
+//!   via the host cache before dispatch.
 //!
 //! Book deltas cross as
 //! [`*const OrderBookDeltasHandle`](crate::surfaces::book::OrderBookDeltasHandle)

@@ -45,11 +45,28 @@ use std::sync::{
     atomic::{AtomicPtr, AtomicU64, Ordering},
 };
 
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{
+    enums::{OrderSide, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    orders::{MarketOrder, OrderAny},
+    types::Quantity,
+};
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
-    surfaces::strategy::{PluginStrategy, strategy_vtable},
+    surfaces::{
+        commands::{
+            CancelAllOrdersCommand, CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle,
+            CancelOrdersCommand, CancelOrdersHandle, CloseAllPositionsCommand,
+            CloseAllPositionsHandle, ClosePositionCommand, ClosePositionHandle, ModifyOrderCommand,
+            ModifyOrderHandle, QueryAccountCommand, QueryAccountHandle, QueryOrderCommand,
+            QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle, SubmitOrderListCommand,
+            SubmitOrderListHandle,
+        },
+        strategy::{PluginStrategy, strategy_vtable},
+    },
 };
 use rstest::rstest;
 
@@ -261,7 +278,7 @@ unsafe extern "C" fn stub_cancel_timer(
 
 unsafe extern "C" fn recording_submit_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::Submit);
     PluginResult::Ok(())
@@ -269,7 +286,7 @@ unsafe extern "C" fn recording_submit_order(
 
 unsafe extern "C" fn recording_cancel_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::Cancel);
     PluginResult::Ok(())
@@ -277,7 +294,7 @@ unsafe extern "C" fn recording_cancel_order(
 
 unsafe extern "C" fn recording_modify_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ModifyOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::Modify);
     PluginResult::Ok(())
@@ -285,7 +302,7 @@ unsafe extern "C" fn recording_modify_order(
 
 unsafe extern "C" fn recording_submit_order_list(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderListHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::SubmitList);
     PluginResult::Ok(())
@@ -293,7 +310,7 @@ unsafe extern "C" fn recording_submit_order_list(
 
 unsafe extern "C" fn recording_cancel_orders(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrdersHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::CancelOrders);
     PluginResult::Ok(())
@@ -301,7 +318,7 @@ unsafe extern "C" fn recording_cancel_orders(
 
 unsafe extern "C" fn recording_cancel_all_orders(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelAllOrdersHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::CancelAll);
     PluginResult::Ok(())
@@ -309,7 +326,7 @@ unsafe extern "C" fn recording_cancel_all_orders(
 
 unsafe extern "C" fn recording_close_position(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ClosePositionHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::ClosePosition);
     PluginResult::Ok(())
@@ -317,7 +334,7 @@ unsafe extern "C" fn recording_close_position(
 
 unsafe extern "C" fn recording_close_all_positions(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CloseAllPositionsHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::CloseAll);
     PluginResult::Ok(())
@@ -325,7 +342,7 @@ unsafe extern "C" fn recording_close_all_positions(
 
 unsafe extern "C" fn recording_query_account(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryAccountHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::QueryAccount);
     PluginResult::Ok(())
@@ -333,10 +350,34 @@ unsafe extern "C" fn recording_query_account(
 
 unsafe extern "C" fn recording_query_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, ExecHook::QueryOrder);
     PluginResult::Ok(())
+}
+
+fn make_market_order() -> OrderAny {
+    OrderAny::Market(MarketOrder::new(
+        TraderId::from("TRADER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("ETH-USDT.BINANCE"),
+        ClientOrderId::from("O-1"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ))
 }
 
 static TEST_HOST: HostVTable = HostVTable {
@@ -407,22 +448,110 @@ impl PluginStrategy for ExecStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
         // SAFETY: the host commits to keeping the vtable live for the strategy.
         let host = unsafe { &*self.host };
-        let payload = BorrowedStr::from_str(r#"{"k":"v"}"#);
-        // Each arm is a single unsafe call into the host's function-pointer
-        // slot. SAFETY: ctx is the value the host supplied at create time
-        // and the host keeps every fn pointer live for the strategy
-        // lifetime.
         let r = match TARGET.with(std::cell::Cell::get) {
-            ExecHook::Submit => unsafe { (host.submit_order)(self.ctx, payload) },
-            ExecHook::Cancel => unsafe { (host.cancel_order)(self.ctx, payload) },
-            ExecHook::Modify => unsafe { (host.modify_order)(self.ctx, payload) },
-            ExecHook::SubmitList => unsafe { (host.submit_order_list)(self.ctx, payload) },
-            ExecHook::CancelOrders => unsafe { (host.cancel_orders)(self.ctx, payload) },
-            ExecHook::CancelAll => unsafe { (host.cancel_all_orders)(self.ctx, payload) },
-            ExecHook::ClosePosition => unsafe { (host.close_position)(self.ctx, payload) },
-            ExecHook::CloseAll => unsafe { (host.close_all_positions)(self.ctx, payload) },
-            ExecHook::QueryAccount => unsafe { (host.query_account)(self.ctx, payload) },
-            ExecHook::QueryOrder => unsafe { (host.query_order)(self.ctx, payload) },
+            ExecHook::Submit => {
+                let handle = SubmitOrderHandle::new(SubmitOrderCommand::new(
+                    make_market_order(),
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: ctx came from create; handle outlives the call.
+                unsafe { (host.submit_order)(self.ctx, &raw const handle) }
+            }
+            ExecHook::Cancel => {
+                let handle = CancelOrderHandle::new(CancelOrderCommand::new(
+                    ClientOrderId::from("O-1"),
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.cancel_order)(self.ctx, &raw const handle) }
+            }
+            ExecHook::Modify => {
+                let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+                    ClientOrderId::from("O-1"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.modify_order)(self.ctx, &raw const handle) }
+            }
+            ExecHook::SubmitList => {
+                let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
+                    vec![make_market_order()],
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.submit_order_list)(self.ctx, &raw const handle) }
+            }
+            ExecHook::CancelOrders => {
+                let handle = CancelOrdersHandle::new(CancelOrdersCommand::new(
+                    vec![ClientOrderId::from("O-1")],
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.cancel_orders)(self.ctx, &raw const handle) }
+            }
+            ExecHook::CancelAll => {
+                let handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
+                    InstrumentId::from("ETH-USDT.BINANCE"),
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.cancel_all_orders)(self.ctx, &raw const handle) }
+            }
+            ExecHook::ClosePosition => {
+                let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+                    PositionId::from("P-001"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.close_position)(self.ctx, &raw const handle) }
+            }
+            ExecHook::CloseAll => {
+                let handle = CloseAllPositionsHandle::new(CloseAllPositionsCommand::new(
+                    InstrumentId::from("ETH-USDT.BINANCE"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.close_all_positions)(self.ctx, &raw const handle) }
+            }
+            ExecHook::QueryAccount => {
+                let handle = QueryAccountHandle::new(QueryAccountCommand::new(
+                    AccountId::from("BINANCE-001"),
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.query_account)(self.ctx, &raw const handle) }
+            }
+            ExecHook::QueryOrder => {
+                let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+                    ClientOrderId::from("O-1"),
+                    None,
+                    None,
+                ));
+                // SAFETY: see above.
+                unsafe { (host.query_order)(self.ctx, &raw const handle) }
+            }
         };
         r.into_result()
             .map_err(|e| anyhow::anyhow!(e.message_string()))

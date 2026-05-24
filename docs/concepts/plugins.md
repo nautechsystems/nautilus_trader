@@ -70,9 +70,13 @@ patterns cover the v1 surface:
 
 - Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
   model types. No serialisation, no per-event allocation.
-- Order commands flow out of the plug-in as opaque JSON. The host deserialises into the matching
-  `Strategy` command and dispatches. JSON keeps the command schema free to evolve without breaking
-  the in-engine `TradingCommand` shape.
+- Order commands flow out of the plug-in as boundary-owned `*const XHandle` pointers
+  (`SubmitOrderHandle`, `CancelOrderHandle`, `ModifyOrderHandle`, `SubmitOrderListHandle`,
+  `CancelOrdersHandle`, `CancelAllOrdersHandle`, `ClosePositionHandle`,
+  `CloseAllPositionsHandle`, `QueryAccountHandle`, `QueryOrderHandle`) into command structs the
+  plug-in owns for the duration of the call. The host derefs the handle and dispatches into the
+  matching `Strategy` command, leaving the in-engine `TradingCommand` shape untouched. No JSON
+  crosses the boundary on any per-call command path.
 
 The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
 documented in `nautilus_plugin::boundary`.
