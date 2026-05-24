@@ -3552,7 +3552,21 @@ impl DataEngine {
         }
     }
 
+    // Skip cache writes that would regress a book a `BookUpdater` is maintaining.
+    // Unmanaged subscriptions don't install a `BookUpdater`, so they don't gate writes.
+    fn cache_is_owned_by_live_subscription(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_updaters.contains_key(instrument_id)
+    }
+
     fn handle_book_response(&self, book: &OrderBook) {
+        if self.cache_is_owned_by_live_subscription(&book.instrument_id) {
+            log::debug!(
+                "Skipping cache write for order book {}: live subscription owns the book",
+                book.instrument_id,
+            );
+            return;
+        }
+
         log::debug!("Adding order book {} to cache", book.instrument_id);
 
         if let Err(e) = self

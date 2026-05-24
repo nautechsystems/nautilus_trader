@@ -39,20 +39,21 @@ use nautilus_common::{
     clients::DataClient,
     clock::{Clock, TestClock},
     messages::data::{
-        BarsResponse, CustomDataResponse, DataCommand, DataResponse, ForwardPricesResponse,
-        FundingRatesResponse, InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT,
-        QuotesResponse, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
-        RequestInstruments, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeMarkPrices,
-        SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
-        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        BarsResponse, BookResponse, CustomDataResponse, DataCommand, DataResponse,
+        ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+        PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
+        RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
+        RequestInstrument, RequestInstruments, RequestJoin, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeTrades,
     },
     msgbus::{
         self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
@@ -16884,4 +16885,216 @@ fn test_subscription_name_param_disables_now_clamping(
         Some(5_000),
         "subscription_name must bypass end clamping"
     );
+}
+
+fn book_response_for(
+    request_id: UUID4,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    book: OrderBook,
+) -> DataResponse {
+    DataResponse::Book(BookResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        book,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_book_response_skips_cache_write_when_subscription_active(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+
+    let maintained_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("subscription must seed a cache book")
+        .update_count;
+    assert!(
+        maintained_count > 0,
+        "live delta must have advanced the cache book"
+    );
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book must remain after a book response")
+        .update_count;
+    assert_eq!(
+        after_count, maintained_count,
+        "book response must not clobber a book owned by a live subscription"
+    );
+}
+
+#[rstest]
+fn test_book_response_writes_to_cache_when_no_active_subscription(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    assert!(cache.borrow().order_book(&instrument_id).is_none());
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_some(),
+        "without an active subscription the book response must populate the cache"
+    );
+}
+
+#[rstest]
+fn test_book_response_writes_to_cache_with_unmanaged_subscription(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false, // unmanaged
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_none(),
+        "unmanaged subscriptions do not install a BookUpdater or seed the cache",
+    );
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    assert!(
+        cache.borrow().order_book(&instrument_id).is_some(),
+        "unmanaged subscriptions must not gate snapshot population of the cache"
+    );
+}
+
+#[rstest]
+fn test_book_response_always_delivers_to_requester(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache, client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookResponse>(Some(Ustr::from("book-response-delivery")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    data_engine.response(book_response_for(
+        request_id,
+        instrument_id,
+        client_id,
+        fresh_book,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(
+        received.len(),
+        1,
+        "requester must receive the snapshot even when cache write is skipped"
+    );
+    assert_eq!(received[0].correlation_id, request_id);
 }
