@@ -172,24 +172,8 @@ pub struct PolymarketDataClientConfig {
 impl Default for PolymarketDataClientConfig {
     fn default() -> Self {
         Self {
-            instrument_config: None,
-            base_url_http: None,
-            base_url_ws: None,
-            base_url_gamma: None,
-            base_url_data_api: None,
-            http_timeout_secs: 60,
-            ws_timeout_secs: 30,
-            ws_max_subscriptions: crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS,
             update_instruments_interval_mins: Some(60),
-            subscribe_new_markets: false,
-            auto_load_missing_instruments: true,
-            auto_load_debounce_ms: 100,
-            auto_load_max_retries: 12,
-            auto_load_retry_delay_initial_secs: 5.0,
-            auto_load_retry_delay_max_secs: 15.0,
-            filters: Vec::new(),
-            new_market_filter: None,
-            transport_backend: TransportBackend::default(),
+            ..Self::builder().build()
         }
     }
 }

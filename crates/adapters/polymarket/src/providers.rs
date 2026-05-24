@@ -232,13 +232,28 @@ impl PolymarketInstrumentProvider {
 
         if self.config.log_warnings {
             log::warn!(
-                "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, event_slugs, market_slugs, or event_slug_builder"
+                "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.event_slugs, instrument_config.market_slugs, or instrument_config.event_slug_builder"
             );
         }
         Ok(())
     }
 
     async fn load_scoped_all(&mut self) -> anyhow::Result<()> {
+        let has_explicit_slug_scope = self
+            .config
+            .event_slug_builder
+            .as_deref()
+            .is_some_and(|slug| !slug.trim().is_empty())
+            || self
+                .config
+                .event_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty())
+            || self
+                .config
+                .market_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty());
         let event_slugs = self.resolve_event_slugs()?;
         let market_slugs = self
             .config
@@ -251,11 +266,13 @@ impl PolymarketInstrumentProvider {
 
         if !event_slugs.is_empty() {
             self.load_by_event_slugs(event_slugs).await?;
-            return Ok(());
         }
 
         if !market_slugs.is_empty() {
             self.load_by_slugs(market_slugs).await?;
+        }
+
+        if has_explicit_slug_scope {
             return Ok(());
         }
 
@@ -394,6 +411,18 @@ pub async fn fetch_configured_instruments(
     let mut instruments = Vec::new();
 
     if config.should_load_all() {
+        let has_explicit_slug_scope = config
+            .event_slug_builder
+            .as_deref()
+            .is_some_and(|slug| !slug.trim().is_empty())
+            || config
+                .event_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty())
+            || config
+                .market_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty());
         let event_slugs = if let Some(builder) = config.event_slug_builder.as_deref()
             && !builder.trim().is_empty()
         {
@@ -422,12 +451,18 @@ pub async fn fetch_configured_instruments(
                     .request_instruments_by_event_slugs(event_slugs)
                     .await?,
             );
-        } else if !market_slugs.is_empty() {
+        }
+
+        if !market_slugs.is_empty() {
             instruments.extend(
                 http_client
                     .request_instruments_by_slugs(market_slugs)
                     .await?,
             );
+        }
+
+        if has_explicit_slug_scope {
+            // Explicit slug scoping should never broaden into a full-universe fetch.
         } else if filters.is_empty() {
             if let Some(map) = config.filters.as_ref() {
                 if map.is_empty() {

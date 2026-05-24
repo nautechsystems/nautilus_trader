@@ -1245,6 +1245,50 @@ async fn test_provider_initialize_uses_instrument_config_event_slugs() {
 
 #[rstest]
 #[tokio::test]
+async fn test_provider_initialize_merges_event_and_market_slug_scopes() {
+    let state = TestServerState::default();
+
+    let event_market = gamma_market_with_slug(
+        "scope-event-market",
+        "0xcondition_scope_evt",
+        ["61500000000000000001", "61500000000000000002"],
+    );
+    let event = gamma_event_with_markets("scope-event", &[event_market]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("scope-event".to_string(), json!([event]));
+
+    let direct_market = gamma_market_with_slug(
+        "scope-direct-market",
+        "0xcondition_scope_direct",
+        ["61500000000000000003", "61500000000000000004"],
+    );
+    state
+        .gamma_slug_responses
+        .lock()
+        .await
+        .insert("scope-direct-market".to_string(), json!([direct_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        event_slugs: Some(vec!["scope-event".to_string()]),
+        market_slugs: Some(vec!["scope-direct-market".to_string()]),
+        load_all: true,
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+
+    assert_eq!(provider.store().count(), 4);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_provider_initialize_reload_adds_new_scoped_instruments_without_clearing_existing() {
     let state = TestServerState::default();
 

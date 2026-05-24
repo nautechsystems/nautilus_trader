@@ -644,7 +644,7 @@ impl PolymarketDataClient {
                 .collect::<Vec<_>>(),
         );
 
-        log::info!("Published all {total} instruments to data engine");
+        log::info!("Published {total} Polymarket instruments to data engine");
         Ok(())
     }
 
