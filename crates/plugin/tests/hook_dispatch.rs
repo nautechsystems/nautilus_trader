@@ -821,7 +821,7 @@ fn order_canceled_value() -> OrderCanceled {
         event_id: UUID4::new(),
         ts_event: UnixNanos::from(1u64),
         ts_init: UnixNanos::from(2u64),
-        reconciliation: 0,
+        reconciliation: false,
         venue_order_id: Some(VenueOrderId::from("V-1")),
         account_id: Some(AccountId::from("BINANCE-001")),
         causation_id: None,

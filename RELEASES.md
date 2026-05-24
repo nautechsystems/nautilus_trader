@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Changed Rust command `new` constructors to accept `correlation_id: Option<UUID4>` (pass `None` for old behavior)
 - Changed Hyperliquid HIP-4 outcome `InstrumentId` to `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
+- Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
 
 ### Security
 None

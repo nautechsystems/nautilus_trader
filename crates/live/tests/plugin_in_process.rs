@@ -600,7 +600,7 @@ fn make_order_canceled() -> OrderCanceled {
         event_id: UUID4::new(),
         ts_event: UnixNanos::from(1u64),
         ts_init: UnixNanos::from(1u64),
-        reconciliation: 0,
+        reconciliation: false,
         causation_id: None,
     }
 }

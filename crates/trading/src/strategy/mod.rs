@@ -2031,7 +2031,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2047,8 +2047,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
             causation_id: None,
         })
     }
@@ -2064,7 +2064,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2080,7 +2080,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2323,8 +2323,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
             causation_id: None,
         });
 

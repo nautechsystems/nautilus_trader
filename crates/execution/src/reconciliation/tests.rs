@@ -2168,7 +2168,7 @@ fn test_reconcile_order_report_generates_rejected(instrument: InstrumentAny) {
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
         assert_eq!(rejected.reason.as_str(), "INSUFFICIENT_MARGIN");
-        assert_eq!(rejected.reconciliation, 1);
+        assert!(rejected.reconciliation);
     } else {
         panic!("Expected Rejected event");
     }
@@ -2316,8 +2316,8 @@ fn test_create_reconciliation_rejected_with_reason() {
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
         assert_eq!(rejected.reason.as_str(), "MARGIN_CALL");
-        assert_eq!(rejected.reconciliation, 1);
-        assert_eq!(rejected.due_post_only, 0);
+        assert!(rejected.reconciliation);
+        assert!(!rejected.due_post_only);
     } else {
         panic!("Expected Rejected event");
     }
@@ -3977,7 +3977,7 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         other => panic!("expected OrderUpdated, was {other:?}"),
     };
     assert_eq!(updated.quantity, Quantity::from(10));
-    assert_eq!(updated.reconciliation, 1);
+    assert!(updated.reconciliation);
 
     order.apply(event).unwrap();
     assert_eq!(order.quantity(), Quantity::from(10));

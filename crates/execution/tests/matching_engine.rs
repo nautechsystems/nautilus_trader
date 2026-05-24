@@ -1204,9 +1204,9 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
             "POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00"
         )
     );
-    assert_eq!(
-        rejected.due_post_only, 1,
-        "due_post_only should be set to true (1) for post-only rejections"
+    assert!(
+        rejected.due_post_only,
+        "due_post_only should be set for post-only rejections"
     );
 }
 

@@ -137,7 +137,7 @@ impl OrderPendingCancel {
     #[getter]
     #[pyo3(name = "reconciliation")]
     fn py_reconciliation(&self) -> bool {
-        self.reconciliation != 0
+        self.reconciliation
     }
 
     #[pyo3(name = "to_dict")]

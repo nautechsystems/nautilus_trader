@@ -708,7 +708,7 @@ mod tests {
             event_id: UUID4::new(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         });
 

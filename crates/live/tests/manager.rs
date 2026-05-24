@@ -1679,7 +1679,7 @@ async fn test_reconcile_mass_status_accepted_order_canceled_at_venue() {
 
     if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
-        assert!(canceled.reconciliation != 0); // Verify reconciliation flag is set
+        assert!(canceled.reconciliation); // Verify reconciliation flag is set
     }
 }
 

@@ -2282,7 +2282,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.account_id, AccountId::from("BINANCE-001"));
-                assert_ne!(event.due_post_only, 0);
+                assert!(event.due_post_only);
             }
             other => panic!("Expected OrderRejected event, was {other:?}"),
         }
