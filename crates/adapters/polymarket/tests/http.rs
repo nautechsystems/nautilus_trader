@@ -1245,6 +1245,57 @@ async fn test_provider_initialize_uses_instrument_config_event_slugs() {
 
 #[rstest]
 #[tokio::test]
+async fn test_provider_initialize_reload_adds_new_scoped_instruments_without_clearing_existing() {
+    let state = TestServerState::default();
+
+    let market1 = gamma_market_with_slug(
+        "rotation-market-1",
+        "0xcondition_rotation_evt1",
+        ["62000000000000000001", "62000000000000000002"],
+    );
+    let event1 = gamma_event_with_markets("rotation-event", &[market1]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("rotation-event".to_string(), json!([event1]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let config = PolymarketInstrumentProviderConfig {
+        event_slugs: Some(vec!["rotation-event".to_string()]),
+        load_all: true,
+        ..PolymarketInstrumentProviderConfig::default()
+    };
+    let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config));
+
+    provider.initialize(false).await.unwrap();
+    assert_eq!(provider.store().count(), 2);
+
+    let market2 = gamma_market_with_slug(
+        "rotation-market-2",
+        "0xcondition_rotation_evt2",
+        ["62000000000000000003", "62000000000000000004"],
+    );
+    let event2 = gamma_event_with_markets("rotation-event", &[market2]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("rotation-event".to_string(), json!([event2]));
+
+    provider.initialize(true).await.unwrap();
+
+    assert_eq!(
+        provider.store().count(),
+        4,
+        "reload=true should add newly discovered scoped instruments without clearing previously loaded ones",
+    );
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_composite_filter_combines_market_and_event_slugs() {
     let state = TestServerState::default();
 

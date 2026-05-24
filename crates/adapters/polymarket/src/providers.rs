@@ -223,10 +223,6 @@ impl PolymarketInstrumentProvider {
         }
 
         if self.config.has_load_ids() {
-            if reload {
-                self.store.clear();
-                self.token_index.clear();
-            }
             let load_ids = self.config.load_ids.clone().unwrap_or_default();
             let filters = self.config.filters.clone();
             self.load_ids(&load_ids, filters.as_ref()).await?;
@@ -254,15 +250,11 @@ impl PolymarketInstrumentProvider {
             .collect::<Vec<_>>();
 
         if !event_slugs.is_empty() {
-            self.store.clear();
-            self.token_index.clear();
             self.load_by_event_slugs(event_slugs).await?;
             return Ok(());
         }
 
         if !market_slugs.is_empty() {
-            self.store.clear();
-            self.token_index.clear();
             self.load_by_slugs(market_slugs).await?;
             return Ok(());
         }
@@ -389,6 +381,96 @@ pub async fn fetch_instruments(
     instruments.retain(|inst| seen.insert(inst.id()));
     instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
 
+    Ok(instruments)
+}
+
+/// Fetches instruments using the configured provider bootstrap scope without
+/// mutating any provider state.
+pub async fn fetch_configured_instruments(
+    http_client: &PolymarketGammaHttpClient,
+    config: &PolymarketInstrumentProviderConfig,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<Vec<InstrumentAny>> {
+    let mut instruments = Vec::new();
+
+    if config.should_load_all() {
+        let event_slugs = if let Some(builder) = config.event_slug_builder.as_deref()
+            && !builder.trim().is_empty()
+        {
+            resolve_python_event_slug_builder(builder)?
+        } else {
+            config
+                .event_slugs
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|slug| !slug.trim().is_empty())
+                .collect::<Vec<_>>()
+        };
+
+        let market_slugs = config
+            .market_slugs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|slug| !slug.trim().is_empty())
+            .collect::<Vec<_>>();
+
+        if !event_slugs.is_empty() {
+            instruments.extend(
+                http_client
+                    .request_instruments_by_event_slugs(event_slugs)
+                    .await?,
+            );
+        } else if !market_slugs.is_empty() {
+            instruments.extend(
+                http_client
+                    .request_instruments_by_slugs(market_slugs)
+                    .await?,
+            );
+        } else if filters.is_empty() {
+            if let Some(map) = config.filters.as_ref() {
+                if map.is_empty() {
+                    instruments.extend(http_client.request_instruments().await?);
+                } else {
+                    let params = build_gamma_params_from_hashmap(map);
+                    instruments.extend(http_client.request_instruments_by_params(params).await?);
+                }
+            } else {
+                instruments.extend(http_client.request_instruments().await?);
+            }
+        } else {
+            instruments.extend(fetch_instruments(http_client, filters).await?);
+        }
+    } else if config.has_load_ids() {
+        let base_params = config
+            .filters
+            .as_ref()
+            .map(build_gamma_params_from_hashmap)
+            .unwrap_or_default();
+
+        let condition_ids = config
+            .load_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| extract_condition_id(&id).ok())
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
+            let params = GetGammaMarketsParams {
+                condition_ids: Some(chunk.join(",")),
+                ..base_params.clone()
+            };
+            instruments.extend(http_client.request_instruments_by_params(params).await?);
+        }
+    }
+
+    let mut seen = AHashSet::new();
+    instruments.retain(|inst| seen.insert(inst.id()));
+    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
     Ok(instruments)
 }
 
