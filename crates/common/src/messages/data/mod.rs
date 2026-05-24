@@ -42,7 +42,8 @@ pub const PARAMS_IS_PARENT: &str = "is_parent";
 // Re-exports
 pub use request::{
     RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
-    RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+    RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin, RequestQuotes,
+    RequestTrades,
 };
 pub use response::{
     BarsResponse, BookResponse, CustomDataResponse, ForwardPricesResponse, FundingRatesResponse,
@@ -406,6 +407,7 @@ pub enum RequestCommand {
     FundingRates(RequestFundingRates),
     ForwardPrices(RequestForwardPrices),
     Bars(RequestBars),
+    Join(RequestJoin),
 }
 
 impl PartialEq for RequestCommand {
@@ -432,6 +434,7 @@ impl RequestCommand {
             Self::FundingRates(cmd) => &cmd.request_id,
             Self::ForwardPrices(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
+            Self::Join(cmd) => &cmd.request_id,
         }
     }
 
@@ -447,6 +450,7 @@ impl RequestCommand {
             Self::FundingRates(cmd) => cmd.client_id.as_ref(),
             Self::ForwardPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
+            Self::Join(_) => None,
         }
     }
 
@@ -466,6 +470,7 @@ impl RequestCommand {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
                 BarType::Composite { instrument_id, .. } => Some(&instrument_id.venue),
             },
+            Self::Join(_) => None,
         }
     }
 
@@ -481,6 +486,7 @@ impl RequestCommand {
             Self::FundingRates(cmd) => cmd.ts_init,
             Self::ForwardPrices(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
+            Self::Join(cmd) => cmd.ts_init,
         }
     }
 }
@@ -548,6 +554,24 @@ impl DataResponse {
             Self::FundingRates(resp) => Some(resp.data.len()),
             Self::ForwardPrices(resp) => Some(resp.data.len()),
             Self::Bars(resp) => Some(resp.data.len()),
+        }
+    }
+
+    /// Trims vector payloads to the inclusive `[start, end]` window on `ts_init`.
+    ///
+    /// Applies to variants whose payload elements implement `HasTsInit`
+    /// (`Quotes`, `Trades`, `FundingRates`, `Bars`, `Instruments`). Other
+    /// variants are untouched: singular payloads (`Instrument`, `Book`),
+    /// `ForwardPrices` (no per-item `ts_init`), and the opaque custom
+    /// `Data` variant.
+    pub fn trim_to_bounds(&mut self) {
+        match self {
+            Self::Quotes(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Trades(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::FundingRates(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Bars(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Data(_) | Self::Instrument(_) | Self::Book(_) | Self::ForwardPrices(_) => {}
         }
     }
 }

@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added `register_custom_data_from_manifest` to register plug-in custom data with `DataRegistry` at load time (Rust)
 - Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
 - Added Rust `DataEngine` continuous futures historical bar requests and live bar subscriptions
+- Added Rust `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan

@@ -39,19 +39,20 @@ use nautilus_common::{
     clients::DataClient,
     clock::{Clock, TestClock},
     messages::data::{
-        BarsResponse, CustomDataResponse, DataCommand, DataResponse, InstrumentResponse,
-        PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
-        RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
-        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        BarsResponse, CustomDataResponse, DataCommand, DataResponse, ForwardPricesResponse,
+        FundingRatesResponse, InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT,
+        QuotesResponse, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
+        RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
+        RequestInstruments, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeMarkPrices,
+        SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+        TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MStr, MessageBus, Topic, TypedHandler, TypedIntoHandler,
@@ -14243,4 +14244,1333 @@ fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
         data_engine.borrow().has_option_chain_manager(&series_id),
         "option chain manager must remain intact after pipeline status",
     );
+}
+
+fn quote_at(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn quotes_response(
+    instrument_id: InstrumentId,
+    data: Vec<QuoteTick>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        data,
+        start,
+        end,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_trim_to_bounds_drops_trailing_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        None,
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_drops_leading_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_short_circuits_on_empty(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![],
+        Some(UnixNanos::from(1_000)),
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_passes_through_when_unbounded(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        None,
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_keeps_already_windowed_data(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(1_000)),
+        Some(UnixNanos::from(3_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_instruments(audusd_sim: CurrencyPair, venue: Venue) {
+    let mut earlier = audusd_sim.clone();
+    earlier.ts_init = UnixNanos::from(1_000);
+    let mut middle = audusd_sim.clone();
+    middle.ts_init = UnixNanos::from(2_000);
+    let mut later = audusd_sim;
+    later.ts_init = UnixNanos::from(3_000);
+
+    let mut resp = DataResponse::Instruments(InstrumentsResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        venue,
+        vec![
+            InstrumentAny::CurrencyPair(earlier),
+            InstrumentAny::CurrencyPair(middle),
+            InstrumentAny::CurrencyPair(later),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Instruments(instruments) = resp else {
+        panic!("expected Instruments variant");
+    };
+    let ts_inits: Vec<u64> = instruments
+        .data
+        .iter()
+        .map(|i| Instrument::ts_init(i).as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_start_after_all_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+        ],
+        Some(UnixNanos::from(5_000)),
+        None,
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_end_before_all_entries(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 5_000),
+            quote_at(instrument_id, 6_000),
+        ],
+        None,
+        Some(UnixNanos::from(1_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_trades(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let make_trade = |ts: u64, trade_id: &str| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Quantity::from("1"),
+            AggressorSide::Buyer,
+            TradeId::new(trade_id),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::Trades(TradesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![
+            make_trade(1_000, "t1"),
+            make_trade(2_000, "t2"),
+            make_trade(3_000, "t3"),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Trades(trades) = resp else {
+        panic!("expected Trades variant");
+    };
+    let ts_inits: Vec<u64> = trades.data.iter().map(|t| t.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_bars(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-INTERNAL").as_str());
+    let make_bar = |ts: u64| {
+        Bar::new(
+            bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Price::from("0.99990"),
+            Price::from("1.00005"),
+            Quantity::from("1"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::Bars(BarsResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        bar_type,
+        vec![make_bar(1_000), make_bar(2_000), make_bar(3_000)],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(3_000)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Bars(bars) = resp else {
+        panic!("expected Bars variant");
+    };
+    let ts_inits: Vec<u64> = bars.data.iter().map(|b| b.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000, 3_000]);
+}
+
+#[rstest]
+fn test_trim_to_bounds_trims_funding_rates(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let make_rate = |ts: u64| {
+        FundingRateUpdate::new(
+            instrument_id,
+            "0.0001".parse().unwrap(),
+            None,
+            None,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::FundingRates(FundingRatesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![make_rate(1_000), make_rate(2_000), make_rate(3_000)],
+        Some(UnixNanos::from(1_500)),
+        Some(UnixNanos::from(2_500)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::FundingRates(rates) = resp else {
+        panic!("expected FundingRates variant");
+    };
+    let ts_inits: Vec<u64> = rates.data.iter().map(|r| r.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+fn pipeline_quote(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from("1"),
+        Quantity::from("1"),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn leg_quotes_response(
+    request_id: UUID4,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    quotes: Vec<QuoteTick>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        quotes,
+        start,
+        end,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_pipeline_single_response_passes_through(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-single")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        request_id,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, request_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000]);
+}
+
+#[rstest]
+fn test_pipeline_two_legs_emits_one_rebuilt_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-two")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+    assert!(
+        saver.get_messages().is_empty(),
+        "parent response must not emit before all legs arrive",
+    );
+
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let rebuilt = &received[0];
+    assert_eq!(rebuilt.correlation_id, parent_id);
+    let ts_inits: Vec<u64> = rebuilt.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_pipeline_three_legs_fires_on_third_arrival(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let legs = [UUID4::new(), UUID4::new(), UUID4::new()];
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, legs.len());
+    for leg_id in &legs {
+        data_engine.register_request_pipeline_leg(*leg_id, parent_id);
+    }
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-three")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    for (i, leg_id) in legs.iter().enumerate() {
+        data_engine.response(leg_quotes_response(
+            *leg_id,
+            instrument_id,
+            client_id,
+            vec![pipeline_quote(instrument_id, (i as u64 + 1) * 1_000)],
+            None,
+            None,
+        ));
+    }
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data.len(), 3);
+}
+
+#[rstest]
+fn test_pipeline_trims_bounds_on_each_leg(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("pipeline-trim")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+            pipeline_quote(instrument_id, 3_000),
+        ],
+        None,
+        Some(UnixNanos::from(2_000)),
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 4_000),
+            pipeline_quote(instrument_id, 5_000),
+            pipeline_quote(instrument_id, 6_000),
+        ],
+        Some(UnixNanos::from(5_000)),
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000, 5_000, 6_000]);
+}
+
+#[rstest]
+fn test_request_join_two_phase_emits_parent_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    // Advance the test clock past the leg ts_init values so the join's
+    // `_bound_dates` clamping does not collapse the parent window to 0.
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+    let (leg_a_handler, leg_a_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-leg-a")));
+    msgbus::register_response_handler(&leg_a, leg_a_handler);
+    let (leg_b_handler, leg_b_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-leg-b")));
+    msgbus::register_response_handler(&leg_b, leg_b_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1, "expected one final join response");
+    assert_eq!(parent[0].correlation_id, join_id);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+
+    assert_eq!(leg_a_saver.get_messages().len(), 1);
+    assert!(leg_a_saver.get_messages()[0].data.is_empty());
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
+    assert!(leg_b_saver.get_messages()[0].data.is_empty());
+
+    // Joined data must reach the cache via the normal per-variant handler
+    // path; the final response routes through `response()` after the
+    // pipeline + join gates are cleared. The cache keeps the latest quote,
+    // so we expect the leg with the higher ts_init.
+    let cached = cache
+        .borrow()
+        .quote(&instrument_id)
+        .copied()
+        .expect("joined quote data must reach the cache");
+    assert_eq!(cached.ts_init, UnixNanos::from(2_000));
+}
+
+#[rstest]
+fn test_request_join_trims_to_parent_window(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock.clone(), cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join_start = UnixNanos::from(2_000).to_datetime_utc();
+    let join_end = UnixNanos::from(4_000).to_datetime_utc();
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        Some(join_start),
+        Some(join_end),
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("join-window")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    // Legs return wider data than the parent join window; only entries in
+    // `[2_000, 4_000]` should survive the final response.
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_500),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 3_500),
+            pipeline_quote(instrument_id, 5_000),
+        ],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_500, 3_500]);
+}
+
+#[rstest]
+fn test_reset_clears_pipeline_and_join_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("reset-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.reset();
+
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "reset must clear pipeline state so no rebuilt parent fires",
+    );
+}
+
+#[rstest]
+fn test_pipeline_unsupported_variant_drops_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let _ = audusd_sim;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_id = UUID4::new();
+
+    let parent_request = RequestCommand::ForwardPrices(RequestForwardPrices::new(
+        venue,
+        Ustr::from("ES"),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 1);
+    data_engine.register_request_pipeline_leg(leg_id, parent_id);
+
+    let (parent_handler, parent_saver) = get_any_saving_handler::<ForwardPricesResponse>(Some(
+        Ustr::from("pipeline-unsupported-parent"),
+    ));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+    let (leg_handler, leg_saver) = get_any_saving_handler::<ForwardPricesResponse>(Some(
+        Ustr::from("pipeline-unsupported-leg"),
+    ));
+    msgbus::register_response_handler(&leg_id, leg_handler);
+
+    data_engine.response(DataResponse::ForwardPrices(ForwardPricesResponse::new(
+        leg_id,
+        client_id,
+        venue,
+        Vec::new(),
+        UnixNanos::default(),
+        None,
+    )));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "unsupported pipeline variant must not emit a parent-keyed response",
+    );
+    assert!(
+        leg_saver.get_messages().is_empty(),
+        "unsupported pipeline variant must not leak the leg response unchanged",
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_request_join_new_panics_on_empty_request_ids() {
+    let result = std::panic::catch_unwind(|| {
+        RequestJoin::new(
+            Vec::new(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    });
+    let err = result.expect_err("RequestJoin::new must panic on empty request_ids");
+    let msg = err
+        .downcast_ref::<&'static str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    assert!(
+        msg.contains("request_ids must not be empty"),
+        "unexpected panic message: {msg}",
+    );
+}
+
+#[rstest]
+fn test_request_join_with_dates_inherits_originals() {
+    let original_id = UUID4::new();
+    let request_ids = vec![UUID4::new(), UUID4::new()];
+    let params: Params = serde_json::from_value(json!({"flag": "value"})).unwrap();
+    let original = RequestJoin::new(
+        request_ids.clone(),
+        None,
+        None,
+        original_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+        None,
+    );
+
+    let new_start = UnixNanos::from(1_000).to_datetime_utc();
+    let new_end = UnixNanos::from(5_000).to_datetime_utc();
+    let dated = original.with_dates(Some(new_start), Some(new_end), UnixNanos::from(42));
+
+    assert_eq!(dated.request_ids, request_ids);
+    assert_eq!(dated.start, Some(new_start));
+    assert_eq!(dated.end, Some(new_end));
+    assert_eq!(dated.ts_init, UnixNanos::from(42));
+    assert_eq!(dated.correlation_id, Some(original_id));
+    assert_ne!(dated.request_id, original_id);
+    assert_eq!(dated.params, Some(params));
+}
+
+#[rstest]
+fn test_trim_to_bounds_clears_when_start_after_end(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(3_000)),
+        Some(UnixNanos::from(1_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    assert!(quotes.data.is_empty());
+}
+
+#[rstest]
+fn test_trim_to_bounds_single_point_window(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let mut resp = quotes_response(
+        instrument_id,
+        vec![
+            quote_at(instrument_id, 1_000),
+            quote_at(instrument_id, 2_000),
+            quote_at(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+    );
+
+    resp.trim_to_bounds();
+
+    let DataResponse::Quotes(quotes) = resp else {
+        panic!("expected Quotes variant");
+    };
+    let ts_inits: Vec<u64> = quotes.data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_response_trims_before_cache_write(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    // Send a bounded response with out-of-window leading and trailing rows.
+    // Only the row at ts_init=2_000 should reach the cache.
+    data_engine.response(leg_quotes_response(
+        UUID4::new(),
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+            pipeline_quote(instrument_id, 3_000),
+        ],
+        Some(UnixNanos::from(2_000)),
+        Some(UnixNanos::from(2_000)),
+    ));
+
+    let cached = cache
+        .borrow()
+        .quotes(&instrument_id)
+        .expect("cache must contain the trimmed quote");
+    let ts_inits: Vec<u64> = cached.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
+#[rstest]
+fn test_pipeline_reset_mid_buffer_clears_partial_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mid-reset-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+    let (leg_b_handler, leg_b_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mid-reset-leg-b")));
+    msgbus::register_response_handler(&leg_b, leg_b_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+
+    data_engine.reset();
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+
+    // After reset, the second leg is no longer registered with any pipeline,
+    // so it must propagate to msgbus under its own correlation_id.
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_000)],
+        None,
+        None,
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "no rebuilt parent must fire after mid-buffer reset",
+    );
+    assert_eq!(leg_b_saver.get_messages().len(), 1);
+    assert_eq!(leg_b_saver.get_messages()[0].correlation_id, leg_b);
+}
+
+#[rstest]
+fn test_request_join_single_leg_fires_immediately(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(10_000_000_000_u64), true);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("single-leg-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+    let (leg_handler, leg_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("single-leg-leg")));
+    msgbus::register_response_handler(&leg, leg_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let parent = parent_saver.get_messages();
+    assert_eq!(parent.len(), 1);
+    assert_eq!(parent[0].correlation_id, join_id);
+    let ts_inits: Vec<u64> = parent[0].data.iter().map(|q| q.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_000]);
+
+    assert_eq!(leg_saver.get_messages().len(), 1);
+    assert!(leg_saver.get_messages()[0].data.is_empty());
+
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[rstest]
+fn test_request_join_mixed_variants_cleans_up_join_staging(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("mixed-variant-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_000)],
+        None,
+        None,
+    ));
+
+    let make_trade = |ts: u64| {
+        TradeTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Quantity::from("1"),
+            AggressorSide::Buyer,
+            TradeId::new(format!("t-{ts}")),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    data_engine.response(DataResponse::Trades(TradesResponse::new(
+        leg_b,
+        client_id,
+        instrument_id,
+        vec![make_trade(2_000)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "mixed-variant rebuild must not emit a parent response",
+    );
+    assert_eq!(
+        data_engine.request_pipeline_count(),
+        0,
+        "pipeline state must be cleared after a failed rebuild",
+    );
+    assert_eq!(
+        data_engine.pending_join_request_count(),
+        0,
+        "pending join must be cleared after a failed rebuild to prevent leaks",
+    );
+}
+
+#[rstest]
+fn test_pipeline_one_empty_leg_still_emits_parent(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let parent_id = UUID4::new();
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+
+    let parent_request = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.new_request_pipeline(parent_request, 2);
+    data_engine.register_request_pipeline_leg(leg_a, parent_id);
+    data_engine.register_request_pipeline_leg(leg_b, parent_id);
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("empty-leg-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![
+            pipeline_quote(instrument_id, 1_000),
+            pipeline_quote(instrument_id, 2_000),
+        ],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+
+    let received = parent_saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|q| q.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+}
+
+#[rstest]
+fn test_request_join_all_empty_legs_emits_empty_parent(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        None,
+        None,
+        join_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("all-empty-parent")));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        Vec::new(),
+        None,
+        None,
+    ));
+
+    let received = parent_saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, join_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.pending_join_request_count(), 0);
 }

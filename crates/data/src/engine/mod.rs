@@ -71,13 +71,14 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, RequestBars,
-        RequestCommand, RequestForwardPrices, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+        QuotesResponse, RequestBars, RequestCommand, RequestForwardPrices, RequestJoin,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
         self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -158,6 +159,12 @@ pub struct DataEngine {
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    request_pipeline_parent_request: AHashMap<UUID4, RequestCommand>,
+    request_pipeline_n_components: AHashMap<UUID4, usize>,
+    request_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
+    request_pipeline_responses: AHashMap<UUID4, Vec<DataResponse>>,
+    parent_join_request_id: AHashMap<UUID4, UUID4>,
+    pending_join_requests: AHashMap<UUID4, RequestJoin>,
     continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
     continuous_future_subscriptions: AHashMap<BarType, ContinuousFutureSubscriptionState>,
     continuous_future_roller: Option<Rc<ContinuousFutureRoller>>,
@@ -225,6 +232,12 @@ impl DataEngine {
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
+            request_pipeline_parent_request: AHashMap::new(),
+            request_pipeline_n_components: AHashMap::new(),
+            request_pipeline_parent_request_id: AHashMap::new(),
+            request_pipeline_responses: AHashMap::new(),
+            parent_join_request_id: AHashMap::new(),
+            pending_join_requests: AHashMap::new(),
             continuous_future_requests: AHashMap::new(),
             continuous_future_subscriptions: AHashMap::new(),
             continuous_future_roller: None,
@@ -367,6 +380,18 @@ impl DataEngine {
     #[must_use]
     pub fn pending_option_chain_request_count(&self) -> usize {
         self.pending_option_chain_requests.len()
+    }
+
+    /// Returns the number of request pipelines awaiting leg responses.
+    #[must_use]
+    pub fn request_pipeline_count(&self) -> usize {
+        self.request_pipeline_parent_request.len()
+    }
+
+    /// Returns the number of `RequestJoin` originals awaiting finalization.
+    #[must_use]
+    pub fn pending_join_request_count(&self) -> usize {
+        self.pending_join_requests.len()
     }
 
     /// Returns a read-only reference to the engines clock.
@@ -512,6 +537,12 @@ impl DataEngine {
         }
 
         self.request_bar_aggregations.clear();
+        self.request_pipeline_parent_request.clear();
+        self.request_pipeline_n_components.clear();
+        self.request_pipeline_parent_request_id.clear();
+        self.request_pipeline_responses.clear();
+        self.parent_join_request_id.clear();
+        self.pending_join_requests.clear();
         self.continuous_future_requests.clear();
 
         for state in self.continuous_future_subscriptions.values_mut() {
@@ -1109,6 +1140,11 @@ impl DataEngine {
             return Ok(());
         }
 
+        if let RequestCommand::Join(join) = req {
+            self.handle_request_join(join);
+            return Ok(());
+        }
+
         if has_continuous_future_params(request_params(&req)) {
             return self.execute_continuous_future_request(req);
         }
@@ -1144,6 +1180,9 @@ impl DataEngine {
             RequestCommand::FundingRates(req) => client.request_funding_rates(req),
             RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
             RequestCommand::Bars(req) => client.request_bars(req),
+            RequestCommand::Join(_) => {
+                anyhow::bail!("RequestJoin must be handled by handle_request_join")
+            }
         }?;
 
         Ok(resolved_client_id)
@@ -1615,8 +1654,7 @@ impl DataEngine {
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
-    #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
-    pub fn response(&mut self, resp: DataResponse) {
+    pub fn response(&mut self, mut resp: DataResponse) {
         if log::log_enabled!(log::Level::Debug) {
             let correlation_id = resp.correlation_id();
             match resp.record_count() {
@@ -1633,12 +1671,27 @@ impl DataEngine {
         log::trace!("{RECV}{RES} {resp:?}");
 
         self.response_count += 1;
-        let correlation_id = *resp.correlation_id();
+
+        resp.trim_to_bounds();
 
         if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
             self.handle_continuous_future_child_response(parent_id, &resp);
             return;
         }
+
+        let Some(resp) = self.handle_request_pipeline_response(resp) else {
+            return;
+        };
+
+        if self
+            .parent_join_request_id
+            .contains_key(resp.correlation_id())
+        {
+            self.finalize_request_join(resp);
+            return;
+        }
+
+        let correlation_id = *resp.correlation_id();
 
         match &resp {
             DataResponse::Instrument(r) => {
@@ -1678,6 +1731,131 @@ impl DataEngine {
         self.process_request_bar_aggregation_response(&resp);
 
         msgbus::send_response(&correlation_id, &resp);
+    }
+
+    /// Registers a parent request whose response will be rebuilt from `n_components` leg responses.
+    pub fn new_request_pipeline(&mut self, parent: RequestCommand, n_components: usize) {
+        let parent_id = *parent.request_id();
+        self.request_pipeline_n_components
+            .insert(parent_id, n_components);
+        self.request_pipeline_parent_request
+            .insert(parent_id, parent);
+        self.request_pipeline_responses
+            .insert(parent_id, Vec::with_capacity(n_components));
+    }
+
+    /// Registers a leg `request_id` as a child of the pipeline keyed by `parent_id`.
+    pub fn register_request_pipeline_leg(&mut self, leg_id: UUID4, parent_id: UUID4) {
+        self.request_pipeline_parent_request_id
+            .insert(leg_id, parent_id);
+    }
+
+    /// Fans a leg response into its parent pipeline and emits the rebuilt response when all legs arrive.
+    ///
+    /// Responses whose `correlation_id` is not part of any pipeline pass through unchanged.
+    /// While accumulating legs, returns `None` so the caller skips further response handling.
+    fn handle_request_pipeline_response(&mut self, resp: DataResponse) -> Option<DataResponse> {
+        let leg_id = *resp.correlation_id();
+        let Some(parent_id) = self.request_pipeline_parent_request_id.remove(&leg_id) else {
+            return Some(resp);
+        };
+
+        let Some(buf) = self.request_pipeline_responses.get_mut(&parent_id) else {
+            log::error!("Pipeline response buffer missing for parent {parent_id} (leg {leg_id})");
+            return Some(resp);
+        };
+        buf.push(resp);
+
+        let expected = self.request_pipeline_n_components.get(&parent_id).copied();
+        let received = buf.len();
+        match expected {
+            Some(n) if received < n => return None,
+            Some(_) => {}
+            None => {
+                log::error!("Pipeline n_components missing for parent {parent_id}");
+                return None;
+            }
+        }
+
+        let mut legs = self.request_pipeline_responses.remove(&parent_id)?;
+        self.request_pipeline_n_components.remove(&parent_id);
+        let parent = self.request_pipeline_parent_request.remove(&parent_id);
+
+        for leg in &mut legs {
+            leg.trim_to_bounds();
+        }
+
+        let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
+
+        // If the rebuild failed (mixed-variant or unsupported-variant legs), drop the
+        // associated `RequestJoin` so its staging maps do not leak. Without this the
+        // original join request stays in `pending_join_requests` and its
+        // `parent_join_request_id` mapping stays live, neither of which will ever
+        // resolve through normal flow.
+        if rebuilt.is_none()
+            && let Some(original_id) = self.parent_join_request_id.remove(&parent_id)
+        {
+            self.pending_join_requests.remove(&original_id);
+            log::error!(
+                "Dropped RequestJoin {original_id} because pipeline rebuild failed for dated parent {parent_id}"
+            );
+        }
+
+        rebuilt
+    }
+
+    fn handle_request_join(&mut self, req: RequestJoin) {
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let now_dt = now_ns.to_datetime_utc();
+        let zero = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(0);
+        let start = req.start.unwrap_or(zero).min(now_dt);
+        let end = req.end.unwrap_or(now_dt).min(now_dt);
+        let dated = req.with_dates(Some(start), Some(end), now_ns);
+
+        let original_id = req.request_id;
+        let dated_id = dated.request_id;
+
+        self.pending_join_requests.insert(original_id, req);
+        self.parent_join_request_id.insert(dated_id, original_id);
+
+        let leg_ids: Vec<UUID4> = dated.request_ids.clone();
+        self.new_request_pipeline(RequestCommand::Join(dated), leg_ids.len());
+        for leg_id in leg_ids {
+            self.register_request_pipeline_leg(leg_id, dated_id);
+        }
+    }
+
+    fn finalize_request_join(&mut self, resp: DataResponse) {
+        let dated_id = *resp.correlation_id();
+        let Some(original_id) = self.parent_join_request_id.remove(&dated_id) else {
+            log::error!("parent_join_request_id missing for dated correlation {dated_id}");
+            return;
+        };
+
+        let Some(original) = self.pending_join_requests.remove(&original_id) else {
+            log::error!("pending_join_requests missing for original {original_id}");
+            return;
+        };
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+
+        // Empty leg responses fire each leg's callback so caller-side request
+        // workflows clean up. Per-leg metadata is reconstructed from the
+        // rebuilt parent response and may not match a leg's original
+        // instrument_id/bar_type when the join spans heterogeneous legs;
+        // tracked as a follow-up in #5 (needs an in-flight leg-request cache).
+        for leg_request_id in &original.request_ids {
+            let empty = empty_response_like(&resp, *leg_request_id, now_ns);
+            msgbus::send_response(leg_request_id, &empty);
+        }
+
+        // Route the final join response through the normal response path so
+        // bounds-trim against the parent window runs and the per-variant
+        // handlers (cache writes, request bar aggregators) fire. The pipeline
+        // and join staging maps for this request have already been popped, so
+        // the recursive call cannot re-enter either gate.
+        let final_resp = rebind_response_correlation(resp, original_id);
+        self.response(final_resp);
     }
 
     fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
@@ -4612,4 +4790,210 @@ fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUI
         return true;
     }
     false
+}
+
+/// Concatenates same-variant leg payloads into a single rebuilt response keyed by `parent_id`.
+///
+/// Returns `None` when legs are mixed-variant or empty; pipelines only group legs of the same
+/// variant. The rebuilt response inherits `start` and `end` from the parent request when the
+/// parent is a `RequestJoin`; otherwise leg bounds are preserved on the first leg.
+fn rebuild_pipeline_response(
+    parent_id: UUID4,
+    parent: Option<&RequestCommand>,
+    legs: Vec<DataResponse>,
+) -> Option<DataResponse> {
+    if legs.is_empty() {
+        return None;
+    }
+
+    let (parent_start, parent_end) = parent_join_window(parent);
+
+    let mut iter = legs.into_iter();
+    let first = iter.next()?;
+
+    match first {
+        DataResponse::Quotes(mut acc) => {
+            for leg in iter {
+                let DataResponse::Quotes(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|q| q.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Quotes(acc))
+        }
+        DataResponse::Trades(mut acc) => {
+            for leg in iter {
+                let DataResponse::Trades(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|t| t.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Trades(acc))
+        }
+        DataResponse::FundingRates(mut acc) => {
+            for leg in iter {
+                let DataResponse::FundingRates(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|r| r.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::FundingRates(acc))
+        }
+        DataResponse::Bars(mut acc) => {
+            for leg in iter {
+                let DataResponse::Bars(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|b| b.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Bars(acc))
+        }
+        DataResponse::Instruments(mut acc) => {
+            for leg in iter {
+                let DataResponse::Instruments(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.correlation_id = parent_id;
+            Some(DataResponse::Instruments(acc))
+        }
+        other => {
+            // Pipelines today rebuild same-variant time-series legs. Variants
+            // without a per-item ts_init payload (singular Book/Instrument,
+            // ForwardPrices, custom Data) cannot be concatenated and would
+            // otherwise leak a leg-keyed response. Drop rather than forward.
+            log::error!(
+                "Pipeline rebuild not supported for variant {} (parent {parent_id})",
+                other.kind(),
+            );
+            None
+        }
+    }
+}
+
+fn parent_join_window(parent: Option<&RequestCommand>) -> (Option<UnixNanos>, Option<UnixNanos>) {
+    match parent {
+        Some(RequestCommand::Join(join)) => (
+            join.start.map(datetime_to_unix_nanos_or_zero),
+            join.end.map(datetime_to_unix_nanos_or_zero),
+        ),
+        _ => (None, None),
+    }
+}
+
+fn datetime_to_unix_nanos_or_zero(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn empty_response_like(
+    template: &DataResponse,
+    correlation_id: UUID4,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    match template {
+        DataResponse::Quotes(r) => DataResponse::Quotes(QuotesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::Trades(r) => DataResponse::Trades(TradesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::FundingRates(r) => DataResponse::FundingRates(FundingRatesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::Bars(r) => DataResponse::Bars(BarsResponse::new(
+            correlation_id,
+            r.client_id,
+            r.bar_type,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        other => {
+            log::error!(
+                "Cannot fabricate empty leg response for variant {}",
+                other.kind(),
+            );
+            other.clone()
+        }
+    }
+}
+
+fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataResponse {
+    match &mut resp {
+        DataResponse::Data(r) => r.correlation_id = new_id,
+        DataResponse::Instrument(r) => r.correlation_id = new_id,
+        DataResponse::Instruments(r) => r.correlation_id = new_id,
+        DataResponse::Book(r) => r.correlation_id = new_id,
+        DataResponse::Quotes(r) => r.correlation_id = new_id,
+        DataResponse::Trades(r) => r.correlation_id = new_id,
+        DataResponse::FundingRates(r) => r.correlation_id = new_id,
+        DataResponse::ForwardPrices(r) => r.correlation_id = new_id,
+        DataResponse::Bars(r) => r.correlation_id = new_id,
+    }
+    resp
 }

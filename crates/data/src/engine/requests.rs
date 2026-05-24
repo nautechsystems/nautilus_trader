@@ -240,6 +240,7 @@ pub(super) fn request_params(req: &RequestCommand) -> Option<&Params> {
         RequestCommand::FundingRates(cmd) => cmd.params.as_ref(),
         RequestCommand::ForwardPrices(cmd) => cmd.params.as_ref(),
         RequestCommand::Bars(cmd) => cmd.params.as_ref(),
+        RequestCommand::Join(cmd) => cmd.params.as_ref(),
     }
 }
 
