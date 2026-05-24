@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -44,7 +45,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, Data, FundingRateUpdate, OrderBookDeltas_API},
+    data::{Bar, BarType, BookOrder, Data, DataType, FundingRateUpdate, OrderBookDeltas_API},
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -172,6 +173,23 @@ impl HyperliquidDataClient {
 
     fn venue(&self) -> Venue {
         *HYPERLIQUID_VENUE
+    }
+
+    fn custom_instrument_id(data_type: &DataType) -> anyhow::Result<Option<InstrumentId>> {
+        let Some(raw_instrument_id) = data_type
+            .metadata()
+            .and_then(|m| m.get("instrument_id"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+
+        let instrument_id = InstrumentId::from_str(raw_instrument_id)
+            .with_context(|| format!("invalid instrument_id metadata `{raw_instrument_id}`"))?;
+
+        Ok(Some(instrument_id))
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -465,6 +483,19 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
+        if data_type == "HyperliquidOpenInterest" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidOpenInterest subscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("subscribe_open_interest", async move {
+                ws.subscribe_open_interest(instrument_id).await
+            });
+
+            return Ok(());
+        }
+
         log::warn!("Unsupported custom data subscription: {data_type}");
         Ok(())
     }
@@ -488,6 +519,19 @@ impl DataClient for HyperliquidDataClient {
 
             self.spawn_task("unsubscribe_all_mids", async move {
                 ws.unsubscribe_all_mids_with_dex(dex.as_deref()).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidOpenInterest" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidOpenInterest unsubscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("unsubscribe_open_interest", async move {
+                ws.unsubscribe_open_interest(instrument_id).await
             });
 
             return Ok(());

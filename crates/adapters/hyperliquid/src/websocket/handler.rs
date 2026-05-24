@@ -30,7 +30,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
 };
@@ -51,9 +51,9 @@ use super::{
         PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
     },
     parse::{
-        parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
-        parse_ws_order_book_depth10, parse_ws_order_status_report, parse_ws_quote_tick,
-        parse_ws_trade_tick,
+        parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
+        parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
+        parse_ws_quote_tick, parse_ws_trade_tick,
     },
     post::PostRouter,
 };
@@ -101,6 +101,50 @@ pub enum HandlerCommand {
     SetDepth10Sub { coin: Ustr, subscribed: bool },
 }
 
+#[derive(Default)]
+struct AssetContextCaches {
+    mark_price: AHashMap<Ustr, String>,
+    index_price: AHashMap<Ustr, String>,
+    funding_rate: AHashMap<Ustr, String>,
+    open_interest: AHashMap<Ustr, String>,
+}
+
+impl AssetContextCaches {
+    fn clear(&mut self, coin: Ustr, data_type: AssetContextDataType) {
+        match data_type {
+            AssetContextDataType::MarkPrice => {
+                self.mark_price.remove(&coin);
+            }
+            AssetContextDataType::IndexPrice => {
+                self.index_price.remove(&coin);
+            }
+            AssetContextDataType::FundingRate => {
+                self.funding_rate.remove(&coin);
+            }
+            AssetContextDataType::OpenInterest => {
+                self.open_interest.remove(&coin);
+            }
+        }
+    }
+
+    fn clear_removed(
+        &mut self,
+        coin: Ustr,
+        previous_data_types: Option<&AHashSet<AssetContextDataType>>,
+        next_data_types: &AHashSet<AssetContextDataType>,
+    ) {
+        let Some(previous_data_types) = previous_data_types else {
+            return;
+        };
+
+        for data_type in previous_data_types {
+            if !next_data_types.contains(data_type) {
+                self.clear(coin, *data_type);
+            }
+        }
+    }
+}
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -120,9 +164,7 @@ pub(super) struct FeedHandler {
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
-    mark_price_cache: AHashMap<Ustr, String>,
-    index_price_cache: AHashMap<Ustr, String>,
-    funding_rate_cache: AHashMap<Ustr, String>,
+    asset_context_caches: AssetContextCaches,
 }
 
 impl FeedHandler {
@@ -160,9 +202,7 @@ impl FeedHandler {
             asset_context_subs: AHashMap::new(),
             depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
-            mark_price_cache: AHashMap::new(),
-            index_price_cache: AHashMap::new(),
-            funding_rate_cache: AHashMap::new(),
+            asset_context_caches: AssetContextCaches::default(),
         }
     }
 
@@ -297,6 +337,13 @@ impl FeedHandler {
                             self.bar_cache.remove(&key);
                         }
                         HandlerCommand::UpdateAssetContextSubs { coin, data_types } => {
+                            let previous_data_types = self.asset_context_subs.get(&coin).cloned();
+                            self.asset_context_caches.clear_removed(
+                                coin,
+                                previous_data_types.as_ref(),
+                                &data_types,
+                            );
+
                             if data_types.is_empty() {
                                 self.asset_context_subs.remove(&coin);
                             } else {
@@ -345,9 +392,7 @@ impl FeedHandler {
                                         &self.asset_context_subs,
                                         &self.depth10_subs,
                                         &mut self.processed_trade_ids,
-                                        &mut self.mark_price_cache,
-                                        &mut self.index_price_cache,
-                                        &mut self.funding_rate_cache,
+                                        &mut self.asset_context_caches,
                                         &mut self.bar_cache,
                                         &all_mids_data_types,
                                     );
@@ -397,9 +442,7 @@ impl FeedHandler {
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         depth10_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
-        mark_price_cache: &mut AHashMap<Ustr, String>,
-        index_price_cache: &mut AHashMap<Ustr, String>,
-        funding_rate_cache: &mut AHashMap<Ustr, String>,
+        asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
@@ -553,9 +596,7 @@ impl FeedHandler {
                     &data,
                     instruments,
                     asset_context_subs,
-                    mark_price_cache,
-                    index_price_cache,
-                    funding_rate_cache,
+                    asset_context_caches,
                     ts_init,
                 ));
             }
@@ -804,9 +845,7 @@ impl FeedHandler {
         data: &WsActiveAssetCtxData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
-        mark_price_cache: &mut AHashMap<Ustr, String>,
-        index_price_cache: &mut AHashMap<Ustr, String>,
-        funding_rate_cache: &mut AHashMap<Ustr, String>,
+        asset_context_caches: &mut AssetContextCaches,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
@@ -817,19 +856,23 @@ impl FeedHandler {
         };
 
         if let Some(instrument) = instruments.get(coin) {
-            let (mark_px, oracle_px, funding) = match data {
+            let (mark_px, oracle_px, funding, open_interest) = match data {
                 WsActiveAssetCtxData::Perp { ctx, .. } => (
                     &ctx.shared.mark_px,
                     Some(&ctx.oracle_px),
                     Some(&ctx.funding),
+                    Some(&ctx.open_interest),
                 ),
-                WsActiveAssetCtxData::Spot { ctx, .. } => (&ctx.shared.mark_px, None, None),
+                WsActiveAssetCtxData::Spot { ctx, .. } => (&ctx.shared.mark_px, None, None, None),
             };
 
-            let mark_changed = mark_price_cache.get(coin) != Some(mark_px);
-            let index_changed = oracle_px.is_some_and(|px| index_price_cache.get(coin) != Some(px));
-            let funding_changed =
-                funding.is_some_and(|rate| funding_rate_cache.get(coin) != Some(rate));
+            let mark_changed = asset_context_caches.mark_price.get(coin) != Some(mark_px);
+            let index_changed =
+                oracle_px.is_some_and(|px| asset_context_caches.index_price.get(coin) != Some(px));
+            let funding_changed = funding
+                .is_some_and(|rate| asset_context_caches.funding_rate.get(coin) != Some(rate));
+            let open_interest_changed = open_interest
+                .is_some_and(|value| asset_context_caches.open_interest.get(coin) != Some(value));
 
             let subscribed_types = asset_context_subs.get(coin);
 
@@ -840,7 +883,9 @@ impl FeedHandler {
                             && subscribed_types
                                 .is_some_and(|s| s.contains(&AssetContextDataType::MarkPrice))
                         {
-                            mark_price_cache.insert(*coin, mark_px.clone());
+                            asset_context_caches
+                                .mark_price
+                                .insert(*coin, mark_px.clone());
                             result.push(NautilusWsMessage::MarkPrice(mark_price));
                         }
 
@@ -849,7 +894,7 @@ impl FeedHandler {
                                 .is_some_and(|s| s.contains(&AssetContextDataType::IndexPrice))
                         {
                             if let Some(px) = oracle_px {
-                                index_price_cache.insert(*coin, px.clone());
+                                asset_context_caches.index_price.insert(*coin, px.clone());
                             }
 
                             if let Some(index) = index_price {
@@ -862,7 +907,9 @@ impl FeedHandler {
                                 .is_some_and(|s| s.contains(&AssetContextDataType::FundingRate))
                         {
                             if let Some(rate) = funding {
-                                funding_rate_cache.insert(*coin, rate.clone());
+                                asset_context_caches
+                                    .funding_rate
+                                    .insert(*coin, rate.clone());
                             }
 
                             if let Some(funding) = funding_rate {
@@ -872,6 +919,30 @@ impl FeedHandler {
                     }
                     Err(e) => {
                         log::error!("Error parsing asset context: {e}");
+                    }
+                }
+            }
+
+            if open_interest_changed
+                && subscribed_types.is_some_and(|s| s.contains(&AssetContextDataType::OpenInterest))
+            {
+                match parse_ws_open_interest(data, instrument, ts_init) {
+                    Ok(Some(open_interest_data)) => {
+                        if let Some(value) = open_interest {
+                            asset_context_caches
+                                .open_interest
+                                .insert(*coin, value.clone());
+                        }
+
+                        let data_type =
+                            Self::open_interest_data_type(open_interest_data.instrument_id);
+                        result.push(NautilusWsMessage::CustomData(Data::Custom(
+                            CustomData::new(Arc::new(open_interest_data), data_type),
+                        )));
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        log::error!("Error parsing open interest: {e}");
                     }
                 }
             }
@@ -909,6 +980,19 @@ impl FeedHandler {
         }
 
         data_types
+    }
+
+    fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        );
+        DataType::new(
+            "HyperliquidOpenInterest",
+            Some(metadata),
+            Some(instrument_id.to_string()),
+        )
     }
 }
 
@@ -1019,8 +1103,9 @@ mod tests {
     use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
+        data::Data,
         identifiers::{ClientOrderId, InstrumentId, Symbol},
-        instruments::{CryptoPerpetual, InstrumentAny},
+        instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::websocket::SubscriptionState;
@@ -1030,13 +1115,18 @@ mod tests {
 
     use super::{
         super::{
+            client::AssetContextDataType,
             client::{CLOID_CACHE_CAPACITY, CloidCache},
-            messages::{NautilusWsMessage, PostRequest, WsBookData, WsLevelData},
+            messages::{
+                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx,
+                WsActiveAssetCtxData, WsBookData, WsLevelData,
+            },
             post::PostRouter,
         },
-        FeedHandler, HandlerCommand,
+        AssetContextCaches, FeedHandler, HandlerCommand,
     };
     use crate::common::consts::HYPERLIQUID_VENUE;
+    use crate::data_types::HyperliquidOpenInterest;
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1084,6 +1174,26 @@ mod tests {
                 }],
             ],
             time: 1_700_000_000_000,
+        }
+    }
+
+    fn btc_active_asset_ctx(open_interest: &str) -> WsActiveAssetCtxData {
+        WsActiveAssetCtxData::Perp {
+            coin: Ustr::from("BTC"),
+            ctx: PerpsAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                funding: "0.0001".to_string(),
+                open_interest: open_interest.to_string(),
+                oracle_px: "50005.0".to_string(),
+                premium: Some("-0.0001".to_string()),
+            },
         }
     }
 
@@ -1186,5 +1296,119 @@ mod tests {
         );
 
         assert!(msgs.is_empty());
+    }
+
+    #[rstest]
+    fn handle_asset_context_emits_open_interest_custom_data_when_subscribed() {
+        let instrument = btc_perp();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let msgs = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 1);
+
+        match &msgs[0] {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let open_interest = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidOpenInterest>()
+                    .expect("expected HyperliquidOpenInterest");
+                assert_eq!(open_interest.instrument_id, instrument_id);
+                assert_eq!(open_interest.open_interest.to_string(), "100000.0");
+                assert_eq!(
+                    custom
+                        .data_type
+                        .metadata()
+                        .and_then(|metadata| metadata.get_str("instrument_id"))
+                        .map(ToString::to_string),
+                    Some(instrument_id.to_string()),
+                );
+            }
+            other => panic!("unexpected message type: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_asset_context_suppresses_unchanged_open_interest() {
+        let instrument = btc_perp();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let first = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+        let second = FeedHandler::handle_asset_context(
+            &btc_active_asset_ctx("100000.0"),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty());
+    }
+
+    #[rstest]
+    fn asset_context_caches_clear_removed_data_types() {
+        let coin = Ustr::from("BTC");
+        let mut caches = AssetContextCaches::default();
+        caches.mark_price.insert(coin, "98455.5".to_string());
+        caches.index_price.insert(coin, "98460.0".to_string());
+        caches.funding_rate.insert(coin, "0.0001".to_string());
+        caches.open_interest.insert(coin, "1500.0".to_string());
+
+        let previous_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::IndexPrice,
+            AssetContextDataType::FundingRate,
+            AssetContextDataType::OpenInterest,
+        ]);
+        let next_data_types = AHashSet::from_iter([
+            AssetContextDataType::MarkPrice,
+            AssetContextDataType::FundingRate,
+        ]);
+
+        caches.clear_removed(coin, Some(&previous_data_types), &next_data_types);
+
+        assert_eq!(
+            caches.mark_price.get(&coin).map(String::as_str),
+            Some("98455.5")
+        );
+        assert!(caches.index_price.get(&coin).is_none());
+        assert_eq!(
+            caches.funding_rate.get(&coin).map(String::as_str),
+            Some("0.0001")
+        );
+        assert!(caches.open_interest.get(&coin).is_none());
     }
 }

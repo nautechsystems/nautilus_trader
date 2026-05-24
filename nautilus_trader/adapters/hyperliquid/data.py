@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
@@ -60,9 +61,15 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 _PYO3HyperliquidAllMids: Any = getattr(nautilus_pyo3, "HyperliquidAllMids", None)
+_PYO3HyperliquidOpenInterest: Any = getattr(
+    nautilus_pyo3,
+    "HyperliquidOpenInterest",
+    None,
+)
 
 
 class HyperliquidAllMids(Data):
@@ -99,6 +106,41 @@ class HyperliquidAllMids(Data):
             mids=mids,
             ts_event=pyo3_all_mids.ts_event,
             ts_init=pyo3_all_mids.ts_init,
+        )
+
+
+class HyperliquidOpenInterest(Data):
+    """
+    Python data object for Hyperliquid open interest updates.
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        open_interest: Decimal,
+        ts_event: int,
+        ts_init: int,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.open_interest = open_interest
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+    @staticmethod
+    def from_pyo3(pyo3_open_interest: Any) -> HyperliquidOpenInterest:
+        return HyperliquidOpenInterest(
+            instrument_id=InstrumentId.from_str(str(pyo3_open_interest.instrument_id)),
+            open_interest=Decimal(str(pyo3_open_interest.open_interest)),
+            ts_event=pyo3_open_interest.ts_event,
+            ts_init=pyo3_open_interest.ts_init,
         )
 
 
@@ -210,6 +252,25 @@ class HyperliquidDataClient(LiveMarketDataClient):
         for currency in self.instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    def _custom_instrument_id(
+        self,
+        data_type: DataType,
+        *,
+        action: str,
+    ) -> nautilus_pyo3.InstrumentId | None:
+        metadata = data_type.metadata or {}
+        instrument_id_raw = metadata.get("instrument_id")
+        instrument_id = str(instrument_id_raw).strip() if instrument_id_raw is not None else ""
+
+        if not instrument_id:
+            self._log.warning(
+                f"Unsupported Hyperliquid open interest {action}: "
+                "metadata['instrument_id'] is required",
+            )
+            return None
+
+        return nautilus_pyo3.InstrumentId.from_str(instrument_id)
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             if nautilus_pyo3.is_pycapsule(msg):
@@ -219,19 +280,27 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 data = capsule_to_data(msg)
                 self._handle_data(data)
             elif isinstance(msg, nautilus_pyo3.CustomData):
-                if _PYO3HyperliquidAllMids is None:
-                    self._log.warning("HyperliquidAllMids type is not available in nautilus_pyo3")
-                    return
-
-                if not isinstance(msg.data, _PYO3HyperliquidAllMids):
+                if _PYO3HyperliquidAllMids is not None and isinstance(
+                    msg.data,
+                    _PYO3HyperliquidAllMids,
+                ):
+                    inner = HyperliquidAllMids.from_pyo3(msg.data)
+                    data_type = DataType(HyperliquidAllMids, metadata=msg.data_type.metadata)
+                    self._handle_data(CustomData(data_type=data_type, data=inner))
+                elif _PYO3HyperliquidOpenInterest is not None and isinstance(
+                    msg.data,
+                    _PYO3HyperliquidOpenInterest,
+                ):
+                    inner = HyperliquidOpenInterest.from_pyo3(msg.data)
+                    data_type = DataType(
+                        HyperliquidOpenInterest,
+                        metadata=msg.data_type.metadata,
+                    )
+                    self._handle_data(CustomData(data_type=data_type, data=inner))
+                else:
                     self._log.warning(
                         f"Unsupported Hyperliquid custom payload type: {type(msg.data).__name__}",
                     )
-                    return
-
-                inner = HyperliquidAllMids.from_pyo3(msg.data)
-                data_type = DataType(HyperliquidAllMids, metadata=msg.data_type.metadata)
-                self._handle_data(CustomData(data_type=data_type, data=inner))
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 data = FundingRateUpdate.from_pyo3(msg)
                 self._handle_data(data)
@@ -281,6 +350,21 @@ class HyperliquidDataClient(LiveMarketDataClient):
                     )
                     return
                 await subscribe_all_mids()
+            return
+
+        if data_type_name == "HyperliquidOpenInterest":
+            instrument_id = self._custom_instrument_id(data_type, action="subscription")
+            if instrument_id is None:
+                return
+            subscribe_open_interest: Any = getattr(self._ws_client, "subscribe_open_interest", None)
+            if subscribe_open_interest is None:
+                self._log.warning(
+                    "Unsupported Hyperliquid open interest subscription: "
+                    "WebSocket client does not expose subscribe_open_interest",
+                )
+                return
+
+            await subscribe_open_interest(instrument_id)
             return
 
         self._log.warning(f"Unsupported custom data subscription: {data_type_name}")
@@ -356,6 +440,26 @@ class HyperliquidDataClient(LiveMarketDataClient):
                     )
                     return
                 await unsubscribe_all_mids()
+            return
+
+        if data_type_name == "HyperliquidOpenInterest":
+            instrument_id = self._custom_instrument_id(data_type, action="unsubscription")
+            if instrument_id is None:
+                return
+            unsubscribe_open_interest: Any = getattr(
+                self._ws_client,
+                "unsubscribe_open_interest",
+                None,
+            )
+
+            if unsubscribe_open_interest is None:
+                self._log.warning(
+                    "Unsupported Hyperliquid open interest unsubscription: "
+                    "WebSocket client does not expose unsubscribe_open_interest",
+                )
+                return
+
+            await unsubscribe_open_interest(instrument_id)
             return
 
         self._log.warning(f"Unsupported custom data unsubscription: {data_type_name}")

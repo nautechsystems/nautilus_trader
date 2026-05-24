@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -23,6 +24,7 @@ from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientCon
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BarType
@@ -53,8 +55,30 @@ class _FakePyo3DataType:
         self.metadata = metadata
 
 
+class _FakePyo3HyperliquidOpenInterest:
+    def __init__(
+        self,
+        instrument_id: str,
+        open_interest: str,
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.open_interest = open_interest
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+
 class _FakePyo3CustomData:
-    def __init__(self, data: _FakePyo3HyperliquidAllMids, data_type: _FakePyo3DataType):
+    def __init__(self, data: object, data_type: _FakePyo3DataType):
         self.data = data
         self.data_type = data_type
 
@@ -521,6 +545,52 @@ async def test_subscribe_custom_data_all_mids_with_dex(data_client_builder, monk
 
 
 @pytest.mark.asyncio
+async def test_subscribe_custom_data_open_interest(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.subscribe_open_interest.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(
+                type=HyperliquidOpenInterest,
+                metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
+            ),
+        )
+
+        await client._subscribe(command)
+
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.subscribe_open_interest.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_custom_data_open_interest(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.unsubscribe_open_interest.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(
+                type=HyperliquidOpenInterest,
+                metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
+            ),
+        )
+
+        await client._unsubscribe(command)
+
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.unsubscribe_open_interest.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_handle_msg_custom_data_all_mids_forwarded(data_client_builder, monkeypatch):
     client, _, _, _ = data_client_builder(monkeypatch)
     monkeypatch.setattr(
@@ -555,3 +625,45 @@ async def test_handle_msg_custom_data_all_mids_forwarded(data_client_builder, mo
     assert isinstance(forwarded.data, HyperliquidAllMids)
     assert forwarded.data.mids["BTC-USD-PERP.HYPERLIQUID"] == "80868.5"
     assert forwarded.data_type == DataType(HyperliquidAllMids, {"dex": "hyperliquid"})
+
+
+@pytest.mark.asyncio
+async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builder, monkeypatch):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    monkeypatch.setattr(
+        hyperliquid_data_module,
+        "_PYO3HyperliquidOpenInterest",
+        _FakePyo3HyperliquidOpenInterest,
+    )
+    monkeypatch.setattr(
+        hyperliquid_data_module.nautilus_pyo3,
+        "CustomData",
+        _FakePyo3CustomData,
+    )
+
+    client._handle_data = MagicMock()
+
+    open_interest = _FakePyo3HyperliquidOpenInterest(
+        instrument_id="BTC-USD-PERP.HYPERLIQUID",
+        open_interest="1500.0",
+        ts_event=2_000,
+        ts_init=2_001,
+    )
+    msg = _FakePyo3CustomData(
+        data_type=_FakePyo3DataType({"instrument_id": "BTC-USD-PERP.HYPERLIQUID"}),
+        data=open_interest,
+    )
+
+    client._handle_msg(msg)
+
+    client._handle_data.assert_called_once()
+    forwarded = client._handle_data.call_args.args[0]
+    assert isinstance(forwarded, CustomData)
+    assert isinstance(forwarded.data, Data)
+    assert isinstance(forwarded.data, HyperliquidOpenInterest)
+    assert forwarded.data.instrument_id == InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+    assert forwarded.data.open_interest == Decimal("1500.0")
+    assert forwarded.data_type == DataType(
+        HyperliquidOpenInterest,
+        {"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
+    )
