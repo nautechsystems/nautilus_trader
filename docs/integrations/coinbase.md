@@ -21,17 +21,15 @@ The adapter does not ship a legacy Python `TradingNode` integration; only
 configuration and enum types are exported through PyO3 so v2 entry points can
 construct them from Python.
 
-Current components:
+Components:
 
-| Component                          | Status | Notes                                                                      |
-|------------------------------------|--------|----------------------------------------------------------------------------|
-| `CoinbaseHttpClient`               | Built  | Two‑layer REST client: raw endpoint methods + domain wrapper.              |
-| `CoinbaseWebSocketClient`          | Built  | Low‑level WebSocket connectivity with JWT subscribe auth.                  |
-| `CoinbaseInstrumentProvider`       | Built  | Instrument parsing and loading.                                            |
-| `CoinbaseDataClient`               | Built  | Rust market data feed manager.                                             |
-| `CoinbaseDataClientFactory`        | Built  | Rust data client factory.                                                  |
-| `CoinbaseExecutionClient`          | Built  | Rust execution client (spot or CFM derivatives; REST orders + WS streams). |
-| `CoinbaseExecutionClientFactory`   | Built  | Execution client factory; spot vs CFM derivatives is selected by `account_type` on the config. |
+- `CoinbaseHttpClient`: Two‑layer REST client (raw endpoint methods + domain wrapper).
+- `CoinbaseWebSocketClient`: Low‑level WebSocket connectivity with JWT subscribe auth.
+- `CoinbaseInstrumentProvider`: Instrument parsing and loading.
+- `CoinbaseDataClient`: Market data feed manager.
+- `CoinbaseDataClientFactory`: Data client factory.
+- `CoinbaseExecutionClient`: Execution client (spot or CFM derivatives; REST orders + WS streams).
+- `CoinbaseExecutionClientFactory`: Execution client factory; spot vs CFM derivatives is selected by `account_type` on the config.
 
 PyO3 surface available from `nautilus_trader.core.nautilus_pyo3.coinbase`:
 
@@ -86,9 +84,10 @@ are classified as `CryptoPerpetual` based on the presence of an ongoing
 funding rate. Dated futures are classified as `CryptoFuture`.
 
 The adapter resolves the product type structurally from API metadata
-(`future_product_details.perpetual_details.funding_rate` plus
-`contract_expiry_type`); the fallback heuristic checks `display_name` for
-`PERP` or `Perpetual` substrings.
+(`future_product_details.contract_expiry_type` and, when that is
+`EXPIRING`, the presence of a non-empty `future_product_details.funding_rate`
+as a perpetual-only structural signal); the fallback heuristic checks
+`display_name` for `PERP` or `Perpetual` substrings.
 
 Examples of full Nautilus instrument IDs:
 
@@ -151,10 +150,15 @@ A static-mock test environment for integration plumbing, per the
 
 ```python
 config = CoinbaseExecClientConfig(
+    api_key="ANY_NON_EMPTY_STRING",   # required by the adapter constructor
+    api_secret="ANY_NON_EMPTY_STRING",
     environment=CoinbaseEnvironment.SANDBOX,
-    # API credentials are not required by sandbox.
 )
 ```
+
+The sandbox venue does not enforce authentication, but
+`CoinbaseExecutionClient::new` still requires both fields (or the matching
+environment variables) to be present in order to construct.
 
 :::warning
 **Sandbox is not a parallel trading venue:**
@@ -480,9 +484,20 @@ funding timestamp from `funding_time`. Coinbase Advanced Trade does not
 publish `funding_rate` on the WebSocket `ticker` channel, so REST polling
 is the only live source.
 
-Historical funding rate requests are served by reading the same REST
-products endpoint and deriving the interval from consecutive funding
-timestamps.
+Historical funding rate requests (`DataTester` TC-D53) are not yet
+implemented; the same REST products endpoint can serve them in a future
+revision, deriving the interval from consecutive funding timestamps.
+
+#### Instrument status
+
+`subscribe_instrument_status` joins the Coinbase WebSocket `status` channel
+on first subscription (the venue publishes one status feed for all
+products), filters incoming events to the subscribed instruments, and emits
+`InstrumentStatus` events with `MarketStatusAction::Trading` for `online`,
+`Halt` for `offline`, and `Close` for `delisted`. Futures products that
+report an empty `status` string carry no information for the data engine
+and are skipped. The channel subscription is dropped when the last
+instrument unsubscribes.
 
 #### Position reconciliation
 
@@ -528,7 +543,9 @@ Nautilus order fields:
   `stop_limit_stop_limit_gtd`. Stop direction is derived from the order
   side (`Buy` -> `STOP_DIRECTION_STOP_UP`, `Sell` -> `STOP_DIRECTION_STOP_DOWN`).
 - `STOP_MARKET`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, and trailing-stop
-  variants are rejected with `OrderDenied` (not exposed by the venue).
+  variants are not exposed by the venue. They surface as `OrderRejected`
+  carrying the `build_order_configuration` error from the spawned submit
+  task (the order is emitted as `OrderSubmitted` first).
 
 On a successful HTTP create, an `OrderAccepted` is emitted carrying the
 venue order ID returned in `success_response.order_id`. On a `success=false`
@@ -657,37 +674,39 @@ fill deltas remain correct.
 
 ### Data client configuration options
 
-| Option                             | Default | Description                                                                       |
-|------------------------------------|---------|-----------------------------------------------------------------------------------|
-| `api_key`                          | `None`  | Falls back to `COINBASE_API_KEY` env var.                                         |
-| `api_secret`                       | `None`  | Falls back to `COINBASE_API_SECRET` env var.                                      |
-| `base_url_rest`                    | `None`  | Override for the REST base URL.                                                   |
-| `base_url_ws`                      | `None`  | Override for the WebSocket market data URL.                                       |
-| `proxy_url`                        | `None`  | Optional proxy URL for HTTP and WebSocket transports.                             |
-| `environment`                      | `Live`  | `Live` or `Sandbox`.                                                              |
-| `http_timeout_secs`                | `10`    | HTTP request timeout (seconds).                                                   |
-| `ws_timeout_secs`                  | `30`    | WebSocket timeout (seconds).                                                      |
-| `update_instruments_interval_mins` | `60`    | Interval between instrument catalogue refreshes.                                  |
-| `derivatives_poll_interval_secs`   | `15`    | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
+| Option                             | Default     | Description                                                                       |
+|------------------------------------|-------------|-----------------------------------------------------------------------------------|
+| `api_key`                          | `None`      | Falls back to `COINBASE_API_KEY` env var.                                         |
+| `api_secret`                       | `None`      | Falls back to `COINBASE_API_SECRET` env var.                                      |
+| `base_url_rest`                    | `None`      | Override for the REST base URL.                                                   |
+| `base_url_ws`                      | `None`      | Override for the WebSocket market data URL.                                       |
+| `proxy_url`                        | `None`      | Optional proxy URL for HTTP and WebSocket transports.                             |
+| `environment`                      | `Live`      | `Live` or `Sandbox`.                                                              |
+| `http_timeout_secs`                | `10`        | HTTP request timeout (seconds).                                                   |
+| `ws_timeout_secs`                  | `30`        | WebSocket timeout (seconds).                                                      |
+| `update_instruments_interval_mins` | `60`        | Interval between instrument catalogue refreshes.                                  |
+| `derivatives_poll_interval_secs`   | `15`        | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
+| `transport_backend`                | `Sockudo`   | WebSocket transport backend (`Sockudo` or `Tungstenite`).                         |
 
 ### Execution client configuration options
 
-| Option                   | Default | Description                                                                                              |
-|--------------------------|---------|----------------------------------------------------------------------------------------------------------|
-| `api_key`                | `None`  | Falls back to `COINBASE_API_KEY` env var.                                                                |
-| `api_secret`             | `None`  | Falls back to `COINBASE_API_SECRET` env var.                                                             |
-| `base_url_rest`          | `None`  | Override for the REST base URL.                                                                          |
-| `base_url_ws`            | `None`  | Override for the user data WebSocket URL.                                                                |
-| `proxy_url`              | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                                    |
-| `environment`            | `Live`  | `Live` or `Sandbox`.                                                                                     |
-| `http_timeout_secs`      | `10`    | HTTP request timeout (seconds).                                                                          |
-| `max_retries`            | `3`     | Maximum retry attempts for HTTP requests.                                                                |
-| `retry_delay_initial_ms` | `100`   | Initial retry delay (milliseconds).                                                                      |
-| `retry_delay_max_ms`     | `5000`  | Maximum retry delay (milliseconds).                                                                      |
-| `account_type`           | `Cash`  | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                |
-| `default_margin_type`    | `None`  | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.     |
-| `default_leverage`       | `None`  | Default leverage applied to derivatives orders. Ignored on Cash.                                         |
-| `retail_portfolio_id`    | `None`  | CDP retail portfolio UUID. Required when the API key is bound to a non‑default portfolio (the venue rejects orders with `account is not available` otherwise). See [Portfolios](#portfolios). |
+| Option                   | Default   | Description                                                                                              |
+|--------------------------|-----------|----------------------------------------------------------------------------------------------------------|
+| `api_key`                | `None`    | Falls back to `COINBASE_API_KEY` env var.                                                                |
+| `api_secret`             | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                                             |
+| `base_url_rest`          | `None`    | Override for the REST base URL.                                                                          |
+| `base_url_ws`            | `None`    | Override for the user data WebSocket URL.                                                                |
+| `proxy_url`              | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                    |
+| `environment`            | `Live`    | `Live` or `Sandbox`.                                                                                     |
+| `http_timeout_secs`      | `10`      | HTTP request timeout (seconds).                                                                          |
+| `max_retries`            | `3`       | Maximum retry attempts for HTTP requests.                                                                |
+| `retry_delay_initial_ms` | `100`     | Initial retry delay (milliseconds).                                                                      |
+| `retry_delay_max_ms`     | `5000`    | Maximum retry delay (milliseconds).                                                                      |
+| `account_type`           | `Cash`    | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                |
+| `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.     |
+| `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                         |
+| `retail_portfolio_id`    | `None`    | CDP retail portfolio UUID. Required when the API key is bound to a non‑default portfolio (the venue rejects orders with `account is not available` otherwise). See [Portfolios](#portfolios). |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                                |
 
 Configurations are constructed from Python via the PyO3-exported types:
 

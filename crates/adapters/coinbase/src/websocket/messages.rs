@@ -143,8 +143,8 @@ pub enum CoinbaseWsMessage {
 
     /// System status updates.
     ///
-    /// The feed handler deserializes this channel but ignores it until venue
-    /// status handling is added.
+    /// The feed handler parses each product entry into an `InstrumentStatus`
+    /// event; the data client filters emissions to subscribed instruments.
     #[serde(rename = "status")]
     Status {
         timestamp: String,

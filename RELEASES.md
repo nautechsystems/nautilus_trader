@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
+- Added Coinbase WebSocket `status` channel subscription emitting `InstrumentStatus` events
 - Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
@@ -72,6 +73,7 @@ None
 - Fixed Betfair Rust adapter overfill checks for rounded stream matched sizes
 - Fixed Betfair Rust adapter unsupported unsubscribe commands logging above debug
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
+- Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
@@ -95,13 +97,14 @@ None
 - Added Polymarket Criterion bench groups for inbound pipeline, exec pipeline, and signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
-- Improved Binance Spot SBE missing credentials error message (#4092), thanks @filipmacek
 - Improved `RiskEngine` per-order pre-trade checks to resolve each order's own instrument in mixed-instrument lists
 - Improved `ExecutionEngine` to route own-order-book inserts per order for mixed-instrument lists
-- Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
-- Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
-- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
+- Improved Binance Spot SBE missing credentials error message (#4092), thanks @filipmacek
+- Improved Coinbase `avg_price` parsing to validate via `Decimal` before `f64` conversion
 - Refined `OptionSpread`/`FuturesSpread` trait accessors to read `size_precision`/`size_increment` fields
+- Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
+- Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
+- Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
 - Optimized Hyperliquid signing and hot paths with benchmark report
@@ -112,6 +115,7 @@ None
 - Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
 - Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
+- Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 

@@ -23,7 +23,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{Bar, BarType, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
     identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
     reports::OrderStatusReport,
@@ -38,8 +38,8 @@ use crate::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
         messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
         parse::{
-            parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_ticker,
-            parse_ws_trade, parse_ws_user_event_to_order_status_report,
+            parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_status_product,
+            parse_ws_ticker, parse_ws_trade, parse_ws_user_event_to_order_status_report,
         },
     },
 };
@@ -128,6 +128,9 @@ pub enum NautilusWsMessage {
     /// Futures balance summary snapshot from the
     /// `futures_balance_summary` channel.
     FuturesBalanceSummary(Box<crate::websocket::messages::WsFcmBalanceSummary>),
+    /// Instrument status update from the `status` channel. Emitted for every
+    /// product the venue reports; the data client filters by subscription.
+    InstrumentStatus(Box<InstrumentStatus>),
     /// The connection was re-established after a drop.
     Reconnected,
     /// An error occurred during message processing.
@@ -327,13 +330,9 @@ impl FeedHandler {
             CoinbaseWsMessage::FuturesBalanceSummary { events, .. } => {
                 self.handle_futures_balance_summary(events)
             }
-            CoinbaseWsMessage::Status { events, .. } => {
-                log::debug!(
-                    "Ignoring {} status events until venue status handling lands",
-                    events.len()
-                );
-                None
-            }
+            CoinbaseWsMessage::Status {
+                timestamp, events, ..
+            } => self.handle_status_events(&events, &timestamp, ts_init),
         }
     }
 
@@ -585,6 +584,40 @@ impl FeedHandler {
         }
     }
 
+    fn handle_status_events(
+        &mut self,
+        events: &[crate::websocket::messages::WsStatusEvent],
+        timestamp: &str,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
+
+        let mut first: Option<NautilusWsMessage> = None;
+
+        for event in events {
+            for product in &event.products {
+                let canonical = product.id;
+                let resolved = self.resolve_instrument_id(&canonical);
+                let Some(status) = parse_ws_status_product(product, resolved, ts_event, ts_init)
+                else {
+                    continue;
+                };
+                let msg = NautilusWsMessage::InstrumentStatus(Box::new(status));
+
+                if first.is_none() {
+                    first = Some(msg);
+                } else {
+                    self.buffer.push(msg);
+                }
+            }
+        }
+
+        if first.is_some() {
+            self.buffer.reverse();
+        }
+        first
+    }
+
     fn handle_futures_balance_summary(
         &mut self,
         events: Vec<crate::websocket::messages::WsFuturesBalanceSummaryEvent>,
@@ -776,7 +809,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_text_ignores_status_channel() {
+    fn test_handle_text_emits_instrument_status_from_status_channel() {
+        use nautilus_model::enums::MarketStatusAction;
+
         let json = r#"{
           "channel": "status",
           "client_id": "",
@@ -797,6 +832,18 @@ mod tests {
                   "status": "online",
                   "status_message": "",
                   "min_market_funds": "1"
+                },
+                {
+                  "product_type": "SPOT",
+                  "id": "ETH-USD",
+                  "base_currency": "ETH",
+                  "quote_currency": "USD",
+                  "base_increment": "0.00000001",
+                  "quote_increment": "0.01",
+                  "display_name": "ETH/USD",
+                  "status": "offline",
+                  "status_message": "maintenance",
+                  "min_market_funds": "1"
                 }
               ]
             }
@@ -804,8 +851,28 @@ mod tests {
         }"#;
         let mut handler = test_handler();
 
-        assert!(handler.handle_text(json).is_none());
-        assert!(handler.buffer.is_empty());
+        let first = handler
+            .handle_text(json)
+            .expect("status channel must emit InstrumentStatus");
+        let NautilusWsMessage::InstrumentStatus(status) = first else {
+            panic!("expected InstrumentStatus, was {first:?}");
+        };
+        assert_eq!(status.instrument_id, btc_usd_instrument().id());
+        assert_eq!(status.action, MarketStatusAction::Trading);
+        assert_eq!(status.is_trading, Some(true));
+        assert!(status.reason.is_none());
+
+        // The second product (ETH-USD offline) is buffered behind the BTC one.
+        assert_eq!(handler.buffer.len(), 1);
+        let NautilusWsMessage::InstrumentStatus(status) = handler.buffer.pop().unwrap() else {
+            panic!("expected buffered InstrumentStatus");
+        };
+        assert_eq!(status.action, MarketStatusAction::Halt);
+        assert_eq!(status.is_trading, Some(false));
+        assert_eq!(
+            status.reason.map(|s| s.to_string()),
+            Some("maintenance".to_string())
+        );
     }
 
     #[rstest]

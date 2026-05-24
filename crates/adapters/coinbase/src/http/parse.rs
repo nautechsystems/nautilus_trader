@@ -421,6 +421,7 @@ pub fn parse_product_book_snapshot(
     let mut deltas = Vec::with_capacity(total_levels + 1);
 
     let mut clear = OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init);
+    clear.flags |= RecordFlag::F_SNAPSHOT as u8;
 
     if total_levels == 0 {
         clear.flags |= RecordFlag::F_LAST as u8;
@@ -476,7 +477,7 @@ fn parse_book_delta(
     let price = parse_price(&level.price, price_precision)?;
     let size = parse_quantity(&level.size, size_precision)?;
 
-    let mut flags = RecordFlag::F_MBP as u8;
+    let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
     if is_last {
         flags |= RecordFlag::F_LAST as u8;
@@ -1497,6 +1498,38 @@ mod tests {
         // Last delta has F_LAST flag
         let last = deltas.deltas.last().unwrap();
         assert_ne!(last.flags & RecordFlag::F_LAST as u8, 0);
+
+        // Every delta in a snapshot sequence carries F_SNAPSHOT.
+        for delta in &deltas.deltas {
+            assert_ne!(
+                delta.flags & RecordFlag::F_SNAPSHOT as u8,
+                0,
+                "snapshot delta missing F_SNAPSHOT: {delta:?}",
+            );
+        }
+    }
+
+    // Empty-book snapshots must carry F_SNAPSHOT | F_LAST on the lone Clear
+    // delta so buffered consumers receive the clear event; without F_LAST the
+    // DataEngine never flushes and downstream subscribers see nothing.
+    #[rstest]
+    fn test_parse_product_book_snapshot_empty_book_clear_carries_snapshot_and_last() {
+        let pricebook = crate::http::models::PriceBook {
+            product_id: Ustr::from("BTC-USD"),
+            bids: Vec::new(),
+            asks: Vec::new(),
+            time: "2024-01-15T10:30:00Z".to_string(),
+        };
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), coinbase_venue());
+
+        let deltas =
+            parse_product_book_snapshot(&pricebook, instrument_id, 2, 8, UnixNanos::default())
+                .unwrap();
+        assert_eq!(deltas.deltas.len(), 1);
+        let clear = &deltas.deltas[0];
+        assert_eq!(clear.action, BookAction::Clear);
+        assert_ne!(clear.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        assert_ne!(clear.flags & RecordFlag::F_LAST as u8, 0);
     }
 
     fn btc_usd_instrument() -> InstrumentAny {
