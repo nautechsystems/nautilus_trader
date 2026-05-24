@@ -42,10 +42,11 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
+    instruments::InstrumentAny,
 };
 
 use crate::{
@@ -53,7 +54,10 @@ use crate::{
     bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
     host::{HostContext, HostVTable},
     manifest::ValidatedActorVTable,
-    surfaces::{actor::PluginActorHandle, book::OrderBookDeltasHandle},
+    surfaces::{
+        actor::PluginActorHandle, book::OrderBookDeltasHandle, instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
+    },
 };
 
 /// Adapts a plug-in actor (vtable + handle from a cdylib) into a host-side
@@ -254,6 +258,23 @@ impl DataActor for PluginActorAdapter {
         let handle = OrderBookDeltasHandle::new(deltas.clone());
         invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book_deltas)(adapter.handle, p)
+        })
+    }
+
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let handle = InstrumentAnyHandle::new(instrument.clone());
+        invoke_event(self, "on_instrument", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_instrument)(adapter.handle, p)
+        })
+    }
+
+    fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {
+        let handle = OptionChainSliceHandle::new(chain.clone());
+        invoke_event(self, "on_option_chain", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_option_chain)(
+                adapter.handle,
+                p,
+            )
         })
     }
 

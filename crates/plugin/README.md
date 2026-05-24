@@ -56,6 +56,19 @@ once and hands a borrowed `&OrderBookDeltas` to the trait method;
 matches the ownership contract `OrderBookDeltas_API` uses on the Cython
 side.
 
+`InstrumentAny` crosses the boundary via `InstrumentAnyHandle`, a
+`#[repr(C)]` wrapper that owns a boxed `InstrumentAny` for the duration
+of the callback. `InstrumentAny` is a Rust enum whose variant payloads
+own heap-allocated fields, so the same boundary-owned shape applies: the
+plug-in's thunk dereferences the handle once and hands a borrowed
+`&InstrumentAny` to the trait method.
+
+`OptionChainSlice` crosses the boundary via `OptionChainSliceHandle`
+for the same reason: the snapshot owns
+`BTreeMap<Price, OptionStrikeData>` call and put maps and cannot be
+`#[repr(C)]`. The host boxes the slice in the handle for the duration
+of the callback.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

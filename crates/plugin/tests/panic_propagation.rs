@@ -47,7 +47,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
@@ -61,8 +61,10 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened, order::stubs as order_stubs,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, TraderId,
+        Venue, VenueOrderId,
     },
+    instruments::{InstrumentAny, stubs::currency_pair_ethusdt},
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
@@ -72,6 +74,8 @@ use nautilus_plugin::{
         actor::{PluginActor, actor_vtable},
         book::OrderBookDeltasHandle,
         custom_data::{CustomDataHandle, MetadataEntry, PluginCustomData, custom_data_vtable},
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
         strategy::{PluginStrategy, strategy_vtable},
     },
 };
@@ -204,6 +208,12 @@ impl PluginActor for MisbehavingActor {
     fn on_book_deltas(&mut self, _deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         fail()
     }
+    fn on_instrument(&mut self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_option_chain(&mut self, _chain: &OptionChainSlice) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_mark_price(&mut self, _mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         fail()
     }
@@ -302,6 +312,12 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
         fail()
     }
     fn on_mark_price(&mut self, _p: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -566,6 +582,8 @@ enum ActorThunkUnderTest {
     OnTrade,
     OnBar,
     OnBookDeltas,
+    OnInstrument,
+    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -629,6 +647,16 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = OrderBookDeltasHandle::new(stub_deltas());
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnInstrument => {
+            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnOptionChain => {
+            let v = OptionChainSliceHandle::new(option_chain_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -745,6 +773,10 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_bar_err(ActorThunkUnderTest::OnBar, Mode::Err)]
 #[case::on_book_deltas_panic(ActorThunkUnderTest::OnBookDeltas, Mode::Panic)]
 #[case::on_book_deltas_err(ActorThunkUnderTest::OnBookDeltas, Mode::Err)]
+#[case::on_instrument_panic(ActorThunkUnderTest::OnInstrument, Mode::Panic)]
+#[case::on_instrument_err(ActorThunkUnderTest::OnInstrument, Mode::Err)]
+#[case::on_option_chain_panic(ActorThunkUnderTest::OnOptionChain, Mode::Panic)]
+#[case::on_option_chain_err(ActorThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_mark_price_panic(ActorThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(ActorThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(ActorThunkUnderTest::OnIndexPrice, Mode::Panic)]
@@ -801,6 +833,8 @@ enum StrategyThunkUnderTest {
     OnTrade,
     OnBar,
     OnBookDeltas,
+    OnInstrument,
+    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -882,6 +916,16 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = OrderBookDeltasHandle::new(stub_deltas());
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnInstrument => {
+            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnOptionChain => {
+            let v = OptionChainSliceHandle::new(option_chain_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -1087,6 +1131,10 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_bar_err(StrategyThunkUnderTest::OnBar, Mode::Err)]
 #[case::on_book_deltas_panic(StrategyThunkUnderTest::OnBookDeltas, Mode::Panic)]
 #[case::on_book_deltas_err(StrategyThunkUnderTest::OnBookDeltas, Mode::Err)]
+#[case::on_instrument_panic(StrategyThunkUnderTest::OnInstrument, Mode::Panic)]
+#[case::on_instrument_err(StrategyThunkUnderTest::OnInstrument, Mode::Err)]
+#[case::on_option_chain_panic(StrategyThunkUnderTest::OnOptionChain, Mode::Panic)]
+#[case::on_option_chain_err(StrategyThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_mark_price_panic(StrategyThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(StrategyThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(StrategyThunkUnderTest::OnIndexPrice, Mode::Panic)]
@@ -1178,6 +1226,15 @@ fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[ca
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn option_chain_value() -> OptionChainSlice {
+    OptionChainSlice::new(OptionSeriesId::new(
+        Venue::new("DERIBIT"),
+        Ustr::from("BTC"),
+        Ustr::from("BTC"),
+        UnixNanos::from(1_700_000_000_000_000_000u64),
+    ))
 }
 
 fn quote_tick_value() -> QuoteTick {

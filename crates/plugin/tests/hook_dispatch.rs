@@ -44,7 +44,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
@@ -58,8 +58,10 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened, order::stubs as order_stubs,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, TraderId,
+        Venue, VenueOrderId,
     },
+    instruments::{InstrumentAny, stubs::currency_pair_ethusdt},
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
@@ -68,6 +70,8 @@ use nautilus_plugin::{
     surfaces::{
         actor::{PluginActor, actor_vtable},
         book::OrderBookDeltasHandle,
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
         strategy::{PluginStrategy, strategy_vtable},
     },
 };
@@ -100,6 +104,8 @@ enum ActorHook {
     OnTrade,
     OnBar,
     OnBookDeltas,
+    OnInstrument,
+    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -225,6 +231,16 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnInstrument);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnOptionChain);
+        Ok(())
+    }
+
     fn on_mark_price(&mut self, _p: &MarkPriceUpdate) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnMarkPrice);
         Ok(())
@@ -318,6 +334,8 @@ enum StrategyHook {
     OnTrade,
     OnBar,
     OnBookDeltas,
+    OnInstrument,
+    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
@@ -449,6 +467,16 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnBookDeltas);
+        Ok(())
+    }
+
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnInstrument);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnOptionChain);
         Ok(())
     }
 
@@ -620,6 +648,15 @@ impl PluginStrategy for HookCountingStrategy {
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn option_chain_value() -> OptionChainSlice {
+    OptionChainSlice::new(OptionSeriesId::new(
+        Venue::new("DERIBIT"),
+        Ustr::from("BTC"),
+        Ustr::from("BTC"),
+        UnixNanos::from(1_700_000_000_000_000_000u64),
+    ))
 }
 
 fn stub_trader_id() -> TraderId {
@@ -1163,6 +1200,56 @@ fn actor_book_deltas_thunk_dispatches_to_its_method() {
 }
 
 #[rstest]
+fn actor_instrument_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_instrument)(handle, &raw const h) };
+    r.into_result().expect("on_instrument thunk failed");
+    assert_only_actor_hook(ActorHook::OnInstrument);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn actor_option_chain_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OptionChainSliceHandle::new(option_chain_value());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const h) };
+    r.into_result().expect("on_option_chain thunk failed");
+    assert_only_actor_hook(ActorHook::OnOptionChain);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
 #[case::on_historical_quotes(ActorHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(ActorHook::OnHistoricalTrades)]
 #[case::on_historical_bars(ActorHook::OnHistoricalBars)]
@@ -1505,6 +1592,56 @@ fn strategy_book_deltas_thunk_dispatches_to_its_method() {
     let r = unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const h) };
     r.into_result().expect("on_book_deltas thunk failed");
     assert_only_strategy_hook(StrategyHook::OnBookDeltas);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn strategy_instrument_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_instrument)(handle, &raw const h) };
+    r.into_result().expect("on_instrument thunk failed");
+    assert_only_strategy_hook(StrategyHook::OnInstrument);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn strategy_option_chain_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OptionChainSliceHandle::new(option_chain_value());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const h) };
+    r.into_result().expect("on_option_chain thunk failed");
+    assert_only_strategy_hook(StrategyHook::OnOptionChain);
 
     // SAFETY: handle is live.
     unsafe {

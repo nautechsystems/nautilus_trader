@@ -29,9 +29,7 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     "on_load",
     // These payloads need routing or boundary-owned representations first
     "on_data",
-    "on_instrument",
     "on_book",
-    "on_option_chain",
     // DeFi callbacks are outside the v1 actor surface
     "on_block",
     "on_pool",
@@ -49,9 +47,7 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     "on_load",
     // These payloads need routing or boundary-owned representations first
     "on_data",
-    "on_instrument",
     "on_book",
-    "on_option_chain",
     // DeFi callbacks are outside the v1 strategy surface
     "on_block",
     "on_pool",

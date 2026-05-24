@@ -42,7 +42,7 @@ use nautilus_common::{actor::DataActor, signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -51,6 +51,7 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::ActorId,
+    instruments::InstrumentAny,
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -62,7 +63,10 @@ use crate::{
     bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
     host::{HostContext, HostVTable},
     manifest::ValidatedStrategyVTable,
-    surfaces::{book::OrderBookDeltasHandle, strategy::PluginStrategyHandle},
+    surfaces::{
+        book::OrderBookDeltasHandle, instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle, strategy::PluginStrategyHandle,
+    },
 };
 
 /// Adapts a plug-in strategy (vtable + handle from a cdylib) into a host-side
@@ -375,6 +379,26 @@ impl DataActor for PluginStrategyAdapter {
         let handle = OrderBookDeltasHandle::new(deltas.clone());
         invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
             validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_book_deltas)(
+                adapter.handle,
+                p,
+            )
+        })
+    }
+
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let handle = InstrumentAnyHandle::new(instrument.clone());
+        invoke_event(self, "on_instrument", &handle, |adapter, p| unsafe {
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_instrument)(
+                adapter.handle,
+                p,
+            )
+        })
+    }
+
+    fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {
+        let handle = OptionChainSliceHandle::new(chain.clone());
+        invoke_event(self, "on_option_chain", &handle, |adapter, p| unsafe {
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_option_chain)(
                 adapter.handle,
                 p,
             )

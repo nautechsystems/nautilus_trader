@@ -31,7 +31,7 @@
 //! proves a configured real plug-in loads through [`LiveNode`], instantiates
 //! from [`PluginConfig`], and receives `on_start`.
 //!
-//! The complementary `plugin_in_process.rs` integration tests run on every
+//! The complementary `plugin_dispatch.rs` integration tests run on every
 //! `cargo test` and exercise the adapters via in-process [`PluginActor`]
 //! and [`PluginStrategy`] types without the cdylib build.
 

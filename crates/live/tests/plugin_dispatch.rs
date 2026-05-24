@@ -13,13 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! In-process integration tests for the live-side plug-in adapters.
+//! Dispatch tests for the live-side plug-in adapters.
 //!
-//! These tests bypass the cdylib build path by registering vtables for
-//! `PluginActor` / `PluginStrategy` types defined in this test crate, then
-//! exercise every adapter callback to verify the event reaches the matching
-//! vtable entry. Counters live in atomics so the host can assert dispatch
-//! without smuggling references across the boundary.
+//! These tests register vtables for `PluginActor` / `PluginStrategy` types
+//! defined in this test crate (bypassing the cdylib build path) and
+//! exercise every adapter callback to verify the event reaches the
+//! matching vtable entry. They also drive the [`HostVTable`] order and
+//! msgbus surfaces to confirm host commands route through the
+//! registered adapter and back into the host cache / risk pipeline.
+//! Counters live in atomics so the host can assert dispatch without
+//! smuggling references across the boundary.
 //!
 //! The slow cdylib-loading tests live in `tests/plugin.rs`.
 
@@ -71,8 +74,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{
         Bar, BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
-        stubs::stub_deltas,
+        InstrumentStatus, MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas,
+        QuoteTick, TradeTick, stubs::stub_deltas,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, GreeksConvention,
@@ -86,8 +89,8 @@ use nautilus_model::{
         OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
-        AccountId, ActorId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ActorId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
     orders::{Order, OrderAny},
@@ -121,6 +124,8 @@ static A_QUOTE: AtomicU64 = AtomicU64::new(0);
 static A_TRADE: AtomicU64 = AtomicU64::new(0);
 static A_BAR: AtomicU64 = AtomicU64::new(0);
 static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static A_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static A_MARK: AtomicU64 = AtomicU64::new(0);
 static A_INDEX: AtomicU64 = AtomicU64::new(0);
 static A_FUNDING: AtomicU64 = AtomicU64::new(0);
@@ -145,6 +150,8 @@ fn a_reset() {
         &A_TRADE,
         &A_BAR,
         &A_BOOK_DELTAS,
+        &A_INSTRUMENT,
+        &A_OPTION_CHAIN,
         &A_MARK,
         &A_INDEX,
         &A_FUNDING,
@@ -216,6 +223,14 @@ impl PluginActor for CountingActor {
         A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        A_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
+        A_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
         A_MARK.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -263,6 +278,8 @@ static S_QUOTE: AtomicU64 = AtomicU64::new(0);
 static S_TRADE: AtomicU64 = AtomicU64::new(0);
 static S_BAR: AtomicU64 = AtomicU64::new(0);
 static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static S_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_INITIALIZED: AtomicU64 = AtomicU64::new(0);
@@ -291,6 +308,8 @@ fn s_reset() {
         &S_TRADE,
         &S_BAR,
         &S_BOOK_DELTAS,
+        &S_INSTRUMENT,
+        &S_OPTION_CHAIN,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
         &S_ORDER_INITIALIZED,
@@ -346,6 +365,14 @@ impl PluginStrategy for CountingStrategy {
     }
     fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
         S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        S_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
+        S_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_filled(&mut self, _: &OrderFilled) -> anyhow::Result<()> {
@@ -544,6 +571,19 @@ fn make_instrument_close() -> InstrumentClose {
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
     )
+}
+
+fn make_instrument() -> InstrumentAny {
+    InstrumentAny::CurrencyPair(currency_pair_ethusdt())
+}
+
+fn make_option_chain() -> OptionChainSlice {
+    OptionChainSlice::new(OptionSeriesId::new(
+        Venue::new("DERIBIT"),
+        ustr::Ustr::from("BTC"),
+        ustr::Ustr::from("BTC"),
+        UnixNanos::from(1_700_000_000_000_000_000u64),
+    ))
 }
 
 fn make_time_event() -> TimeEvent {
@@ -766,6 +806,8 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     DataActor::on_trade(&mut a, &make_trade()).unwrap();
     DataActor::on_bar(&mut a, &make_bar()).unwrap();
     DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
+    DataActor::on_instrument(&mut a, &make_instrument()).unwrap();
+    DataActor::on_option_chain(&mut a, &make_option_chain()).unwrap();
     DataActor::on_mark_price(&mut a, &make_mark_price()).unwrap();
     DataActor::on_index_price(&mut a, &make_index_price()).unwrap();
     DataActor::on_funding_rate(&mut a, &make_funding_rate()).unwrap();
@@ -779,6 +821,8 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
     assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
     assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_INSTRUMENT.load(Ordering::SeqCst), 1);
+    assert_eq!(A_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(A_MARK.load(Ordering::SeqCst), 1);
     assert_eq!(A_INDEX.load(Ordering::SeqCst), 1);
     assert_eq!(A_FUNDING.load(Ordering::SeqCst), 1);
@@ -812,12 +856,16 @@ fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
 
     DataActor::on_quote(&mut s, &make_quote()).unwrap();
     DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
+    DataActor::on_instrument(&mut s, &make_instrument()).unwrap();
+    DataActor::on_option_chain(&mut s, &make_option_chain()).unwrap();
     DataActor::on_option_greeks(&mut s, &make_option_greeks()).unwrap();
     DataActor::on_order_filled(&mut s, &make_order_filled()).unwrap();
     DataActor::on_order_canceled(&mut s, &make_order_canceled()).unwrap();
 
     assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTRUMENT.load(Ordering::SeqCst), 1);
+    assert_eq!(S_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_GREEKS.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_FILLED.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_CANCELED.load(Ordering::SeqCst), 1);
