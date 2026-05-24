@@ -191,7 +191,9 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::Cfd>()?;
     m.add_class::<crate::instruments::Commodity>()?;
     m.add_class::<crate::instruments::CryptoFuture>()?;
+    m.add_class::<crate::instruments::CryptoFuturesSpread>()?;
     m.add_class::<crate::instruments::CryptoOption>()?;
+    m.add_class::<crate::instruments::CryptoOptionSpread>()?;
     m.add_class::<crate::instruments::CryptoPerpetual>()?;
     m.add_class::<crate::instruments::CurrencyPair>()?;
     m.add_class::<crate::instruments::Equity>()?;

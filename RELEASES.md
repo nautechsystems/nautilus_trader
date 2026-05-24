@@ -31,7 +31,8 @@ Released on TBD (UTC).
 - Added Binance Futures open interest request custom data (Rust) (#4109), thanks @graceyangfan
 - Added pending-resolution settlement pipeline for binary options (Rust) (#4101), thanks @graceyangfan
 - Added Coinbase WebSocket `status` channel subscription emitting `InstrumentStatus` events
-- Added Deribit `option_combo` and `future_combo` parsing as `OptionSpread`/`FuturesSpread` instruments
+- Added `CryptoFuturesSpread` and `CryptoOptionSpread` instrument types mirroring `CryptoFuture`/`CryptoOption`
+- Added Deribit `option_combo` and `future_combo` parsing as `CryptoOptionSpread`/`CryptoFuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
 - Added Deribit `get_last_trades_by_currency` HTTP endpoint for combo trade backfill
 - Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
@@ -52,6 +53,7 @@ Released on TBD (UTC).
 - Changed Hyperliquid HIP-4 outcome `InstrumentId` to `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 - Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
+- Changed Deribit combos to land as `CryptoOptionSpread`/`CryptoFuturesSpread` instead of `OptionSpread`/`FuturesSpread`; `FuturesSpread`/`OptionSpread` once again guarantee whole-contract sizing
 
 ### Security
 None

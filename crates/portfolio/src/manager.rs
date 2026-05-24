@@ -255,7 +255,13 @@ impl AccountsManager {
                 InstrumentAny::CryptoFuture(i) => account
                     .calculate_maintenance_margin(i, quantity, price, None)
                     .ok()?,
+                InstrumentAny::CryptoFuturesSpread(i) => account
+                    .calculate_maintenance_margin(i, quantity, price, None)
+                    .ok()?,
                 InstrumentAny::CryptoOption(i) => account
+                    .calculate_maintenance_margin(i, quantity, price, None)
+                    .ok()?,
+                InstrumentAny::CryptoOptionSpread(i) => account
                     .calculate_maintenance_margin(i, quantity, price, None)
                     .ok()?,
                 InstrumentAny::CryptoPerpetual(i) => account
@@ -455,7 +461,13 @@ impl AccountsManager {
                 InstrumentAny::CryptoFuture(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
+                InstrumentAny::CryptoFuturesSpread(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
                 InstrumentAny::CryptoOption(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
+                InstrumentAny::CryptoOptionSpread(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
                 InstrumentAny::CryptoPerpetual(i) => account

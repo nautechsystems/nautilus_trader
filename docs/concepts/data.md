@@ -83,12 +83,14 @@ flowchart TD
     Futures --> FuturesContract
     Futures --> FuturesSpread
     Futures --> CryptoFuture
+    Futures --> CryptoFuturesSpread
     Futures --> CryptoPerpetual
     Futures --> PerpetualContract
 
     Options --> OptionContract
     Options --> OptionSpread
     Options --> CryptoOption
+    Options --> CryptoOptionSpread
     Options --> BinaryOption
 
     Other --> BettingInstrument
@@ -102,13 +104,15 @@ flowchart TD
 | `Commodity`          | Commodity in a spot/cash market.                                                 |
 | `IndexInstrument`    | Spot index (reference price, not directly tradable).                             |
 | `FuturesContract`    | Generic deliverable futures contract.                                            |
-| `FuturesSpread`      | Deliverable futures spread.                                                      |
+| `FuturesSpread`      | Deliverable futures spread (whole‑contract sizing).                              |
 | `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
+| `CryptoFuturesSpread`| Crypto futures spread with inverse and fractional‑size support.                  |
 | `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
 | `PerpetualContract`  | Asset‑class agnostic perpetual swap (any underlying).                            |
 | `OptionContract`     | Generic option contract.                                                         |
-| `OptionSpread`       | Generic option spread.                                                           |
+| `OptionSpread`       | Generic option spread (whole‑contract sizing).                                   |
 | `CryptoOption`       | Crypto option contract.                                                          |
+| `CryptoOptionSpread` | Crypto option spread with inverse and fractional‑size support.                   |
 | `BinaryOption`       | Binary option instrument.                                                        |
 | `Cfd`                | Contract for Difference (CFD).                                                   |
 | `BettingInstrument`  | Instrument in a betting market.                                                  |

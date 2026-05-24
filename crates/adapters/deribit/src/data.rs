@@ -390,8 +390,8 @@ impl DeribitDataClient {
         };
 
         let info = match instrument {
-            InstrumentAny::OptionSpread(spread) => spread.info,
-            InstrumentAny::FuturesSpread(spread) => spread.info,
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info,
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info,
             _ => return Vec::new(),
         };
         let Some(info) = info else {

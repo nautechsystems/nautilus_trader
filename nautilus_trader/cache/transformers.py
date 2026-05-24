@@ -49,7 +49,9 @@ from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoFuturesSpread
 from nautilus_trader.model.instruments import CryptoOption
+from nautilus_trader.model.instruments import CryptoOptionSpread
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
@@ -105,8 +107,16 @@ def transform_instrument_to_pyo3(instrument: Instrument):  # noqa: C901
         return nautilus_pyo3.Commodity.from_dict(Commodity.to_dict(instrument))
     elif isinstance(instrument, CryptoFuture):
         return nautilus_pyo3.CryptoFuture.from_dict(CryptoFuture.to_dict(instrument))
+    elif isinstance(instrument, CryptoFuturesSpread):
+        return nautilus_pyo3.CryptoFuturesSpread.from_dict(
+            CryptoFuturesSpread.to_dict(instrument),
+        )
     elif isinstance(instrument, CryptoOption):
         return nautilus_pyo3.CryptoOption.from_dict(CryptoOption.to_dict(instrument))
+    elif isinstance(instrument, CryptoOptionSpread):
+        return nautilus_pyo3.CryptoOptionSpread.from_dict(
+            CryptoOptionSpread.to_dict(instrument),
+        )
     elif isinstance(instrument, CryptoPerpetual):
         return nautilus_pyo3.CryptoPerpetual.from_dict(CryptoPerpetual.to_dict(instrument))
     elif isinstance(instrument, CurrencyPair):
@@ -144,8 +154,12 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return Commodity.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
         return CryptoFuture.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuturesSpread):
+        return CryptoFuturesSpread.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoOption):
         return CryptoOption.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoOptionSpread):
+        return CryptoOptionSpread.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoPerpetual):
         return CryptoPerpetual.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CurrencyPair):

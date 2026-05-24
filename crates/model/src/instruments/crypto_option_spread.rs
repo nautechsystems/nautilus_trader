@@ -19,7 +19,6 @@ use nautilus_core::{
     Params, UnixNanos,
     correctness::{
         CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8, check_valid_string_ascii,
-        check_valid_string_ascii_optional,
     },
 };
 use rust_decimal::Decimal;
@@ -38,7 +37,8 @@ use crate::{
     },
 };
 
-/// Represents a generic deliverable futures spread instrument.
+/// Represents a crypto option spread instrument, with crypto assets as underlying and for
+/// settlement.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -49,34 +49,34 @@ use crate::{
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
-pub struct FuturesSpread {
+pub struct CryptoOptionSpread {
     /// The instrument ID.
     pub id: InstrumentId,
     /// The raw/local/native symbol for the instrument, assigned by the venue.
     pub raw_symbol: Symbol,
-    /// The futures spread asset class.
-    pub asset_class: AssetClass,
-    /// The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
-    pub exchange: Option<Ustr>,
     /// The underlying asset.
-    pub underlying: Ustr,
+    pub underlying: Currency,
+    /// The contract quote currency.
+    pub quote_currency: Currency,
+    /// The settlement currency.
+    pub settlement_currency: Currency,
+    /// If the instrument costing is inverse (quantity expressed in quote currency units).
+    pub is_inverse: bool,
     /// The strategy type for the spread.
     pub strategy_type: Ustr,
     /// UNIX timestamp (nanoseconds) for contract activation.
     pub activation_ns: UnixNanos,
     /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
-    /// The futures spread currency.
-    pub currency: Currency,
     /// The price decimal precision.
     pub price_precision: u8,
+    /// The trading size decimal precision.
+    pub size_precision: u8,
     /// The minimum price increment (tick size).
     pub price_increment: Price,
     /// The minimum size increment.
     pub size_increment: Quantity,
-    /// The trading size decimal precision.
-    pub size_precision: u8,
-    /// The contract multiplier.
+    /// The option multiplier.
     pub multiplier: Quantity,
     /// The rounded lot unit size (standard/board).
     pub lot_size: Quantity,
@@ -92,6 +92,10 @@ pub struct FuturesSpread {
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
     pub min_quantity: Option<Quantity>,
+    /// The maximum allowable order notional value.
+    pub max_notional: Option<Money>,
+    /// The minimum allowable order notional value.
+    pub min_notional: Option<Money>,
     /// The maximum allowable quoted price.
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
@@ -104,8 +108,8 @@ pub struct FuturesSpread {
     pub ts_init: UnixNanos,
 }
 
-impl FuturesSpread {
-    /// Creates a new [`FuturesSpread`] instance with correctness checking.
+impl CryptoOptionSpread {
+    /// Creates a new [`CryptoOptionSpread`] instance with correctness checking.
     ///
     /// # Notes
     ///
@@ -117,19 +121,23 @@ impl FuturesSpread {
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
-        asset_class: AssetClass,
-        exchange: Option<Ustr>,
-        underlying: Ustr,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
         strategy_type: Ustr,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
-        currency: Currency,
         price_precision: u8,
+        size_precision: u8,
         price_increment: Price,
-        multiplier: Quantity,
-        lot_size: Quantity,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
@@ -140,7 +148,6 @@ impl FuturesSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> CorrectnessResult<Self> {
-        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(exchange))?;
         check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
@@ -148,32 +155,43 @@ impl FuturesSpread {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
+        check_equal_u8(
+            size_precision,
+            size_increment.precision,
+            stringify!(size_precision),
+            stringify!(size_increment.precision),
+        )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
-        check_positive_quantity(multiplier, stringify!(multiplier))?;
-        check_positive_quantity(lot_size, stringify!(lot_size))?;
+        check_positive_quantity(size_increment, stringify!(size_increment))?;
+
+        if let Some(multiplier) = multiplier {
+            check_positive_quantity(multiplier, stringify!(multiplier))?;
+        }
 
         Ok(Self {
             id: instrument_id,
             raw_symbol,
-            asset_class,
-            exchange,
             underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
             strategy_type,
             activation_ns,
             expiration_ns,
-            currency,
             price_precision,
+            size_precision,
             price_increment,
-            size_precision: 0,
-            size_increment: Quantity::from("1"),
-            multiplier,
-            lot_size,
+            size_increment,
+            multiplier: multiplier.unwrap_or(Quantity::from(1)),
+            lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            max_notional,
+            min_notional,
             max_quantity,
-            min_quantity: Some(min_quantity.unwrap_or(1.into())),
+            min_quantity,
             max_price,
             min_price,
             info,
@@ -182,29 +200,33 @@ impl FuturesSpread {
         })
     }
 
-    /// Creates a new [`FuturesSpread`] instance.
+    /// Creates a new [`CryptoOptionSpread`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if any input parameter is invalid (see `new_checked`).
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
-        asset_class: AssetClass,
-        exchange: Option<Ustr>,
-        underlying: Ustr,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
         strategy_type: Ustr,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
-        currency: Currency,
         price_precision: u8,
+        size_precision: u8,
         price_increment: Price,
-        multiplier: Quantity,
-        lot_size: Quantity,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
@@ -218,19 +240,23 @@ impl FuturesSpread {
         Self::new_checked(
             instrument_id,
             raw_symbol,
-            asset_class,
-            exchange,
             underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
             strategy_type,
             activation_ns,
             expiration_ns,
-            currency,
             price_precision,
+            size_precision,
             price_increment,
+            size_increment,
             multiplier,
             lot_size,
             max_quantity,
             min_quantity,
+            max_notional,
+            min_notional,
             max_price,
             min_price,
             margin_init,
@@ -245,23 +271,23 @@ impl FuturesSpread {
     }
 }
 
-impl PartialEq<Self> for FuturesSpread {
+impl PartialEq<Self> for CryptoOptionSpread {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for FuturesSpread {}
+impl Eq for CryptoOptionSpread {}
 
-impl Hash for FuturesSpread {
+impl Hash for CryptoOptionSpread {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl Instrument for FuturesSpread {
+impl Instrument for CryptoOptionSpread {
     fn into_any(self) -> InstrumentAny {
-        InstrumentAny::FuturesSpread(self)
+        InstrumentAny::CryptoOptionSpread(self)
     }
 
     fn id(&self) -> InstrumentId {
@@ -273,26 +299,31 @@ impl Instrument for FuturesSpread {
     }
 
     fn asset_class(&self) -> AssetClass {
-        self.asset_class
+        AssetClass::Cryptocurrency
     }
 
     fn instrument_class(&self) -> InstrumentClass {
-        InstrumentClass::FuturesSpread
+        InstrumentClass::OptionSpread
     }
+
     fn underlying(&self) -> Option<Ustr> {
-        Some(self.underlying)
+        Some(self.underlying.code)
     }
 
     fn base_currency(&self) -> Option<Currency> {
-        None
+        Some(self.underlying)
     }
 
     fn quote_currency(&self) -> Currency {
-        self.currency
+        self.quote_currency
     }
 
     fn settlement_currency(&self) -> Currency {
-        self.currency
+        self.settlement_currency
+    }
+
+    fn is_inverse(&self) -> bool {
+        self.is_inverse
     }
 
     fn isin(&self) -> Option<Ustr> {
@@ -301,10 +332,6 @@ impl Instrument for FuturesSpread {
 
     fn option_kind(&self) -> Option<OptionKind> {
         None
-    }
-
-    fn exchange(&self) -> Option<Ustr> {
-        self.exchange
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -323,8 +350,8 @@ impl Instrument for FuturesSpread {
         Some(self.expiration_ns)
     }
 
-    fn is_inverse(&self) -> bool {
-        false
+    fn exchange(&self) -> Option<Ustr> {
+        None
     }
 
     fn price_precision(&self) -> u8 {
@@ -332,7 +359,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn size_precision(&self) -> u8 {
-        0 // No fractional units
+        self.size_precision
     }
 
     fn price_increment(&self) -> Price {
@@ -340,7 +367,7 @@ impl Instrument for FuturesSpread {
     }
 
     fn size_increment(&self) -> Quantity {
-        Quantity::from(1)
+        self.size_increment
     }
 
     fn multiplier(&self) -> Quantity {
@@ -360,11 +387,11 @@ impl Instrument for FuturesSpread {
     }
 
     fn max_notional(&self) -> Option<Money> {
-        None
+        self.max_notional
     }
 
     fn min_notional(&self) -> Option<Money> {
-        None
+        self.min_notional
     }
 
     fn max_price(&self) -> Option<Price> {
@@ -403,80 +430,67 @@ impl Instrument for FuturesSpread {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use ustr::Ustr;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
-        instruments::{FuturesSpread, Instrument, stubs::*},
+        instruments::{CryptoOptionSpread, Instrument, stubs::*},
         types::{Currency, Price, Quantity},
     };
 
     #[rstest]
-    fn test_trait_accessors(futures_spread_es: FuturesSpread) {
-        assert_eq!(futures_spread_es.id(), InstrumentId::from("ESM4-ESU4.GLBX"));
-        assert_eq!(futures_spread_es.asset_class(), AssetClass::Index);
+    fn test_trait_accessors(crypto_option_spread_btc_deribit: CryptoOptionSpread) {
         assert_eq!(
-            futures_spread_es.instrument_class(),
-            InstrumentClass::FuturesSpread
+            crypto_option_spread_btc_deribit.id(),
+            InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT")
         );
-        assert_eq!(futures_spread_es.quote_currency(), Currency::USD());
-        assert!(!futures_spread_es.is_inverse());
-        assert_eq!(futures_spread_es.exchange(), Some(Ustr::from("XCME")));
-        assert_eq!(futures_spread_es.size_precision(), 0);
-        assert_eq!(futures_spread_es.size_increment(), Quantity::from("1"));
-        assert_eq!(futures_spread_es.min_quantity(), Some(Quantity::from("1")));
-        assert!(futures_spread_es.activation_ns().is_some());
-        assert!(futures_spread_es.expiration_ns().is_some());
+        assert_eq!(
+            crypto_option_spread_btc_deribit.asset_class(),
+            AssetClass::Cryptocurrency
+        );
+        assert_eq!(
+            crypto_option_spread_btc_deribit.instrument_class(),
+            InstrumentClass::OptionSpread
+        );
+        assert_eq!(
+            crypto_option_spread_btc_deribit.quote_currency(),
+            Currency::USD()
+        );
+        assert_eq!(
+            crypto_option_spread_btc_deribit.settlement_currency(),
+            Currency::BTC()
+        );
+        assert!(!crypto_option_spread_btc_deribit.is_inverse());
+        assert_eq!(crypto_option_spread_btc_deribit.price_precision(), 4);
+        assert_eq!(crypto_option_spread_btc_deribit.size_precision(), 1);
+        assert_eq!(
+            crypto_option_spread_btc_deribit.size_increment(),
+            Quantity::from("0.1")
+        );
+        assert!(crypto_option_spread_btc_deribit.activation_ns().is_some());
+        assert!(crypto_option_spread_btc_deribit.expiration_ns().is_some());
     }
 
     #[rstest]
     fn test_new_checked_price_precision_mismatch() {
-        let result = FuturesSpread::new_checked(
-            InstrumentId::from("TEST.GLBX"),
-            Symbol::from("TEST"),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from("ES"),
-            Ustr::from("EQ"),
-            0.into(),
-            0.into(),
+        let result = CryptoOptionSpread::new_checked(
+            InstrumentId::from("BTC-CS-TEST.DERIBIT"),
+            Symbol::from("BTC-CS-TEST"),
+            Currency::BTC(),
             Currency::USD(),
+            Currency::BTC(),
+            false,
+            ustr::Ustr::from("CS"),
+            0.into(),
+            0.into(),
             4, // mismatch
-            Price::from("0.01"),
-            Quantity::from(1),
-            Quantity::from(1),
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
             None,
             None,
             None,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_zero_multiplier() {
-        let result = FuturesSpread::new_checked(
-            InstrumentId::from("TEST.GLBX"),
-            Symbol::from("TEST"),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from("ES"),
-            Ustr::from("EQ"),
-            0.into(),
-            0.into(),
-            Currency::USD(),
-            2,
-            Price::from("0.01"),
-            Quantity::from("0"), // zero multiplier
-            Quantity::from(1),
             None,
             None,
             None,
@@ -493,9 +507,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_serialization_roundtrip(futures_spread_es: FuturesSpread) {
-        let json = serde_json::to_string(&futures_spread_es).unwrap();
-        let deserialized: FuturesSpread = serde_json::from_str(&json).unwrap();
-        assert_eq!(futures_spread_es, deserialized);
+    fn test_serialization_roundtrip(crypto_option_spread_btc_deribit: CryptoOptionSpread) {
+        let json = serde_json::to_string(&crypto_option_spread_btc_deribit).unwrap();
+        let deserialized: CryptoOptionSpread = serde_json::from_str(&json).unwrap();
+        assert_eq!(crypto_option_spread_btc_deribit, deserialized);
     }
 }

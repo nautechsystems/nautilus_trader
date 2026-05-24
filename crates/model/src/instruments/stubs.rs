@@ -30,7 +30,8 @@ use crate::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{
-        CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, OptionContract,
+        CryptoFuture, CryptoFuturesSpread, CryptoOptionSpread, CryptoPerpetual, CurrencyPair,
+        Equity, FuturesContract, OptionContract,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -51,10 +52,6 @@ impl Default for SyntheticInstrument {
         )
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// CryptoFuture
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn crypto_future_btcusdt(
@@ -136,10 +133,6 @@ pub fn ethbtc_quanto(
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// CryptoPerpetual – BitMEX inverse (XBTUSD)
-// ////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn xbtusd_inverse_perp(
     // One-decimal tick (0.5 USD) and integer contract size
@@ -177,10 +170,6 @@ pub fn xbtusd_inverse_perp(
         UnixNanos::default(),              // ts_init
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// CryptoOption
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn crypto_option_btc_deribit(
@@ -223,10 +212,6 @@ pub fn crypto_option_btc_deribit(
         0.into(),
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// CryptoPerpetual
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
@@ -320,10 +305,6 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         UnixNanos::default(),
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// CurrencyPair
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn currency_pair_btcusdt() -> CurrencyPair {
@@ -439,10 +420,6 @@ pub fn usdjpy_idealpro() -> CurrencyPair {
     default_fx_ccy(Symbol::from("USD/JPY"), Some(Venue::from("IDEALPRO")))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Equity
-////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn equity_aapl() -> Equity {
     Equity::new(
@@ -492,10 +469,6 @@ pub fn equity_aapl_itch() -> Equity {
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// FuturesContract
-////////////////////////////////////////////////////////////////////////////////
-
 /// # Panics
 ///
 /// Panics if constructing the activation or expiration timestamp fails,
@@ -544,10 +517,6 @@ pub fn futures_contract_es(
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// FuturesSpread
-////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn futures_spread_es() -> FuturesSpread {
     let activation = Utc.with_ymd_and_hms(2022, 6, 21, 13, 30, 0).unwrap();
@@ -579,10 +548,6 @@ pub fn futures_spread_es() -> FuturesSpread {
         UnixNanos::default(),
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// OptionContract
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn option_contract_appl() -> OptionContract {
@@ -617,10 +582,6 @@ pub fn option_contract_appl() -> OptionContract {
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// OptionSpread
-////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn option_spread() -> OptionSpread {
     let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
@@ -653,9 +614,77 @@ pub fn option_spread() -> OptionSpread {
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// BettingInstrument
-////////////////////////////////////////////////////////////////////////////////
+#[fixture]
+pub fn crypto_futures_spread_btc_deribit() -> CryptoFuturesSpread {
+    let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+    let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+    CryptoFuturesSpread::new(
+        InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"),
+        Symbol::from("BTC-FS-19MAY26_PERP"),
+        Currency::BTC(),
+        Currency::USD(),
+        Currency::BTC(),
+        false,
+        Ustr::from("FS"),
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+        1,
+        0,
+        Price::from("0.5"),
+        Quantity::from("1"),
+        Some(Quantity::from("10")),
+        None,
+        None,
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(dec!(0.0003)),
+        Some(dec!(0.0003)),
+        None, // info
+        0.into(),
+        0.into(),
+    )
+}
+
+#[fixture]
+pub fn crypto_option_spread_btc_deribit() -> CryptoOptionSpread {
+    let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+    let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+    CryptoOptionSpread::new(
+        InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"),
+        Symbol::from("BTC-CS-19MAY26-70000_75000"),
+        Currency::BTC(),
+        Currency::USD(),
+        Currency::BTC(),
+        false,
+        Ustr::from("CS"),
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+        4,
+        1,
+        Price::from("0.0001"),
+        Quantity::from("0.1"),
+        Some(Quantity::from(1)),
+        None,
+        None,
+        Some(Quantity::from("0.1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(dec!(0.0003)),
+        Some(dec!(0.0003)),
+        None, // info
+        0.into(),
+        0.into(),
+    )
+}
 
 #[fixture]
 pub fn betting() -> BettingInstrument {
@@ -816,10 +845,6 @@ pub fn cfd_gold() -> Cfd {
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// PerpetualContract
-////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn perpetual_contract_eurusd() -> PerpetualContract {
     PerpetualContract::new(
@@ -852,10 +877,6 @@ pub fn perpetual_contract_eurusd() -> PerpetualContract {
         UnixNanos::default(),
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// BinaryOption
-////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn binary_option() -> BinaryOption {

@@ -2898,7 +2898,10 @@ impl DataEngine {
         let aggregator = Rc::new(RefCell::new(SpreadQuoteAggregator::new(
             cmd.instrument_id,
             &legs,
-            matches!(instrument, InstrumentAny::FuturesSpread(_)),
+            matches!(
+                instrument,
+                InstrumentAny::FuturesSpread(_) | InstrumentAny::CryptoFuturesSpread(_)
+            ),
             instrument.price_precision(),
             instrument.size_precision(),
             handler,

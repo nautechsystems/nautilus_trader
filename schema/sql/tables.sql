@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
     exchange TEXT,
+    strategy_type TEXT,
     option_kind TEXT,
     strike_price TEXT,
     activation_ns TEXT,

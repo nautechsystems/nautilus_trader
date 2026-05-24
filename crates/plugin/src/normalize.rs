@@ -315,6 +315,17 @@ impl BoundaryNormalize for InstrumentAny {
                 instrument.max_notional = instrument.max_notional.boundary_normalized();
                 instrument.min_notional = instrument.min_notional.boundary_normalized();
             }
+            Self::CryptoFuturesSpread(instrument) => {
+                instrument.id = instrument.id.boundary_normalized();
+                instrument.raw_symbol = instrument.raw_symbol.boundary_normalized();
+                instrument.underlying = instrument.underlying.boundary_normalized();
+                instrument.quote_currency = instrument.quote_currency.boundary_normalized();
+                instrument.settlement_currency =
+                    instrument.settlement_currency.boundary_normalized();
+                instrument.strategy_type = instrument.strategy_type.boundary_normalized();
+                instrument.max_notional = instrument.max_notional.boundary_normalized();
+                instrument.min_notional = instrument.min_notional.boundary_normalized();
+            }
             Self::CryptoOption(instrument) => {
                 instrument.id = instrument.id.boundary_normalized();
                 instrument.raw_symbol = instrument.raw_symbol.boundary_normalized();
@@ -322,6 +333,17 @@ impl BoundaryNormalize for InstrumentAny {
                 instrument.quote_currency = instrument.quote_currency.boundary_normalized();
                 instrument.settlement_currency =
                     instrument.settlement_currency.boundary_normalized();
+                instrument.max_notional = instrument.max_notional.boundary_normalized();
+                instrument.min_notional = instrument.min_notional.boundary_normalized();
+            }
+            Self::CryptoOptionSpread(instrument) => {
+                instrument.id = instrument.id.boundary_normalized();
+                instrument.raw_symbol = instrument.raw_symbol.boundary_normalized();
+                instrument.underlying = instrument.underlying.boundary_normalized();
+                instrument.quote_currency = instrument.quote_currency.boundary_normalized();
+                instrument.settlement_currency =
+                    instrument.settlement_currency.boundary_normalized();
+                instrument.strategy_type = instrument.strategy_type.boundary_normalized();
                 instrument.max_notional = instrument.max_notional.boundary_normalized();
                 instrument.min_notional = instrument.min_notional.boundary_normalized();
             }
@@ -1051,12 +1073,32 @@ mod tests {
                 instrument.max_notional = Some(foreign_money("USDT"));
                 instrument.min_notional = Some(foreign_money("USDT"));
             }
+            InstrumentAny::CryptoFuturesSpread(instrument) => {
+                foreignize_instrument_key(&mut instrument.id, &mut instrument.raw_symbol);
+                instrument.underlying = foreign_currency_from(instrument.underlying);
+                instrument.quote_currency = foreign_currency_from(instrument.quote_currency);
+                instrument.settlement_currency =
+                    foreign_currency_from(instrument.settlement_currency);
+                instrument.strategy_type = foreign_ustr(instrument.strategy_type.as_str());
+                instrument.max_notional = Some(foreign_money("USDT"));
+                instrument.min_notional = Some(foreign_money("USDT"));
+            }
             InstrumentAny::CryptoOption(instrument) => {
                 foreignize_instrument_key(&mut instrument.id, &mut instrument.raw_symbol);
                 instrument.underlying = foreign_currency_from(instrument.underlying);
                 instrument.quote_currency = foreign_currency_from(instrument.quote_currency);
                 instrument.settlement_currency =
                     foreign_currency_from(instrument.settlement_currency);
+                instrument.max_notional = Some(foreign_money("USD"));
+                instrument.min_notional = Some(foreign_money("USD"));
+            }
+            InstrumentAny::CryptoOptionSpread(instrument) => {
+                foreignize_instrument_key(&mut instrument.id, &mut instrument.raw_symbol);
+                instrument.underlying = foreign_currency_from(instrument.underlying);
+                instrument.quote_currency = foreign_currency_from(instrument.quote_currency);
+                instrument.settlement_currency =
+                    foreign_currency_from(instrument.settlement_currency);
+                instrument.strategy_type = foreign_ustr(instrument.strategy_type.as_str());
                 instrument.max_notional = Some(foreign_money("USD"));
                 instrument.min_notional = Some(foreign_money("USD"));
             }
@@ -1179,11 +1221,29 @@ mod tests {
                 assert_local_money(instrument.max_notional.expect("max notional is set"));
                 assert_local_money(instrument.min_notional.expect("min notional is set"));
             }
+            InstrumentAny::CryptoFuturesSpread(instrument) => {
+                assert_local_instrument_key(instrument.id, instrument.raw_symbol);
+                assert_local_currency(instrument.underlying);
+                assert_local_currency(instrument.quote_currency);
+                assert_local_currency(instrument.settlement_currency);
+                assert_local_ustr(instrument.strategy_type);
+                assert_local_money(instrument.max_notional.expect("max notional is set"));
+                assert_local_money(instrument.min_notional.expect("min notional is set"));
+            }
             InstrumentAny::CryptoOption(instrument) => {
                 assert_local_instrument_key(instrument.id, instrument.raw_symbol);
                 assert_local_currency(instrument.underlying);
                 assert_local_currency(instrument.quote_currency);
                 assert_local_currency(instrument.settlement_currency);
+                assert_local_money(instrument.max_notional.expect("max notional is set"));
+                assert_local_money(instrument.min_notional.expect("min notional is set"));
+            }
+            InstrumentAny::CryptoOptionSpread(instrument) => {
+                assert_local_instrument_key(instrument.id, instrument.raw_symbol);
+                assert_local_currency(instrument.underlying);
+                assert_local_currency(instrument.quote_currency);
+                assert_local_currency(instrument.settlement_currency);
+                assert_local_ustr(instrument.strategy_type);
                 assert_local_money(instrument.max_notional.expect("max notional is set"));
                 assert_local_money(instrument.min_notional.expect("min notional is set"));
             }

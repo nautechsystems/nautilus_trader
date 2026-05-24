@@ -123,7 +123,9 @@ Examples:
 InstrumentId.from_str("BTC-FS-25DEC26_PERP.DERIBIT")
 ```
 
-The adapter models future combos as `FuturesSpread`, priced in USD as the spread between legs.
+The adapter models future combos as `CryptoFuturesSpread`, priced in USD as the spread
+between legs, with crypto settlement currency and `is_inverse` set per the upstream
+`instrument_type`.
 
 ### Option combos
 
@@ -143,8 +145,9 @@ Examples:
 InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
 ```
 
-The adapter models option combos as `OptionSpread`, priced in the base currency under Deribit's
-inverse-option convention.
+The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under
+Deribit's inverse-option convention; fractional `size_increment` (e.g. `0.1`) is preserved
+end-to-end.
 
 ## Traded expirations
 

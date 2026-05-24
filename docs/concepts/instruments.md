@@ -12,13 +12,15 @@ directly. The platform supports a range of asset classes and instrument classes:
 - `Commodity`: Spot commodity instrument (e.g., gold or oil) traded in cash markets.
 - `IndexInstrument`: Spot index calculated from constituents; used as a reference price and not directly tradable.
 - `FuturesContract`: Deliverable futures contract with defined underlying, expiry, and multiplier.
-- `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument.
+- `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument; whole-contract sizing.
 - `CryptoFuture`: Dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency.
+- `CryptoFuturesSpread`: Crypto futures spread mirroring `CryptoFuture` (underlying, settlement currency, `is_inverse`); supports fractional `size_increment` for venues like Deribit.
 - `CryptoPerpetual`: Perpetual futures contract (perpetual swap) on crypto with no expiry; can be inverse or quanto-settled.
 - `PerpetualContract`: Asset-class agnostic perpetual swap for any underlying (FX, equities, commodities, indexes, crypto).
 - `OptionContract`: Exchange-traded option (put or call) on an underlying with strike and expiry.
-- `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument.
+- `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument; whole-contract sizing.
 - `CryptoOption`: Option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles.
+- `CryptoOptionSpread`: Crypto option spread mirroring `CryptoOption` (underlying, settlement currency, `is_inverse`); supports fractional `size_increment` (e.g., Deribit BTC combos with `min_trade_amount=0.1`).
 - `BinaryOption`: Fixed-payout option that settles to 0 or 1 based on a binary outcome.
 - `Cfd`: Over-the-counter Contract for Difference that tracks an underlying and is cash-settled.
 - `BettingInstrument`: Sports/gaming market selection (e.g., team or runner) tradable on betting venues.

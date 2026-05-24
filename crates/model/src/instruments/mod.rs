@@ -21,7 +21,9 @@ pub mod binary_option;
 pub mod cfd;
 pub mod commodity;
 pub mod crypto_future;
+pub mod crypto_futures_spread;
 pub mod crypto_option;
+pub mod crypto_option_spread;
 pub mod crypto_perpetual;
 pub mod currency_pair;
 pub mod equity;
@@ -59,7 +61,9 @@ pub use crate::instruments::{
     cfd::Cfd,
     commodity::Commodity,
     crypto_future::CryptoFuture,
+    crypto_futures_spread::CryptoFuturesSpread,
     crypto_option::CryptoOption,
+    crypto_option_spread::CryptoOptionSpread,
     crypto_perpetual::CryptoPerpetual,
     currency_pair::CurrencyPair,
     equity::Equity,
@@ -214,6 +218,9 @@ pub trait Instrument: 'static + Send {
     fn option_kind(&self) -> Option<OptionKind>;
     fn exchange(&self) -> Option<Ustr>;
     fn strike_price(&self) -> Option<Price>;
+    fn strategy_type(&self) -> Option<Ustr> {
+        None
+    }
 
     fn activation_ns(&self) -> Option<UnixNanos>;
     fn expiration_ns(&self) -> Option<UnixNanos>;

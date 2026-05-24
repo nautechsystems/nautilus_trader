@@ -115,8 +115,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instruments
             .iter()
             .fold((0usize, 0usize), |(f, o), inst| match inst {
-                InstrumentAny::FuturesSpread(_) => (f + 1, o),
-                InstrumentAny::OptionSpread(_) => (f, o + 1),
+                InstrumentAny::CryptoFuturesSpread(_) => (f + 1, o),
+                InstrumentAny::CryptoOptionSpread(_) => (f, o + 1),
                 _ => (f, o),
             });
     log::info!(

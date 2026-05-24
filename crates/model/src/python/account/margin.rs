@@ -357,7 +357,13 @@ impl MarginAccount {
             InstrumentAny::CryptoFuture(inst) => self
                 .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoFuturesSpread(inst) => self
+                .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
             InstrumentAny::CryptoOption(inst) => self
+                .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoOptionSpread(inst) => self
                 .calculate_initial_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CryptoPerpetual(inst) => self
@@ -423,7 +429,13 @@ impl MarginAccount {
             InstrumentAny::CryptoFuture(inst) => self
                 .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoFuturesSpread(inst) => self
+                .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
             InstrumentAny::CryptoOption(inst) => self
+                .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
+                .map_err(to_pyvalue_err),
+            InstrumentAny::CryptoOptionSpread(inst) => self
                 .calculate_maintenance_margin(&inst, quantity, price, use_quote_for_inverse)
                 .map_err(to_pyvalue_err),
             InstrumentAny::CryptoPerpetual(inst) => self

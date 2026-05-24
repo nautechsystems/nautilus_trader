@@ -25,12 +25,12 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
-    enums::{AccountType, AggressorSide, AssetClass, BookType, OptionKind, OrderSide},
+    enums::{AccountType, AggressorSide, BookType, OptionKind, OrderSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId},
     instruments::{
-        CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, FuturesSpread, OptionSpread,
-        any::InstrumentAny,
+        CryptoFuture, CryptoFuturesSpread, CryptoOption, CryptoOptionSpread, CryptoPerpetual,
+        CurrencyPair, any::InstrumentAny,
     },
     orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -461,90 +461,98 @@ fn parse_option_instrument(
     Ok(InstrumentAny::CryptoOption(option))
 }
 
-/// Parses a Deribit option combo into an [`OptionSpread`].
+/// Parses a Deribit option combo into a [`CryptoOptionSpread`].
 fn parse_option_combo_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let spread = build_spread_common(instrument, ts_init, ts_event)?;
-    Ok(InstrumentAny::OptionSpread(OptionSpread {
-        id: spread.id,
-        raw_symbol: spread.raw_symbol,
-        asset_class: AssetClass::Cryptocurrency,
-        exchange: None,
-        underlying: spread.underlying,
-        strategy_type: spread.strategy_type,
-        activation_ns: spread.activation_ns,
-        expiration_ns: spread.expiration_ns,
-        currency: spread.currency,
-        price_precision: spread.price_precision,
-        price_increment: spread.price_increment,
-        size_precision: spread.size_precision,
-        size_increment: spread.size_increment,
-        multiplier: spread.multiplier,
-        lot_size: spread.lot_size,
-        margin_init: Decimal::ZERO,
-        margin_maint: Decimal::ZERO,
-        maker_fee: spread.maker_fee,
-        taker_fee: spread.taker_fee,
-        max_quantity: None,
-        min_quantity: Some(spread.size_increment),
-        max_price: None,
-        min_price: None,
-        info: None,
+    let option_spread = CryptoOptionSpread::new(
+        spread.id,
+        spread.raw_symbol,
+        spread.underlying,
+        spread.quote_currency,
+        spread.settlement_currency,
+        spread.is_inverse,
+        spread.strategy_type,
+        spread.activation_ns,
+        spread.expiration_ns,
+        spread.price_precision,
+        spread.size_precision,
+        spread.price_increment,
+        spread.size_increment,
+        Some(spread.multiplier),
+        Some(spread.lot_size),
+        None,
+        Some(spread.size_increment),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(spread.maker_fee),
+        Some(spread.taker_fee),
+        None,
         ts_event,
         ts_init,
-    }))
+    );
+    Ok(InstrumentAny::CryptoOptionSpread(option_spread))
 }
 
-/// Parses a Deribit future combo into a [`FuturesSpread`].
+/// Parses a Deribit future combo into a [`CryptoFuturesSpread`].
 fn parse_future_combo_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let spread = build_spread_common(instrument, ts_init, ts_event)?;
-    Ok(InstrumentAny::FuturesSpread(FuturesSpread {
-        id: spread.id,
-        raw_symbol: spread.raw_symbol,
-        asset_class: AssetClass::Cryptocurrency,
-        exchange: None,
-        underlying: spread.underlying,
-        strategy_type: spread.strategy_type,
-        activation_ns: spread.activation_ns,
-        expiration_ns: spread.expiration_ns,
-        currency: spread.currency,
-        price_precision: spread.price_precision,
-        price_increment: spread.price_increment,
-        size_precision: spread.size_precision,
-        size_increment: spread.size_increment,
-        multiplier: spread.multiplier,
-        lot_size: spread.lot_size,
-        margin_init: Decimal::ZERO,
-        margin_maint: Decimal::ZERO,
-        maker_fee: spread.maker_fee,
-        taker_fee: spread.taker_fee,
-        max_quantity: None,
-        min_quantity: Some(spread.size_increment),
-        max_price: None,
-        min_price: None,
-        info: None,
+    let futures_spread = CryptoFuturesSpread::new(
+        spread.id,
+        spread.raw_symbol,
+        spread.underlying,
+        spread.quote_currency,
+        spread.settlement_currency,
+        spread.is_inverse,
+        spread.strategy_type,
+        spread.activation_ns,
+        spread.expiration_ns,
+        spread.price_precision,
+        spread.size_precision,
+        spread.price_increment,
+        spread.size_increment,
+        Some(spread.multiplier),
+        Some(spread.lot_size),
+        None,
+        Some(spread.size_increment),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(spread.maker_fee),
+        Some(spread.taker_fee),
+        None,
         ts_event,
         ts_init,
-    }))
+    );
+    Ok(InstrumentAny::CryptoFuturesSpread(futures_spread))
 }
 
-/// Fields shared by [`OptionSpread`] and [`FuturesSpread`] construction from a
-/// Deribit combo instrument response.
+/// Fields shared by [`CryptoOptionSpread`] and [`CryptoFuturesSpread`] construction
+/// from a Deribit combo instrument response.
 struct DeribitSpreadCommon {
     id: InstrumentId,
     raw_symbol: Symbol,
-    underlying: Ustr,
+    underlying: Currency,
+    quote_currency: Currency,
+    settlement_currency: Currency,
+    is_inverse: bool,
     strategy_type: Ustr,
     activation_ns: UnixNanos,
     expiration_ns: UnixNanos,
-    currency: Currency,
     price_precision: u8,
     price_increment: Price,
     size_precision: u8,
@@ -562,7 +570,15 @@ fn build_spread_common(
 ) -> anyhow::Result<DeribitSpreadCommon> {
     let id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
     let raw_symbol = Symbol::new(instrument.instrument_name);
-    let underlying = instrument.base_currency;
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
+    let settlement_currency = instrument
+        .settlement_currency
+        .map_or(underlying, Currency::get_or_create_crypto);
+    let is_inverse = instrument
+        .instrument_type
+        .as_ref()
+        .is_some_and(|t| t == "reversed");
     let strategy_type = second_segment(instrument.instrument_name.as_str())
         .map_or_else(|| Ustr::from("SPREAD"), Ustr::from);
 
@@ -573,8 +589,6 @@ fn build_spread_common(
             .context("Missing expiration_timestamp for combo")? as u64
             * 1_000_000,
     );
-
-    let currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
     let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
@@ -589,10 +603,12 @@ fn build_spread_common(
         id,
         raw_symbol,
         underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
         strategy_type,
         activation_ns,
         expiration_ns,
-        currency,
         price_precision: price_increment.precision,
         price_increment,
         size_precision: size_increment.precision,
@@ -1628,16 +1644,18 @@ mod tests {
             .unwrap()
             .expect("Should parse option combo");
 
-        let InstrumentAny::OptionSpread(spread) = any else {
-            panic!("Expected OptionSpread, was {any:?}");
+        let InstrumentAny::CryptoOptionSpread(spread) = any else {
+            panic!("Expected CryptoOptionSpread, was {any:?}");
         };
         assert_eq!(
             spread.id,
             InstrumentId::from("BTC-STRG-19MAY26-74000_79000.DERIBIT")
         );
-        assert_eq!(spread.underlying.as_str(), "BTC");
+        assert_eq!(spread.underlying.code.as_str(), "BTC");
         assert_eq!(spread.strategy_type.as_str(), "STRG");
-        assert_eq!(spread.currency.code.as_str(), "BTC");
+        assert_eq!(spread.quote_currency.code.as_str(), "BTC");
+        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 4);
         assert_eq!(spread.price_increment, Price::from("0.0001"));
         assert_eq!(spread.size_precision, 1);
@@ -1846,14 +1864,16 @@ mod tests {
             .unwrap()
             .expect("Should parse future combo");
 
-        let InstrumentAny::FuturesSpread(spread) = any else {
-            panic!("Expected FuturesSpread, was {any:?}");
+        let InstrumentAny::CryptoFuturesSpread(spread) = any else {
+            panic!("Expected CryptoFuturesSpread, was {any:?}");
         };
         assert_eq!(spread.id, InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"));
-        assert_eq!(spread.underlying.as_str(), "BTC");
+        assert_eq!(spread.underlying.code.as_str(), "BTC");
         assert_eq!(spread.strategy_type.as_str(), "FS");
         // Future combo quote_currency on BTC contracts is USD.
-        assert_eq!(spread.currency.code.as_str(), "USD");
+        assert_eq!(spread.quote_currency.code.as_str(), "USD");
+        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 1);
         assert_eq!(spread.price_increment, Price::from("0.5"));
         assert_eq!(spread.size_precision, 0);
