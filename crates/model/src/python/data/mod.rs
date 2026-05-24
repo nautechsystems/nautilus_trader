@@ -51,7 +51,7 @@ use pyo3::{prelude::*, types::PyCapsule};
 use crate::data::DataFFI;
 use crate::data::{
     Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
+    MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
     is_monotonically_increasing_by_init, register_python_data_class,
 };
 
@@ -409,6 +409,24 @@ pub fn pyobjects_to_instrument_statuses(
     }
 
     Ok(statuses)
+}
+
+/// Transforms the given Python objects into a vector of [`OptionGreeks`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+pub fn pyobjects_to_option_greeks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<OptionGreeks>> {
+    let greeks: Vec<OptionGreeks> = data
+        .into_iter()
+        .map(|obj| OptionGreeks::from_pyobject(&obj))
+        .collect::<PyResult<Vec<OptionGreeks>>>()?;
+
+    if !is_monotonically_increasing_by_init(&greeks) {
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(greeks)
 }
 
 /// Transforms the given Python objects into a vector of [`InstrumentClose`] objects.

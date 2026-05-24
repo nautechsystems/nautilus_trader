@@ -492,6 +492,12 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
+    pub fn get_pipeline_option_greeks_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_option_greeks_topic(instrument_id);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
     pub fn get_pipeline_instrument_close_topic(
         &mut self,
         instrument_id: InstrumentId,
@@ -595,6 +601,7 @@ define_wrappers! {
     get_pipeline_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_cancels_topic(instrument_id: InstrumentId) -> MStr<Topic>,

@@ -5556,6 +5556,7 @@ class NautilusDataType(Enum):
     Bar = 5
     MarkPriceUpdate = 6
     InstrumentStatus = 7
+    OptionGreeks = 8
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 10_000) -> None: ...
@@ -5678,6 +5679,8 @@ def instrument_status_to_arrow_record_batch_bytes(data: list[InstrumentStatus]) 
 def instrument_status_from_arrow_record_batch_bytes(
     data: bytes,
 ) -> list[InstrumentStatus]: ...
+def option_greeks_to_arrow_record_batch_bytes(data: list[OptionGreeks]) -> bytes: ...
+def option_greeks_from_arrow_record_batch_bytes(data: bytes) -> list[OptionGreeks]: ...
 def instrument_closes_to_arrow_record_batch_bytes(data: list[InstrumentClose]) -> bytes: ...
 
 ###################################################################################################

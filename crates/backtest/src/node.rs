@@ -22,7 +22,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
@@ -560,6 +560,9 @@ fn dispatch_query(
         }
         NautilusDataType::InstrumentStatus => {
             catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize)
+        }
+        NautilusDataType::OptionGreeks => {
+            catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize)
         }
         NautilusDataType::InstrumentClose => {
             catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize)

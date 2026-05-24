@@ -23,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -63,6 +64,7 @@ def filename_to_class(filename: str) -> type | None:
         "order_book_deltas": OrderBookDelta,
         "order_book_depths": OrderBookDepth10,
         "mark_price_update": MarkPriceUpdate,
+        "option_greeks": OptionGreeks,
     }
 
     if filename in builtin_filename_to_class:

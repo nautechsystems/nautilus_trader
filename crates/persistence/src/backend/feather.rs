@@ -35,9 +35,9 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
-        get_arrow_schema,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        encode_custom_to_arrow, get_arrow_schema,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -741,6 +741,7 @@ impl FeatherWriter {
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
             Data::InstrumentStatus(status) => self.write(status).await,
+            Data::OptionGreeks(greeks) => self.write(greeks).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
@@ -841,6 +842,7 @@ impl FeatherWriter {
             try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
             try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
             try_write!(message, InstrumentStatus, "InstrumentStatus");
+            try_write!(message, OptionGreeks, "OptionGreeks");
             try_write!(message, InstrumentClose, "InstrumentClose");
             try_write!(message, FundingRateUpdate, "FundingRateUpdate");
             try_write!(message, AccountState, "AccountState");

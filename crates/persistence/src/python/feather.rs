@@ -30,7 +30,8 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        close::InstrumentClose,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -199,6 +200,7 @@ impl PyStreamingFeatherWriter {
         per_instrument_types.insert("bars".to_string());
         per_instrument_types.insert("order_book_deltas".to_string());
         per_instrument_types.insert("order_book_depths".to_string());
+        per_instrument_types.insert("option_greeks".to_string());
         per_instrument_types.insert("quotes".to_string());
         per_instrument_types.insert("trades".to_string());
 
@@ -328,6 +330,14 @@ impl PyStreamingFeatherWriter {
             return runtime
                 .block_on(async { writer.write_data(Data::MarkPriceUpdate(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
+        }
+
+        if let Ok(greeks) = data.extract::<OptionGreeks>(py) {
+            let mut writer = self.writer.borrow_mut();
+            let runtime = get_runtime();
+            return runtime
+                .block_on(async { writer.write_data(Data::OptionGreeks(greeks)).await })
+                .map_err(|e| PyIOError::new_err(format!("Failed to write OptionGreeks: {e}")));
         }
 
         if let Ok(close) = data.extract::<InstrumentClose>(py) {

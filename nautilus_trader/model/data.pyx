@@ -352,6 +352,8 @@ cpdef list pyo3_list_to_data_list(list pyo3_items):
             result.append(MarkPriceUpdate.from_pyo3(item))
         elif type_name == "IndexPriceUpdate":
             result.append(IndexPriceUpdate.from_pyo3(item))
+        elif type_name == "OptionGreeks":
+            result.append(OptionGreeks.from_pyo3(item))
         elif type_name == "InstrumentStatus":
             result.append(InstrumentStatus.from_pyo3(item))
         elif type_name == "InstrumentClose":

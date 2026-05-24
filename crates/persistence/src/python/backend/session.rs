@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use nautilus_model::{
     data::{
-        Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-        QuoteTick, TradeTick,
+        Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     python::data::DataFfiCVec,
 };
@@ -46,6 +46,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
+        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
         Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
     }
@@ -64,6 +65,7 @@ pub enum NautilusDataType {
     Bar = 5,
     MarkPriceUpdate = 6,
     InstrumentStatus = 7,
+    OptionGreeks = 8,
 }
 
 #[pymethods]
@@ -127,6 +129,9 @@ impl DataBackendSession {
                 .map_err(to_pyruntime_err),
             NautilusDataType::InstrumentStatus => slf
                 .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::OptionGreeks => slf
+                .add_file::<OptionGreeks>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
         }
     }
@@ -229,12 +234,15 @@ impl DataQueryResult {
 
         match acc {
             Some(acc) if !acc.is_empty() => {
-                let has_non_ffi = acc
-                    .iter()
-                    .any(|d| matches!(d, Data::Custom(_) | Data::InstrumentStatus(_)));
+                let has_non_ffi = acc.iter().any(|d| {
+                    matches!(
+                        d,
+                        Data::Custom(_) | Data::InstrumentStatus(_) | Data::OptionGreeks(_)
+                    )
+                });
 
                 if has_non_ffi {
-                    // Custom and instrument-status data: convert directly to Python objects (bypasses FFI)
+                    // Non-FFI data: convert directly to Python objects.
                     let objects: Vec<Py<PyAny>> = acc
                         .into_iter()
                         .map(|item| data_to_pyobject(py, item))
