@@ -65,6 +65,7 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -2747,6 +2748,113 @@ class TestRiskEngineWithCashAccount:
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
         assert self.risk_engine.command_count == 1  # <-- Command never reaches engine
+
+    def test_submit_order_list_denies_when_non_representative_instrument_missing(self):
+        # Arrange: only the representative instrument is registered; the second
+        # instrument is intentionally missing from the cache.
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order_a = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order_b = strategy.order_factory.market(
+            _GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order_list = OrderList(
+            order_list_id=OrderListId("L-MISS-001"),
+            orders=[order_a, order_b],
+        )
+
+        submit_order_list = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            order_list,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order_list)
+
+        # Assert
+        assert order_a.status == OrderStatus.DENIED
+        assert order_b.status == OrderStatus.DENIED
+        assert "no instrument found" in order_a.last_event.reason
+        assert str(_GBPUSD_SIM.id) in order_a.last_event.reason
+
+    def test_submit_order_list_check_order_uses_each_orders_own_instrument(self):
+        # Arrange: both instruments registered; the second order's price violates
+        # its OWN instrument's precision but would be valid against the representative
+        # (which doesn't apply, since check_order must use each order's instrument).
+        self.exec_engine.start()
+        self.cache.add_instrument(_GBPUSD_SIM)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order_a = strategy.order_factory.limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("0.50000"),  # valid 5-dp
+        )
+        # Build the bad-precision order directly to bypass the order_factory's
+        # precision validation; the risk engine is the layer under test.
+        bad_price = Price.from_str("1.000001")  # 6-dp, violates GBP/USD 5-dp
+        assert bad_price.precision > _GBPUSD_SIM.price_precision
+        order_b = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            instrument_id=_GBPUSD_SIM.id,
+            client_order_id=ClientOrderId("O-PREC-002"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=bad_price,
+            time_in_force=TimeInForce.GTC,
+            init_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        order_list = OrderList(
+            order_list_id=OrderListId("L-PREC-001"),
+            orders=[order_a, order_b],
+        )
+
+        submit_order_list = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            order_list,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order_list)
+
+        # Assert: only order_b is denied (price precision); order_a remains INITIALIZED
+        assert order_b.status == OrderStatus.DENIED
+        assert "price" in order_b.last_event.reason.lower()
+        assert order_a.status != OrderStatus.DENIED
 
     def test_submit_order_list_buys_when_trading_reducing_then_denies_orders(self):
         # Arrange

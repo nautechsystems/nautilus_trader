@@ -55,8 +55,8 @@ use nautilus_model::{
     instruments::{
         CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny, OptionSpread,
         stubs::{
-            audusd_sim, betting, crypto_perpetual_ethusdt, futures_spread_es, option_spread,
-            xbtusd_bitmex,
+            audusd_sim, betting, crypto_perpetual_ethusdt, futures_spread_es, gbpusd_sim,
+            option_spread, xbtusd_bitmex,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -2717,6 +2717,181 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(event.message().unwrap(), Ustr::from("TradingState::HALTED"));
     }
+}
+
+#[rstest]
+fn test_submit_order_list_denies_when_non_representative_instrument_missing(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    let instrument_a: InstrumentAny = audusd_sim.into();
+    let instrument_b: InstrumentAny = gbpusd_sim.into();
+
+    // Only register the representative instrument; non-representative is missing.
+    simple_cache.add_instrument(instrument_a.clone()).unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let order_a = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_a.id())
+        .client_order_id(ClientOrderId::from("O-MISS-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+    let order_b = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_b.id())
+        .client_order_id(ClientOrderId::from("O-MISS-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    for order in &orders {
+        simple_cache
+            .add_order(order.clone(), None, Some(client_id_binance), true)
+            .unwrap();
+    }
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    let order_list = OrderList::new(
+        OrderListId::new("L-MISS-001"),
+        instrument_a.id(),
+        StrategyId::new("S-001"),
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+
+    let submit = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        order_list,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved.len(), orders.len());
+    for event in &saved {
+        assert_eq!(event.event_type(), OrderEventType::Denied);
+        let msg = event.message().unwrap();
+        assert!(
+            msg.as_str().contains("no instrument found")
+                && msg.as_str().contains(&instrument_b.id().to_string()),
+            "unexpected denial reason: {msg}",
+        );
+    }
+}
+
+#[rstest]
+fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    let instrument_a: InstrumentAny = audusd_sim.into();
+    let instrument_b: InstrumentAny = gbpusd_sim.into();
+
+    simple_cache.add_instrument(instrument_a.clone()).unwrap();
+    simple_cache.add_instrument(instrument_b.clone()).unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    // AUD/USD price precision is 5. A 6-decimal-place limit price violates instrument_a's
+    // precision regardless of which instrument the risk engine looks up. The first order
+    // uses a valid 5-dp price; the second order's price is 6-dp and must be denied because
+    // its own instrument's precision is checked, not the representative's.
+    let order_a = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_a.id())
+        .client_order_id(ClientOrderId::from("O-PREC-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.50000"))
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+    let bad_price = Price::from("1.000001"); // 6-dp, exceeds GBP/USD 5-dp precision
+    assert!(bad_price.precision > instrument_b.price_precision());
+    let order_b = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_b.id())
+        .client_order_id(ClientOrderId::from("O-PREC-002"))
+        .side(OrderSide::Buy)
+        .price(bad_price)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    for order in &orders {
+        simple_cache
+            .add_order(order.clone(), None, Some(client_id_binance), true)
+            .unwrap();
+    }
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    let order_list = OrderList::new(
+        OrderListId::new("L-PREC-001"),
+        instrument_a.id(),
+        StrategyId::new("S-001"),
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+
+    let submit = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        order_list,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    // The second order is denied for price precision; the first order is not denied
+    // (no event emitted for the still-pending entry).
+    assert!(saved.iter().any(|event| {
+        event.event_type() == OrderEventType::Denied
+            && event.client_order_id() == order_b.client_order_id()
+    }));
+    assert!(
+        !saved.iter().any(|event| {
+            event.event_type() == OrderEventType::Denied
+                && event.client_order_id() == order_a.client_order_id()
+        }),
+        "first order should not be denied; check_order is per-order: {saved:?}",
+    );
 }
 
 // Test that order lists with BUY orders are denied when in REDUCING state and already LONG.
@@ -5637,6 +5812,132 @@ fn test_submit_sell_when_reducing_and_net_long_then_allows(
     let saved_execute_messages =
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1);
+}
+
+#[rstest]
+fn test_submit_order_list_reducing_uses_each_orders_own_instrument(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut simple_cache: Cache,
+) {
+    let instrument_a: InstrumentAny = audusd_sim.into();
+    let instrument_b: InstrumentAny = gbpusd_sim.into();
+
+    simple_cache.add_instrument(instrument_a.clone()).unwrap();
+    simple_cache.add_instrument(instrument_b.clone()).unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+        )))
+        .unwrap();
+
+    // Open a LONG position only on instrument_b.
+    let fill_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_b.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+    let mut fill = order_filled(
+        &fill_order,
+        &instrument_b,
+        None,
+        Some(AccountId::from("SIM-001")),
+        Some(VenueOrderId::from("V-REDUCE-001")),
+        None,
+        None,
+        Some(Price::from("1.20000")),
+        None,
+        None,
+        None,
+    );
+    fill.position_id = Some(PositionId::from("P-REDUCE-B"));
+    let position = Position::new(&instrument_b, fill);
+    simple_cache
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut risk_engine = get_risk_engine(Some(cache), None, None, false);
+    risk_engine.portfolio_mut().initialize_positions();
+    risk_engine.set_trading_state(TradingState::Reducing);
+
+    // Order on instrument_a should pass (no position on A). Order on instrument_b
+    // is a BUY that would extend the existing LONG -> denied with B's instrument_id
+    // in the reason. Representative is instrument_a; reverting to the representative
+    // would let order_b through.
+    let order_a = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_a.id())
+        .client_order_id(ClientOrderId::from("O-REDUCE-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+    let order_b = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_b.id())
+        .client_order_id(ClientOrderId::from("O-REDUCE-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    for order in &orders {
+        risk_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id_binance), true)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::new("L-REDUCE-001"),
+        instrument_a.id(),
+        StrategyId::new("S-001"),
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+
+    let submit = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        order_list,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert!(
+        !saved.is_empty(),
+        "REDUCING should have produced denial events",
+    );
+    let denial_messages: Vec<String> = saved
+        .iter()
+        .filter(|e| e.event_type() == OrderEventType::Denied)
+        .filter_map(|e| e.message().map(|m| m.as_str().to_string()))
+        .collect();
+    assert!(
+        denial_messages
+            .iter()
+            .any(|m| m.contains(&instrument_b.id().to_string())),
+        "expected denial reason to name instrument {}, found: {denial_messages:?}",
+        instrument_b.id(),
+    );
+    assert!(
+        !denial_messages
+            .iter()
+            .any(|m| m.contains(&instrument_a.id().to_string()) && m.contains("REDUCING")),
+        "instrument_a should not appear in a REDUCING denial reason: {denial_messages:?}",
+    );
 }
 
 #[rstest]

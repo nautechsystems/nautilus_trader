@@ -21,6 +21,9 @@ Released on TBD (UTC).
 - Added `config_json` argument to plug-in `create` thunks and `PluginActor::new`/`PluginStrategy::new` (Rust)
 - Added Rust `DataEngine` continuous futures historical bar requests and live bar subscriptions
 - Added Rust `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support
+- Added support for mixed-instrument `OrderList`s at the same venue (e.g. pairs, calendar spreads, multi-leg legs)
+- Added `OrderList.is_uniform_instrument` and `OrderList.instrument_ids` helpers (Python)
+- Added deny guard for mixed-instrument order lists submitted with a `position_id`
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
@@ -93,6 +96,8 @@ None
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
 - Improved Binance Spot SBE missing credentials error message (#4092), thanks @filipmacek
+- Improved `RiskEngine` per-order pre-trade checks to resolve each order's own instrument in mixed-instrument lists
+- Improved `ExecutionEngine` to route own-order-book inserts per order for mixed-instrument lists
 - Refined Hyperliquid adapter hot paths in WebSocket handler, parse, and signing modules
 - Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
 - Refined Interactive Brokers `nautilus-execution`/`nautilus-network` deps behind `execution` feature
@@ -105,6 +110,7 @@ None
 ### Documentation Updates
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
 - Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
+- Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)

@@ -2485,6 +2485,61 @@ class TestExecutionEngine:
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
 
+    @pytest.mark.parametrize("oms_type", ["NETTING", "HEDGING"])
+    def test_submit_order_list_denies_mixed_instruments_with_position_id_regardless_of_oms(
+        self,
+        oms_type: str,
+    ) -> None:
+        # Arrange
+        self.cache.add_instrument(GBPUSD_SIM)
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type=oms_type)
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        order_a = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order_b = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order_list = OrderList(
+            order_list_id=OrderListId("L-MIXED-POS"),
+            orders=[order_a, order_b],
+        )
+
+        position_id = PositionId(f"{AUDUSD_SIM.id}-LEGACY")
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            order_list=order_list,
+            position_id=position_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order_list)
+
+        # Assert
+        assert order_a.status == OrderStatus.DENIED
+        assert order_b.status == OrderStatus.DENIED
+        assert "mixed-instrument" in order_a.last_event.reason
+        assert "position belongs" in order_a.last_event.reason
+
     def test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(self) -> None:
         # Arrange: register a NETTING client for BINANCE alongside the default
         # HEDGING SIM client; the strategy is left at UNSPECIFIED so resolution

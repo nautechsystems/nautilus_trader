@@ -1919,6 +1919,24 @@ impl ExecutionEngine {
             return;
         }
 
+        let is_uniform_instrument = orders
+            .iter()
+            .all(|o| o.instrument_id() == cmd.instrument_id);
+
+        if let Some(position_id) = cmd.position_id
+            && !is_uniform_instrument
+        {
+            let reason = format!(
+                "`position_id` {position_id} is not valid for a mixed-instrument order list; \
+                 a position belongs to a single instrument",
+            );
+
+            for order in &orders {
+                self.deny_order(order, &reason);
+            }
+            return;
+        }
+
         if let Some(reason) = self.check_position_id_against_oms(
             cmd.instrument_id,
             cmd.strategy_id,
@@ -1949,10 +1967,9 @@ impl ExecutionEngine {
         }
 
         if self.config.manage_own_order_books {
-            let mut own_book = self.get_or_init_own_order_book(&cmd.instrument_id);
-
             for order in &orders {
                 if should_handle_own_book_order(order) {
+                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
                     own_book.add(order.to_own_book_order());
                 }
             }

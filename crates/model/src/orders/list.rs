@@ -29,8 +29,18 @@ use crate::{
 
 /// Lightweight identifier container for a group of related orders.
 ///
-/// Stores only the order IDs - full order data lives in the cache.
+/// Stores only the order IDs; full order data lives in the cache.
 /// For serialization payload, see `SubmitOrderList.order_inits`.
+///
+/// All orders should share the same venue. The production constructors
+/// enforce this: [`OrderList::from_orders`] and `OrderFactory::create_list`
+/// panic on mixed venues, and `Strategy::submit_order_list` bails at the
+/// user-facing entry. [`OrderList::new`] is infallible and takes
+/// `instrument_id` directly; it does not verify the venues of the supplied
+/// `client_order_ids`. The `instrument_id` is a representative value taken
+/// from the first order; orders may target different instruments at that
+/// venue. Downstream consumers that need a per-order instrument should
+/// resolve each order from the cache.
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -70,19 +80,21 @@ impl OrderList {
 
     /// Creates a new [`OrderList`] from a slice of orders.
     ///
-    /// Derives `order_list_id`, `instrument_id`, and `strategy_id` from
-    /// the first order without checking that subsequent orders share
-    /// them; callers in the production path (`OrderFactory` plus a single
-    /// strategy instance) produce orders with consistent identifiers.
-    /// [`OrderList::validate`] checks the syntactic invariants (non-empty,
-    /// unique `client_order_ids`); it does not check cross-field
-    /// consistency.
+    /// Derives `order_list_id`, `instrument_id`, and `strategy_id` from the
+    /// first order. The `instrument_id` is representative only; orders in
+    /// the list may target different instruments at the same venue.
+    /// Callers in the production path (`OrderFactory` plus a single
+    /// strategy instance) produce orders with a consistent `order_list_id`
+    /// and `strategy_id`. [`OrderList::validate`] checks the syntactic
+    /// invariants (non-empty, unique `client_order_ids`); it does not
+    /// check cross-field consistency.
     ///
     /// # Panics
     ///
-    /// Panics if `orders` is empty or if the first order has no
-    /// `order_list_id`. Callers are expected to guard non-empty input;
-    /// `Strategy::submit_order_list` filters out the empty case before
+    /// Panics if `orders` is empty, if the first order has no
+    /// `order_list_id`, or if orders span more than one venue. Callers
+    /// are expected to guard non-empty input; `Strategy::submit_order_list`
+    /// filters out the empty case and bails on mixed venues before
     /// reaching this constructor.
     #[must_use]
     pub fn from_orders(orders: &[OrderAny], ts_init: UnixNanos) -> Self {
@@ -94,6 +106,18 @@ impl OrderList {
             .expect("OrderList::from_orders requires first order to have order_list_id");
         let instrument_id = first.instrument_id();
         let strategy_id = first.strategy_id();
+        let venue = instrument_id.venue;
+
+        for order in orders {
+            assert!(
+                order.instrument_id().venue == venue,
+                "OrderList::from_orders requires all orders to share the same venue; \
+                 expected {venue}, found {} on {}",
+                order.instrument_id().venue,
+                order.client_order_id(),
+            );
+        }
+
         let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
 
         Self {
@@ -217,6 +241,45 @@ mod tests {
         assert!(order_list.to_string().starts_with(
             "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=S-001, client_order_ids="
         ));
+    }
+
+    fn create_orders_for_instrument(
+        instrument_ids: &[&str],
+        order_list_id: OrderListId,
+    ) -> Vec<OrderAny> {
+        instrument_ids
+            .iter()
+            .enumerate()
+            .map(|(i, instrument)| {
+                OrderTestBuilder::new(OrderType::Market)
+                    .instrument_id(InstrumentId::from(*instrument))
+                    .client_order_id(ClientOrderId::from(format!("O-00{}", i + 1).as_str()))
+                    .order_list_id(order_list_id)
+                    .quantity(Quantity::from(1))
+                    .build()
+            })
+            .collect()
+    }
+
+    #[rstest]
+    fn test_from_orders_accepts_mixed_instruments_same_venue() {
+        let order_list_id = OrderListId::from("OL-MIXED-001");
+        let orders = create_orders_for_instrument(&["AUD/USD.SIM", "EUR/USD.SIM"], order_list_id);
+
+        let order_list = OrderList::from_orders(&orders, UnixNanos::default());
+
+        assert_eq!(order_list.len(), 2);
+        assert_eq!(order_list.instrument_id, InstrumentId::from("AUD/USD.SIM"));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "share the same venue")]
+    fn test_from_orders_panics_on_mixed_venues() {
+        let order_list_id = OrderListId::from("OL-MIXED-002");
+        let orders =
+            create_orders_for_instrument(&["AUD/USD.SIM", "EUR/USD.IDEALPRO"], order_list_id);
+
+        let _ = OrderList::from_orders(&orders, UnixNanos::default());
     }
 
     #[rstest]

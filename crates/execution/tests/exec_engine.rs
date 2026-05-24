@@ -59,7 +59,10 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
-    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+    instruments::{
+        CurrencyPair, Instrument, InstrumentAny,
+        stubs::{audusd_sim, gbpusd_sim},
+    },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -587,6 +590,214 @@ fn test_submit_order_list_denied_with_custom_position_id_under_netting(
             .expect("Order should be cached");
         assert_eq!(cached.status(), OrderStatus::Denied);
     }
+}
+
+#[rstest]
+#[case(OmsType::Netting)]
+#[case(OmsType::Hedging)]
+fn test_submit_order_list_denies_mixed_instruments_with_position_id_regardless_of_oms(
+    mut execution_engine: ExecutionEngine,
+    #[case] oms_type: OmsType,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_a = audusd_sim();
+    let instrument_b = gbpusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::from("TEST-ACCOUNT"),
+        Venue::test_default(),
+        oms_type,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument_a.clone().into()).unwrap();
+        cache.add_instrument(instrument_b.clone().into()).unwrap();
+    }
+
+    let order_a = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_a.id)
+        .client_order_id(ClientOrderId::from("O-MIXED-POS-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let order_b = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_b.id)
+        .client_order_id(ClientOrderId::from("O-MIXED-POS-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    let position_id = PositionId::new(format!("{}-LEGACY", instrument_a.id));
+
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(
+                order.clone(),
+                Some(position_id),
+                Some(ClientId::from("STUB")),
+                true,
+            )
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-MIXED-POS"),
+        instrument_a.id,
+        strategy_id,
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        UnixNanos::default(),
+    );
+
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: Some(ClientId::from("STUB")),
+        strategy_id,
+        instrument_id: instrument_a.id,
+        order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
+        exec_algorithm_id: None,
+        position_id: Some(position_id),
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let cache = execution_engine.cache().borrow();
+    for order in &orders {
+        let cached = cache
+            .order(&order.client_order_id())
+            .expect("Order should be cached");
+        assert_eq!(
+            cached.status(),
+            OrderStatus::Denied,
+            "expected {} denied under OMS {oms_type:?}",
+            order.client_order_id(),
+        );
+    }
+}
+
+#[rstest]
+fn test_submit_order_list_mixed_instruments_routes_per_order_own_book(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        debug: true,
+        manage_own_order_books: true,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_a: InstrumentAny = audusd_sim.into();
+    let instrument_b: InstrumentAny = gbpusd_sim.into();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument_a.clone()).unwrap();
+        cache.add_instrument(instrument_b.clone()).unwrap();
+    }
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    let order_a = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_a.id())
+        .client_order_id(ClientOrderId::from("O-OWN-BOOK-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("0.50000").unwrap())
+        .build();
+
+    let order_b = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_b.id())
+        .client_order_id(ClientOrderId::from("O-OWN-BOOK-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("1.20000").unwrap())
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-OWN-BOOK"),
+        instrument_a.id(),
+        strategy_id,
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        UnixNanos::default(),
+    );
+
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: Some(ClientId::from("STUB")),
+        strategy_id,
+        instrument_id: instrument_a.id(),
+        order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let cache = execution_engine.cache().borrow();
+    let book_a = cache
+        .own_order_book(&instrument_a.id())
+        .expect("own book for instrument A should exist");
+    let book_b = cache
+        .own_order_book(&instrument_b.id())
+        .expect("own book for instrument B should exist");
+
+    assert_eq!(book_a.update_count, 1, "book A should have one update");
+    assert_eq!(book_b.update_count, 1, "book B should have one update");
+    assert_eq!(book_a.bids_as_map(None, None, None).len(), 1);
+    assert_eq!(book_b.bids_as_map(None, None, None).len(), 1);
 }
 
 #[rstest]

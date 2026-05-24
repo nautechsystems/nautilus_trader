@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -60,6 +61,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+EURUSD_SIM = TestInstrumentProvider.default_fx_ccy("EUR/USD")
 
 
 class TestOrders:
@@ -1872,6 +1874,69 @@ class TestOrders:
         assert repr(bracket) == (
             "OrderList(id=OL-19700101-000000-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000000-000-001-2, O-19700101-000000-000-001-3], tags=['ENTRY']), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000000-000-001-3], parent_order_id=O-19700101-000000-000-001-1, tags=['STOP_LOSS']), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, position_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000000-000-001-2], parent_order_id=O-19700101-000000-000-001-1, tags=['TAKE_PROFIT'])])"
         )
+
+    def test_order_list_accepts_mixed_instruments_same_venue(self):
+        # Arrange
+        order_a = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order_b = self.order_factory.market(
+            EURUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act
+        order_list = OrderList(
+            order_list_id=OrderListId("OL-MIXED-001"),
+            orders=[order_a, order_b],
+        )
+
+        # Assert
+        assert len(order_list) == 2
+        assert order_list.instrument_id == AUDUSD_SIM.id  # representative
+        assert order_list.is_uniform_instrument() is False
+        assert order_list.instrument_ids() == {AUDUSD_SIM.id, EURUSD_SIM.id}
+
+    def test_order_list_rejects_mixed_venues(self):
+        # Arrange
+        order_a = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        other_venue_instrument = TestInstrumentProvider.default_fx_ccy(
+            "EUR/USD",
+            venue=Venue("IDEALPRO"),
+        )
+        order_b = self.order_factory.market(
+            other_venue_instrument.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="same venue"):
+            OrderList(
+                order_list_id=OrderListId("OL-MIXED-002"),
+                orders=[order_a, order_b],
+            )
+
+    def test_order_list_is_uniform_instrument_true_for_single_instrument(self):
+        # Arrange
+        bracket = self.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
+        )
+
+        # Act, Assert
+        assert bracket.is_uniform_instrument() is True
+        assert bracket.instrument_ids() == {AUDUSD_SIM.id}
 
     def test_is_bracket_with_valid_bracket_order(self):
         # Arrange
