@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import signal
@@ -24,6 +25,21 @@ from nautilus_trader.core import nautilus_pyo3 as pyo3
 IB = "IB"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_TWS_PORT = 7497
+FUTURES_MONTH_CODES = {
+    1: "F",
+    2: "G",
+    3: "H",
+    4: "J",
+    5: "K",
+    6: "M",
+    7: "N",
+    8: "Q",
+    9: "U",
+    10: "V",
+    11: "X",
+    12: "Z",
+}
+QUARTERLY_CONTRACT_MONTHS = (3, 6, 9, 12)
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -68,6 +84,117 @@ def ib_account_id(raw_account_id: str) -> pyo3.AccountId:
     return pyo3.AccountId.from_str(f"{IB}-{raw_account_id}")
 
 
+def contract_month_code(year: int, month: int) -> str:
+    return f"{FUTURES_MONTH_CODES[month]}{year % 10}"
+
+
+def third_friday(year: int, month: int) -> dt.date:
+    first_day = dt.date(year, month, 1)
+    first_friday_offset = (4 - first_day.weekday()) % 7
+    return first_day + dt.timedelta(days=first_friday_offset + 14)
+
+
+def active_quarterly_contract(
+    *,
+    symbol: str,
+    venue: str,
+    today: dt.date | None = None,
+    min_days_to_expiry: int = 45,
+) -> tuple[str, str, str]:
+    today = today or dt.date.today()
+    target_expiry = today + dt.timedelta(days=min_days_to_expiry)
+    year = today.year
+
+    while True:
+        for month in QUARTERLY_CONTRACT_MONTHS:
+            expiry = third_friday(year, month)
+            if expiry >= target_expiry:
+                local_symbol = f"{symbol}{contract_month_code(year, month)}"
+                return local_symbol, f"{local_symbol}.{venue}", expiry.strftime("%Y%m%d")
+        year += 1
+
+
+def active_monthly_contract(
+    *,
+    symbol: str,
+    venue: str,
+    today: dt.date | None = None,
+    min_days_to_contract_month: int = 45,
+) -> tuple[str, str, str]:
+    today = today or dt.date.today()
+    target_month = today + dt.timedelta(days=min_days_to_contract_month)
+    year = today.year
+    month = today.month
+
+    while dt.date(year, month, 1) < target_month:
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+
+    local_symbol = f"{symbol}{contract_month_code(year, month)}"
+    return local_symbol, f"{local_symbol}.{venue}", f"{year}{month:02d}"
+
+
+def default_es_future() -> tuple[str, str, str]:
+    return active_quarterly_contract(symbol="ES", venue="XCME")
+
+
+def default_ym_future() -> tuple[str, str, str]:
+    return active_quarterly_contract(symbol="YM", venue="XCBT")
+
+
+def default_cl_future() -> tuple[str, str, str]:
+    return active_monthly_contract(symbol="CL", venue="XNYM")
+
+
+def default_es_future_instrument_id() -> str:
+    return default_es_future()[1]
+
+
+def default_ym_future_instrument_id() -> str:
+    return default_ym_future()[1]
+
+
+def default_cl_future_instrument_id() -> str:
+    return default_cl_future()[1]
+
+
+def format_option_strike(strike: float) -> str:
+    strike_value = float(strike)
+    return str(int(strike_value)) if strike_value.is_integer() else str(strike_value)
+
+
+def default_es_put_option_local_symbol(strike: float = 6800.0) -> str:
+    local_symbol, _, _ = default_es_future()
+    return f"{local_symbol} P{format_option_strike(strike)}"
+
+
+def default_es_put_option_instrument_id(strike: float = 6800.0) -> str:
+    return f"{default_es_put_option_local_symbol(strike)}.XCME"
+
+
+def default_es_put_spread_instrument_id(
+    long_strike: float = 6800.0,
+    short_strike: float = 6750.0,
+) -> str:
+    leg_ratios = [
+        (default_es_put_option_local_symbol(long_strike), 1),
+        (default_es_put_option_local_symbol(short_strike), -1),
+    ]
+    leg_ratios.sort(key=lambda value: value[0])
+
+    symbol_parts = []
+
+    for symbol, ratio in leg_ratios:
+        if ratio > 0:
+            symbol_parts.append(f"({ratio}){symbol}")
+        else:
+            symbol_parts.append(f"(({abs(ratio)})){symbol}")
+
+    return f"{'_'.join(symbol_parts)}.XCME"
+
+
 def default_stock_contracts() -> list[dict[str, str]]:
     ib = pyo3.interactive_brokers
     return [
@@ -99,16 +226,17 @@ def futures_contract(
     *,
     symbol: str = "ES",
     exchange: str = "CME",
-    local_symbol: str = "ESM6",
-    expiry: str = "20260618",
+    local_symbol: str | None = None,
+    expiry: str | None = None,
 ) -> dict[str, object]:
     ib = pyo3.interactive_brokers
+    default_local_symbol, _, default_expiry = default_es_future()
     return {
         "secType": ib.IbSecurityType.FUTURE.as_str(),
         "symbol": symbol,
         "exchange": exchange,
-        "localSymbol": local_symbol,
-        "lastTradeDateOrContractMonth": expiry,
+        "localSymbol": local_symbol or default_local_symbol,
+        "lastTradeDateOrContractMonth": expiry or default_expiry,
         "currency": "USD",
     }
 
@@ -117,20 +245,22 @@ def option_contract(
     *,
     symbol: str = "ES",
     exchange: str = "CME",
-    local_symbol: str,
-    expiry: str = "20260618",
+    local_symbol: str | None = None,
+    expiry: str | None = None,
     right: Any | None = None,
     strike: float | None = None,
 ) -> dict[str, object]:
     ib = pyo3.interactive_brokers
     right = right or ib.IbOptionRight.PUT
     right_value = right.as_str() if hasattr(right, "as_str") else str(right)
+    default_local_symbol = default_es_put_option_local_symbol(strike or 6800.0)
+    _, _, default_expiry = default_es_future()
     contract: dict[str, object] = {
         "secType": ib.IbSecurityType.FUTURES_OPTION.as_str(),
         "symbol": symbol,
         "exchange": exchange,
-        "localSymbol": local_symbol,
-        "lastTradeDateOrContractMonth": expiry,
+        "localSymbol": local_symbol or default_local_symbol,
+        "lastTradeDateOrContractMonth": expiry or default_expiry,
         "right": right_value,
         "currency": "USD",
     }

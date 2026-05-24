@@ -415,6 +415,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         self.core.venue
     }
 
+    fn handles_order_venue(&self, _venue: Venue) -> bool {
+        true
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }

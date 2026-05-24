@@ -1847,7 +1847,7 @@ impl ExecutionEngine {
 
         let order_venue = order.instrument_id().venue;
         let client_venue = client.venue();
-        if order_venue != client_venue {
+        if !client.handles_order_venue(order_venue) {
             self.deny_order(
                 &order,
                 &format!("Order venue {order_venue} does not match client venue {client_venue}"),
@@ -1909,7 +1909,7 @@ impl ExecutionEngine {
 
         let order_list_venue = cmd.instrument_id.venue;
         let client_venue = client.venue();
-        if order_list_venue != client_venue {
+        if !client.handles_order_venue(order_list_venue) {
             for order in &orders {
                 self.deny_order(
                     order,

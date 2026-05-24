@@ -56,6 +56,7 @@ pub struct StubExecutionClient {
     stop_count: Rc<Cell<usize>>,
     reset_count: Rc<Cell<usize>>,
     dispose_count: Rc<Cell<usize>>,
+    handles_all_order_venues: bool,
 }
 
 impl StubExecutionClient {
@@ -81,7 +82,15 @@ impl StubExecutionClient {
             stop_count: Rc::new(Cell::new(0)),
             reset_count: Rc::new(Cell::new(0)),
             dispose_count: Rc::new(Cell::new(0)),
+            handles_all_order_venues: false,
         }
+    }
+
+    /// Configures this stub to accept orders for any instrument venue.
+    #[must_use]
+    pub fn with_handles_all_order_venues(mut self) -> Self {
+        self.handles_all_order_venues = true;
+        self
     }
 
     /// Returns a shared handle to the instruments delivered via [`ExecutionClient::on_instrument`].
@@ -131,6 +140,10 @@ impl ExecutionClient for StubExecutionClient {
 
     fn venue(&self) -> Venue {
         self.venue
+    }
+
+    fn handles_order_venue(&self, venue: Venue) -> bool {
+        self.handles_all_order_venues || self.venue == venue
     }
 
     fn oms_type(&self) -> OmsType {
