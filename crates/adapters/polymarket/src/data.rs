@@ -74,7 +74,7 @@ use crate::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
         query::GetGammaMarketsParams,
     },
-    providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_instruments},
+    providers::{PolymarketInstrumentProvider, extract_condition_id},
     websocket::{
         client::PolymarketWebSocketClient,
         messages::{MarketWsMessage, PolymarketQuotes, PolymarketWsMessage},
@@ -1233,11 +1233,14 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        let http = self.provider.http_client().clone();
-        let filters = self.provider.filters();
         let sender = self.data_sender.clone();
-        let instruments_cache = self.instruments.clone();
-        let token_meta = self.token_meta.clone();
+        let instruments = self
+            .instruments
+            .load()
+            .values()
+            .filter(|instrument| instrument.id().venue == *POLYMARKET_VENUE)
+            .cloned()
+            .collect::<Vec<_>>();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *POLYMARKET_VENUE;
@@ -1247,32 +1250,19 @@ impl DataClient for PolymarketDataClient {
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            match fetch_instruments(&http, &filters).await {
-                Ok(instruments) => {
-                    log::info!("Fetched {} instruments from Gamma API", instruments.len());
+            let response = DataResponse::Instruments(InstrumentsResponse::new(
+                request_id,
+                client_id,
+                venue,
+                instruments,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
 
-                    for instrument in &instruments {
-                        cache_instrument(&instruments_cache, &token_meta, instrument);
-                    }
-
-                    let response = DataResponse::Instruments(InstrumentsResponse::new(
-                        request_id,
-                        client_id,
-                        venue,
-                        instruments,
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    ));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instruments response: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch instruments from Gamma API: {e:?}");
-                }
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send instruments response: {e}");
             }
         });
 
