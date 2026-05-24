@@ -23,9 +23,11 @@ from nautilus_trader.model.objects cimport Price
 
 cdef class CryptoOption(Instrument):
     cdef readonly Currency underlying
-    """The underlying asset for the contract.\n\n:returns: `str`"""
+    """The underlying asset for the contract.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
     """The settlement currency for the instrument.\n\n:returns: `Currency`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `bool`"""
     cdef readonly OptionKind option_kind
     """The option kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
     cdef readonly Price strike_price

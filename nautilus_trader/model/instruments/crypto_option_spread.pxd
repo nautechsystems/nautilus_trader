@@ -24,6 +24,8 @@ cdef class CryptoOptionSpread(Instrument):
     """The underlying asset for the contract.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
     """The settlement currency for the contract.\n\n:returns: `Currency`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `bool`"""
     cdef readonly str strategy_type
     """The strategy type of the spread.\n\n:returns: `str`"""
     cdef readonly uint64_t activation_ns

@@ -52,6 +52,33 @@ _ETHUSD_PERP_QUANTO = nautilus_pyo3.CryptoPerpetual(
     ts_init=0,
 )
 
+_ETHUSD_PERP_USD_STABLE_SETTLED = nautilus_pyo3.CryptoPerpetual(
+    instrument_id=nautilus_pyo3.InstrumentId.from_str("ETHUSD-STABLE-PERP.BITMEX"),
+    raw_symbol=nautilus_pyo3.Symbol("ETHUSD-STABLE-PERP"),
+    base_currency=nautilus_pyo3.Currency.from_str("ETH"),
+    quote_currency=nautilus_pyo3.Currency.from_str("USD"),
+    settlement_currency=nautilus_pyo3.Currency.from_str("USDT"),
+    is_inverse=False,
+    price_precision=1,
+    size_precision=0,
+    price_increment=nautilus_pyo3.Price.from_str("0.5"),
+    size_increment=nautilus_pyo3.Quantity.from_int(1),
+    maker_fee=Decimal(0),
+    taker_fee=Decimal(0),
+    margin_init=Decimal("0.01"),
+    margin_maint=Decimal("0.005"),
+    multiplier=None,
+    lot_size=None,
+    max_quantity=nautilus_pyo3.Quantity.from_int(1_000_000),
+    min_quantity=nautilus_pyo3.Quantity.from_int(1),
+    max_notional=None,
+    min_notional=None,
+    max_price=nautilus_pyo3.Price.from_str("1000000.0"),
+    min_price=nautilus_pyo3.Price.from_str("0.5"),
+    ts_event=0,
+    ts_init=0,
+)
+
 
 def test_equality():
     item_1 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
@@ -147,6 +174,36 @@ def test_pyo3_cython_conversion():
     assert crypto_perpetual_pyo3_dict == crypto_perpetual_cython_dict
 
 
+def test_dict_round_trip_preserves_fractional_lot_size():
+    values = CryptoPerpetual.to_dict(CryptoPerpetual.from_pyo3(_ETHUSDT_PERP))
+    values["lot_size"] = "0.25"
+
+    restored = CryptoPerpetual.from_dict(values)
+
+    assert restored.lot_size == Quantity.from_str("0.25")
+    assert CryptoPerpetual.to_dict(restored)["lot_size"] == "0.25"
+
+
+def test_dict_round_trip_preserves_none_lot_size():
+    values = CryptoPerpetual.to_dict(CryptoPerpetual.from_pyo3(_ETHUSDT_PERP))
+    values["lot_size"] = None
+
+    restored = CryptoPerpetual.from_dict(values)
+
+    assert restored.lot_size is None
+    assert CryptoPerpetual.to_dict(restored)["lot_size"] is None
+
+
+def test_dict_round_trip_defaults_missing_lot_size_to_none():
+    values = CryptoPerpetual.to_dict(CryptoPerpetual.from_pyo3(_ETHUSDT_PERP))
+    values.pop("lot_size")
+
+    restored = CryptoPerpetual.from_dict(values)
+
+    assert restored.lot_size is None
+    assert CryptoPerpetual.to_dict(restored)["lot_size"] is None
+
+
 def test_get_cost_currency_linear():
     linear = CryptoPerpetual.from_pyo3(_ETHUSDT_PERP)
     assert linear.get_cost_currency() == Currency.from_str("USDT")
@@ -160,6 +217,13 @@ def test_get_cost_currency_inverse():
 def test_get_cost_currency_quanto():
     quanto = CryptoPerpetual.from_pyo3(_ETHUSD_PERP_QUANTO)
     assert quanto.get_cost_currency() == Currency.from_str("BTC")
+
+
+def test_usd_stable_settlement_is_not_quanto():
+    instrument = CryptoPerpetual.from_pyo3(_ETHUSD_PERP_USD_STABLE_SETTLED)
+
+    assert instrument.is_quanto is False
+    assert instrument.get_cost_currency() == Currency.from_str("USD")
 
 
 def test_notional_value_linear():
@@ -204,4 +268,16 @@ def test_notional_value_quanto():
 
     assert notional.currency == Currency.from_str("BTC")
     expected = quantity.as_decimal() * quanto.multiplier.as_decimal() * price.as_decimal()
+    assert notional.as_decimal() == expected
+
+
+def test_notional_value_usd_stable_settlement_returns_quote():
+    instrument = CryptoPerpetual.from_pyo3(_ETHUSD_PERP_USD_STABLE_SETTLED)
+    quantity = Quantity.from_int(1000)
+    price = Price.from_str("2500.0")
+
+    notional = instrument.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("USD")
+    expected = quantity.as_decimal() * instrument.multiplier.as_decimal() * price.as_decimal()
     assert notional.as_decimal() == expected

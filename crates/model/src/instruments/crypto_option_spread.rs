@@ -168,6 +168,10 @@ impl CryptoOptionSpread {
             check_positive_quantity(multiplier, stringify!(multiplier))?;
         }
 
+        if let Some(lot_size) = lot_size {
+            check_positive_quantity(lot_size, stringify!(lot_size))?;
+        }
+
         Ok(Self {
             id: instrument_id,
             raw_symbol,
@@ -429,6 +433,7 @@ impl Instrument for CryptoOptionSpread {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessResult;
     use rstest::rstest;
 
     use crate::{
@@ -507,9 +512,56 @@ mod tests {
     }
 
     #[rstest]
+    #[case::zero_multiplier(Some(Quantity::from("0")), None)]
+    #[case::zero_lot_size(None, Some(Quantity::from("0")))]
+    fn test_new_checked_rejects_non_positive_sizing(
+        #[case] multiplier: Option<Quantity>,
+        #[case] lot_size: Option<Quantity>,
+    ) {
+        let result = crypto_option_spread_result(multiplier, lot_size);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_serialization_roundtrip(crypto_option_spread_btc_deribit: CryptoOptionSpread) {
         let json = serde_json::to_string(&crypto_option_spread_btc_deribit).unwrap();
         let deserialized: CryptoOptionSpread = serde_json::from_str(&json).unwrap();
         assert_eq!(crypto_option_spread_btc_deribit, deserialized);
+    }
+
+    fn crypto_option_spread_result(
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
+    ) -> CorrectnessResult<CryptoOptionSpread> {
+        CryptoOptionSpread::new_checked(
+            InstrumentId::from("BTC-CS-TEST.DERIBIT"),
+            Symbol::from("BTC-CS-TEST"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::BTC(),
+            false,
+            ustr::Ustr::from("CS"),
+            0.into(),
+            0.into(),
+            4,
+            1,
+            Price::from("0.0001"),
+            Quantity::from("0.1"),
+            multiplier,
+            lot_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )
     }
 }

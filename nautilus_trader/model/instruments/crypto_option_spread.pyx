@@ -29,6 +29,7 @@ from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.base cimport settlement_currency_differs_for_quanto
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -167,6 +168,14 @@ cdef class CryptoOptionSpread(Instrument):
 
         self.underlying = underlying
         self.settlement_currency = settlement_currency
+        if settlement_currency_differs_for_quanto(
+            settlement_currency,
+            quote_currency,
+            underlying,
+        ):
+            self.is_quanto = True
+        else:
+            self.is_quanto = False
         self.strategy_type = strategy_type
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
@@ -226,6 +235,7 @@ cdef class CryptoOptionSpread(Instrument):
 
         - Standard linear instruments = quote_currency
         - Inverse instruments = underlying (base currency)
+        - Quanto instruments = settlement_currency
 
         Returns
         -------
@@ -234,6 +244,8 @@ cdef class CryptoOptionSpread(Instrument):
         """
         if self.is_inverse:
             return self.underlying
+        elif self.is_quanto:
+            return self.settlement_currency
         else:
             return self.quote_currency
 
@@ -248,8 +260,9 @@ cdef class CryptoOptionSpread(Instrument):
         """
         Calculate the notional value.
 
-        Result will be in quote currency for standard instruments, or underlying
-        currency for inverse instruments.
+        Result will be in quote currency for standard instruments, underlying
+        currency for inverse instruments, or settlement currency for quanto
+        instruments.
 
         Parameters
         ----------
@@ -261,7 +274,7 @@ cdef class CryptoOptionSpread(Instrument):
             For inverse instruments only: if True, treats the quantity as already representing
             notional value in quote currency and returns it directly without calculation.
             This is useful when quantity already represents a USD value that doesn't need
-            conversion (e.g., for display purposes). Has no effect on linear instruments.
+            conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
         target_currency : Currency, optional
             The target currency for conversion.
         conversion_price : Price, optional
@@ -284,6 +297,11 @@ cdef class CryptoOptionSpread(Instrument):
                     quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
                     self.underlying,
                 )
+        elif self.is_quanto:
+            notional = Money(
+                quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
+                self.settlement_currency,
+            )
         else:
             notional = Money(
                 quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),

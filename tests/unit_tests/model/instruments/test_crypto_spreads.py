@@ -46,6 +46,12 @@ def test_crypto_futures_spread_inverse_notional_returns_underlying():
     assert notional == Money(100.0, BTC)
 
 
+def test_crypto_futures_spread_is_spread():
+    instrument = TestInstrumentProvider.crypto_futures_spread_inverse()
+
+    assert instrument.is_spread() is True
+
+
 def test_crypto_futures_spread_inverse_notional_use_quote_for_inverse():
     instrument = TestInstrumentProvider.crypto_futures_spread_inverse()
 
@@ -129,6 +135,41 @@ def test_crypto_futures_spread_quanto_notional_returns_settlement():
     assert notional == Money(3000.0, BTC)
 
 
+def test_crypto_futures_spread_usd_stable_settlement_is_not_quanto():
+    instrument = CryptoFuturesSpread(
+        instrument_id=InstrumentId(
+            symbol=Symbol("ETH-FS-STABLE"),
+            venue=Venue("DERIBIT"),
+        ),
+        raw_symbol=Symbol("ETH-FS-STABLE"),
+        underlying=ETH,
+        quote_currency=USD,
+        settlement_currency=USDT,
+        is_inverse=False,
+        strategy_type="FS",
+        activation_ns=0,
+        expiration_ns=0,
+        price_precision=2,
+        size_precision=0,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_int(1),
+        multiplier=Quantity.from_int(1),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert instrument.is_quanto is False
+    assert instrument.get_cost_currency() == USD
+
+    notional = instrument.notional_value(
+        Quantity.from_int(2),
+        Price.from_str("1500.00"),
+    )
+
+    assert notional == Money(3000.0, USD)
+
+
 def test_crypto_option_spread_inverse_notional_returns_underlying():
     # Deribit BTC option combo: inverse, multiplier 1, settles in BTC
     instrument = TestInstrumentProvider.crypto_option_spread_inverse()
@@ -141,6 +182,12 @@ def test_crypto_option_spread_inverse_notional_returns_underlying():
     # Inverse notional = quantity * multiplier / price, in underlying (BTC)
     # 1.0 * 1 / 0.05 = 20 BTC
     assert notional == Money(20.0, BTC)
+
+
+def test_crypto_option_spread_is_spread():
+    instrument = TestInstrumentProvider.crypto_option_spread_inverse()
+
+    assert instrument.is_spread() is True
 
 
 def test_crypto_option_spread_linear_notional_returns_quote():
@@ -173,6 +220,76 @@ def test_crypto_option_spread_linear_notional_returns_quote():
     )
 
     assert notional == Money(300.0, USDT)
+
+
+def test_crypto_option_spread_quanto_notional_returns_settlement():
+    instrument = CryptoOptionSpread(
+        instrument_id=InstrumentId(
+            symbol=Symbol("ETH-CS-QUANTO"),
+            venue=Venue("DERIBIT"),
+        ),
+        raw_symbol=Symbol("ETH-CS-QUANTO"),
+        underlying=ETH,
+        quote_currency=USD,
+        settlement_currency=BTC,
+        is_inverse=False,
+        strategy_type="CS",
+        activation_ns=0,
+        expiration_ns=0,
+        price_precision=2,
+        size_precision=0,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_int(1),
+        multiplier=Quantity.from_int(1),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert instrument.is_quanto is True
+    assert instrument.get_cost_currency() == BTC
+
+    notional = instrument.notional_value(
+        Quantity.from_int(3),
+        Price.from_str("100.00"),
+    )
+
+    assert notional == Money(300.0, BTC)
+
+
+def test_crypto_option_spread_usd_stable_settlement_is_not_quanto():
+    instrument = CryptoOptionSpread(
+        instrument_id=InstrumentId(
+            symbol=Symbol("ETH-CS-STABLE"),
+            venue=Venue("DERIBIT"),
+        ),
+        raw_symbol=Symbol("ETH-CS-STABLE"),
+        underlying=ETH,
+        quote_currency=USD,
+        settlement_currency=USDT,
+        is_inverse=False,
+        strategy_type="CS",
+        activation_ns=0,
+        expiration_ns=0,
+        price_precision=2,
+        size_precision=0,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_int(1),
+        multiplier=Quantity.from_int(1),
+        lot_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert instrument.is_quanto is False
+    assert instrument.get_cost_currency() == USD
+
+    notional = instrument.notional_value(
+        Quantity.from_int(3),
+        Price.from_str("100.00"),
+    )
+
+    assert notional == Money(300.0, USD)
 
 
 @pytest.mark.parametrize(
