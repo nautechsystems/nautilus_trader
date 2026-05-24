@@ -42,7 +42,8 @@ use nautilus_common::{actor::DataActor, signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -492,6 +493,21 @@ impl DataActor for PluginStrategyAdapter {
                 on_historical_quotes
             )(adapter.handle, s)
         })
+    }
+
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_book_deltas",
+            deltas,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    StrategyVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_book_deltas
+                )(adapter.handle, s)
+            },
+        )
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {

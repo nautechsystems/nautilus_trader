@@ -18,7 +18,8 @@ use std::{any::Any, sync::Arc};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, ForwardPrice, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick,
+        Bar, BarType, DataType, ForwardPrice, FundingRateUpdate, HasTsInit, OrderBookDelta,
+        QuoteTick, TradeTick,
     },
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
@@ -236,6 +237,49 @@ impl BookResponse {
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: OrderBook,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ts_init: UnixNanos,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            start,
+            end,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BookDeltasResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: Vec<OrderBookDelta>,
+    pub start: Option<UnixNanos>,
+    pub end: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
+    pub params: Option<Params>,
+}
+
+impl BookDeltasResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    /// Creates a new [`BookDeltasResponse`] instance.
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: Vec<OrderBookDelta>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,

@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added `DataEngine` continuous futures historical bar requests and live bar subscriptions (Rust)
 - Added `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support (Rust)
 - Added `DataEngine` catalog / client response-side request splitting (Rust)
+- Added `DataEngine` order book deltas request and response with catalog/client split (Rust)
 - Added support for mixed-instrument `OrderList`s at the same venue (e.g. pairs, calendar spreads, multi-leg legs)
 - Added `OrderList.is_uniform_instrument` and `OrderList.instrument_ids` helpers (Python)
 - Added deny guard for mixed-instrument order lists submitted with a `position_id`

@@ -16,16 +16,16 @@
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_common::messages::data::{
-    BarsResponse, DataResponse, QuotesResponse, RequestBars, RequestCommand, RequestQuotes,
-    RequestTrades, SubscribeBars, SubscribeCommand, SubscribeCustomData, SubscribeQuotes,
-    SubscribeTrades, TradesResponse,
+    BarsResponse, BookDeltasResponse, DataResponse, QuotesResponse, RequestBars, RequestBookDeltas,
+    RequestCommand, RequestQuotes, RequestTrades, SubscribeBars, SubscribeCommand,
+    SubscribeCustomData, SubscribeQuotes, SubscribeTrades, TradesResponse,
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos,
     correctness::{FAILED, check_key_not_in_map},
 };
 use nautilus_model::{
-    data::{Bar, QuoteTick, TradeTick},
+    data::{Bar, OrderBookDelta, QuoteTick, TradeTick},
     identifiers::ClientId,
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
@@ -392,6 +392,21 @@ impl DataEngine {
                     ts_init,
                 ))
             }
+            RequestCommand::BookDeltas(cmd) => {
+                let data: Vec<OrderBookDelta> = catalog.order_book_deltas(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_book_deltas_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
             _ => {
                 anyhow::bail!("query_catalog_leg called with non-catalog-eligible variant {leg:?}")
             }
@@ -402,7 +417,10 @@ impl DataEngine {
 pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
     matches!(
         req,
-        RequestCommand::Quotes(_) | RequestCommand::Trades(_) | RequestCommand::Bars(_)
+        RequestCommand::Quotes(_)
+            | RequestCommand::Trades(_)
+            | RequestCommand::Bars(_)
+            | RequestCommand::BookDeltas(_)
     )
 }
 
@@ -411,6 +429,9 @@ fn request_identifier(req: &RequestCommand) -> Option<(&'static str, String)> {
         RequestCommand::Quotes(cmd) => Some(("quotes", cmd.instrument_id.to_string())),
         RequestCommand::Trades(cmd) => Some(("trades", cmd.instrument_id.to_string())),
         RequestCommand::Bars(cmd) => Some(("bars", cmd.bar_type.to_string())),
+        RequestCommand::BookDeltas(cmd) => {
+            Some(("order_book_deltas", cmd.instrument_id.to_string()))
+        }
         _ => None,
     }
 }
@@ -420,6 +441,7 @@ fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Quotes(cmd) => cmd.start,
         RequestCommand::Trades(cmd) => cmd.start,
         RequestCommand::Bars(cmd) => cmd.start,
+        RequestCommand::BookDeltas(cmd) => cmd.start,
         _ => None,
     }
 }
@@ -429,6 +451,7 @@ fn request_end(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Quotes(cmd) => cmd.end,
         RequestCommand::Trades(cmd) => cmd.end,
         RequestCommand::Bars(cmd) => cmd.end,
+        RequestCommand::BookDeltas(cmd) => cmd.end,
         _ => None,
     }
 }
@@ -489,6 +512,16 @@ fn with_dates_for_pipeline(
             ts_init,
             params: cmd.params.clone(),
         }),
+        RequestCommand::BookDeltas(cmd) => RequestCommand::BookDeltas(RequestBookDeltas {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
         RequestCommand::Bars(cmd) => RequestCommand::Bars(RequestBars {
             bar_type: cmd.bar_type,
             start,
@@ -538,6 +571,16 @@ fn build_empty_response(
             cmd.request_id,
             resolve_response_client_id(cmd.client_id, used_client_id),
             cmd.bar_type,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::BookDeltas(cmd) => DataResponse::BookDeltas(BookDeltasResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
             Vec::new(),
             Some(start),
             Some(end),
@@ -603,6 +646,27 @@ fn build_bars_catalog_response(
         cmd.request_id,
         resolve_response_client_id(cmd.client_id, used_client_id),
         cmd.bar_type,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_book_deltas_catalog_response(
+    cmd: &RequestBookDeltas,
+    data: Vec<OrderBookDelta>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::BookDeltas(BookDeltasResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
         data,
         Some(start),
         Some(end),

@@ -37,9 +37,9 @@ use std::collections::HashSet;
 use bytes::Bytes;
 use nautilus_common::messages::{
     data::{
-        BarsResponse, BookResponse, CustomDataResponse, DataCommand, DataResponse,
-        ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        QuotesResponse, TradesResponse,
+        BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
+        DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
+        InstrumentsResponse, QuotesResponse, TradesResponse,
     },
     execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
@@ -166,6 +166,8 @@ pub const PAYLOAD_TYPE_INSTRUMENT_RESPONSE: &str = "InstrumentResponse";
 pub const PAYLOAD_TYPE_INSTRUMENTS_RESPONSE: &str = "InstrumentsResponse";
 /// The canonical `payload_type` tag for [`BookResponse`].
 pub const PAYLOAD_TYPE_BOOK_RESPONSE: &str = "BookResponse";
+/// The canonical `payload_type` tag for [`BookDeltasResponse`].
+pub const PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE: &str = "BookDeltasResponse";
 /// The canonical `payload_type` tag for [`QuotesResponse`].
 pub const PAYLOAD_TYPE_QUOTES_RESPONSE: &str = "QuotesResponse";
 /// The canonical `payload_type` tag for [`TradesResponse`].
@@ -1134,6 +1136,7 @@ pub fn encode_data_response(response: &DataResponse) -> Result<EncodedPayload, E
         DataResponse::Instrument(resp) => encode_instrument_response(resp),
         DataResponse::Instruments(resp) => encode_instruments_response(resp),
         DataResponse::Book(resp) => encode_book_response(resp),
+        DataResponse::BookDeltas(resp) => encode_book_deltas_response(resp),
         DataResponse::Quotes(resp) => encode_quotes_response(resp),
         DataResponse::Trades(resp) => encode_trades_response(resp),
         DataResponse::FundingRates(resp) => encode_funding_rates_response(resp),
@@ -1236,6 +1239,17 @@ fn encode_quotes_response(response: &QuotesResponse) -> Result<EncodedPayload, E
     let payload = encode_serde(response)?;
     Ok(EncodedPayload::with_payload_type(
         payload_type(PAYLOAD_TYPE_QUOTES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_book_deltas_response(
+    response: &BookDeltasResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE),
         payload,
         Vec::new(),
     ))

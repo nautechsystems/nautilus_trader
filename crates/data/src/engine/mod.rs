@@ -71,11 +71,11 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-        QuotesResponse, RequestBars, RequestCommand, RequestForwardPrices, RequestJoin,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeQuotes,
-        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        BarsResponse, BookDeltasResponse, DataCommand, DataResponse, ForwardPricesResponse,
+        FundingRatesResponse, QuotesResponse, RequestBars, RequestCommand, RequestForwardPrices,
+        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain,
+        SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
         UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
         UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
         UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
@@ -1186,6 +1186,7 @@ impl DataEngine {
             RequestCommand::Instrument(req) => client.request_instrument(req),
             RequestCommand::Instruments(req) => client.request_instruments(req),
             RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+            RequestCommand::BookDeltas(req) => client.request_book_deltas(req),
             RequestCommand::BookDepth(req) => client.request_book_depth(req),
             RequestCommand::Quotes(req) => client.request_quotes(req),
             RequestCommand::Trades(req) => client.request_trades(req),
@@ -1733,6 +1734,11 @@ impl DataEngine {
                 }
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
+            DataResponse::BookDeltas(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_book_deltas_response(r);
+                }
+            }
             DataResponse::ForwardPrices(r) => {
                 self.process_request_bar_aggregation_response(&resp);
                 return self.handle_forward_prices_response(&correlation_id, r);
@@ -3582,6 +3588,49 @@ impl DataEngine {
         }
     }
 
+    fn handle_book_deltas_response(&self, resp: &BookDeltasResponse) {
+        if !self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
+            let mut cache = self.cache.as_ref().borrow_mut();
+            if let Some(book) = cache.order_book_mut(&resp.instrument_id) {
+                for delta in &resp.data {
+                    if let Err(e) = book.apply_delta(delta) {
+                        log::error!("Failed to apply historical delta to cache: {e}");
+                    }
+                }
+            } else {
+                log::debug!(
+                    "Skipping cache write for {} historical deltas on {}: no cache book yet",
+                    resp.data.len(),
+                    resp.instrument_id,
+                );
+            }
+        }
+
+        // Group deltas by `F_LAST` so each published batch preserves the original event
+        // boundary and metadata (timestamps and sequence from the closing delta), matching
+        // the live `handle_delta` buffering semantic. Collapsing the whole response into
+        // one batch would surface a synthetic event with the trailing delta's flags only.
+        if resp.data.is_empty() {
+            return;
+        }
+
+        let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
+        let mut frame: Vec<OrderBookDelta> = Vec::new();
+
+        for delta in &resp.data {
+            frame.push(*delta);
+            if RecordFlag::F_LAST.matches(delta.flags) {
+                let batch = OrderBookDeltas::new(resp.instrument_id, std::mem::take(&mut frame));
+                msgbus::publish_deltas(topic, &batch);
+            }
+        }
+
+        if !frame.is_empty() {
+            let batch = OrderBookDeltas::new(resp.instrument_id, frame);
+            msgbus::publish_deltas(topic, &batch);
+        }
+    }
+
     /// Handles a `ForwardPricesResponse` by extracting the forward price
     /// for the pending option chain and creating the manager with instant bootstrap.
     fn handle_forward_prices_response(
@@ -4939,6 +4988,25 @@ fn rebuild_pipeline_response(
             acc.correlation_id = parent_id;
             Some(DataResponse::Instruments(acc))
         }
+        DataResponse::BookDeltas(mut acc) => {
+            for leg in iter {
+                let DataResponse::BookDeltas(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|d| d.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::BookDeltas(acc))
+        }
         other => {
             // Pipelines today rebuild same-variant time-series legs. Variants
             // without a per-item ts_init payload (singular Book/Instrument,
@@ -4964,6 +5032,7 @@ fn parent_request_window(
         RequestCommand::Data(cmd) => (cmd.start, cmd.end),
         RequestCommand::Instrument(cmd) => (cmd.start, cmd.end),
         RequestCommand::Instruments(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookDeltas(cmd) => (cmd.start, cmd.end),
         RequestCommand::BookDepth(cmd) => (cmd.start, cmd.end),
         RequestCommand::Quotes(cmd) => (cmd.start, cmd.end),
         RequestCommand::Trades(cmd) => (cmd.start, cmd.end),
@@ -5029,6 +5098,16 @@ fn empty_response_like(
             ts_init,
             r.params.clone(),
         )),
+        DataResponse::BookDeltas(r) => DataResponse::BookDeltas(BookDeltasResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
         other => {
             log::error!(
                 "Cannot fabricate empty leg response for variant {}",
@@ -5045,6 +5124,7 @@ fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataRes
         DataResponse::Instrument(r) => r.correlation_id = new_id,
         DataResponse::Instruments(r) => r.correlation_id = new_id,
         DataResponse::Book(r) => r.correlation_id = new_id,
+        DataResponse::BookDeltas(r) => r.correlation_id = new_id,
         DataResponse::Quotes(r) => r.correlation_id = new_id,
         DataResponse::Trades(r) => r.correlation_id = new_id,
         DataResponse::FundingRates(r) => r.correlation_id = new_id,

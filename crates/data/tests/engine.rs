@@ -39,18 +39,18 @@ use nautilus_common::{
     clients::DataClient,
     clock::{Clock, TestClock},
     messages::data::{
-        BarsResponse, BookResponse, CustomDataResponse, DataCommand, DataResponse,
-        ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
-        RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
-        RequestInstrument, RequestInstruments, RequestJoin, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
+        DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
+        InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDeltas,
+        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeOptionChain,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
@@ -83,8 +83,8 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionGreeks, StrikeRange},
         stubs::{
@@ -93,7 +93,7 @@ use nautilus_model::{
     },
     enums::{
         AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -244,6 +244,10 @@ impl DataClient for FailingRequestDataClient {
     }
 
     fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    fn request_book_deltas(&self, _request: RequestBookDeltas) -> anyhow::Result<()> {
         anyhow::bail!("{}", self.error_message)
     }
 }
@@ -17097,4 +17101,403 @@ fn test_book_response_always_delivers_to_requester(
         "requester must receive the snapshot even when cache write is skipped"
     );
     assert_eq!(received[0].correlation_id, request_id);
+}
+
+fn split_delta(instrument_id: InstrumentId, ts: u64) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[cfg(feature = "streaming")]
+fn register_deltas_catalog_with_deltas(
+    data_engine: &mut DataEngine,
+    label: &str,
+    deltas: Vec<OrderBookDelta>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(deltas, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_book_deltas(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDeltas> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDeltas(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-catalog-only",
+        vec![
+            split_delta(instrument_id, 1_000),
+            split_delta(instrument_id, 2_000),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-split",
+        vec![split_delta(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_book_deltas(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+    assert_eq!(recorded[0].instrument_id, instrument_id);
+
+    let leg_request_id = recorded[0].request_id;
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        leg_request_id,
+        client_id,
+        instrument_id,
+        vec![split_delta(instrument_id, 2_500)],
+        recorded[0].start.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        recorded[0].end.map(|d| {
+            UnixNanos::from(u64::try_from(d.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+        }),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|d| d.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_book_deltas_response_skips_cache_write_when_subscription_active(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+    let maintained_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("managed sub must seed a cache book")
+        .update_count;
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-response-skip")));
+    msgbus::register_response_handler(&request_id, handler);
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![split_delta(instrument_id, 1_500)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book remains under active subscription")
+        .update_count;
+    assert_eq!(
+        after_count, maintained_count,
+        "historical deltas must not mutate a cache book owned by a live subscription"
+    );
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1, "requester still receives the response");
+    assert_eq!(received[0].correlation_id, request_id);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_book_deltas_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "deltas-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+fn delta_with_flag(instrument_id: InstrumentId, ts: u64, flags: u8) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .flags(flags)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[rstest]
+fn test_book_deltas_response_publishes_frames_by_f_last(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let pipeline_topic =
+        switchboard::MessagingSwitchboard::default().get_pipeline_book_deltas_topic(instrument_id);
+    let (handler, saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("deltas-by-f-last")));
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), handler, None);
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let payload = vec![
+        delta_with_flag(instrument_id, 1_000, 0),
+        delta_with_flag(instrument_id, 2_000, f_last),
+        delta_with_flag(instrument_id, 3_000, 0),
+        delta_with_flag(instrument_id, 4_000, f_last),
+        delta_with_flag(instrument_id, 5_000, 0),
+    ];
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        payload,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let batches = saver.get_messages();
+    assert_eq!(
+        batches.len(),
+        3,
+        "two F_LAST-terminated frames plus a trailing partial must publish as three batches"
+    );
+    let frame_sizes: Vec<usize> = batches.iter().map(|b| b.deltas.len()).collect();
+    assert_eq!(frame_sizes, vec![2, 2, 1]);
+    let frame_end_ts: Vec<u64> = batches
+        .iter()
+        .map(|b| b.deltas.last().unwrap().ts_event.as_u64())
+        .collect();
+    assert_eq!(
+        frame_end_ts,
+        vec![2_000, 4_000, 5_000],
+        "each batch must close on the F_LAST delta of its frame (or the trailing delta)"
+    );
+}
+
+#[rstest]
+fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exists(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+        .unwrap();
+    let before_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("seeded book")
+        .update_count;
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        instrument_id,
+        vec![
+            split_delta(instrument_id, 1_000),
+            split_delta(instrument_id, 2_000),
+        ],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("book still present")
+        .update_count;
+    assert!(
+        after_count > before_count,
+        "historical deltas must apply to a cache book when no live subscription owns it (was {before_count}, now {after_count})"
+    );
 }

@@ -69,8 +69,9 @@ use crate::{
     component::Component,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
-        BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
-        InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, TradesResponse,
+        BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataResponse,
+        FundingRatesResponse, InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT,
+        QuotesResponse, TradesResponse,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -229,6 +230,11 @@ impl DataActor for TestDataActor {
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_trades.extend(trades);
+        Ok(())
+    }
+
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        self.received_deltas.extend(deltas);
         Ok(())
     }
 
@@ -1172,6 +1178,40 @@ fn test_request_trades(
 
     assert_eq!(actor.received_trades.len(), 1);
     assert_eq!(actor.received_trades[0], trade);
+}
+
+#[rstest]
+fn test_request_book_deltas(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_book_deltas(audusd_sim.id, None, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let delta = stub_delta();
+    let response = BookDeltasResponse::new(
+        request_id,
+        client_id,
+        audusd_sim.id,
+        vec![delta],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    msgbus::send_response(&request_id, &DataResponse::BookDeltas(response));
+
+    assert_eq!(actor.received_deltas.len(), 1);
+    assert_eq!(actor.received_deltas[0], delta);
 }
 
 #[rstest]

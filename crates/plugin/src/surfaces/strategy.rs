@@ -85,7 +85,8 @@ use nautilus_common::{signal::Signal, timer::TimeEvent};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -374,6 +375,12 @@ pub struct StrategyVTable {
     pub on_market_exit:
         Option<unsafe extern "C" fn(handle: *mut PluginStrategyHandle) -> PluginResult<()>>,
 
+    pub on_historical_book_deltas: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            deltas: Slice<'_, OrderBookDelta>,
+        ) -> PluginResult<()>,
+    >,
     pub on_historical_quotes: Option<
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
@@ -640,6 +647,11 @@ pub trait PluginStrategy: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -739,6 +751,7 @@ where
         on_position_changed: Some(on_position_changed_thunk::<T>),
         on_position_closed: Some(on_position_closed_thunk::<T>),
         on_market_exit: Some(on_market_exit_thunk::<T>),
+        on_historical_book_deltas: Some(on_historical_book_deltas_thunk::<T>),
         on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
         on_historical_trades: Some(on_historical_trades_thunk::<T>),
         on_historical_bars: Some(on_historical_bars_thunk::<T>),
@@ -951,6 +964,11 @@ macro_rules! slice_thunk {
     };
 }
 
+slice_thunk!(
+    on_historical_book_deltas_thunk,
+    on_historical_book_deltas,
+    OrderBookDelta
+);
 slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
 slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);
 slice_thunk!(on_historical_bars_thunk, on_historical_bars, Bar);

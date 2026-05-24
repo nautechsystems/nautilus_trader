@@ -354,6 +354,44 @@ impl RequestBookDepth {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequestBookDeltas {
+    pub instrument_id: InstrumentId,
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<DateTime<Utc>>,
+    pub limit: Option<NonZeroUsize>,
+    pub client_id: Option<ClientId>,
+    pub request_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<Params>,
+}
+
+impl RequestBookDeltas {
+    /// Creates a new [`RequestBookDeltas`] instance.
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        request_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBars {
     pub bar_type: BarType,
     pub start: Option<DateTime<Utc>>,

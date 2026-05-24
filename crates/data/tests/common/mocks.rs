@@ -36,11 +36,11 @@ use nautilus_common::{
     clients::DataClient,
     clock::Clock,
     messages::data::{
-        DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestForwardPrices, RequestFundingRates, RequestInstrument,
-        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        DataCommand, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+        RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
         SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
         UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
@@ -608,6 +608,14 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Request(RequestCommand::BookDepth(request)));
+        }
+        Ok(())
+    }
+
+    fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::BookDeltas(request)));
         }
         Ok(())
     }

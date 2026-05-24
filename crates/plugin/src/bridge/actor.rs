@@ -42,7 +42,8 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
@@ -348,6 +349,21 @@ impl DataActor for PluginActorAdapter {
         invoke_event(self, "on_signal", signal, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_signal)(adapter.handle, p)
         })
+    }
+
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_book_deltas",
+            deltas,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_book_deltas
+                )(adapter.handle, s)
+            },
+        )
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {

@@ -41,13 +41,13 @@ pub const PARAMS_IS_PARENT: &str = "is_parent";
 
 // Re-exports
 pub use request::{
-    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
-    RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin, RequestQuotes,
-    RequestTrades,
+    RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
+    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin,
+    RequestQuotes, RequestTrades,
 };
 pub use response::{
-    BarsResponse, BookResponse, CustomDataResponse, ForwardPricesResponse, FundingRatesResponse,
-    InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+    BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, ForwardPricesResponse,
+    FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -401,6 +401,7 @@ pub enum RequestCommand {
     Instrument(RequestInstrument),
     Instruments(RequestInstruments),
     BookSnapshot(RequestBookSnapshot),
+    BookDeltas(RequestBookDeltas),
     BookDepth(RequestBookDepth),
     Quotes(RequestQuotes),
     Trades(RequestTrades),
@@ -428,6 +429,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => &cmd.request_id,
             Self::Instruments(cmd) => &cmd.request_id,
             Self::BookSnapshot(cmd) => &cmd.request_id,
+            Self::BookDeltas(cmd) => &cmd.request_id,
             Self::BookDepth(cmd) => &cmd.request_id,
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
@@ -444,6 +446,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshot(cmd) => cmd.client_id.as_ref(),
+            Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
             Self::BookDepth(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
@@ -460,6 +463,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
             Self::Instruments(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
+            Self::BookDeltas(cmd) => Some(&cmd.instrument_id.venue),
             Self::BookDepth(cmd) => Some(&cmd.instrument_id.venue),
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
@@ -480,6 +484,7 @@ impl RequestCommand {
             Self::Instrument(cmd) => cmd.ts_init,
             Self::Instruments(cmd) => cmd.ts_init,
             Self::BookSnapshot(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
             Self::BookDepth(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
@@ -497,6 +502,7 @@ pub enum DataResponse {
     Instrument(Box<InstrumentResponse>),
     Instruments(InstrumentsResponse),
     Book(BookResponse),
+    BookDeltas(BookDeltasResponse),
     Quotes(QuotesResponse),
     Trades(TradesResponse),
     FundingRates(FundingRatesResponse),
@@ -516,6 +522,7 @@ impl DataResponse {
             Self::Instrument(resp) => &resp.correlation_id,
             Self::Instruments(resp) => &resp.correlation_id,
             Self::Book(resp) => &resp.correlation_id,
+            Self::BookDeltas(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
             Self::FundingRates(resp) => &resp.correlation_id,
@@ -532,6 +539,7 @@ impl DataResponse {
             Self::Instrument(_) => "Instrument",
             Self::Instruments(_) => "Instruments",
             Self::Book(_) => "Book",
+            Self::BookDeltas(_) => "BookDeltas",
             Self::Quotes(_) => "Quotes",
             Self::Trades(_) => "Trades",
             Self::FundingRates(_) => "FundingRates",
@@ -549,6 +557,7 @@ impl DataResponse {
         match self {
             Self::Data(_) | Self::Instrument(_) | Self::Book(_) => None,
             Self::Instruments(resp) => Some(resp.data.len()),
+            Self::BookDeltas(resp) => Some(resp.data.len()),
             Self::Quotes(resp) => Some(resp.data.len()),
             Self::Trades(resp) => Some(resp.data.len()),
             Self::FundingRates(resp) => Some(resp.data.len()),
@@ -571,6 +580,7 @@ impl DataResponse {
             Self::FundingRates(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::Bars(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::BookDeltas(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::Data(_) | Self::Instrument(_) | Self::Book(_) | Self::ForwardPrices(_) => {}
         }
     }
