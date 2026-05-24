@@ -792,6 +792,7 @@ impl LiveNodeConfig {
             portfolio,
             emulator: None,
             streaming: None,
+            event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
             data_engine: data_engine.unwrap_or_default(),
             risk_engine: risk_engine.unwrap_or_default(),

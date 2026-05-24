@@ -21,7 +21,7 @@
 //! independently of `nautilus-system`; callers inject an implementation through the builder
 //! (see [`crate::builder::NautilusKernelBuilder::with_event_store`]).
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc, time::Duration};
 
 use indexmap::IndexMap;
 use nautilus_common::{cache::Cache, clock::Clock, enums::Environment};
@@ -122,4 +122,149 @@ pub trait KernelEventStore: Debug {
 
     /// Returns whether the implementation has signaled a fail-stop condition.
     fn is_halted(&self) -> bool;
+}
+
+/// How the supervisor prunes sealed run files.
+///
+/// The kernel records the choice in the manifest's `feature_flags`; actual retention
+/// enforcement is performed by a separate supervisor process and is out of scope for
+/// the kernel boot path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RetentionMode {
+    /// Keep every sealed run; never reclaim.
+    #[default]
+    Full,
+    /// Keep at most `keep_last` sealed runs; the supervisor reclaims older files.
+    Bounded {
+        /// The number of sealed runs to retain.
+        keep_last: usize,
+    },
+    /// Keep the manifest plus a snapshot anchor and the tail since the anchor; older
+    /// entries reclaim once a newer anchor is durable.
+    SnapshotAnchored,
+}
+
+/// Per-run identification data the kernel populates from build metadata.
+///
+/// The kernel records what is available at run start; downstream binaries refine these
+/// values when their build-time wiring populates them. Defaults are placeholders so the
+/// kernel can boot before the binary-hash and crate-versions wiring is finalized.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunIdentity {
+    /// A hex-encoded hash of the trader binary.
+    pub binary_hash: String,
+    /// The entry payload schema version.
+    pub schema_version: u32,
+    /// A hex-encoded hash of `Cargo.lock` or an equivalent crate version manifest.
+    pub crate_versions: String,
+    /// The active Cargo features for the trader binary.
+    pub feature_flags: Vec<String>,
+    /// Per-adapter version stamp keyed by adapter name.
+    pub adapter_versions: IndexMap<String, String>,
+    /// A hex-encoded hash of the kernel configuration.
+    pub config_hash: String,
+    /// The deterministic seed, populated when the run executes under a seeded mode.
+    pub seed: Option<u64>,
+}
+
+/// The id of a captured run: `<start_ts_init>-<short_uuid>`, sortable by start time.
+///
+/// The runtime constructs this from the kernel's start timestamp plus a fresh `UUID4` so
+/// the representation stays stable across processes and platforms.
+pub type RunId = String;
+
+/// Configuration for the kernel-managed event store run lifecycle.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventStoreConfig {
+    /// Root directory; the backend creates `<base_dir>/<instance_id>/<run_id>.redb`.
+    pub base_dir: PathBuf,
+    /// Stable identification for this trader instance and binary.
+    pub identity: RunIdentity,
+    /// How the supervisor reclaims sealed run files.
+    pub retention: RetentionMode,
+    /// Sealed run to restore cache state from before opening a fresh run.
+    ///
+    /// When set, this enables event-store replay: the kernel restores cache state from this run,
+    /// records it as the parent link for the fresh child run, and then skips engines, clients,
+    /// trader startup, and live reconciliation. Quarantined runs are rejected.
+    pub replay_from_run_id: Option<RunId>,
+    /// Capacity of the writer's bounded submit channel.
+    pub channel_capacity: usize,
+    /// Maximum entries collected before the writer forces a commit.
+    pub max_batch_entries: usize,
+    /// Maximum time a batch may accumulate before the writer forces a commit.
+    pub max_batch_latency: Duration,
+    /// Submit-side stall ceiling that triggers writer fail-stop.
+    pub halt_threshold: Duration,
+    /// Maximum time to wait for the `RunStarted` entry to durably commit before the
+    /// kernel surfaces an event-store boot error.
+    pub run_started_timeout: Duration,
+}
+
+impl Default for EventStoreConfig {
+    fn default() -> Self {
+        Self {
+            base_dir: PathBuf::new(),
+            identity: RunIdentity::default(),
+            retention: RetentionMode::default(),
+            replay_from_run_id: None,
+            channel_capacity: 10_000,
+            max_batch_entries: 100,
+            max_batch_latency: Duration::from_millis(5),
+            halt_threshold: Duration::from_millis(250),
+            run_started_timeout: Duration::from_secs(5),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn event_store_config_serde_roundtrip() {
+        let config = EventStoreConfig::default();
+        let json = serde_json::to_string(&config).expect("serialize");
+        let restored: EventStoreConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.channel_capacity, config.channel_capacity);
+        assert_eq!(restored.max_batch_entries, config.max_batch_entries);
+        assert_eq!(restored.max_batch_latency, config.max_batch_latency);
+        assert_eq!(restored.halt_threshold, config.halt_threshold);
+        assert_eq!(restored.run_started_timeout, config.run_started_timeout);
+        assert_eq!(restored.base_dir, config.base_dir);
+        assert_eq!(restored.retention, config.retention);
+        assert_eq!(restored.replay_from_run_id, config.replay_from_run_id);
+        assert_eq!(restored.identity, config.identity);
+    }
+
+    #[rstest]
+    fn retention_mode_serde_roundtrip() {
+        for mode in [
+            RetentionMode::Full,
+            RetentionMode::Bounded { keep_last: 5 },
+            RetentionMode::SnapshotAnchored,
+        ] {
+            let json = serde_json::to_string(&mode).expect("serialize");
+            let restored: RetentionMode = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(restored, mode);
+        }
+    }
+
+    #[rstest]
+    fn event_store_config_default_values() {
+        let config = EventStoreConfig::default();
+
+        assert_eq!(config.channel_capacity, 10_000);
+        assert_eq!(config.max_batch_entries, 100);
+        assert_eq!(config.max_batch_latency, Duration::from_millis(5));
+        assert_eq!(config.halt_threshold, Duration::from_millis(250));
+        assert_eq!(config.run_started_timeout, Duration::from_secs(5));
+        assert_eq!(config.base_dir, PathBuf::new());
+        assert_eq!(config.retention, RetentionMode::Full);
+        assert!(config.replay_from_run_id.is_none());
+        assert_eq!(config.identity, RunIdentity::default());
+    }
 }

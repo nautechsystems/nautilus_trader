@@ -33,7 +33,10 @@ use nautilus_model::{
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
+use nautilus_system::{
+    config::{NautilusKernelConfig, StreamingConfig},
+    event_store::EventStoreConfig,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -604,6 +607,12 @@ pub struct LiveNodeConfig {
     pub emulator: Option<OrderEmulatorConfig>,
     /// The configuration for streaming to feather files.
     pub streaming: Option<StreamingConfig>,
+    /// The event-store configuration.
+    ///
+    /// When set, the live node boots a kernel-managed event-store run for audit and replay.
+    /// The caller supplies a factory via `LiveNodeBuilder::with_event_store` to construct
+    /// the concrete `KernelEventStore`; this field carries the configuration that factory reads.
+    pub event_store: Option<EventStoreConfig>,
     /// If the asyncio event loop should run in debug mode.
     #[builder(default)]
     pub loop_debug: bool,
@@ -1534,5 +1543,27 @@ config = { strategy_id = "ExampleStrategy-001", threshold = 10 }
             serde_json::json!("ExampleStrategy-001")
         );
         assert_eq!(config.plugins[0].config["threshold"], serde_json::json!(10));
+    }
+
+    #[rstest]
+    fn live_node_config_serde_roundtrip_with_event_store() {
+        let config = LiveNodeConfig {
+            event_store: Some(EventStoreConfig {
+                channel_capacity: 5_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).expect("serialize");
+        let restored: LiveNodeConfig = serde_json::from_str(&json).expect("deserialize");
+
+        let restored_event_store = restored.event_store.expect("event_store present");
+        assert_eq!(restored_event_store.channel_capacity, 5_000);
+    }
+
+    #[rstest]
+    fn live_node_config_default_has_no_event_store() {
+        let config = LiveNodeConfig::default();
+        assert!(config.event_store.is_none());
     }
 }

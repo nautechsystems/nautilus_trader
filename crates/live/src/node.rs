@@ -350,6 +350,13 @@ impl LiveNode {
 
         config.validate_runtime_support()?;
 
+        if config.event_store.is_some() {
+            anyhow::bail!(
+                "LiveNodeConfig.event_store is set but LiveNode::build cannot install a factory; \
+                 use LiveNodeBuilder::with_event_store(...) instead"
+            );
+        }
+
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
@@ -2058,7 +2065,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::identifiers::TraderId;
-    use nautilus_system::{KernelEventStore, NautilusKernelBuilder, RegisteredComponents};
+    use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use rstest::*;
 
     use super::*;
@@ -2114,37 +2121,21 @@ mod tests {
     }
 
     fn live_node_with_replay_store(fail_restore: bool) -> LiveNode {
-        let config = LiveNodeConfig {
-            environment: Environment::Live,
-            exec_engine: crate::config::LiveExecEngineConfig {
+        // load_state must be true: the kernel rejects event-store replay otherwise,
+        // and LiveNodeConfig defaults it to false.
+        let builder = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
+            .unwrap()
+            .with_exec_engine_config(crate::config::LiveExecEngineConfig {
                 reconciliation: false,
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let kernel = NautilusKernelBuilder::new(
-            "TestKernel".to_string(),
-            config.trader_id,
-            Environment::Live,
-        )
-        .with_event_store(
-            move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| -> anyhow::Result<_> {
-                Ok(Box::new(ReplayKernelEventStore { fail_restore }))
-            },
-        )
-        .build()
-        .expect("kernel");
-        let runner = AsyncRunner::new();
-        runner.bind_senders();
-        let exec_manager_config =
-            ExecutionManagerConfig::from(&config.exec_engine).with_trader_id(config.trader_id);
-        let exec_manager = ExecutionManager::new(
-            kernel.clock.clone(),
-            kernel.cache.clone(),
-            exec_manager_config,
-        );
+            })
+            .with_load_state(true)
+            .with_name("TestKernel")
+            .with_event_store(move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
+                Ok(Box::new(ReplayKernelEventStore { fail_restore }) as Box<dyn KernelEventStore>)
+            });
 
-        LiveNode::new_from_builder(kernel, runner, config, exec_manager)
+        builder.build().unwrap()
     }
 
     #[rstest]
@@ -2291,6 +2282,48 @@ mod tests {
         assert!(node.kernel.is_event_store_replay_configured());
         assert!(!node.kernel.is_event_store_replay());
         assert!(node.runner.is_none());
+    }
+
+    #[rstest]
+    fn test_build_rejects_event_store_config_without_factory() {
+        let config = LiveNodeConfig {
+            event_store: Some(EventStoreConfig::default()),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let err = LiveNodeBuilder::from_config(config)
+            .expect("builder")
+            .build()
+            .expect_err("should reject event_store config without factory");
+
+        assert!(
+            err.to_string().contains("with_event_store"),
+            "error message should mention with_event_store, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_direct_build_rejects_event_store_config() {
+        let config = LiveNodeConfig {
+            event_store: Some(EventStoreConfig::default()),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let err = LiveNode::build("TestNode".to_string(), Some(config))
+            .expect_err("LiveNode::build should reject event_store config");
+
+        assert!(
+            err.to_string().contains("with_event_store"),
+            "error message should mention with_event_store, was: {err}"
+        );
     }
 
     #[rstest]

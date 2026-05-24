@@ -72,12 +72,14 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use kernel::{
-    BootError, EventStoreConfig, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError,
-    RecoveredRun, RecoveryOutcome, RetentionMode, RunIdentity, build_run_id, open_run,
-    recover_predecessors,
+    BootError, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError, RecoveredRun,
+    RecoveryOutcome, build_run_id, open_run, recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
-pub use nautilus_system::RegisteredComponents;
+pub use nautilus_system::{
+    RegisteredComponents,
+    event_store::{EventStoreConfig, RetentionMode, RunIdentity},
+};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
 pub use replay::{
     CacheReplayError, CacheReplayReport, EventStoreReplayReport, apply_cache_replay_entry,

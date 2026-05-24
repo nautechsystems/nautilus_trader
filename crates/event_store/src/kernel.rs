@@ -26,7 +26,7 @@ use std::{
     any::Any,
     cell::RefCell,
     fmt::Debug,
-    path::{Path, PathBuf},
+    path::Path,
     rc::Rc,
     sync::{
         Arc, Mutex,
@@ -37,7 +37,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use indexmap::IndexMap;
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
     clock::Clock,
@@ -51,7 +50,10 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_static},
 };
 use nautilus_execution::engine::SnapshotAnchorer;
-use nautilus_system::{KernelEventStore as KernelEventStoreTrait, RegisteredComponents};
+use nautilus_system::{
+    KernelEventStore as KernelEventStoreTrait, RegisteredComponents,
+    event_store::{EventStoreConfig, RetentionMode},
+};
 use ustr::Ustr;
 
 use crate::{
@@ -65,93 +67,6 @@ const RUN_STARTED_TOPIC: &str = "run.lifecycle.RunStarted";
 const RUN_STARTED_PAYLOAD_TYPE: &str = "RunStarted";
 const RUN_ENDED_TOPIC: &str = "run.lifecycle.RunEnded";
 const RUN_ENDED_PAYLOAD_TYPE: &str = "RunEnded";
-
-/// How the supervisor (a future workstream) prunes sealed run files.
-///
-/// The kernel records the choice in the manifest's `feature_flags` and otherwise treats
-/// every value identically: retention is implemented in Phase 12 and is out of scope for
-/// the kernel boot path.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum RetentionMode {
-    /// Keep every sealed run; never reclaim.
-    #[default]
-    Full,
-    /// Keep at most `keep_last` sealed runs; the supervisor reclaims older files.
-    Bounded {
-        /// The number of sealed runs to retain.
-        keep_last: usize,
-    },
-    /// Keep the manifest plus a snapshot anchor and the tail since the anchor; older
-    /// entries reclaim once a newer anchor is durable.
-    SnapshotAnchored,
-}
-
-/// Per-run identification data the kernel populates from build metadata.
-///
-/// Phase 7 records what is available at run start; cross-cutting workstreams refine
-/// these values as they land. Defaults are placeholders so the kernel can boot before
-/// the binary-hash and crate-versions wiring is finalized.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RunIdentity {
-    /// A hex-encoded hash of the trader binary.
-    pub binary_hash: String,
-    /// The entry payload schema version.
-    pub schema_version: u32,
-    /// A hex-encoded hash of `Cargo.lock` or an equivalent crate version manifest.
-    pub crate_versions: String,
-    /// The active Cargo features for the trader binary.
-    pub feature_flags: Vec<String>,
-    /// Per-adapter version stamp keyed by adapter name.
-    pub adapter_versions: IndexMap<String, String>,
-    /// A hex-encoded hash of the kernel configuration.
-    pub config_hash: String,
-    /// The deterministic seed, populated when the run executes under a seeded mode.
-    pub seed: Option<u64>,
-}
-
-/// Configuration for the kernel-managed event store run lifecycle.
-#[derive(Clone, Debug)]
-pub struct EventStoreConfig {
-    /// Root directory; the backend creates `<base_dir>/<instance_id>/<run_id>.redb`.
-    pub base_dir: PathBuf,
-    /// Stable identification for this trader instance and binary.
-    pub identity: RunIdentity,
-    /// How the supervisor reclaims sealed run files (out-of-scope in Phase 7).
-    pub retention: RetentionMode,
-    /// Sealed run to restore cache state from before opening a fresh run.
-    ///
-    /// When set, this enables event-store replay: the kernel restores cache state from this run,
-    /// records it as the parent link for the fresh child run, and then skips engines, clients,
-    /// trader startup, and live reconciliation. Quarantined runs are rejected.
-    pub replay_from_run_id: Option<RunId>,
-    /// Capacity of the writer's bounded submit channel.
-    pub channel_capacity: usize,
-    /// Maximum entries collected before the writer forces a commit.
-    pub max_batch_entries: usize,
-    /// Maximum time a batch may accumulate before the writer forces a commit.
-    pub max_batch_latency: Duration,
-    /// Submit-side stall ceiling that triggers writer fail-stop.
-    pub halt_threshold: Duration,
-    /// Maximum time to wait for the `RunStarted` entry to durably commit before the
-    /// kernel surfaces [`BootError::RunStartedTimeout`].
-    pub run_started_timeout: Duration,
-}
-
-impl Default for EventStoreConfig {
-    fn default() -> Self {
-        Self {
-            base_dir: PathBuf::new(),
-            identity: RunIdentity::default(),
-            retention: RetentionMode::default(),
-            replay_from_run_id: None,
-            channel_capacity: crate::DEFAULT_CHANNEL_CAPACITY,
-            max_batch_entries: crate::DEFAULT_MAX_BATCH_ENTRIES,
-            max_batch_latency: crate::DEFAULT_MAX_BATCH_LATENCY,
-            halt_threshold: crate::DEFAULT_HALT_THRESHOLD,
-            run_started_timeout: Duration::from_secs(5),
-        }
-    }
-}
 
 /// The outcome of sealing a single crashed predecessor.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1102,6 +1017,9 @@ impl KernelEventStoreTrait for EventStoreLifecycle {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use indexmap::IndexMap;
     use nautilus_common::{
         clock::TestClock,
         messages::{
@@ -1122,6 +1040,7 @@ mod tests {
         },
         types::{Currency, Money, Price, Quantity},
     };
+    use nautilus_system::event_store::RunIdentity;
     use rstest::rstest;
     use tempfile::TempDir;
 

@@ -6635,6 +6635,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "serde_json",
  "sysinfo",
  "toml 1.1.2+spec-1.1.0",
  "ustr",
