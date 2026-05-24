@@ -74,6 +74,7 @@ pub mod bridge;
 pub mod loader;
 
 mod macros;
+mod normalize;
 
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
 pub use host::{HostContext, HostVTable};

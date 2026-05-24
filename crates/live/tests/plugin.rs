@@ -47,29 +47,52 @@ use std::{
 };
 
 use aws_lc_rs::digest;
-use nautilus_common::actor::DataActor;
-use nautilus_core::{UUID4, hex};
+use nautilus_common::{
+    actor::{DataActor, registry::register_actor},
+    cache::Cache,
+    clock::{Clock, TestClock},
+    component::Component,
+    messages::execution::TradingCommand,
+    msgbus::{self, MessagingSwitchboard, TypedIntoHandler, switchboard::get_quotes_topic},
+    timer::{TimeEvent, TimeEventCallback},
+};
+use nautilus_core::{UUID4, UnixNanos, hex};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig, PluginConfig},
     node::LiveNode,
     plugin::{
-        PluginActorAdapter, PluginStrategyAdapter, host_vtable, plugin_loader,
+        HostContextInner, PluginActorAdapter, PluginStrategyAdapter, host_vtable, plugin_loader,
         register_custom_data_from_manifest,
     },
 };
 use nautilus_model::{
-    data::{Data, registry::deserialize_custom_from_json},
-    identifiers::{ActorId, StrategyId},
+    data::{
+        Data, OptionChainSlice, QuoteTick, registry::deserialize_custom_from_json,
+        stubs::stub_deltas,
+    },
+    enums::{OmsType, OrderSide, TimeInForce},
+    events::OrderEventAny,
+    identifiers::{
+        AccountId, ActorId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
+        TraderId, VenueOrderId,
+    },
+    instruments::{InstrumentAny, stubs},
+    orders::{MarketOrder, Order, OrderAny, stubs::TestOrderEventStubs},
+    position::Position,
+    types::{Price, Quantity},
 };
 use nautilus_plugin::{
     PLUGIN_BUILD_ID_VERSION,
     manifest::{PluginManifest, ValidatedPluginManifest},
 };
-use nautilus_trading::strategy::StrategyConfig;
+use nautilus_portfolio::portfolio::Portfolio;
+use nautilus_trading::strategy::{Strategy, StrategyConfig};
 use rstest::{fixture, rstest};
 
 const EXAMPLE_NAME: &str = "custom_data_plugin";
 const RUNTIME_SMOKE_EXAMPLE_NAME: &str = "runtime_smoke_plugin";
+const EXEC_TEST_EXAMPLE_NAME: &str = "exec_test_plugin";
+const ACTOR_EVENT_EXAMPLE_NAME: &str = "actor_event_plugin";
 
 fn workspace_root() -> PathBuf {
     let p = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo");
@@ -150,6 +173,41 @@ fn build_runtime_smoke_example_once() -> PathBuf {
         .clone()
 }
 
+fn build_exec_test_example_once() -> PathBuf {
+    static EXAMPLE_PATH: OnceLock<PathBuf> = OnceLock::new();
+    EXAMPLE_PATH
+        .get_or_init(|| build_plugin_example(EXEC_TEST_EXAMPLE_NAME))
+        .clone()
+}
+
+fn build_actor_event_example_once() -> PathBuf {
+    static EXAMPLE_PATH: OnceLock<PathBuf> = OnceLock::new();
+    EXAMPLE_PATH
+        .get_or_init(|| build_plugin_example(ACTOR_EVENT_EXAMPLE_NAME))
+        .clone()
+}
+
+fn build_plugin_example(name: &str) -> PathBuf {
+    let root = workspace_root();
+    let status = Command::new(env!("CARGO"))
+        .current_dir(&root)
+        .args(["build", "-p", "nautilus-plugin", "--example", name])
+        .status()
+        .expect("cargo build of plug-in example cdylib");
+    assert!(status.success(), "failed to build plug-in example cdylib");
+
+    let artifact = cargo_target_dir(&root)
+        .join("debug")
+        .join("examples")
+        .join(cdylib_filename(name));
+    assert!(
+        artifact.exists(),
+        "plug-in example cdylib artifact not at {}",
+        artifact.display()
+    );
+    artifact
+}
+
 fn cargo_target_dir(root: &Path) -> PathBuf {
     let target_dir =
         std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
@@ -170,19 +228,160 @@ fn loaded_manifest() -> &'static PluginManifest {
     MANIFEST.get_or_init(|| {
         let _guard = LOAD_GUARD.lock().unwrap();
         let path = build_example_once();
-        let loader: &'static mut _ = Box::leak(Box::new(plugin_loader()));
-        let loaded = loader
-            .load(&path)
-            .expect("loader should accept the example cdylib");
-        // SAFETY: loader is leaked, so its inner manifest pointer stays live
-        // for the process lifetime. Returning the static reference is sound.
-        unsafe { &*std::ptr::from_ref::<PluginManifest>(loaded.manifest()) }
+        load_manifest_from_path(&path)
     })
+}
+
+fn loaded_exec_manifest() -> &'static PluginManifest {
+    static MANIFEST: OnceLock<&'static PluginManifest> = OnceLock::new();
+    static LOAD_GUARD: Mutex<()> = Mutex::new(());
+    MANIFEST.get_or_init(|| {
+        let _guard = LOAD_GUARD.lock().unwrap();
+        let path = build_exec_test_example_once();
+        load_manifest_from_path(&path)
+    })
+}
+
+fn loaded_actor_event_manifest() -> &'static PluginManifest {
+    static MANIFEST: OnceLock<&'static PluginManifest> = OnceLock::new();
+    static LOAD_GUARD: Mutex<()> = Mutex::new(());
+    MANIFEST.get_or_init(|| {
+        let _guard = LOAD_GUARD.lock().unwrap();
+        let path = build_actor_event_example_once();
+        load_manifest_from_path(&path)
+    })
+}
+
+fn load_manifest_from_path(path: &Path) -> &'static PluginManifest {
+    let loader: &'static mut _ = Box::leak(Box::new(plugin_loader()));
+    let loaded = loader
+        .load(path)
+        .expect("loader should accept the example cdylib");
+    // SAFETY: loader is leaked, so its inner manifest pointer stays live
+    // for the process lifetime. Returning the static reference is sound.
+    unsafe { &*std::ptr::from_ref::<PluginManifest>(loaded.manifest()) }
 }
 
 #[fixture]
 fn example_manifest() -> &'static PluginManifest {
     loaded_manifest()
+}
+
+fn register_strategy_adapter(adapter: &mut PluginStrategyAdapter) {
+    let trader_id = TraderId::from("TRADER-001");
+    let clock = std::rc::Rc::new(std::cell::RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .register_default_handler(TimeEventCallback::from(|_event: TimeEvent| {}));
+    let cache = std::rc::Rc::new(std::cell::RefCell::new(Cache::default()));
+    let portfolio = std::rc::Rc::new(std::cell::RefCell::new(Portfolio::new(
+        cache.clone(),
+        clock.clone(),
+        None,
+    )));
+    adapter
+        .core_mut()
+        .register(trader_id, clock, cache, portfolio)
+        .expect("strategy register");
+    adapter.initialize().expect("strategy initialize");
+}
+
+fn register_actor_adapter(adapter: &mut PluginActorAdapter) {
+    adapter
+        .register(
+            TraderId::from("TRADER-001"),
+            std::rc::Rc::new(std::cell::RefCell::new(TestClock::new())),
+            std::rc::Rc::new(std::cell::RefCell::new(Cache::default())),
+        )
+        .expect("actor register");
+    Component::start(adapter).expect("actor starts");
+}
+
+fn plugin_test_instrument_id() -> InstrumentId {
+    InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn plugin_test_quote() -> QuoteTick {
+    QuoteTick::new(
+        plugin_test_instrument_id(),
+        Price::from("100.00"),
+        Price::from("100.50"),
+        Quantity::from("1.0"),
+        Quantity::from("2.0"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    )
+}
+
+fn plugin_test_order(strategy_id: StrategyId, client_order_id: ClientOrderId) -> OrderAny {
+    OrderAny::Market(MarketOrder::new(
+        TraderId::from("TRADER-001"),
+        strategy_id,
+        plugin_test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ))
+}
+
+fn plugin_test_accepted_order(strategy_id: StrategyId, client_order_id: ClientOrderId) -> OrderAny {
+    let mut order = plugin_test_order(strategy_id, client_order_id);
+    let account_id = AccountId::from("SIM-001");
+    order
+        .apply(TestOrderEventStubs::submitted(&order, account_id))
+        .expect("submitted event applies");
+    order
+        .apply(TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::from("V-CDYLIB-001"),
+        ))
+        .expect("accepted event applies");
+    order
+}
+
+fn plugin_test_position(strategy_id: StrategyId, position_id: PositionId) -> Position {
+    let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
+    let order = plugin_test_accepted_order(strategy_id, ClientOrderId::from("O-CDYLIB-POS-OPEN"));
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        None,
+        Some(position_id),
+        Some(Price::from("100.00")),
+        Some(Quantity::from("1.0")),
+        None,
+        None,
+        None,
+        Some(AccountId::from("SIM-001")),
+    );
+    let OrderEventAny::Filled(fill) = fill else {
+        panic!("expected filled event");
+    };
+    Position::new(&instrument, fill)
+}
+
+fn plugin_test_option_series_id() -> OptionSeriesId {
+    "DERIBIT:BTC:BTC:1700000000000000000"
+        .parse()
+        .expect("option series id parses")
+}
+
+fn plugin_test_option_chain() -> OptionChainSlice {
+    OptionChainSlice::new(plugin_test_option_series_id())
 }
 
 #[rstest]
@@ -278,6 +477,601 @@ fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
 
     DataActor::on_start(&mut adapter).expect("on_start dispatches into plug-in");
     DataActor::on_stop(&mut adapter).expect("on_stop dispatches into plug-in");
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_submit_order_normalizes_identifiers() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginExecCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-001");
+    let position_id = PositionId::from("P-CDYLIB-001");
+    let config_json = serde_json::json!({
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "position_id": position_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibRiskProbe.{}", UUID4::new());
+    let risk_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_handler,
+    );
+
+    let actor_id = ActorId::from(adapter.actor_id().inner().as_str());
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(command) => {
+            assert_eq!(command.client_order_id, client_order_id);
+            assert_eq!(command.position_id, Some(position_id));
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
+    assert_eq!(actor_id, ActorId::from("PluginExecCdylib-001"));
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginQueryCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-QUERY-001");
+    let config_json = serde_json::json!({
+        "action": "query_order",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let cache_rc = adapter.core_mut().cache_rc();
+    cache_rc
+        .borrow_mut()
+        .add_order(
+            plugin_test_order(strategy_id, client_order_id),
+            None,
+            None,
+            true,
+        )
+        .expect("seed query order cache");
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibQueryExecProbe.{}", UUID4::new());
+    let exec_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryOrder(command) => {
+            assert_eq!(command.client_order_id, client_order_id);
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+        }
+        other => panic!("expected QueryOrder, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCancelCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-001");
+    let config_json = serde_json::json!({
+        "action": "cancel_order",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let cache_rc = adapter.core_mut().cache_rc();
+    cache_rc
+        .borrow_mut()
+        .add_order(
+            plugin_test_accepted_order(strategy_id, client_order_id),
+            None,
+            None,
+            true,
+        )
+        .expect("seed cancel order cache");
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibCancelExecProbe.{}", UUID4::new());
+    let exec_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::CancelOrder(command) => {
+            assert_eq!(command.client_order_id, client_order_id);
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+        }
+        other => panic!("expected CancelOrder, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginModifyCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-MODIFY-001");
+    let config_json = serde_json::json!({
+        "action": "modify_order",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let cache_rc = adapter.core_mut().cache_rc();
+    cache_rc
+        .borrow_mut()
+        .add_order(
+            plugin_test_accepted_order(strategy_id, client_order_id),
+            None,
+            None,
+            true,
+        )
+        .expect("seed modify order cache");
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibModifyRiskProbe.{}", UUID4::new());
+    let risk_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::ModifyOrder(command) => {
+            assert_eq!(command.client_order_id, client_order_id);
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+            assert_eq!(command.quantity, Some(Quantity::from("2.0")));
+        }
+        other => panic!("expected ModifyOrder, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCloseCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-CLOSE-001");
+    let position_id = PositionId::from("P-CDYLIB-CLOSE-001");
+    let config_json = serde_json::json!({
+        "action": "close_position",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "position_id": position_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
+    let position = plugin_test_position(strategy_id, position_id);
+    let expected_instrument_id = position.instrument_id;
+    let cache_rc = adapter.core_mut().cache_rc();
+    cache_rc
+        .borrow_mut()
+        .add_instrument(instrument)
+        .expect("seed close position instrument");
+    cache_rc
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .expect("seed close position cache");
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibCloseRiskProbe.{}", UUID4::new());
+    let risk_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(command) => {
+            assert_eq!(command.instrument_id, expected_instrument_id);
+            assert_eq!(command.position_id, Some(position_id));
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
+        .expect("actor event manifest passes validation");
+    let entry = manifest.actors().next().expect("actor event entry");
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-event-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "instrument_id": plugin_test_instrument_id().to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ActorEventProbe-001"),
+            "actor-event-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+    let actor_id = ActorId::from(adapter.actor_id().inner().as_str());
+    let _registered = register_actor(adapter);
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id,
+        is_strategy: false,
+    });
+    let instrument = plugin_test_instrument_id().to_string();
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+
+    // SAFETY: ctx and borrowed strings are live for the call.
+    unsafe {
+        (v.subscribe_quotes)(
+            ctx,
+            nautilus_plugin::BorrowedStr::from_str(&instrument),
+            nautilus_plugin::BorrowedStr::empty(),
+            nautilus_plugin::BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("subscribe_quotes succeeds");
+
+    msgbus::publish_quote(
+        get_quotes_topic(plugin_test_instrument_id()),
+        &plugin_test_quote(),
+    );
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes quote marker");
+
+    // SAFETY: ctx and borrowed strings are live for the call.
+    unsafe {
+        (v.unsubscribe_quotes)(
+            ctx,
+            nautilus_plugin::BorrowedStr::from_str(&instrument),
+            nautilus_plugin::BorrowedStr::empty(),
+            nautilus_plugin::BorrowedStr::empty(),
+        )
+    }
+    .into_result()
+    .expect("unsubscribe_quotes succeeds");
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, instrument);
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
+        .expect("actor event manifest passes validation");
+    let entry = manifest.actors().next().expect("actor event entry");
+    let deltas = stub_deltas();
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-book-deltas-event-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "instrument_id": deltas.instrument_id.to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ActorEventProbe-BookDeltas"),
+            "actor-event-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    DataActor::on_book_deltas(&mut adapter, &deltas).expect("on_book_deltas dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes deltas marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, deltas.instrument_id.to_string());
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
+        .expect("actor event manifest passes validation");
+    let entry = manifest.actors().next().expect("actor event entry");
+    let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-instrument-event-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "instrument_id": instrument_id.to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ActorEventProbe-002"),
+            "actor-event-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
+    DataActor::on_instrument(&mut adapter, &instrument).expect("on_instrument dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes instrument marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, instrument_id.to_string());
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
+        .expect("actor event manifest passes validation");
+    let entry = manifest.actors().next().expect("actor event entry");
+    let series_id = plugin_test_option_series_id();
+    let chain = plugin_test_option_chain();
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-option-chain-event-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "series_id": series_id.to_wire_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ActorEventProbe-OptionChain"),
+            "actor-event-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    DataActor::on_option_chain(&mut adapter, &chain).expect("on_option_chain dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes option chain marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, series_id.to_wire_string());
+}
+
+#[rstest]
+#[ignore]
+fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginQuoteCdylib-001");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-strategy-quote-event-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "strategy_id": strategy_id.to_string(),
+        "instrument_id": plugin_test_instrument_id().to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    DataActor::on_quote(&mut adapter, &plugin_test_quote()).expect("on_quote dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in strategy writes quote marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, plugin_test_instrument_id().to_string());
 }
 
 #[rstest]

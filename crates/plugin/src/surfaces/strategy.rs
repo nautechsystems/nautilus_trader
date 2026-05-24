@@ -99,6 +99,7 @@ use nautilus_model::{
 use crate::{
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
     host::{HostContext, HostVTable},
+    normalize::BoundaryNormalize,
     panic::{guard, guard_infallible},
     surfaces::{
         book::OrderBookDeltasHandle, instrument::InstrumentAnyHandle,
@@ -817,9 +818,9 @@ macro_rules! event_thunk {
             guard(|| {
                 // SAFETY: host keeps `value` live for the duration of the call;
                 // the plug-in only borrows it for the trait-method invocation.
-                let v = unsafe { &*value };
+                let v = unsafe { &*value }.boundary_normalized();
                 let strategy = handle_as_mut::<T>(handle);
-                ok_or_err(strategy.$method(v))
+                ok_or_err(strategy.$method(&v))
             })
         }
     };
@@ -837,9 +838,9 @@ unsafe extern "C" fn on_book_deltas_thunk<T: PluginStrategy>(
     guard(|| {
         // SAFETY: host keeps the handle live for the duration of the call;
         // the plug-in only borrows the wrapped deltas via the trait method.
-        let v: &OrderBookDeltas = unsafe { (*deltas).deltas() };
+        let v: OrderBookDeltas = unsafe { (*deltas).deltas() }.boundary_normalized();
         let strategy = handle_as_mut::<T>(handle);
-        ok_or_err(strategy.on_book_deltas(v))
+        ok_or_err(strategy.on_book_deltas(&v))
     })
 }
 
@@ -850,9 +851,9 @@ unsafe extern "C" fn on_instrument_thunk<T: PluginStrategy>(
     guard(|| {
         // SAFETY: host keeps the handle live for the duration of the call;
         // the plug-in only borrows the wrapped instrument via the trait method.
-        let v: &InstrumentAny = unsafe { (*instrument).instrument() };
+        let v: InstrumentAny = unsafe { (*instrument).instrument() }.boundary_normalized();
         let strategy = handle_as_mut::<T>(handle);
-        ok_or_err(strategy.on_instrument(v))
+        ok_or_err(strategy.on_instrument(&v))
     })
 }
 
@@ -863,9 +864,9 @@ unsafe extern "C" fn on_option_chain_thunk<T: PluginStrategy>(
     guard(|| {
         // SAFETY: host keeps the handle live for the duration of the call;
         // the plug-in only borrows the wrapped chain via the trait method.
-        let v: &OptionChainSlice = unsafe { (*chain).chain() };
+        let v: OptionChainSlice = unsafe { (*chain).chain() }.boundary_normalized();
         let strategy = handle_as_mut::<T>(handle);
-        ok_or_err(strategy.on_option_chain(v))
+        ok_or_err(strategy.on_option_chain(&v))
     })
 }
 
@@ -939,9 +940,12 @@ macro_rules! slice_thunk {
             guard(|| {
                 // SAFETY: host keeps the slice storage live for the call;
                 // the plug-in only borrows it for the trait-method invocation.
-                let v = unsafe { values.as_slice() };
+                let v: Vec<$ty> = unsafe { values.as_slice() }
+                    .iter()
+                    .map(BoundaryNormalize::boundary_normalized)
+                    .collect();
                 let strategy = handle_as_mut::<T>(handle);
-                ok_or_err(strategy.$method(v))
+                ok_or_err(strategy.$method(&v))
             })
         }
     };

@@ -69,6 +69,27 @@ for the same reason: the snapshot owns
 `#[repr(C)]`. The host boxes the slice in the handle for the duration
 of the callback.
 
+## Identifier interning
+
+Nautilus identifier types such as `ClientOrderId`, `InstrumentId`,
+`ClientId`, `AccountId`, `PositionId`, `StrategyId`, and `TraderId`
+wrap `Ustr`. A Rust cdylib has its own `ustr` global string cache, so
+equal text can have different `Ustr` pointers on the host and plug-in
+sides. The plug-in boundary treats `Ustr` values as receiver-local:
+
+- Host command dispatch re-interns every identifier in boundary-owned
+  command handles before calling `Strategy::*`.
+- Plug-in event thunks re-intern identifiers in inbound event payloads
+  before calling `PluginActor` or `PluginStrategy` trait methods.
+- Plug-in authors can compare and store identifiers received through
+  trait callbacks normally. Code that bypasses the macro-generated
+  thunks must re-intern copied identifiers with `Ustr::from(value.as_str())`.
+
+The policy also covers nested identifiers such as `Symbol`, `Venue`,
+`OrderListId`, `ExecAlgorithmId`, `VenueOrderId`, `OptionSeriesId`,
+raw `Ustr` tags and names, and currency codes carried inside command
+or event payloads.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

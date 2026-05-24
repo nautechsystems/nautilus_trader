@@ -60,8 +60,8 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Catalog, cache, and event-store backends as plug-ins.
 - Pre-trade risk gating as a plug-in.
 - Hot reload (plug-ins load at process startup and stay loaded).
-- `OrderBookDeltas`, `OrderBook`, `Instrument`, and arbitrary `CustomData` on the actor or
-  strategy callback surface (payload shapes are not `#[repr(C)]`-clean).
+- `OrderBook` state and arbitrary `CustomData` on the actor or strategy callback surface
+  (payload shapes are not `#[repr(C)]`-clean).
 
 ## ABI boundary
 
@@ -80,6 +80,26 @@ patterns cover the v1 surface:
 
 The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
 documented in `nautilus_plugin::boundary`.
+
+### Identifier interning
+
+Nautilus identifiers such as `ClientOrderId`, `InstrumentId`, `ClientId`, `AccountId`,
+`PositionId`, `StrategyId`, and `TraderId` wrap `Ustr`. A Rust cdylib has its own `ustr`
+global string cache, so equal text can have different `Ustr` pointers on the host and
+plug-in sides. The boundary treats `Ustr` values as receiver-local:
+
+- Host command dispatch re-interns every identifier in boundary-owned command handles before
+  calling the matching `Strategy::*` method.
+- Plug-in event thunks re-intern identifiers in inbound event payloads before calling
+  `PluginActor` or `PluginStrategy` trait methods.
+- Plug-in authors can compare and store identifiers received through trait callbacks normally.
+  Code that bypasses the macro-generated thunks must re-intern copied identifiers with
+  `Ustr::from(value.as_str())`.
+
+The policy also covers nested identifiers such as `Symbol`, `Venue`, `OrderListId`,
+`ExecAlgorithmId`, `VenueOrderId`, `OptionSeriesId`, raw `Ustr` tags and names, and
+currency codes carried inside command or event payloads. This does not change any vtable
+or handle layout, so it does not require an ABI version bump.
 
 ## Manifest
 

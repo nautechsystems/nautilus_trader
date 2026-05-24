@@ -54,6 +54,7 @@ use crate::{
     },
     host::{HostContext, HostLogLevel, HostVTable},
     loader::PluginLoader,
+    normalize::BoundaryCommandHandle,
     surfaces::commands::{
         CancelAllOrdersHandle, CancelOrderHandle, CancelOrdersHandle, CloseAllPositionsHandle,
         ClosePositionHandle, ModifyOrderHandle, QueryAccountHandle, QueryOrderHandle,
@@ -768,14 +769,13 @@ unsafe extern "C" fn host_submit_order(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "submit_order", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "submit_order", |adapter, cmd| {
             Strategy::submit_order(
                 adapter,
-                cmd.order.clone(),
+                cmd.order,
                 cmd.position_id,
                 cmd.client_id,
-                cmd.params.clone(),
+                cmd.params,
             )
         })
     }
@@ -787,14 +787,8 @@ unsafe extern "C" fn host_cancel_order(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "cancel_order", |adapter, handle| {
-            let cmd = handle.command();
-            Strategy::cancel_order(
-                adapter,
-                cmd.client_order_id,
-                cmd.client_id,
-                cmd.params.clone(),
-            )
+        dispatch_handle(ctx, command, "cancel_order", |adapter, cmd| {
+            Strategy::cancel_order(adapter, cmd.client_order_id, cmd.client_id, cmd.params)
         })
     }
 }
@@ -805,8 +799,7 @@ unsafe extern "C" fn host_modify_order(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "modify_order", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "modify_order", |adapter, cmd| {
             Strategy::modify_order(
                 adapter,
                 cmd.client_order_id,
@@ -814,7 +807,7 @@ unsafe extern "C" fn host_modify_order(
                 cmd.price,
                 cmd.trigger_price,
                 cmd.client_id,
-                cmd.params.clone(),
+                cmd.params,
             )
         })
     }
@@ -826,14 +819,13 @@ unsafe extern "C" fn host_submit_order_list(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "submit_order_list", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "submit_order_list", |adapter, cmd| {
             Strategy::submit_order_list(
                 adapter,
-                cmd.orders.clone(),
+                cmd.orders,
                 cmd.position_id,
                 cmd.client_id,
-                cmd.params.clone(),
+                cmd.params,
             )
         })
     }
@@ -845,14 +837,8 @@ unsafe extern "C" fn host_cancel_orders(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "cancel_orders", |adapter, handle| {
-            let cmd = handle.command();
-            Strategy::cancel_orders(
-                adapter,
-                cmd.client_order_ids.clone(),
-                cmd.client_id,
-                cmd.params.clone(),
-            )
+        dispatch_handle(ctx, command, "cancel_orders", |adapter, cmd| {
+            Strategy::cancel_orders(adapter, cmd.client_order_ids, cmd.client_id, cmd.params)
         })
     }
 }
@@ -863,14 +849,13 @@ unsafe extern "C" fn host_cancel_all_orders(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "cancel_all_orders", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "cancel_all_orders", |adapter, cmd| {
             Strategy::cancel_all_orders(
                 adapter,
                 cmd.instrument_id,
                 cmd.order_side,
                 cmd.client_id,
-                cmd.params.clone(),
+                cmd.params,
             )
         })
     }
@@ -882,8 +867,7 @@ unsafe extern "C" fn host_close_position(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "close_position", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "close_position", |adapter, cmd| {
             let position = {
                 let cache = adapter.cache();
                 cache.position(&cmd.position_id).map(|p| p.cloned())
@@ -895,7 +879,7 @@ unsafe extern "C" fn host_close_position(
                 adapter,
                 &position,
                 cmd.client_id,
-                cmd.tags.clone(),
+                cmd.tags,
                 cmd.time_in_force,
                 cmd.reduce_only,
                 cmd.quote_quantity,
@@ -910,14 +894,13 @@ unsafe extern "C" fn host_close_all_positions(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "close_all_positions", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "close_all_positions", |adapter, cmd| {
             Strategy::close_all_positions(
                 adapter,
                 cmd.instrument_id,
                 cmd.position_side,
                 cmd.client_id,
-                cmd.tags.clone(),
+                cmd.tags,
                 cmd.time_in_force,
                 cmd.reduce_only,
                 cmd.quote_quantity,
@@ -932,9 +915,8 @@ unsafe extern "C" fn host_query_account(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "query_account", |adapter, handle| {
-            let cmd = handle.command();
-            Strategy::query_account(adapter, cmd.account_id, cmd.client_id, cmd.params.clone())
+        dispatch_handle(ctx, command, "query_account", |adapter, cmd| {
+            Strategy::query_account(adapter, cmd.account_id, cmd.client_id, cmd.params)
         })
     }
 }
@@ -945,8 +927,7 @@ unsafe extern "C" fn host_query_order(
 ) -> PluginResult<()> {
     // SAFETY: plug-in keeps the handle alive for the duration of the call.
     unsafe {
-        dispatch_handle(ctx, command, "query_order", |adapter, handle| {
-            let cmd = handle.command();
+        dispatch_handle(ctx, command, "query_order", |adapter, cmd| {
             let order = {
                 let cache = adapter.cache();
                 cache.order(&cmd.client_order_id).map(|o| o.cloned())
@@ -954,7 +935,7 @@ unsafe extern "C" fn host_query_order(
             let order = order.ok_or_else(|| {
                 anyhow::anyhow!("order '{}' not found in cache", cmd.client_order_id)
             })?;
-            Strategy::query_order(adapter, &order, cmd.client_id, cmd.params.clone())
+            Strategy::query_order(adapter, &order, cmd.client_id, cmd.params)
         })
     }
 }
@@ -977,8 +958,11 @@ unsafe fn dispatch_handle<H>(
     ctx: *const HostContext,
     command: *const H,
     method: &'static str,
-    f: impl FnOnce(&mut PluginStrategyAdapter, &H) -> anyhow::Result<()>,
-) -> PluginResult<()> {
+    f: impl FnOnce(&mut PluginStrategyAdapter, H::Command) -> anyhow::Result<()>,
+) -> PluginResult<()>
+where
+    H: BoundaryCommandHandle,
+{
     if command.is_null() {
         return PluginResult::Err(PluginError::new(
             PluginErrorCode::InvalidArgument,
@@ -1022,7 +1006,8 @@ unsafe fn dispatch_handle<H>(
     // SAFETY: command is non-null (checked above) and the plug-in commits
     // to keeping the handle live for the duration of this call.
     let handle = unsafe { &*command };
-    match f(&mut adapter_ref, handle) {
+    let command = handle.boundary_normalized_command();
+    match f(&mut adapter_ref, command) {
         Ok(()) => PluginResult::Ok(()),
         Err(e) => PluginResult::Err(PluginError::new(PluginErrorCode::Generic, e.to_string())),
     }

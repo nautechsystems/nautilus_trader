@@ -40,6 +40,7 @@ nautilus-model = { workspace = true }
 nautilus-trading = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 libloading = { workspace = true, optional = true }
 log = { workspace = true }
 serde = { workspace = true, optional = true }
@@ -48,9 +49,15 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["host"]
 
 [[example]]
 name = "custom_data_plugin"
@@ -61,6 +68,20 @@ test = false
 
 [[example]]
 name = "runtime_smoke_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "exec_test_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "actor_event_plugin"
 crate-type = ["cdylib"]
 required-features = []
 doc = false
