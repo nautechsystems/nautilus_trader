@@ -184,6 +184,9 @@ pub struct ExecTesterConfig {
     /// Whether unsubscribe is supported on stop.
     #[builder(default = true)]
     pub can_unsubscribe: bool,
+    /// Clamp computed prices to the instrument's `[min_price, max_price]` before submit.
+    #[builder(default = false)]
+    pub clamp_to_instrument_price_range: bool,
 }
 
 impl ExecTesterConfig {
@@ -257,6 +260,7 @@ impl ExecTesterConfig {
             test_reject_reduce_only: false,
             test_modify_rejected: false,
             can_unsubscribe: true,
+            clamp_to_instrument_price_range: false,
         }
     }
 }
