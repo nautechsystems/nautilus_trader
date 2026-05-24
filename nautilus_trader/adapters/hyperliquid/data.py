@@ -65,9 +65,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 _PYO3HyperliquidAllMids: Any = getattr(nautilus_pyo3, "HyperliquidAllMids", None)
-_PYO3HyperliquidOpenInterestData: Any = getattr(
+_PYO3HyperliquidOpenInterest: Any = getattr(
     nautilus_pyo3,
-    "HyperliquidOpenInterestData",
+    "HyperliquidOpenInterest",
     None,
 )
 
@@ -109,7 +109,7 @@ class HyperliquidAllMids(Data):
         )
 
 
-class HyperliquidOpenInterestData(Data):
+class HyperliquidOpenInterest(Data):
     """
     Python data object for Hyperliquid open interest updates.
     """
@@ -135,8 +135,8 @@ class HyperliquidOpenInterestData(Data):
         return self._ts_init
 
     @staticmethod
-    def from_pyo3(pyo3_open_interest: Any) -> HyperliquidOpenInterestData:
-        return HyperliquidOpenInterestData(
+    def from_pyo3(pyo3_open_interest: Any) -> HyperliquidOpenInterest:
+        return HyperliquidOpenInterest(
             instrument_id=InstrumentId.from_str(str(pyo3_open_interest.instrument_id)),
             open_interest=Decimal(str(pyo3_open_interest.open_interest)),
             ts_event=pyo3_open_interest.ts_event,
@@ -252,6 +252,25 @@ class HyperliquidDataClient(LiveMarketDataClient):
         for currency in self.instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    def _custom_instrument_id(
+        self,
+        data_type: DataType,
+        *,
+        action: str,
+    ) -> nautilus_pyo3.InstrumentId | None:
+        metadata = data_type.metadata or {}
+        instrument_id_raw = metadata.get("instrument_id")
+        instrument_id = str(instrument_id_raw).strip() if instrument_id_raw is not None else ""
+
+        if not instrument_id:
+            self._log.warning(
+                f"Unsupported Hyperliquid open interest {action}: "
+                "metadata['instrument_id'] is required",
+            )
+            return None
+
+        return nautilus_pyo3.InstrumentId.from_str(instrument_id)
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             if nautilus_pyo3.is_pycapsule(msg):
@@ -268,13 +287,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
                     inner = HyperliquidAllMids.from_pyo3(msg.data)
                     data_type = DataType(HyperliquidAllMids, metadata=msg.data_type.metadata)
                     self._handle_data(CustomData(data_type=data_type, data=inner))
-                elif _PYO3HyperliquidOpenInterestData is not None and isinstance(
+                elif _PYO3HyperliquidOpenInterest is not None and isinstance(
                     msg.data,
-                    _PYO3HyperliquidOpenInterestData,
+                    _PYO3HyperliquidOpenInterest,
                 ):
-                    inner = HyperliquidOpenInterestData.from_pyo3(msg.data)
+                    inner = HyperliquidOpenInterest.from_pyo3(msg.data)
                     data_type = DataType(
-                        HyperliquidOpenInterestData,
+                        HyperliquidOpenInterest,
                         metadata=msg.data_type.metadata,
                     )
                     self._handle_data(CustomData(data_type=data_type, data=inner))
@@ -333,18 +352,10 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 await subscribe_all_mids()
             return
 
-        if data_type_name == "HyperliquidOpenInterestData":
-            metadata = data_type.metadata or {}
-            instrument_id_raw = metadata.get("instrument_id")
-            instrument_id = str(instrument_id_raw).strip() if instrument_id_raw is not None else ""
-
-            if not instrument_id:
-                self._log.warning(
-                    "Unsupported Hyperliquid open interest subscription: "
-                    "metadata['instrument_id'] is required",
-                )
+        if data_type_name == "HyperliquidOpenInterest":
+            instrument_id = self._custom_instrument_id(data_type, action="subscription")
+            if instrument_id is None:
                 return
-
             subscribe_open_interest: Any = getattr(self._ws_client, "subscribe_open_interest", None)
             if subscribe_open_interest is None:
                 self._log.warning(
@@ -353,7 +364,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 )
                 return
 
-            await subscribe_open_interest(nautilus_pyo3.InstrumentId.from_str(instrument_id))
+            await subscribe_open_interest(instrument_id)
             return
 
         self._log.warning(f"Unsupported custom data subscription: {data_type_name}")
@@ -431,18 +442,10 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 await unsubscribe_all_mids()
             return
 
-        if data_type_name == "HyperliquidOpenInterestData":
-            metadata = data_type.metadata or {}
-            instrument_id_raw = metadata.get("instrument_id")
-            instrument_id = str(instrument_id_raw).strip() if instrument_id_raw is not None else ""
-
-            if not instrument_id:
-                self._log.warning(
-                    "Unsupported Hyperliquid open interest unsubscription: "
-                    "metadata['instrument_id'] is required",
-                )
+        if data_type_name == "HyperliquidOpenInterest":
+            instrument_id = self._custom_instrument_id(data_type, action="unsubscription")
+            if instrument_id is None:
                 return
-
             unsubscribe_open_interest: Any = getattr(
                 self._ws_client,
                 "unsubscribe_open_interest",
@@ -456,7 +459,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 )
                 return
 
-            await unsubscribe_open_interest(nautilus_pyo3.InstrumentId.from_str(instrument_id))
+            await unsubscribe_open_interest(instrument_id)
             return
 
         self._log.warning(f"Unsupported custom data unsubscription: {data_type_name}")

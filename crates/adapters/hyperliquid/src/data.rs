@@ -178,7 +178,6 @@ impl HyperliquidDataClient {
     fn custom_instrument_id(data_type: &DataType) -> anyhow::Result<Option<InstrumentId>> {
         let Some(raw_instrument_id) = data_type
             .metadata()
-            .as_ref()
             .and_then(|m| m.get("instrument_id"))
             .and_then(|v| v.as_str())
             .map(str::trim)
@@ -484,10 +483,10 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
-        if data_type == "HyperliquidOpenInterestData" {
+        if data_type == "HyperliquidOpenInterest" {
             let ws = self.ws_client.clone();
             let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
-                "HyperliquidOpenInterestData subscriptions require metadata['instrument_id']",
+                "HyperliquidOpenInterest subscriptions require metadata['instrument_id']",
             )?;
 
             self.spawn_task("subscribe_open_interest", async move {
@@ -525,10 +524,10 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
-        if data_type == "HyperliquidOpenInterestData" {
+        if data_type == "HyperliquidOpenInterest" {
             let ws = self.ws_client.clone();
             let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
-                "HyperliquidOpenInterestData unsubscriptions require metadata['instrument_id']",
+                "HyperliquidOpenInterest unsubscriptions require metadata['instrument_id']",
             )?;
 
             self.spawn_task("unsubscribe_open_interest", async move {

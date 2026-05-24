@@ -24,7 +24,7 @@ from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientCon
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
-from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterestData
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BarType
@@ -55,7 +55,7 @@ class _FakePyo3DataType:
         self.metadata = metadata
 
 
-class _FakePyo3HyperliquidOpenInterestData:
+class _FakePyo3HyperliquidOpenInterest:
     def __init__(
         self,
         instrument_id: str,
@@ -554,7 +554,7 @@ async def test_subscribe_custom_data_open_interest(data_client_builder, monkeypa
 
         command = SimpleNamespace(
             data_type=DataType(
-                type=HyperliquidOpenInterestData,
+                type=HyperliquidOpenInterest,
                 metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
             ),
         )
@@ -577,7 +577,7 @@ async def test_unsubscribe_custom_data_open_interest(data_client_builder, monkey
 
         command = SimpleNamespace(
             data_type=DataType(
-                type=HyperliquidOpenInterestData,
+                type=HyperliquidOpenInterest,
                 metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
             ),
         )
@@ -632,8 +632,8 @@ async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builde
     client, _, _, _ = data_client_builder(monkeypatch)
     monkeypatch.setattr(
         hyperliquid_data_module,
-        "_PYO3HyperliquidOpenInterestData",
-        _FakePyo3HyperliquidOpenInterestData,
+        "_PYO3HyperliquidOpenInterest",
+        _FakePyo3HyperliquidOpenInterest,
     )
     monkeypatch.setattr(
         hyperliquid_data_module.nautilus_pyo3,
@@ -643,7 +643,7 @@ async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builde
 
     client._handle_data = MagicMock()
 
-    open_interest = _FakePyo3HyperliquidOpenInterestData(
+    open_interest = _FakePyo3HyperliquidOpenInterest(
         instrument_id="BTC-USD-PERP.HYPERLIQUID",
         open_interest="1500.0",
         ts_event=2_000,
@@ -660,10 +660,10 @@ async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builde
     forwarded = client._handle_data.call_args.args[0]
     assert isinstance(forwarded, CustomData)
     assert isinstance(forwarded.data, Data)
-    assert isinstance(forwarded.data, HyperliquidOpenInterestData)
+    assert isinstance(forwarded.data, HyperliquidOpenInterest)
     assert forwarded.data.instrument_id == InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
     assert forwarded.data.open_interest == Decimal("1500.0")
     assert forwarded.data_type == DataType(
-        HyperliquidOpenInterestData,
+        HyperliquidOpenInterest,
         {"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
     )

@@ -45,7 +45,7 @@ use crate::common::{
         is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
     },
 };
-use crate::data_types::HyperliquidOpenInterestData;
+use crate::data_types::HyperliquidOpenInterest;
 
 fn parse_price(
     price_str: &str,
@@ -503,19 +503,19 @@ pub fn parse_ws_asset_context(
 
 /// Parses a WebSocket ActiveAssetCtx message into an open interest custom data update.
 ///
-/// Returns `Some(HyperliquidOpenInterestData)` for perpetual instruments and `None` for spot.
+/// Returns `Some(HyperliquidOpenInterest)` for perpetual instruments and `None` for spot.
 pub fn parse_ws_open_interest(
     ctx: &WsActiveAssetCtxData,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<Option<HyperliquidOpenInterestData>> {
+) -> anyhow::Result<Option<HyperliquidOpenInterest>> {
     match ctx {
         WsActiveAssetCtxData::Perp { coin: _, ctx } => {
             let open_interest = Decimal::from_str(&ctx.open_interest).with_context(|| {
                 format!("failed to parse open interest from '{}'", ctx.open_interest)
             })?;
 
-            Ok(Some(HyperliquidOpenInterestData::new(
+            Ok(Some(HyperliquidOpenInterest::new(
                 instrument.id(),
                 open_interest,
                 ts_init,

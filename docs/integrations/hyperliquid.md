@@ -541,7 +541,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.           |
 | Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.          |
 | Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.            |
-| Open interest     | ✓    | -        | -     | `HyperliquidOpenInterestData` | Custom data from `activeAssetCtx`.    |
+| Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.    |
 | All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.           |
 
 :::note
@@ -574,7 +574,7 @@ The adapter emits two Hyperliquid-specific custom data types:
 
 - `HyperliquidAllMids` from the WebSocket `allMids` feed. Each update carries
   all currently reported mid prices in one payload.
-- `HyperliquidOpenInterestData` from the shared `activeAssetCtx` feed used by
+- `HyperliquidOpenInterest` from the shared `activeAssetCtx` feed used by
   mark prices, index prices, and funding rates.
 
 | Field      | Type             | Description                                              |
@@ -597,32 +597,32 @@ self.subscribe_data(
 )
 ```
 
-`HyperliquidOpenInterestData` carries the latest open interest for one
+`HyperliquidOpenInterest` carries the latest open interest for one
 perpetual instrument. Subscribe with the canonical Nautilus `instrument_id`
 in `metadata["instrument_id"]`:
 
-| Field           | Type  | Description                                             |
-|----------------|-------|---------------------------------------------------------|
-| `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.            |
-| `open_interest` | `Decimal` | Open interest parsed for direct arithmetic use. |
-| `ts_event`      | `int` | UNIX timestamp in nanoseconds when the update occurred. |
-| `ts_init`       | `int` | UNIX timestamp in nanoseconds when the object was built. |
+| Field           | Type           | Description                                                                 |
+|-----------------|----------------|-----------------------------------------------------------------------------|
+| `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.                                           |
+| `open_interest` | `Decimal`      | Open interest parsed for direct arithmetic use.                             |
+| `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`. |
+| `ts_init`       | `int`          | UNIX timestamp in nanoseconds when the object was built.                    |
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
-from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterestData
+from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterest
 from nautilus_trader.model.data import DataType
 
 self.subscribe_data(
     data_type=DataType(
-        HyperliquidOpenInterestData,
+        HyperliquidOpenInterest,
         metadata={"instrument_id": str(self.instrument_id)},
     ),
     client_id=HYPERLIQUID_CLIENT_ID,
 )
 ```
 
-`HyperliquidOpenInterestData` reuses the same single underlying
+`HyperliquidOpenInterest` reuses the same single underlying
 `activeAssetCtx` venue subscription that already backs mark prices, index
 prices, and funding rates for the same coin. Adding OI does not open a second
 parallel `activeAssetCtx` subscription.
@@ -636,7 +636,7 @@ from decimal import Decimal
 from nautilus_trader.model.data import CustomData
 
 def on_data(self, data: CustomData) -> None:
-    if isinstance(data.data, HyperliquidOpenInterestData):
+    if isinstance(data.data, HyperliquidOpenInterest):
         if data.data.open_interest > Decimal("1000"):
             self.log.info(f"OI {data.data.instrument_id} -> {data.data.open_interest}")
 ```

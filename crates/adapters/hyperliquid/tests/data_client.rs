@@ -56,7 +56,7 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
-    data_types::HyperliquidOpenInterestData,
+    data_types::HyperliquidOpenInterest,
     http::{
         models::{HyperliquidL2Book, PerpMeta},
         query::InfoRequest,
@@ -538,7 +538,7 @@ fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
         serde_json::Value::String(instrument_id.to_string()),
     );
     DataType::new(
-        "HyperliquidOpenInterestData",
+        "HyperliquidOpenInterest",
         Some(metadata),
         Some(instrument_id.to_string()),
     )
@@ -574,7 +574,7 @@ async fn wait_for_open_interest_event(
                 custom
                     .data
                     .as_any()
-                    .downcast_ref::<HyperliquidOpenInterestData>()
+                    .downcast_ref::<HyperliquidOpenInterest>()
                     .is_some_and(|open_interest| {
                         open_interest.instrument_id == instrument_id
                             && open_interest.open_interest.to_string() == "1500.0"

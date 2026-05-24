@@ -989,7 +989,7 @@ impl FeedHandler {
             serde_json::Value::String(instrument_id.to_string()),
         );
         DataType::new(
-            "HyperliquidOpenInterestData",
+            "HyperliquidOpenInterest",
             Some(metadata),
             Some(instrument_id.to_string()),
         )
@@ -1126,7 +1126,7 @@ mod tests {
         AssetContextCaches, FeedHandler, HandlerCommand,
     };
     use crate::common::consts::HYPERLIQUID_VENUE;
-    use crate::data_types::HyperliquidOpenInterestData;
+    use crate::data_types::HyperliquidOpenInterest;
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1328,8 +1328,8 @@ mod tests {
                 let open_interest = custom
                     .data
                     .as_any()
-                    .downcast_ref::<HyperliquidOpenInterestData>()
-                    .expect("expected HyperliquidOpenInterestData");
+                    .downcast_ref::<HyperliquidOpenInterest>()
+                    .expect("expected HyperliquidOpenInterest");
                 assert_eq!(open_interest.instrument_id, instrument_id);
                 assert_eq!(open_interest.open_interest.to_string(), "100000.0");
                 assert_eq!(

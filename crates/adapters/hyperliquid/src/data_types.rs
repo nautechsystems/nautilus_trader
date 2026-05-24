@@ -45,6 +45,9 @@ pub struct HyperliquidAllMids {
 }
 
 /// Hyperliquid open interest update from the `activeAssetCtx` WebSocket channel.
+///
+/// Hyperliquid does not provide a native event timestamp on this payload, so
+/// `ts_event` mirrors `ts_init` like the peer asset-context update types.
 #[cfg_attr(
     feature = "arrow",
     custom_data(pyo3, stub_module = "nautilus_trader.hyperliquid")
@@ -53,7 +56,7 @@ pub struct HyperliquidAllMids {
     not(feature = "arrow"),
     custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.hyperliquid")
 )]
-pub struct HyperliquidOpenInterestData {
+pub struct HyperliquidOpenInterest {
     /// The instrument ID for this open interest update.
     pub instrument_id: InstrumentId,
     /// The current open interest for the perpetual instrument.
@@ -72,15 +75,14 @@ pub fn register_hyperliquid_custom_data() {
     #[cfg(feature = "arrow")]
     {
         nautilus_serialization::ensure_custom_data_registered::<HyperliquidAllMids>();
-        nautilus_serialization::ensure_custom_data_registered::<HyperliquidOpenInterestData>();
+        nautilus_serialization::ensure_custom_data_registered::<HyperliquidOpenInterest>();
     }
 
     #[cfg(not(feature = "arrow"))]
     {
         let _ = nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidAllMids>();
-        let _ = nautilus_model::data::ensure_custom_data_json_registered::<
-            HyperliquidOpenInterestData,
-        >();
+        let _ =
+            nautilus_model::data::ensure_custom_data_json_registered::<HyperliquidOpenInterest>();
     }
 }
 
@@ -119,7 +121,7 @@ mod tests {
         use arrow::datatypes::DataType;
         use nautilus_serialization::arrow::ArrowSchemaProvider;
 
-        let schema = HyperliquidOpenInterestData::get_schema(None);
+        let schema = HyperliquidOpenInterest::get_schema(None);
 
         assert_eq!(schema.fields().len(), 4);
         assert_eq!(schema.field(0).name(), "instrument_id");
@@ -136,5 +138,40 @@ mod tests {
         assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
         assert_eq!(schema.field(3).name(), "ts_init");
         assert_eq!(schema.field(3).data_type(), &DataType::UInt64);
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_hyperliquid_open_interest_arrow_round_trip_preserves_decimal() {
+        use std::str::FromStr;
+
+        use nautilus_model::data::Data;
+        use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
+
+        let original = HyperliquidOpenInterest::new(
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            Decimal::from_str("123456.789012345678").unwrap(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let metadata = EncodeToRecordBatch::metadata(&original);
+        let batch = HyperliquidOpenInterest::encode_batch(&metadata, &[original.clone()]).unwrap();
+        let decoded = HyperliquidOpenInterest::decode_data_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        match &decoded[0] {
+            Data::Custom(custom) => {
+                let open_interest = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidOpenInterest>()
+                    .expect("expected HyperliquidOpenInterest");
+                assert_eq!(open_interest.instrument_id, original.instrument_id);
+                assert_eq!(open_interest.open_interest, original.open_interest);
+                assert_eq!(open_interest.ts_event, original.ts_event);
+                assert_eq!(open_interest.ts_init, original.ts_init);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
     }
 }
