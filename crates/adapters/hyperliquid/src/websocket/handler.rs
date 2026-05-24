@@ -923,16 +923,15 @@ impl FeedHandler {
                 }
             }
 
-            if open_interest_changed
+            if let Some(value) = open_interest
+                && open_interest_changed
                 && subscribed_types.is_some_and(|s| s.contains(&AssetContextDataType::OpenInterest))
             {
-                match parse_ws_open_interest(data, instrument, ts_init) {
-                    Ok(Some(open_interest_data)) => {
-                        if let Some(value) = open_interest {
-                            asset_context_caches
-                                .open_interest
-                                .insert(*coin, value.clone());
-                        }
+                match parse_ws_open_interest(value, instrument, ts_init) {
+                    Ok(open_interest_data) => {
+                        asset_context_caches
+                            .open_interest
+                            .insert(*coin, value.clone());
 
                         let data_type =
                             Self::open_interest_data_type(open_interest_data.instrument_id);
@@ -940,7 +939,6 @@ impl FeedHandler {
                             CustomData::new(Arc::new(open_interest_data), data_type),
                         )));
                     }
-                    Ok(None) => {}
                     Err(e) => {
                         log::error!("Error parsing open interest: {e}");
                     }
@@ -1115,18 +1113,16 @@ mod tests {
 
     use super::{
         super::{
-            client::AssetContextDataType,
-            client::{CLOID_CACHE_CAPACITY, CloidCache},
+            client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             messages::{
-                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx,
+                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
                 WsActiveAssetCtxData, WsBookData, WsLevelData,
             },
             post::PostRouter,
         },
         AssetContextCaches, FeedHandler, HandlerCommand,
     };
-    use crate::common::consts::HYPERLIQUID_VENUE;
-    use crate::data_types::HyperliquidOpenInterest;
+    use crate::{common::consts::HYPERLIQUID_VENUE, data_types::HyperliquidOpenInterest};
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1174,6 +1170,23 @@ mod tests {
                 }],
             ],
             time: 1_700_000_000_000,
+        }
+    }
+
+    fn btc_active_spot_asset_ctx() -> WsActiveAssetCtxData {
+        WsActiveAssetCtxData::Spot {
+            coin: Ustr::from("BTC"),
+            ctx: SpotAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: None,
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                circulating_supply: "19000000.0".to_string(),
+            },
         }
     }
 
@@ -1343,6 +1356,32 @@ mod tests {
             }
             other => panic!("unexpected message type: {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn handle_asset_context_skips_open_interest_for_spot_payload() {
+        let instrument = btc_perp();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+
+        let mut asset_context_subs = AHashMap::new();
+        asset_context_subs.insert(
+            Ustr::from("BTC"),
+            AHashSet::from_iter([AssetContextDataType::OpenInterest]),
+        );
+
+        let mut asset_context_caches = AssetContextCaches::default();
+
+        let msgs = FeedHandler::handle_asset_context(
+            &btc_active_spot_asset_ctx(),
+            &instruments,
+            &asset_context_subs,
+            &mut asset_context_caches,
+            UnixNanos::default(),
+        );
+
+        assert!(msgs.is_empty());
+        assert!(asset_context_caches.open_interest.is_empty());
     }
 
     #[rstest]

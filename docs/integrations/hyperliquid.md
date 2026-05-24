@@ -605,7 +605,7 @@ in `metadata["instrument_id"]`:
 |-----------------|----------------|-----------------------------------------------------------------------------|
 | `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.                                           |
 | `open_interest` | `Decimal`      | Open interest parsed for direct arithmetic use.                             |
-| `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`. |
+| `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`.  |
 | `ts_init`       | `int`          | UNIX timestamp in nanoseconds when the object was built.                    |
 
 ```python

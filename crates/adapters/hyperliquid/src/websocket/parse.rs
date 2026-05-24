@@ -39,13 +39,16 @@ use rust_decimal::Decimal;
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::{
-    enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
-    parse::{
-        is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+use crate::{
+    common::{
+        enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
+        parse::{
+            is_conditional_order_data, make_fill_trade_id, millis_to_nanos,
+            parse_trigger_order_type,
+        },
     },
+    data_types::HyperliquidOpenInterest,
 };
-use crate::data_types::HyperliquidOpenInterest;
 
 fn parse_price(
     price_str: &str,
@@ -501,29 +504,24 @@ pub fn parse_ws_asset_context(
     }
 }
 
-/// Parses a WebSocket ActiveAssetCtx message into an open interest custom data update.
+/// Parses an `activeAssetCtx` open interest string into an open interest custom data update.
 ///
-/// Returns `Some(HyperliquidOpenInterest)` for perpetual instruments and `None` for spot.
+/// The caller is responsible for restricting this to the perpetual branch; spot
+/// `activeAssetCtx` payloads carry no open interest field.
 pub fn parse_ws_open_interest(
-    ctx: &WsActiveAssetCtxData,
+    open_interest: &str,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<Option<HyperliquidOpenInterest>> {
-    match ctx {
-        WsActiveAssetCtxData::Perp { coin: _, ctx } => {
-            let open_interest = Decimal::from_str(&ctx.open_interest).with_context(|| {
-                format!("failed to parse open interest from '{}'", ctx.open_interest)
-            })?;
+) -> anyhow::Result<HyperliquidOpenInterest> {
+    let open_interest_decimal = Decimal::from_str(open_interest)
+        .with_context(|| format!("failed to parse open interest from '{open_interest}'"))?;
 
-            Ok(Some(HyperliquidOpenInterest::new(
-                instrument.id(),
-                open_interest,
-                ts_init,
-                ts_init,
-            )))
-        }
-        WsActiveAssetCtxData::Spot { .. } => Ok(None),
-    }
+    Ok(HyperliquidOpenInterest::new(
+        instrument.id(),
+        open_interest_decimal,
+        ts_init,
+        ts_init,
+    ))
 }
 
 #[cfg(test)]
@@ -1030,57 +1028,12 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        let ctx_data = WsActiveAssetCtxData::Perp {
-            coin: Ustr::from("BTC"),
-            ctx: PerpsAssetCtx {
-                shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
-                    mid_px: Some("50001.0".to_string()),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
-                    day_base_vlm: Some("100.0".to_string()),
-                },
-                funding: "0.0001".to_string(),
-                open_interest: "100000.0".to_string(),
-                oracle_px: "50005.0".to_string(),
-                premium: Some("-0.0001".to_string()),
-            },
-        };
-
-        let open_interest = parse_ws_open_interest(&ctx_data, &instrument, ts_init)
-            .unwrap()
-            .expect("expected perp open interest update");
+        let open_interest = parse_ws_open_interest("100000.0", &instrument, ts_init).unwrap();
 
         assert_eq!(open_interest.instrument_id, instrument.id());
         assert_eq!(open_interest.open_interest.to_string(), "100000.0");
         assert_eq!(open_interest.ts_event, ts_init);
         assert_eq!(open_interest.ts_init, ts_init);
-    }
-
-    #[rstest]
-    fn test_parse_ws_open_interest_spot_returns_none() {
-        let instrument = create_test_instrument();
-        let ts_init = UnixNanos::default();
-
-        let ctx_data = WsActiveAssetCtxData::Spot {
-            coin: Ustr::from("BTC"),
-            ctx: SpotAssetCtx {
-                shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
-                    mid_px: Some("50001.0".to_string()),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
-                    day_base_vlm: Some("100.0".to_string()),
-                },
-                circulating_supply: "19000000.0".to_string(),
-            },
-        };
-
-        let open_interest = parse_ws_open_interest(&ctx_data, &instrument, ts_init).unwrap();
-
-        assert!(open_interest.is_none());
     }
 
     #[rstest]
@@ -1092,27 +1045,8 @@ mod tests {
 
         let expected = Decimal::from_str(open_interest_str).unwrap();
 
-        let ctx_data = WsActiveAssetCtxData::Perp {
-            coin: Ustr::from("BTC"),
-            ctx: PerpsAssetCtx {
-                shared: SharedAssetCtx {
-                    day_ntl_vlm: "1000000.0".to_string(),
-                    prev_day_px: "49000.0".to_string(),
-                    mark_px: "50000.0".to_string(),
-                    mid_px: None,
-                    impact_pxs: None,
-                    day_base_vlm: None,
-                },
-                funding: "0.0001".to_string(),
-                open_interest: open_interest_str.to_string(),
-                oracle_px: "50005.0".to_string(),
-                premium: None,
-            },
-        };
-
-        let open_interest = parse_ws_open_interest(&ctx_data, &instrument, ts_init)
-            .unwrap()
-            .expect("expected perp open interest update");
+        let open_interest =
+            parse_ws_open_interest(open_interest_str, &instrument, ts_init).unwrap();
 
         assert_eq!(open_interest.open_interest, expected);
     }

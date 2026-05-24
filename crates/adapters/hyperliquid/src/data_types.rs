@@ -155,7 +155,9 @@ mod tests {
             UnixNanos::from(2),
         );
         let metadata = EncodeToRecordBatch::metadata(&original);
-        let batch = HyperliquidOpenInterest::encode_batch(&metadata, &[original.clone()]).unwrap();
+        let batch =
+            HyperliquidOpenInterest::encode_batch(&metadata, std::slice::from_ref(&original))
+                .unwrap();
         let decoded = HyperliquidOpenInterest::decode_data_batch(&metadata, batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
