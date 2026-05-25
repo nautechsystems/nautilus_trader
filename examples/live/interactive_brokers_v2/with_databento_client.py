@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 
 from _common import add_strategy_from_config
+from _common import default_cl_future_instrument_id
+from _common import default_es_future_instrument_id
 from _common import env_bool
 from _common import env_int
 from _common import ib_account_id
@@ -43,8 +45,8 @@ def main() -> None:
             "SPY.XNAS",
             "AAPL.XNAS",
             "V.XNYS",
-            "CLM6.XNYM",
-            "ESM6.XCME",
+            os.getenv("IB_V2_DATABENTO_CL_INSTRUMENT_ID", default_cl_future_instrument_id()),
+            os.getenv("IB_V2_DATABENTO_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
         ],
     )
 

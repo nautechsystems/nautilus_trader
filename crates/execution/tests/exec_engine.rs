@@ -49,18 +49,18 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::CashAccount,
     enums::{
-        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
+        OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
-        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        CurrencyPair, Instrument, InstrumentAny,
+        CurrencyPair, FuturesContract, Instrument, InstrumentAny,
         stubs::{audusd_sim, gbpusd_sim},
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -72,6 +72,7 @@ use nautilus_model::{
 use rstest::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 #[fixture]
 fn test_clock() -> Rc<RefCell<dyn clock::Clock>> {
@@ -104,6 +105,36 @@ fn execution_engine_with_config() -> ExecutionEngine {
     };
 
     ExecutionEngine::new(clock, cache, Some(config))
+}
+
+fn futures_contract_xcme() -> FuturesContract {
+    FuturesContract::new(
+        InstrumentId::from("ESM6.XCME"),
+        Symbol::from("ESM6"),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        // Activation: 2026-04-06 00:00:00 UTC
+        UnixNanos::from(1_775_433_600_000_000_000),
+        // Expiration: 2026-06-17 16:00:00 UTC
+        UnixNanos::from(1_781_712_000_000_000_000),
+        Currency::USD(),
+        2,
+        Price::from("0.25"),
+        Quantity::from(50),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
 }
 
 #[fixture]
@@ -1506,6 +1537,154 @@ fn test_submit_order_successfully_processes_and_caches_order(
         cached_order.status(),
         OrderStatus::Initialized,
         "Order should be in Initialized status after submission"
+    );
+}
+
+#[rstest]
+fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = futures_contract_xcme();
+    let client_id = ClientId::from("IB");
+
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("IB-001"),
+        Venue::from("IB"),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(1))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        position_id: None,
+        params: None,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        client_id: Some(client_id),
+        instrument_id: instrument.id,
+        exec_algorithm_id: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache
+        .order(&order.client_order_id())
+        .expect("Order should be retrievable from cache");
+    assert_eq!(cached_order.status(), OrderStatus::Denied);
+    if let OrderEventAny::Denied(denied) = cached_order.last_event() {
+        assert_eq!(
+            denied.reason.as_str(),
+            "Client IB does not handle order venue XCME (client venue IB)",
+        );
+    } else {
+        panic!("Expected OrderDenied event");
+    }
+    assert!(submitted_order_ids.borrow().is_empty());
+}
+
+#[rstest]
+fn test_submit_order_allows_routing_broker_for_exchange_mic_venue(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = futures_contract_xcme();
+    let client_id = ClientId::from("IB");
+
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("IB-001"),
+        Venue::from("IB"),
+        OmsType::Netting,
+        None,
+    )
+    .with_handles_all_order_venues();
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(1))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        position_id: None,
+        params: None,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        client_id: Some(client_id),
+        instrument_id: instrument.id,
+        exec_algorithm_id: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache
+        .order(&order.client_order_id())
+        .expect("Order should be retrievable from cache");
+    assert_eq!(cached_order.status(), OrderStatus::Initialized);
+    assert_eq!(
+        cached_order.instrument_id(),
+        InstrumentId::from("ESM6.XCME")
+    );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
     );
 }
 

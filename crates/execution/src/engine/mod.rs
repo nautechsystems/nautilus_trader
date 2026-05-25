@@ -1847,10 +1847,13 @@ impl ExecutionEngine {
 
         let order_venue = order.instrument_id().venue;
         let client_venue = client.venue();
-        if order_venue != client_venue {
+        if !client.handles_order_venue(order_venue) {
+            let client_id = client.client_id();
             self.deny_order(
                 &order,
-                &format!("Order venue {order_venue} does not match client venue {client_venue}"),
+                &format!(
+                    "Client {client_id} does not handle order venue {order_venue} (client venue {client_venue})"
+                ),
             );
             return;
         }
@@ -1909,11 +1912,15 @@ impl ExecutionEngine {
 
         let order_list_venue = cmd.instrument_id.venue;
         let client_venue = client.venue();
-        if order_list_venue != client_venue {
+        if !client.handles_order_venue(order_list_venue) {
+            let client_id = client.client_id();
+
             for order in &orders {
                 self.deny_order(
                     order,
-                    &format!("Order list venue {order_list_venue} does not match client venue {client_venue}"),
+                    &format!(
+                        "Client {client_id} does not handle order list venue {order_list_venue} (client venue {client_venue})"
+                    ),
                 );
             }
             return;

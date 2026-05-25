@@ -14,6 +14,9 @@ import os
 
 from _common import add_strategy_from_config
 from _common import build_ib_live_node
+from _common import default_cl_future
+from _common import default_es_future_instrument_id
+from _common import default_ym_future_instrument_id
 from _common import env_bool
 from _common import env_int
 from _common import instrument_provider_config
@@ -49,6 +52,7 @@ def main() -> None:
         port = gateway.port
 
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
+    cl_local_symbol, cl_instrument_id, _ = default_cl_future()
     os.environ.setdefault("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", "EUR/USD.IDEALPRO")
     os.environ.setdefault("IB_V2_SUBSCRIBE_QUOTES", "1")
     provider_config = instrument_provider_config(
@@ -57,9 +61,9 @@ def main() -> None:
             "BTC/USD.PAXOS",
             "SPY.ARCA",
             "V.NYSE",
-            "YMM6.CBOT",
-            "CLM6.NYMEX",
-            "ESM6.CME",
+            os.getenv("IB_V2_DOCKER_YM_INSTRUMENT_ID", default_ym_future_instrument_id()),
+            os.getenv("IB_V2_DOCKER_CL_INSTRUMENT_ID", cl_instrument_id),
+            os.getenv("IB_V2_DOCKER_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
         ],
         load_contracts=[
             {
@@ -80,7 +84,7 @@ def main() -> None:
             {
                 "secType": ib.IbSecurityType.FUTURE.as_str(),
                 "exchange": "NYMEX",
-                "localSymbol": "CLM6",
+                "localSymbol": os.getenv("IB_V2_DOCKER_CL_LOCAL_SYMBOL", cl_local_symbol),
                 "build_futures_chain": False,
             },
         ],
