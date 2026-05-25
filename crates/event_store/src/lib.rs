@@ -50,6 +50,7 @@ pub mod kernel;
 pub mod manifest;
 pub mod reader;
 pub mod replay;
+pub mod retention;
 pub mod snapshot;
 pub mod verifier;
 pub mod writer;
@@ -86,6 +87,10 @@ pub use replay::{
     open_event_store_replay_source, replay_cache_snapshot_tail, restore_cache_from_sealed_run,
     restore_cache_snapshot_and_replay_tail, restore_cache_snapshot_blob,
     validate_event_store_replay_source,
+};
+pub use retention::{
+    RetentionPlan, RetentionRun, SnapshotAnchorStatus, list_redb_sealed_runs, plan_redb_retention,
+    plan_retention,
 };
 pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{

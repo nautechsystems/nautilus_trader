@@ -13,10 +13,25 @@ and verifiers use the same log to reconstruct what happened and to rebuild state
 - External I/O becomes replayable only when Nautilus captures it as commands, raw reports, or
   other state-affecting inputs.
 
-:::warning
-Event-store capture, replay, and verification are early alpha surfaces. Treat the concepts here as
-the design contract for current development, and use the crate README for current API details.
+:::note
+Event-store capture, replay, verification, recovery, and retention planning have targeted test
+coverage, but the API surface is still evolving. Treat the concepts here as the design contract for
+current development, and use the crate README for current API details.
 :::
+
+## Why event sourcing
+
+The cache answers "what is true now." The event store answers "how did Nautilus get here." It gives
+readers, replay tools, and verifiers a run-scoped history that does not require strategy logic,
+venue queries, or the live cache to explain past state.
+
+The event store provides Nautilus with a durable basis to:
+
+- Prove whether a sealed run is clean before replay or archive.
+- Inspect the exact command, report, and event sequence behind an order or agent intent.
+- Rebuild cache state from captured history, including a snapshot anchor plus the run tail.
+- Compare an agent decision with the engine-side messages that followed from it.
+- Seal stale run files before the next run starts after a process exit or writer halt.
 
 ## Terms
 
@@ -39,7 +54,8 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 - Fired time events and generated order, position, and account events.
 - Raw venue execution reports before reconciliation synthesizes derived events.
 - Reconciliation outputs produced from those raw reports.
-- Request and response messages that cross the bus and affect state.
+- Request and response messages, or their audit-relevant metadata, that cross the bus and affect
+  state.
 - Run lifecycle entries such as `RunStarted` and `RunEnded`.
 
 The store does not replace the data catalog. Market-data observations remain in the Feather
@@ -75,7 +91,7 @@ flowchart LR
 **The operational steps are**:
 
 - The producer publishes or sends a state-affecting message.
-- The bus capture tap builds an event-store entry before handler fanout.
+- The bus capture tap builds an event-store entry before downstream handlers run.
 - The writer assigns the next `seq`, writes a batch, and advances the high-watermark after the
   backend acknowledges durability.
 - Handlers run after the captured entry has reached the writer boundary.
@@ -95,7 +111,7 @@ Each event-store entry is one captured message plus metadata:
 - `payload_type`: the encoded message type.
 - `payload`: the encoded message bytes.
 - `headers`: correlation and causation metadata.
-- `hash`: the canonical hash over the entry content.
+- `entry_hash`: the canonical hash over the entry content.
 
 `seq` orders replay. Timestamps help explain the run, but they do not override `seq`.
 
@@ -108,7 +124,8 @@ until then, correlation scans can walk the captured stream.
 Nautilus records three identity levels so forensics can answer scope, lineage, and message identity
 questions.
 
-- `correlation_id`: the logical workflow or chain. An agent `intent_id` lowers into this field at the dispatch boundary.
+- `correlation_id`: the logical workflow or chain. An agent `intent_id` is recorded in this field
+  at the dispatch boundary.
 - `causation_id`: the direct parent message that caused this message.
 - `command_id`, `event_id`, or `report_id`: the identity of this specific message.
 
@@ -158,22 +175,51 @@ Run status is one of `Running`, `Ended`, `CrashedRecovered`, or `Quarantined`.
 ```mermaid
 flowchart TD
     Start["RunStarted entry"] --> Running["Running manifest"]
-    Running --> Graceful["RunEnded entry"]
-    Graceful --> Ended["Ended manifest"]
-    Running --> Crash["Process exits before RunEnded"]
-    Crash --> Recovered["Seal predecessor as CrashedRecovered"]
-    Recovered --> NextRun["Start new run with parent_run_id"]
-    Ended --> Verify["Verify sealed run"]
-    Verify --> Clean["Clean: replay, inspect, or archive"]
-    Verify --> Corrupt["Corrupt: report quarantine=not-performed"]
+    Running --> Capture["Capture state-affecting entries"]
+    Capture --> Anchor["Record optional snapshot anchors"]
+    Anchor --> Capture
+    Capture --> RunEnded["RunEnded entry"]
+    RunEnded --> Ended["Ended manifest"]
 ```
 
 Operationally:
 
-- A clean shutdown appends `RunEnded` and seals the manifest as `Ended`.
-- A restart can mark a predecessor without `RunEnded` as `CrashedRecovered`.
-- A verifier can inspect a sealed run without mutating it.
-- Quarantine is a policy decision owned outside the verifier binary.
+- `RunStarted` is the first entry of a fresh run. A repeated `open()` in the same process seals
+  the current session before it starts a new run.
+- While the manifest is `Running`, the bus tap records state-affecting entries and cache snapshots
+  can record anchors against the durable high-watermark.
+- A clean shutdown, kernel drop, or reset/rerun seal appends `RunEnded` and seals the manifest as
+  `Ended`.
+
+## Recovery sealing
+
+A predecessor is an older run file for the same instance whose manifest still says `Running`. This
+means the previous process did not finish the normal lifecycle, or the writer halted before the
+manifest seal completed.
+
+```mermaid
+flowchart TD
+    Predecessor["Running predecessor"] --> Scan["Scan durable tail"]
+    Scan --> Empty["No durable entries"]
+    Empty --> Recovered["Seal as CrashedRecovered"]
+    Scan --> TailEnded["Tail contains RunEnded"]
+    TailEnded --> Ended["Seal as Ended"]
+    Scan --> CleanTail["Clean tail without RunEnded"]
+    CleanTail --> Recovered
+    Scan --> BadTail["Hash, gap, or structural failure"]
+    BadTail --> Quarantined["Seal as Quarantined"]
+    Recovered --> Parent["Eligible parent_run_id"]
+    Ended --> NoParent["No parent link"]
+    Quarantined --> NoParent
+```
+
+Boot recovery scans each `Running` predecessor and chooses a final manifest status from the durable
+tail. A clean tail without `RunEnded` seals as `CrashedRecovered`, a tail ending in `RunEnded`
+seals as `Ended`, and a hash mismatch, gap, or structural corruption seals as `Quarantined`.
+
+Only `CrashedRecovered` predecessors become `parent_run_id`. A configured `replay_from_run_id`
+overrides a recovered parent after validation. The read-only verifier is separate: it can inspect a
+sealed run without mutating it and reports `quarantine=not-performed`.
 
 ## Replay modes
 
@@ -233,7 +279,26 @@ Replay correctness depends on four checks:
 - Entries are addressed by immutable `seq` values.
 - Writes reject out-of-order commits.
 - Readers detect gaps inside the high-watermark.
-- Live catch-up deduplicates by captured entry and venue identifiers.
+- Snapshot replay plans reject anchors that point past the durable high-watermark.
+
+## Retention planning
+
+Retention uses whole run files as the reclaim unit. The event store exposes a non-destructive
+planner that lists sealed run manifests, inspects their latest snapshot-anchor status, and returns
+candidate run files for a later supervisor or operator process to reclaim.
+
+The planner supports three modes:
+
+- `Full`: keep every sealed run and return no reclaim candidates.
+- `Bounded { keep_last }`: keep the newest sealed runs and also keep at least one known-good
+  restore point.
+- `SnapshotAnchored`: reclaim only sealed runs older than the newest known-good restore point.
+
+A known-good restore point is a sealed, non-`Quarantined` run with a valid snapshot anchor whose
+high-watermark does not exceed the sealed manifest high-watermark. `Running` runs are never
+listed as sealed runs or selected as reclaim candidates. Missing, corrupt, or invalid snapshot
+anchors do not count as restore points, so the planner returns no candidates when it cannot prove
+that at least one usable restore point remains.
 
 ## Verification coverage
 
@@ -247,9 +312,8 @@ surface:
 - Process-isolated verification reports truncated or zero-tailed run files as corrupt.
 - Cache replay reconstructs the same observed account, order, and position state as a live cache
   for generated captured event streams.
-- Crash recovery seals predecessor runs and links the next run through `parent_run_id` across the
-  durable crash footprints before enqueue, after enqueue before commit, after commit before
-  snapshot, and after snapshot.
+- Crash recovery seals `Running` predecessors as `Ended`, `CrashedRecovered`, or `Quarantined`
+  based on the durable tail, and only `CrashedRecovered` runs become parents.
 
 ## Integrity and verification
 
@@ -327,13 +391,8 @@ fn inspect_run() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Use the log operationally to:
-
-- Prove whether a sealed run is clean before replay or archive.
-- Inspect the exact command and event sequence for an order.
-- Rebuild cache state from a snapshot anchor plus the run tail.
-- Compare an agent decision envelope with the engine-side messages that followed from it.
-- Keep corrupt-run handling outside the trading process.
+The verifier is read-only inspection. It reports corruption without changing the run file, so
+quarantine decisions remain outside this command path.
 
 ## Relationship to DST
 
@@ -348,4 +407,4 @@ Under `cfg(madsim)`, tests use a synchronous in-memory event store instead of th
 they can assert against an authoritative log without disk I/O or thread scheduling.
 
 Adapter network I/O remains outside bit-identical replay unless Nautilus captures the relevant
-raw inputs and routes them through deterministic seams.
+raw inputs and routes them through deterministic interfaces.
