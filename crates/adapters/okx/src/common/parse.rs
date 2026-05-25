@@ -47,7 +47,8 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
     },
     instruments::{
-        BinaryOption, CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny,
+        BinaryOption, CryptoFuture, CryptoFuturesSpread, CryptoOption, CryptoPerpetual,
+        CurrencyPair, InstrumentAny,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -62,13 +63,14 @@ use crate::{
         consts::OKX_VENUE,
         enums::{
             OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus,
-            OKXOrderType, OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
+            OKXOrderType, OKXPositionSide, OKXSide, OKXSpreadState, OKXSpreadType,
+            OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
     http::models::{
         OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXFundingRateHistory, OKXIndexTicker,
-        OKXMarkPrice, OKXOrderHistory, OKXPosition, OKXTrade, OKXTransactionDetail,
+        OKXMarkPrice, OKXOrderHistory, OKXPosition, OKXSpread, OKXTrade, OKXTransactionDetail,
     },
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
@@ -189,6 +191,12 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
         InstrumentAny::CryptoOption(_) => Ok(OKXInstrumentType::Option),
         _ => anyhow::bail!("Invalid instrument type for OKX: {instrument:?}"),
     }
+}
+
+/// Returns whether the OKX symbol uses the spread ID format.
+#[must_use]
+pub fn is_okx_spread_symbol(symbol: &str) -> bool {
+    symbol.contains('_')
 }
 
 /// Parses `OKXInstrumentType` from an instrument symbol.
@@ -1421,6 +1429,208 @@ pub fn parse_instrument_any(
     }
 }
 
+/// Parses an OKX spread definition into a Nautilus crypto futures spread.
+///
+/// # Errors
+///
+/// Returns an error if the spread definition cannot be parsed.
+pub fn parse_spread_instrument(
+    definition: &OKXSpread,
+    margin_init: Option<Decimal>,
+    margin_maint: Option<Decimal>,
+    maker_fee: Option<Decimal>,
+    taker_fee: Option<Decimal>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    if definition.tick_sz.is_empty() {
+        anyhow::bail!("`tick_sz` is empty for {}", definition.sprd_id);
+    }
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.sprd_id);
+    }
+
+    let context = format!("SPREAD instrument {}", definition.sprd_id);
+    let instrument_id = parse_instrument_id(definition.sprd_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.sprd_id);
+    let underlying =
+        Currency::get_or_create_crypto_with_context(definition.base_ccy, Some(&context));
+    let quote_currency =
+        Currency::get_or_create_crypto_with_context(definition.quote_ccy, Some(&context));
+    let settlement_currency = spread_settlement_currency(definition, underlying, quote_currency);
+    let is_inverse = matches!(definition.sprd_type, OKXSpreadType::Inverse);
+    let activation_ns = definition
+        .list_time
+        .map(parse_millisecond_timestamp)
+        .ok_or_else(|| anyhow::anyhow!("`list_time` is required for {}", definition.sprd_id))?;
+    let expiration_ns = definition
+        .exp_time
+        .map(parse_millisecond_timestamp)
+        .unwrap_or_default();
+    let ts_event = definition
+        .u_time
+        .map_or(ts_init, parse_millisecond_timestamp);
+
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `tick_sz` '{}' for {}: {e}",
+            definition.tick_sz,
+            definition.sprd_id
+        )
+    })?;
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.sprd_id
+        )
+    })?;
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.sprd_id
+            )
+        })?)
+    };
+
+    let instrument = CryptoFuturesSpread::new(
+        instrument_id,
+        raw_symbol,
+        underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
+        Ustr::from(spread_type_literal(definition.sprd_type)),
+        activation_ns,
+        expiration_ns,
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        None,
+        Some(size_increment),
+        None,
+        min_quantity,
+        None,
+        None,
+        None,
+        None,
+        margin_init,
+        margin_maint,
+        maker_fee,
+        taker_fee,
+        Some(build_spread_info(definition)),
+        ts_event,
+        ts_init,
+    );
+
+    Ok(InstrumentAny::CryptoFuturesSpread(instrument))
+}
+
+fn spread_settlement_currency(
+    definition: &OKXSpread,
+    underlying: Currency,
+    quote_currency: Currency,
+) -> Currency {
+    match definition.sprd_type {
+        OKXSpreadType::Inverse => underlying,
+        OKXSpreadType::Linear | OKXSpreadType::Hybrid | OKXSpreadType::Unknown => quote_currency,
+    }
+}
+
+fn build_spread_info(definition: &OKXSpread) -> Params {
+    let mut info = Params::new();
+    info.insert(
+        "okx_sprd_id".to_string(),
+        serde_json::json!(definition.sprd_id),
+    );
+    info.insert(
+        "okx_sprd_type".to_string(),
+        serde_json::json!(spread_type_literal(definition.sprd_type)),
+    );
+    info.insert(
+        "okx_spread_state".to_string(),
+        serde_json::json!(spread_state_literal(definition.state)),
+    );
+    info.insert(
+        "okx_base_ccy".to_string(),
+        serde_json::json!(definition.base_ccy),
+    );
+    info.insert(
+        "okx_sz_ccy".to_string(),
+        serde_json::json!(definition.sz_ccy),
+    );
+    info.insert(
+        "okx_quote_ccy".to_string(),
+        serde_json::json!(definition.quote_ccy),
+    );
+    info.insert(
+        "okx_list_time".to_string(),
+        serde_json::json!(definition.list_time),
+    );
+    info.insert(
+        "okx_exp_time".to_string(),
+        serde_json::json!(definition.exp_time),
+    );
+    info.insert(
+        "okx_u_time".to_string(),
+        serde_json::json!(definition.u_time),
+    );
+
+    let legs = definition
+        .legs
+        .iter()
+        .map(|leg| {
+            let leg_id = parse_instrument_id(leg.inst_id);
+            serde_json::json!({
+                "inst_id": leg.inst_id,
+                "instrument_id": leg_id.to_string(),
+                "side": side_literal(leg.side),
+                "ratio": leg_ratio(leg.side),
+            })
+        })
+        .collect::<Vec<_>>();
+    info.insert("okx_spread_legs".to_string(), serde_json::json!(legs));
+
+    info
+}
+
+fn spread_type_literal(spread_type: OKXSpreadType) -> &'static str {
+    match spread_type {
+        OKXSpreadType::Linear => "linear",
+        OKXSpreadType::Inverse => "inverse",
+        OKXSpreadType::Hybrid => "hybrid",
+        OKXSpreadType::Unknown => "unknown",
+    }
+}
+
+fn spread_state_literal(state: OKXSpreadState) -> &'static str {
+    match state {
+        OKXSpreadState::Live => "live",
+        OKXSpreadState::Suspend => "suspend",
+        OKXSpreadState::Expired => "expired",
+        OKXSpreadState::Unknown => "unknown",
+    }
+}
+
+fn side_literal(side: OKXSide) -> &'static str {
+    match side {
+        OKXSide::Buy => "buy",
+        OKXSide::Sell => "sell",
+    }
+}
+
+fn leg_ratio(side: OKXSide) -> i8 {
+    match side {
+        OKXSide::Buy => 1,
+        OKXSide::Sell => -1,
+    }
+}
+
 /// Common parsed instrument data extracted from OKX definitions.
 #[derive(Debug)]
 struct CommonInstrumentData {
@@ -2378,7 +2588,7 @@ mod tests {
             models::{
                 OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXIndexTicker, OKXMarkPrice,
                 OKXOrderHistory, OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory,
-                OKXPositionTier, OKXTrade, OKXTransactionDetail,
+                OKXPositionTier, OKXSpread, OKXTrade, OKXTransactionDetail,
             },
         },
     };
@@ -2997,6 +3207,126 @@ mod tests {
         let response: OKXResponse<OKXInstrument> = serde_json::from_value(value).unwrap();
 
         assert_eq!(response.data[0].inst_id, "BTC-USD-SWAP");
+    }
+
+    #[rstest]
+    fn test_parse_inverse_spread_instrument() {
+        let json_data = load_test_json("http_get_spreads.json");
+        let response: OKXResponse<OKXSpread> = serde_json::from_str(&json_data).unwrap();
+        let okx_spread = response.data.first().expect("Test data must have a spread");
+
+        let instrument =
+            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
+            panic!("Expected CryptoFuturesSpread");
+        };
+        let info = spread.info.as_ref().expect("spread info must be set");
+        let legs = info
+            .get("okx_spread_legs")
+            .and_then(serde_json::Value::as_array)
+            .expect("spread legs must be present");
+
+        assert_eq!(
+            spread.id,
+            InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX")
+        );
+        assert_eq!(
+            spread.raw_symbol,
+            Symbol::from("ETH-USD-SWAP_ETH-USD-231229")
+        );
+        assert_eq!(spread.underlying, Currency::ETH());
+        assert_eq!(spread.quote_currency, Currency::USD());
+        assert_eq!(spread.settlement_currency, Currency::ETH());
+        assert!(spread.is_inverse);
+        assert_eq!(spread.strategy_type, Ustr::from("inverse"));
+        assert_eq!(spread.price_precision, 2);
+        assert_eq!(spread.size_precision, 0);
+        assert_eq!(spread.price_increment, Price::from("0.01"));
+        assert_eq!(spread.size_increment, Quantity::from("10"));
+        assert_eq!(spread.lot_size, Quantity::from("10"));
+        assert_eq!(spread.min_quantity, Some(Quantity::from("10")));
+        assert_eq!(spread.max_quantity, None);
+        assert_eq!(info.get_str("okx_sz_ccy"), Some("USD"));
+        assert_eq!(legs.len(), 2);
+        assert_eq!(legs[0]["inst_id"].as_str(), Some("ETH-USD-SWAP"));
+        assert_eq!(legs[0]["side"].as_str(), Some("sell"));
+        assert_eq!(legs[0]["ratio"].as_i64(), Some(-1));
+        assert_eq!(legs[1]["inst_id"].as_str(), Some("ETH-USD-231229"));
+        assert_eq!(legs[1]["side"].as_str(), Some("buy"));
+        assert_eq!(legs[1]["ratio"].as_i64(), Some(1));
+    }
+
+    #[rstest]
+    fn test_parse_linear_spread_instrument_without_expiry() {
+        let json_data = load_test_json("http_get_spreads.json");
+        let response: OKXResponse<OKXSpread> = serde_json::from_str(&json_data).unwrap();
+        let okx_spread = response
+            .data
+            .get(1)
+            .expect("Test data must have a linear spread");
+
+        let instrument =
+            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
+                .unwrap();
+
+        let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
+            panic!("Expected CryptoFuturesSpread");
+        };
+
+        assert_eq!(spread.id, InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX"));
+        assert_eq!(spread.underlying, Currency::BTC());
+        assert_eq!(spread.quote_currency, Currency::USDT());
+        assert_eq!(spread.settlement_currency, Currency::USDT());
+        assert!(!spread.is_inverse);
+        assert_eq!(spread.price_precision, 4);
+        assert_eq!(spread.size_precision, 3);
+        assert_eq!(spread.price_increment, Price::from("0.0001"));
+        assert_eq!(spread.size_increment, Quantity::from("0.001"));
+        assert_eq!(spread.expiration_ns, UnixNanos::default());
+    }
+
+    #[rstest]
+    #[case::empty_tick_size("tickSz", Some(""), "`tick_sz` is empty")]
+    #[case::empty_lot_size("lotSz", Some(""), "`lot_sz` is empty")]
+    #[case::invalid_min_size("minSz", Some("not-a-quantity"), "Failed to parse `min_sz`")]
+    #[case::missing_list_time("listTime", None, "`list_time` is required")]
+    fn test_parse_spread_instrument_rejects_invalid_fields(
+        #[case] field: &str,
+        #[case] value: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let json_data = load_test_json("http_get_spreads.json");
+        let mut payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let spread = payload["data"][0]
+            .as_object_mut()
+            .expect("spread payload must be an object");
+
+        if let Some(value) = value {
+            spread.insert(
+                field.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+        } else {
+            spread.remove(field);
+        }
+
+        let response: OKXResponse<OKXSpread> = serde_json::from_value(payload).unwrap();
+        let result = parse_spread_instrument(
+            response.data.first().expect("Test data must have a spread"),
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+        );
+
+        let err = result.expect_err("invalid spread field must fail");
+        assert!(
+            err.to_string().contains(expected),
+            "expected error to contain {expected:?}, was {err}"
+        );
     }
 
     #[rstest]

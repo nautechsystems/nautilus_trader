@@ -54,12 +54,13 @@ use nautilus_okx::{
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
-        models::OKXAttachAlgoOrdRequest,
+        models::{OKXAttachAlgoOrdRequest, OKXCancelOrderRequest},
         query::{
             GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOptionSummaryParamsBuilder,
             GetOrderHistoryParams, GetOrderListParams, GetOrderParamsBuilder,
-            GetPositionTiersParamsBuilder, GetPositionsParamsBuilder, GetTradeFeeParamsBuilder,
-            GetTransactionDetailsParamsBuilder, SetPositionModeParamsBuilder,
+            GetPositionTiersParamsBuilder, GetPositionsParamsBuilder, GetSpreadsParamsBuilder,
+            GetTradeFeeParamsBuilder, GetTransactionDetailsParamsBuilder,
+            SetPositionModeParamsBuilder,
         },
     },
 };
@@ -77,10 +78,13 @@ struct TestServerState {
     option_summary_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     option_summary_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    spread_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     event_series_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    last_cancel_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    cancel_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
@@ -233,8 +237,21 @@ fn event_instruments_response(params: &HashMap<String, String>) -> Value {
     })
 }
 
+fn spread_response(params: &HashMap<String, String>) -> Value {
+    let mut payload = load_test_data("http_get_spreads.json");
+
+    if let Some(sprd_id) = params.get("sprdId")
+        && let Some(data) = payload.get_mut("data").and_then(Value::as_array_mut)
+    {
+        data.retain(|item| item.get("sprdId").and_then(Value::as_str) == Some(sprd_id));
+    }
+
+    payload
+}
+
 fn create_router(state: Arc<TestServerState>) -> Router {
     let instruments_state = state.clone();
+    let spreads_state = state.clone();
     let event_series_state = state.clone();
     let history_state = state.clone();
     let option_summary_state = state.clone();
@@ -242,6 +259,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let order_history_state = state.clone();
     let order_detail_state = state.clone();
     let order_place_state = state.clone();
+    let order_cancel_state = state.clone();
     let algo_pending_state = state.clone();
     let algo_history_state = state.clone();
     let algo_order_state = state;
@@ -273,6 +291,16 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     }
 
                     Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/sprd/spreads",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = spreads_state.clone();
+                async move {
+                    state.spread_queries.lock().await.push(params.clone());
+                    Json(spread_response(&params)).into_response()
                 }
             }),
         )
@@ -442,6 +470,48 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         ],
                     }))
                     .into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/cancel-batch-orders",
+            post(move |headers: HeaderMap, Json(payload): Json<Value>| {
+                let state = order_cancel_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    *state.last_cancel_order_body.lock().await = Some(payload);
+                    let response = state
+                        .cancel_order_response
+                        .lock()
+                        .await
+                        .clone()
+                        .unwrap_or_else(|| {
+                            json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [
+                                    {
+                                        "ordId": "12345",
+                                        "clOrdId": "O-cancel",
+                                        "sCode": "0",
+                                        "sMsg": "",
+                                        "ts": "1700000000000"
+                                    }
+                                ],
+                            })
+                        });
+                    Json(response).into_response()
                 }
             }),
         )
@@ -717,6 +787,112 @@ async fn test_http_get_instruments_returns_data() {
 
     assert!(!instruments.is_empty());
     assert_eq!(instruments[0].inst_type, OKXInstrumentType::Spot);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_spreads_returns_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let params = GetSpreadsParamsBuilder::default()
+        .state("live")
+        .sprd_id("ETH-USD-SWAP_ETH-USD-231229")
+        .build()
+        .unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let spreads = client.get_spreads(params).await.unwrap();
+    let queries = state.spread_queries.lock().await;
+
+    assert_eq!(spreads.len(), 1);
+    assert_eq!(spreads[0].sprd_id, "ETH-USD-SWAP_ETH-USD-231229");
+    assert_eq!(spreads[0].legs.len(), 2);
+    assert_eq!(queries[0].get("state").map(String::as_str), Some("live"));
+    assert_eq!(
+        queries[0].get("sprdId").map(String::as_str),
+        Some("ETH-USD-SWAP_ETH-USD-231229")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_spread_instruments_parses_and_caches() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_spread_instruments(
+            GetSpreadsParamsBuilder::default()
+                .state("live")
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    client.cache_instruments(&instruments);
+    let cached = client
+        .get_instrument(&Ustr::from("ETH-USD-SWAP_ETH-USD-231229"))
+        .expect("spread must be cached");
+
+    assert_eq!(instruments.len(), 2);
+    assert!(matches!(
+        instruments[0],
+        InstrumentAny::CryptoFuturesSpread(_)
+    ));
+    assert!(matches!(cached, InstrumentAny::CryptoFuturesSpread(_)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_spread_instrument_by_id() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let instrument = client
+        .request_instrument(InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX"))
+        .await
+        .unwrap();
+    let queries = state.spread_queries.lock().await;
+
+    assert!(matches!(instrument, InstrumentAny::CryptoFuturesSpread(_)));
+    assert_eq!(
+        queries[0].get("sprdId").map(String::as_str),
+        Some("BTC-USDT_BTC-USDT-SWAP")
+    );
 }
 
 #[rstest]
@@ -2319,6 +2495,145 @@ async fn test_http_get_order_algo_history_returns_data() {
     assert!(!orders.is_empty());
     assert_eq!(orders[0].algo_id, "987654321");
     assert_eq!(orders[0].state, OKXAlgoOrderStatus::Effective);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_cancel_orders_sends_batch_request() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let responses = client
+        .cancel_orders(vec![
+            OKXCancelOrderRequest {
+                inst_id: "ETH-USDT-SWAP".to_string(),
+                inst_id_code: None,
+                ord_id: Some("12345".to_string()),
+                cl_ord_id: None,
+            },
+            OKXCancelOrderRequest {
+                inst_id: "BTC-USDT-SWAP".to_string(),
+                inst_id_code: Some(42),
+                ord_id: None,
+                cl_ord_id: Some("O-cancel-by-client".to_string()),
+            },
+        ])
+        .await
+        .unwrap();
+    let body = state
+        .last_cancel_order_body
+        .lock()
+        .await
+        .clone()
+        .expect("cancel order body must be captured");
+    let requests = body
+        .as_array()
+        .expect("cancel request body must be an array");
+
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].ord_id, "12345");
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["instId"].as_str(), Some("ETH-USDT-SWAP"));
+    assert_eq!(requests[0]["ordId"].as_str(), Some("12345"));
+    assert!(requests[0].get("clOrdId").is_none());
+    assert_eq!(requests[1]["instId"].as_str(), Some("BTC-USDT-SWAP"));
+    assert_eq!(requests[1]["instIdCode"].as_u64(), Some(42));
+    assert_eq!(requests[1]["clOrdId"].as_str(), Some("O-cancel-by-client"));
+    assert!(requests[1].get("ordId").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_cancel_orders_empty_request_does_not_call_endpoint() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let responses = client.cancel_orders(Vec::new()).await.unwrap();
+    let body = state.last_cancel_order_body.lock().await.clone();
+
+    assert!(responses.is_empty());
+    assert!(body.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_cancel_orders_preserves_rejected_items() {
+    let state = Arc::new(TestServerState::default());
+    *state.cancel_order_response.lock().await = Some(json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "ordId": "12345",
+                "clOrdId": "O-already-gone",
+                "sCode": "51400",
+                "sMsg": "Order does not exist",
+                "ts": "1700000000000"
+            }
+        ],
+    }));
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let responses = client
+        .cancel_orders(vec![OKXCancelOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            inst_id_code: None,
+            ord_id: Some("12345".to_string()),
+            cl_ord_id: None,
+        }])
+        .await
+        .unwrap();
+
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].ord_id, "12345");
+    assert_eq!(responses[0].cl_ord_id.as_deref(), Some("O-already-gone"));
+    assert_eq!(responses[0].s_code.as_deref(), Some("51400"));
+    assert_eq!(responses[0].s_msg.as_deref(), Some("Order does not exist"));
 }
 
 #[rstest]

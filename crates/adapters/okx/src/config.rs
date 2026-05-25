@@ -51,6 +51,9 @@ pub struct OKXDataClientConfig {
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to loaded instruments.
     pub contract_types: Option<Vec<OKXContractType>>,
+    /// Whether to load spread trading instruments from the separate spread endpoint.
+    #[builder(default)]
+    pub load_spreads: bool,
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
     /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
@@ -286,6 +289,19 @@ http_timeout_secs = 90
             vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap]
         );
         assert_eq!(config.http_timeout_secs, 90);
+        assert!(!config.load_spreads);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_load_spreads() {
+        let config: OKXDataClientConfig = toml::from_str(
+            "
+load_spreads = true
+",
+        )
+        .unwrap();
+
+        assert!(config.load_spreads);
     }
 
     #[rstest]

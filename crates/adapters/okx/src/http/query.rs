@@ -101,6 +101,26 @@ pub struct GetInstrumentsParams {
     pub series_id: Option<String>,
 }
 
+/// Parameters for the GET /api/v5/sprd/spreads endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpreadsParams {
+    /// Currency the spread is based in, e.g. BTC or ETH.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ccy: Option<String>,
+    /// Instrument ID to include in the spread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Spread ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprd_id: Option<String>,
+    /// Spread state: live, suspend, or expired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
 /// Parameters for the GET /api/v5/public/event-contract/series endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

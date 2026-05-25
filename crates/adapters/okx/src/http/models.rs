@@ -69,8 +69,8 @@ pub struct OKXCandlestick(
 use crate::common::{
     enums::{
         OKXAlgoOrderStatus, OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode,
-        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXSpreadState,
+        OKXSpreadType, OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -111,6 +111,51 @@ pub struct OKXOptionSummary {
     /// Data timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
+}
+
+/// Represents a spread from the GET /api/v5/sprd/spreads endpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXSpread {
+    /// Spread ID.
+    pub sprd_id: Ustr,
+    /// Spread type.
+    pub sprd_type: OKXSpreadType,
+    /// Spread status.
+    pub state: OKXSpreadState,
+    /// Base currency.
+    pub base_ccy: Ustr,
+    /// Size currency.
+    pub sz_ccy: Ustr,
+    /// Quote currency.
+    pub quote_ccy: Ustr,
+    /// Tick size in quote currency.
+    pub tick_sz: String,
+    /// Minimum order size in size currency.
+    pub min_sz: String,
+    /// Order size increment in size currency.
+    pub lot_sz: String,
+    /// Listing time in milliseconds.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub list_time: Option<u64>,
+    /// Expiry time in milliseconds.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub exp_time: Option<u64>,
+    /// Last update time in milliseconds.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub u_time: Option<u64>,
+    /// Spread legs.
+    pub legs: Vec<OKXSpreadLeg>,
+}
+
+/// Represents a leg in an OKX spread.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXSpreadLeg {
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Leg side.
+    pub side: OKXSide,
 }
 
 /// Settlement configuration for an OKX event contract series.
@@ -709,6 +754,43 @@ pub struct OKXPlaceOrderRequest {
     /// the venue's accepted range. See the OKX v5 docs for the current matrix.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage_pct: Option<String>,
+}
+
+/// Represents the request body for `POST /api/v5/trade/cancel-batch-orders`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelOrderRequest {
+    /// Instrument ID.
+    pub inst_id: String,
+    /// Instrument ID code (numeric). May be required per OKX deprecation notice.
+    #[serde(rename = "instIdCode", skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
+    /// Order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Client-supplied order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+}
+
+/// Represents a single response item from `POST /api/v5/trade/cancel-batch-orders`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelOrderResponse {
+    /// Order ID.
+    pub ord_id: String,
+    /// Client-supplied order ID.
+    #[serde(default)]
+    pub cl_ord_id: Option<String>,
+    /// The result of the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_code: Option<String>,
+    /// Error message if the request failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_msg: Option<String>,
+    /// Response timestamp.
+    #[serde(default)]
+    pub ts: Option<String>,
 }
 
 pub use crate::common::models::OKXAttachedAlgoOrd;

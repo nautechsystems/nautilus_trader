@@ -44,6 +44,7 @@ impl OKXDataClientConfig {
         retry_delay_max_ms = None,
         update_instruments_interval_mins = None,
         vip_level = None,
+        load_spreads = false,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -62,6 +63,7 @@ impl OKXDataClientConfig {
         retry_delay_max_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         vip_level: Option<OKXVipLevel>,
+        load_spreads: bool,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -70,6 +72,7 @@ impl OKXDataClientConfig {
             api_passphrase,
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
+            load_spreads,
             instrument_families: None,
             base_url_http,
             base_url_ws_public,
@@ -165,5 +168,22 @@ impl OKXExecClientConfig {
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_py_new_load_spreads() {
+        let config = OKXDataClientConfig::py_new(
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, true,
+        );
+
+        assert!(config.load_spreads);
     }
 }

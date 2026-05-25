@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Added Hyperliquid live open interest custom data from `activeAssetCtx` (Rust) (#4120), thanks @graceyangfan
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
+- Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 - Added `clamp_to_instrument_price_range` to `ExecTesterConfig` to keep computed prices within instrument bounds (Rust)
 

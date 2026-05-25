@@ -68,13 +68,13 @@ use crate::{
             OKXVipLevel,
         },
         parse::{
-            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
-            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, is_okx_spread_symbol, okx_instrument_type_from_symbol,
+            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
+            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
     },
     config::OKXDataClientConfig,
-    http::client::OKXHttpClient,
+    http::{client::OKXHttpClient, query::GetSpreadsParams},
     websocket::{
         client::OKXWebSocketClient,
         enums::OKXWsChannel,
@@ -796,6 +796,34 @@ impl DataClient for OKXDataClient {
             }
         }
 
+        if self.config.load_spreads {
+            match self
+                .http_client
+                .request_spread_instruments(GetSpreadsParams {
+                    state: Some("live".to_string()),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(mut fetched) => {
+                    fetched
+                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
+                    self.http_client.cache_instruments(&fetched);
+
+                    self.instruments.rcu(|m| {
+                        for instrument in &fetched {
+                            m.insert(instrument.id(), instrument.clone());
+                        }
+                    });
+
+                    all_instruments.extend(fetched);
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                }
+            }
+        }
+
         for instrument in all_instruments {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::warn!("Failed to send instrument: {e}");
@@ -1482,6 +1510,7 @@ impl DataClient for OKXDataClient {
         };
         let contract_types = self.config.contract_types.clone();
         let instrument_families = self.config.instrument_families.clone();
+        let load_spreads = self.config.load_spreads;
 
         get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
@@ -1541,6 +1570,33 @@ impl DataClient for OKXDataClient {
                 }
             }
 
+            if load_spreads {
+                match http
+                    .request_spread_instruments(GetSpreadsParams {
+                        state: Some("live".to_string()),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    Ok(instruments) => {
+                        for instrument in instruments {
+                            if !contract_filter_with_config_types(
+                                contract_types.as_ref(),
+                                &instrument,
+                            ) {
+                                continue;
+                            }
+
+                            upsert_instrument(&instruments_cache, instrument.clone());
+                            all_instruments.push(instrument);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                    }
+                }
+            }
+
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
                 client_id,
@@ -1579,6 +1635,7 @@ impl DataClient for OKXDataClient {
             self.config.instrument_types.clone()
         };
         let contract_types = self.config.contract_types.clone();
+        let load_spreads = self.config.load_spreads;
 
         get_runtime().spawn(async move {
             match http
@@ -1589,12 +1646,21 @@ impl DataClient for OKXDataClient {
                 Ok(instrument) => {
                     let inst_id = instrument.id();
                     let symbol = inst_id.symbol.as_str();
-                    let inst_type = okx_instrument_type_from_symbol(symbol);
-                    if !instrument_types.contains(&inst_type) {
-                        log::error!(
-                            "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
-                        );
-                        return;
+                    if is_okx_spread_symbol(symbol) {
+                        if !load_spreads {
+                            log::error!(
+                                "Instrument {instrument_id} is a spread but load_spreads is false"
+                            );
+                            return;
+                        }
+                    } else {
+                        let inst_type = okx_instrument_type_from_symbol(symbol);
+                        if !instrument_types.contains(&inst_type) {
+                            log::error!(
+                                "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
+                            );
+                            return;
+                        }
                     }
 
                     if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {

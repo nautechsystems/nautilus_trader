@@ -82,12 +82,13 @@ use super::{
     error::OKXHttpError,
     models::{
         OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAttachAlgoOrdRequest,
-        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXEventContractEvent,
-        OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory,
-        OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot,
-        OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
+        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXCancelOrderRequest,
+        OKXCancelOrderResponse, OKXEventContractEvent, OKXEventContractMarket,
+        OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice,
+        OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
         OKXPlaceOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
-        OKXTransactionDetail,
+        OKXSpread, OKXTransactionDetail,
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
@@ -97,9 +98,9 @@ use super::{
         GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOptionSummaryParams, GetOrderBookParams,
         GetOrderHistoryParams, GetOrderHistoryParamsBuilder, GetOrderListParams,
         GetOrderListParamsBuilder, GetPositionTiersParams, GetPositionsHistoryParams,
-        GetPositionsParams, GetPositionsParamsBuilder, GetTradeFeeParams, GetTradesParams,
-        GetTradesParamsBuilder, GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder,
-        SetPositionModeParams, SetPositionModeParamsBuilder,
+        GetPositionsParams, GetPositionsParamsBuilder, GetSpreadsParams, GetTradeFeeParams,
+        GetTradesParams, GetTradesParamsBuilder, GetTransactionDetailsParams,
+        GetTransactionDetailsParamsBuilder, SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -117,12 +118,12 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, okx_instrument_type, okx_instrument_type_from_symbol,
-            parse_account_state, parse_base_quote_from_symbol, parse_candlestick,
-            parse_fill_report, parse_funding_rate, parse_index_price_update, parse_instrument_any,
-            parse_instrument_id, parse_mark_price_update, parse_order_status_report,
-            parse_position_status_report, parse_price, parse_quantity,
-            parse_spot_margin_position_from_balance, parse_trade_tick,
+            extract_inst_family, is_okx_spread_symbol, okx_instrument_type,
+            okx_instrument_type_from_symbol, parse_account_state, parse_base_quote_from_symbol,
+            parse_candlestick, parse_fill_report, parse_funding_rate, parse_index_price_update,
+            parse_instrument_any, parse_instrument_id, parse_mark_price_update,
+            parse_order_status_report, parse_position_status_report, parse_price, parse_quantity,
+            parse_spot_margin_position_from_balance, parse_spread_instrument, parse_trade_tick,
         },
     },
     http::{
@@ -379,6 +380,10 @@ impl OKXRawHttpClient {
             ),
             (
                 "okx:/api/v5/public/instruments".to_string(),
+                Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/sprd/spreads".to_string(),
                 Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant"),
             ),
             (
@@ -814,6 +819,30 @@ impl OKXRawHttpClient {
         self.send_request(
             Method::GET,
             "/api/v5/public/instruments",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests a list of spread trading instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or if the response body cannot
+    /// be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-spreads-public>
+    pub async fn get_spreads(
+        &self,
+        params: GetSpreadsParams,
+    ) -> Result<Vec<OKXSpread>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/sprd/spreads",
             Some(&params),
             None,
             false,
@@ -1491,6 +1520,42 @@ impl OKXHttpClient {
         self.inner.cancellation_token()
     }
 
+    /// Requests order list (pending orders).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn get_orders_pending(
+        &self,
+        params: GetOrderListParams,
+    ) -> Result<Vec<OKXOrderHistory>, OKXHttpError> {
+        self.inner.get_orders_pending(params).await
+    }
+
+    /// Requests pending algo orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn get_order_algo_pending(
+        &self,
+        params: GetAlgoOrdersParams,
+    ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        self.inner.get_order_algo_pending(params).await
+    }
+
+    /// Requests information on current account positions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    pub async fn get_positions(
+        &self,
+        params: GetPositionsParams,
+    ) -> Result<Vec<OKXPosition>, OKXHttpError> {
+        self.inner.get_positions(params).await
+    }
+
     /// Returns the base url being used by the client.
     pub fn base_url(&self) -> &str {
         self.inner.base_url.as_str()
@@ -1773,6 +1838,34 @@ impl OKXHttpClient {
         Ok((instruments, inst_id_codes))
     }
 
+    /// Requests spread instruments from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or spread parsing fails.
+    pub async fn request_spread_instruments(
+        &self,
+        params: GetSpreadsParams,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let resp = self
+            .inner
+            .get_spreads(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut instruments = Vec::new();
+
+        for spread in &resp {
+            match parse_spread_instrument(spread, None, None, None, None, ts_init) {
+                Ok(instrument) => instruments.push(instrument),
+                Err(e) => log::warn!("Failed to parse spread {}: {e}", spread.sprd_id),
+            }
+        }
+
+        Ok(instruments)
+    }
+
     /// Requests a single instrument by `instrument_id` from OKX.
     ///
     /// Fetches the instrument from the API, caches it, and returns it.
@@ -1788,6 +1881,13 @@ impl OKXHttpClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
         let symbol = instrument_id.symbol.as_str();
+
+        if is_okx_spread_symbol(symbol) {
+            let instrument = self.request_spread_instrument(symbol).await?;
+            self.cache_instrument(instrument.clone());
+            return Ok(instrument);
+        }
+
         let instrument_type = okx_instrument_type_from_symbol(symbol);
 
         let resp = if instrument_type == OKXInstrumentType::Events {
@@ -1893,6 +1993,24 @@ impl OKXHttpClient {
         self.cache_instrument(instrument.clone());
 
         Ok(instrument)
+    }
+
+    async fn request_spread_instrument(&self, symbol: &str) -> anyhow::Result<InstrumentAny> {
+        let resp = self
+            .inner
+            .get_spreads(GetSpreadsParams {
+                sprd_id: Some(symbol.to_string()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let raw_spread = resp
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("Spread instrument {symbol} not found"))?;
+        let ts_init = self.generate_ts_init();
+
+        parse_spread_instrument(raw_spread, None, None, None, None, ts_init)
     }
 
     /// Requests event contract series metadata from OKX.
@@ -4026,6 +4144,55 @@ impl OKXHttpClient {
         resp.into_iter()
             .next()
             .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Cancels multiple regular orders via HTTP in a single request.
+    ///
+    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// fail the entire batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-cancel-multiple-orders>
+    pub async fn cancel_orders(
+        &self,
+        requests: Vec<OKXCancelOrderRequest>,
+    ) -> Result<Vec<OKXCancelOrderResponse>, OKXHttpError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body =
+            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXCancelOrderResponse> = self
+            .inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/cancel-batch-orders",
+                None,
+                Some(body),
+                true,
+            )
+            .await?;
+
+        for item in &resp {
+            if let Some(ref code) = item.s_code
+                && code != OKX_SUCCESS_CODE
+            {
+                let msg = item.s_msg.as_deref().unwrap_or("");
+                log::warn!(
+                    "Order cancel rejected: ord_id={} sCode={code} sMsg={msg}",
+                    item.ord_id
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     /// Places an algo order via HTTP.

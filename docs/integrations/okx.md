@@ -1,8 +1,8 @@
 # OKX
 
 Founded in 2017, OKX is a cryptocurrency exchange that offers spot, margin, perpetual
-swap, futures, options, and event contract trading. This integration supports live
-market data ingest and order execution on OKX.
+swap, futures, options, spread, and event contract trading. This integration supports
+live market data ingest and order execution on OKX.
 
 ## Overview
 
@@ -17,14 +17,15 @@ Live example scripts are available in
 
 ### Product support
 
-| Product type      | Data feed | Trading | Notes                                               |
-|-------------------|-----------|---------|-----------------------------------------------------|
-| Spot              | ✓         | ✓       | Spot trading pairs.                                 |
-| Margin            | ✓         | ✓       | Spot trading with margin or leverage.               |
-| Perpetual swaps   | ✓         | ✓       | Linear and inverse contracts.                       |
-| Futures           | ✓         | ✓       | Dated futures contracts.                            |
-| Options           | ✓         | ✓       | Limit‑style orders only; no market or conditional.  |
-| Event contracts   | ✓         | ✓       | Parsed as Nautilus `BinaryOption` instruments.      |
+| Product type      | Data feed            | Trading | Notes                                           |
+|-------------------|----------------------|---------|-------------------------------------------------|
+| Spot              | ✓                    | ✓       | Spot trading pairs.                             |
+| Margin            | ✓                    | ✓       | Spot trading with margin or leverage.           |
+| Perpetual swaps   | ✓                    | ✓       | Linear and inverse contracts.                   |
+| Futures           | ✓                    | ✓       | Dated futures contracts.                        |
+| Options           | ✓                    | ✓       | Limit‑style orders only.                        |
+| Spreads           | Instrument discovery | -       | Opt‑in `CryptoFuturesSpread` loading.           |
+| Event contracts   | ✓                    | ✓       | Parsed as Nautilus `BinaryOption` instruments.  |
 
 :::note
 **Options support**: The adapter supports options market data, venue-provided Greeks
@@ -106,6 +107,19 @@ Examples:
 - `BTC-USD-250328` - Bitcoin futures expiring March 28, 2025
 
 Note: Futures are typically inverse contracts (coin-margined).
+
+#### SPREADS
+
+Format: `{Leg1InstrumentId}_{Leg2InstrumentId}`
+
+Examples:
+
+- `BTC-USDT_BTC-USDT-SWAP` - Spread between BTC-USDT spot and BTC-USDT perpetual swap
+- `ETH-USD-SWAP_ETH-USD-231229` - Spread between ETH-USD perpetual swap and dated future
+
+Set `load_spreads=True` on the data client to load live OKX spread instruments from
+the separate spread endpoint. The adapter currently supports spread instrument
+discovery, but not OKX spread order routing.
 
 #### OPTIONS
 
@@ -887,9 +901,11 @@ The OKX data client provides the following configuration options:
 |------------------------------------|-----------------------------|----------------------------------------------|
 | `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.                |
 | `contract_types`                   | `None`                      | Contract styles to load.                     |
+| `load_spreads`                     | `False`                     | Loads live spread instruments.               |
 | `instrument_families`              | `None`                      | Families or event `seriesId` values.         |
 | `base_url_http`                    | `None`                      | Override for the OKX REST endpoint.          |
-| `base_url_ws`                      | `None`                      | Override for the market data WebSocket URL.  |
+| `base_url_ws_public`               | `None`                      | Override for the public WebSocket URL.       |
+| `base_url_ws_business`             | `None`                      | Override for the business WebSocket URL.     |
 | `api_key`                          | `None`                      | Falls back to `OKX_API_KEY` when unset.      |
 | `api_secret`                       | `None`                      | Falls back to `OKX_API_SECRET` when unset.   |
 | `api_passphrase`                   | `None`                      | Falls back to `OKX_API_PASSPHRASE`.          |
@@ -903,9 +919,13 @@ The OKX data client provides the following configuration options:
 | `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.       |
 | `transport_backend`                | `Sockudo`                   | WebSocket transport backend.                 |
 
+Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
+`FUTURES`, `OPTION`, and `EVENTS`.
+
 `instrument_families` is required for `OPTION`, optional for `FUTURES`, `SWAP`, and
 `EVENTS`, and ignored for `SPOT` and `MARGIN`. For `EVENTS`, pass OKX `seriesId`
-values such as `BTC-ABOVE-DAILY`.
+values such as `BTC-ABOVE-DAILY`. Spread instruments use `load_spreads` instead of
+`instrument_types` because OKX serves them from `/api/v5/sprd/spreads`.
 
 The OKX execution client provides the following configuration options:
 
@@ -917,7 +937,8 @@ The OKX execution client provides the following configuration options:
 | `contract_types`                  | `None`                      | Tradable contract styles to load.           |
 | `instrument_families`             | `None`                      | Families or event `seriesId` values.        |
 | `base_url_http`                   | `None`                      | Override for the OKX trading REST endpoint. |
-| `base_url_ws`                     | `None`                      | Override for the private WebSocket URL.     |
+| `base_url_ws_private`             | `None`                      | Override for the private WebSocket URL.     |
+| `base_url_ws_business`            | `None`                      | Override for the business WebSocket URL.    |
 | `api_key`                         | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
 | `api_secret`                      | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
 | `api_passphrase`                  | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
@@ -934,8 +955,11 @@ The OKX execution client provides the following configuration options:
 | `proxy_url`                       | `None`                      | Optional HTTP and WebSocket proxy URL.      |
 | `transport_backend`               | `Sockudo`                   | WebSocket transport backend.                |
 
+Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
+`FUTURES`, `OPTION`, and `EVENTS`.
+
 `instrument_families` has the same meaning for execution clients as it does for data
-clients.
+clients. The execution client does not route OKX spread orders.
 
 Below is an example configuration for a live trading node using OKX data and execution clients:
 

@@ -143,6 +143,13 @@ path = "bin/ws_exec.rs"
 doc = false
 test = false
 
+# Run with `cargo run -p nautilus-okx --bin okx-flatten`.
+[[bin]]
+name = "okx-flatten"
+path = "bin/flatten.rs"
+doc = false
+test = false
+
 # Run with `cargo run --example okx-data-tester --package nautilus-okx --features examples`.
 [[example]]
 name = "okx-data-tester"

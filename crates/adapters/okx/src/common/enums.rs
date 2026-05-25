@@ -314,6 +314,56 @@ pub enum OKXInstrumentStatus {
     Unknown,
 }
 
+/// Represents a spread type on OKX.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OKXSpreadType {
+    Linear,
+    Inverse,
+    Hybrid,
+    /// Unknown or future spread type.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Represents a spread status on OKX.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum OKXSpreadState {
+    Live,
+    Suspend,
+    Expired,
+    /// Unknown or future status.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Represents an instrument contract type on OKX.
 #[derive(
     Copy,
