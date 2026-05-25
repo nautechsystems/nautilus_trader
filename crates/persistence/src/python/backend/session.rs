@@ -15,13 +15,13 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{
-    ffi::cvec::CVec,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err},
-};
-use nautilus_model::data::{
-    Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-    QuoteTick, TradeTick,
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_model::{
+    data::{
+        Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
+    },
+    python::data::DataFfiCVec,
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{prelude::*, types::PyCapsule};
@@ -247,8 +247,13 @@ impl DataQueryResult {
                         .map(DataFFI::try_from)
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(to_pyruntime_err)?;
-                    let cvec: CVec = ffi_data.into();
-                    match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
+                    let cvec: DataFfiCVec = ffi_data.into();
+                    match PyCapsule::new_with_destructor::<DataFfiCVec, _>(
+                        py,
+                        cvec,
+                        Some(DataFfiCVec::capsule_name()),
+                        |_, _| {},
+                    ) {
                         Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
                         Err(e) => Err(to_pyruntime_err(e)),
                     }

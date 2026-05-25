@@ -54,13 +54,17 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
 - Changed command `new` constructors to accept `correlation_id: Option<UUID4>`, pass `None` for old behavior (Rust)
+- Changed `CVec` to no longer implement `Send`; use typed wrappers for thread transfer (Rust)
 - Changed Hyperliquid HIP-4 outcome `InstrumentId` to `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 - Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
 - Changed Deribit combos to land as `CryptoOptionSpread`/`CryptoFuturesSpread` instead of `OptionSpread`/`FuturesSpread`; `FuturesSpread`/`OptionSpread` once again guarantee whole-contract sizing
 
 ### Security
-None
+- Fixed DataFFI PyCapsules to reject mismatched types and prevent repeated `CVec` drops
+- Fixed thread-local registry access to avoid exposing global-lifetime actor and component refs
+- Fixed `OrderBookDepth10` FFI constructor to avoid unwinding across C ABI boundaries
+- Fixed `StackStr::from_c_ptr_checked` to return `None` for null C string pointers
 
 ### Fixes
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
@@ -129,6 +133,7 @@ None
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
 - Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
 - Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
+- Added FFI and Rust unsafe-code guidance for `PyCapsule` ownership and scoped TLS access
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints

@@ -29,11 +29,11 @@ use nautilus_common::{
     actor::{
         Actor, DataActor,
         data_actor::DataActorCore,
-        registry::{get_actor_registry, try_get_actor_unchecked},
+        registry::{try_get_actor_unchecked, with_actor_registry},
     },
     cache::Cache,
     clock::Clock,
-    component::{Component, get_component_registry},
+    component::{Component, with_component_registry},
     enums::ComponentState,
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
@@ -1161,10 +1161,10 @@ impl PyStrategy {
         let inner_ref: Rc<UnsafeCell<PyStrategyInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        get_component_registry().insert(component_id, component_trait_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
-        get_actor_registry().insert(actor_id, actor_trait_ref);
+        with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
     }
 }
 
