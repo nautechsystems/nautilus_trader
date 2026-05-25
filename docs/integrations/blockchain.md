@@ -81,15 +81,15 @@ Set the HyperSync token and RPC URLs outside the repository. Do not commit `.env
 secrets.
 
 ```fish
-set -x ENVIO_API_TOKEN "envio-token"
+set -x ENVIO_API_TOKEN "<envio-token>"
 set -x RPC_HTTP_URL "https://your-rpc.example"
 set -x RPC_WSS_URL "wss://your-rpc.example"
 ```
 
 For local `.env` usage:
 
-```env
-ENVIO_API_TOKEN=envio-token
+```dotenv
+ENVIO_API_TOKEN=<envio-token>
 RPC_HTTP_URL=https://your-rpc.example
 RPC_WSS_URL=wss://your-rpc.example
 ```
