@@ -232,6 +232,23 @@ The event store supports three replay scopes:
 Replay follows one ordering rule: apply entries in `seq` order. `ts_init` and `ts_publish` explain
 when messages happened, but `seq` is the durable replay order.
 
+The Rust replay-input API keeps planning separate from execution:
+
+- `plan_forensics_replay_inputs` and `load_forensics_replay_inputs` return event-store entries
+  only.
+- `plan_decision_replay_inputs` and `load_decision_replay_inputs` join entries with
+  caller-selected catalog slices for decision analysis.
+- `plan_full_incident_replay_inputs` and `load_full_incident_replay_inputs` join entries with all
+  caller-selected slices for an incident window.
+
+Decision and full incident planners take explicit `CatalogSliceSelector` values and a read-only
+`ReplayCatalog`. Planning resolves catalog time bounds from the event-store scan unless the
+selector supplies explicit bounds, reports missing catalog slices, and preserves `seq` as the
+entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
+catalog records grouped under their selected slice. These APIs do not open live venue clients, run
+strategies or actors, re-run reconciliation, delete files, or replay clock registration/cancel
+lifecycle.
+
 Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores
 cache state from the sealed run, records that run as the parent of the fresh child run, and skips
 live engines, clients, startup, and venue reconciliation.
@@ -312,6 +329,8 @@ surface:
 - Process-isolated verification reports truncated or zero-tailed run files as corrupt.
 - Cache replay reconstructs the same observed account, order, and position state as a live cache
   for generated captured event streams.
+- Catalog-joined replay input planning covers selected slices, missing slices, time bounds,
+  scope-specific loaders, and event-store `seq` ordering.
 - Crash recovery seals `Running` predecessors as `Ended`, `CrashedRecovered`, or `Quarantined`
   based on the durable tail, and only `CrashedRecovered` runs become parents.
 
