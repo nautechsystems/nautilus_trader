@@ -35,16 +35,19 @@
 use std::collections::HashSet;
 
 use bytes::Bytes;
-use nautilus_common::messages::{
-    data::{
-        BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
-        DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
-        InstrumentsResponse, QuotesResponse, TradesResponse,
+use nautilus_common::{
+    messages::{
+        data::{
+            BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
+            DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, QuotesResponse, TradesResponse,
+        },
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        },
     },
-    execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
-    },
+    timer::TimeEvent,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
@@ -141,6 +144,8 @@ pub const PAYLOAD_TYPE_POSITION_CLOSED: &str = "PositionClosed";
 pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 /// The canonical `payload_type` tag for [`AccountState`].
 pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
+/// The canonical `payload_type` tag for [`TimeEvent`].
+pub const PAYLOAD_TYPE_TIME_EVENT: &str = "TimeEvent";
 
 /// The canonical `payload_type` tag for `RequestCommand`.
 pub const PAYLOAD_TYPE_REQUEST_COMMAND: &str = "RequestCommand";
@@ -260,6 +265,7 @@ pub fn register_default(registry: &mut EncoderRegistry) {
         payload_type(PAYLOAD_TYPE_ACCOUNT_STATE),
         encode_account_state,
     );
+    registry.register::<TimeEvent, _>(payload_type(PAYLOAD_TYPE_TIME_EVENT), encode_time_event);
     registry
         .register::<DataCommand, _>(payload_type(PAYLOAD_TYPE_DATA_COMMAND), encode_data_command);
     registry.register::<DataResponse, _>(
@@ -1046,6 +1052,33 @@ pub fn encode_account_state(message: &AccountState) -> Result<EncodedPayload, En
     Ok(EncodedPayload::new(payload, Vec::new()))
 }
 
+#[derive(Serialize)]
+struct TimeEventPayload<'a> {
+    name: &'a str,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+}
+
+/// Encodes a fired [`TimeEvent`] into canonical bytes with no sidecar indices.
+///
+/// Time events carry a callback boundary rather than a cache-state key. The event store
+/// captures them for forensic ordering and deterministic replay inputs, while cache
+/// replay leaves clock re-arming to the later clock lifecycle event workstream.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the payload.
+pub fn encode_time_event(event: &TimeEvent) -> Result<EncodedPayload, EncodeError> {
+    let payload = TimeEventPayload {
+        name: event.name.as_str(),
+        event_id: event.event_id,
+        ts_event: event.ts_event,
+        ts_init: event.ts_init,
+    };
+    Ok(EncodedPayload::new(encode_serde(&payload)?, Vec::new()))
+}
+
 /// Encodes a [`DataCommand`] envelope by dispatching on its command category.
 ///
 /// `send_data_command` hands the bus tap a [`DataCommand`] wrapper, so the tap
@@ -1327,6 +1360,7 @@ mod tests {
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
+    use serde::Deserialize;
 
     use super::*;
 
@@ -1490,22 +1524,76 @@ mod tests {
     }
 
     #[rstest]
-    fn default_registry_contains_bare_and_envelope_encoders() {
+    fn default_registry_covers_published_state_affecting_surface() {
         let registry = default_registry();
+        let expected = [
+            (
+                "send_any_value(SubmitOrder) / bare SubmitOrder",
+                registry.contains::<SubmitOrder>(),
+            ),
+            (
+                "publish_order_event(OrderFilled) / bare OrderFilled",
+                registry.contains::<OrderFilled>(),
+            ),
+            (
+                "reconciliation.raw.order_status / OrderStatusReport",
+                registry.contains::<OrderStatusReport>(),
+            ),
+            (
+                "reconciliation.raw.fill / FillReport",
+                registry.contains::<FillReport>(),
+            ),
+            (
+                "reconciliation.raw.position / PositionStatusReport",
+                registry.contains::<PositionStatusReport>(),
+            ),
+            (
+                "send_trading_command / TradingCommand",
+                registry.contains::<TradingCommand>(),
+            ),
+            (
+                "publish_order_event / OrderEventAny",
+                registry.contains::<OrderEventAny>(),
+            ),
+            (
+                "send_execution_report / ExecutionReport",
+                registry.contains::<ExecutionReport>(),
+            ),
+            (
+                "publish_position_event / PositionEvent",
+                registry.contains::<PositionEvent>(),
+            ),
+            (
+                "publish_account_state and send_account_state / AccountState",
+                registry.contains::<AccountState>(),
+            ),
+            (
+                "time event handler firing / TimeEvent",
+                registry.contains::<TimeEvent>(),
+            ),
+            (
+                "send_data_command / DataCommand",
+                registry.contains::<DataCommand>(),
+            ),
+            (
+                "send_data_response / DataResponse",
+                registry.contains::<DataResponse>(),
+            ),
+        ];
+        let missing: Vec<&str> = expected
+            .iter()
+            .filter_map(|(name, registered)| (!*registered).then_some(*name))
+            .collect();
 
-        assert_eq!(registry.len(), 12);
-        assert!(registry.contains::<SubmitOrder>());
-        assert!(registry.contains::<OrderFilled>());
-        assert!(registry.contains::<OrderStatusReport>());
-        assert!(registry.contains::<FillReport>());
-        assert!(registry.contains::<PositionStatusReport>());
-        assert!(registry.contains::<TradingCommand>());
-        assert!(registry.contains::<OrderEventAny>());
-        assert!(registry.contains::<ExecutionReport>());
-        assert!(registry.contains::<PositionEvent>());
-        assert!(registry.contains::<AccountState>());
-        assert!(registry.contains::<DataCommand>());
-        assert!(registry.contains::<DataResponse>());
+        assert!(
+            missing.is_empty(),
+            "missing default event-store encoder registrations for {missing:?}",
+        );
+        assert_eq!(
+            registry.len(),
+            expected.len(),
+            "default registry must match the audited state-affecting surface",
+        );
     }
 
     #[rstest]
@@ -2735,6 +2823,56 @@ mod tests {
             .expect("registered");
 
         assert_eq!(tag.as_str(), PAYLOAD_TYPE_ACCOUNT_STATE);
+        assert!(encoded.index_keys.is_empty());
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct DecodedTimeEventPayload {
+        name: String,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    }
+
+    #[rstest]
+    fn time_event_payload_round_trips_through_msgpack() {
+        let event = TimeEvent::new(
+            Ustr::from("heartbeat"),
+            UUID4::new(),
+            UnixNanos::from(100),
+            UnixNanos::from(99),
+        );
+        let encoded = encode_time_event(&event).expect("encode");
+
+        let decoded: DecodedTimeEventPayload =
+            rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(
+            decoded,
+            DecodedTimeEventPayload {
+                name: event.name.to_string(),
+                event_id: event.event_id,
+                ts_event: event.ts_event,
+                ts_init: event.ts_init,
+            },
+        );
+        assert!(encoded.index_keys.is_empty());
+    }
+
+    #[rstest]
+    fn time_event_registered_under_canonical_payload_type() {
+        let registry = default_registry();
+        let event = TimeEvent::new(
+            Ustr::from("heartbeat"),
+            UUID4::new(),
+            UnixNanos::from(100),
+            UnixNanos::from(99),
+        );
+        let (tag, encoded) = registry
+            .encode(&event)
+            .expect("encode")
+            .expect("registered");
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_TIME_EVENT);
         assert!(encoded.index_keys.is_empty());
     }
 

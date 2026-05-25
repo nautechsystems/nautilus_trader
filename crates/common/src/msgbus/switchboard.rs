@@ -25,6 +25,7 @@ use super::mstr::{Endpoint, MStr, Pattern, Topic};
 use crate::msgbus::get_message_bus;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
+pub const TIME_EVENT_TOPIC: &str = "clock.time_event";
 
 static DATA_QUEUE_COMMAND_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -32,6 +33,7 @@ static DATA_PROCESS_ANY_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_PROCESS_DATA_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_RESPONSE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static DATA_RESPONSE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static TIME_EVENT_TOPIC_MSTR: OnceLock<MStr<Topic>> = OnceLock::new();
 static EXEC_QUEUE_COMMAND_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -138,6 +140,13 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn data_response_topic() -> MStr<Topic> {
                 *DATA_RESPONSE_TOPIC.get_or_init(|| "data.response".into())
+            }
+
+            /// Pub/sub topic used by the event-store tap for fired clock events.
+            #[inline]
+            #[must_use]
+            pub fn time_event_topic() -> MStr<Topic> {
+                *TIME_EVENT_TOPIC_MSTR.get_or_init(|| TIME_EVENT_TOPIC.into())
             }
 
             #[inline]
@@ -683,6 +692,13 @@ mod tests {
     fn test_data_response_topic() {
         let expected_topic = "data.response".into();
         let result = MessagingSwitchboard::data_response_topic();
+        assert_eq!(result, expected_topic);
+    }
+
+    #[rstest]
+    fn test_time_event_topic() {
+        let expected_topic = "clock.time_event".into();
+        let result = MessagingSwitchboard::time_event_topic();
         assert_eq!(result, expected_topic);
     }
 

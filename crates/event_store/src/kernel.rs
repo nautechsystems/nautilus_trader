@@ -1029,6 +1029,7 @@ mod tests {
             },
             execution::{SubmitOrder, TradingCommand},
         },
+        timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
     };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
@@ -1045,7 +1046,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::IndexKind;
+    use crate::{
+        AppendEntry, EventStoreEntry, IndexKind, SnapshotAnchor,
+        capture::builtins::PAYLOAD_TYPE_TIME_EVENT, compute_entry_hash,
+    };
 
     const INSTANCE_ID: &str = "trader-001";
 
@@ -1068,6 +1072,78 @@ mod tests {
             max_batch_latency: Duration::from_millis(2),
             halt_threshold: Duration::from_secs(2),
             run_started_timeout: Duration::from_secs(2),
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum CrashPoint {
+        BeforeEnqueue,
+        AfterEnqueueBeforeCommit,
+        AfterCommitBeforeSnapshot,
+        AfterSnapshot,
+    }
+
+    fn append_entry(seq: u64, topic: &str, payload_type: &str, payload: Bytes) -> AppendEntry {
+        let ts = UnixNanos::from(seq);
+        let headers = Headers::empty();
+        let hash = compute_entry_hash(seq, ts, ts, topic, payload_type, &payload, &headers);
+        let entry = EventStoreEntry::new(
+            hash,
+            seq,
+            headers,
+            Topic::from(topic),
+            Ustr::from(payload_type),
+            payload,
+            ts,
+            ts,
+        );
+        AppendEntry::without_indices(entry)
+    }
+
+    fn append_run_started(seq: u64) -> AppendEntry {
+        append_entry(
+            seq,
+            RUN_STARTED_TOPIC,
+            RUN_STARTED_PAYLOAD_TYPE,
+            encode_run_started(&RegisteredComponents::default()),
+        )
+    }
+
+    fn seed_crashed_predecessor(config: &EventStoreConfig, run_id: &str, crash_point: CrashPoint) {
+        let mut backend = RedbBackend::new(config.base_dir.clone());
+        backend
+            .open_run(build_manifest(
+                config,
+                INSTANCE_ID,
+                run_id.to_string(),
+                None,
+                UnixNanos::from(1_000),
+                RegisteredComponents::default(),
+            ))
+            .expect("open predecessor");
+
+        match crash_point {
+            // An entry sitting only in the writer channel leaves no durable redb
+            // footprint after process death, so these two fault points intentionally
+            // recover from the same on-disk state.
+            CrashPoint::BeforeEnqueue | CrashPoint::AfterEnqueueBeforeCommit => {}
+            CrashPoint::AfterCommitBeforeSnapshot => {
+                backend
+                    .append_batch(&[append_run_started(1)])
+                    .expect("append committed entry");
+            }
+            CrashPoint::AfterSnapshot => {
+                backend
+                    .append_batch(&[append_run_started(1)])
+                    .expect("append committed entry");
+                backend
+                    .record_snapshot_anchor(SnapshotAnchor::new(
+                        1,
+                        "cache://snapshot/run-crash/1",
+                        "blake3:abc",
+                    ))
+                    .expect("record snapshot anchor");
+            }
         }
     }
 
@@ -1437,6 +1513,62 @@ mod tests {
             .expect("RunStarted present");
         assert_eq!(first_entry.payload_type.as_str(), "RunStarted");
         assert_eq!(first_entry.topic.as_ref(), "run.lifecycle.RunStarted");
+    }
+
+    #[rstest]
+    #[case::before_enqueue(CrashPoint::BeforeEnqueue, 0, false)]
+    #[case::after_enqueue_before_commit(CrashPoint::AfterEnqueueBeforeCommit, 0, false)]
+    #[case::after_commit_before_snapshot(CrashPoint::AfterCommitBeforeSnapshot, 1, false)]
+    #[case::after_snapshot(CrashPoint::AfterSnapshot, 1, true)]
+    fn crash_recovery_matrix_seals_predecessor_and_links_parent_run_id(
+        #[case] crash_point: CrashPoint,
+        #[case] expected_hwm: u64,
+        #[case] expect_snapshot_anchor: bool,
+    ) {
+        let tmp = TempDir::new().expect("tempdir");
+        let config = make_config(tmp.path().to_path_buf());
+        let predecessor_run_id = format!("3000-{crash_point:?}");
+        seed_crashed_predecessor(&config, &predecessor_run_id, crash_point);
+
+        let outcome = recover_predecessors(&config.base_dir, INSTANCE_ID).expect("recover sweep");
+        assert_eq!(outcome.recovered.len(), 1);
+        assert_eq!(outcome.recovered[0].run_id, predecessor_run_id);
+        assert_eq!(outcome.recovered[0].status, RunStatus::CrashedRecovered);
+        assert_eq!(
+            outcome.parent_run_id.as_deref(),
+            Some(predecessor_run_id.as_str()),
+        );
+
+        let predecessor =
+            RedbBackend::open_sealed(&config.base_dir, INSTANCE_ID, &predecessor_run_id)
+                .expect("open sealed predecessor");
+        let manifest = predecessor.manifest().expect("manifest");
+        let snapshot_anchor = predecessor.latest_snapshot_anchor().expect("anchor read");
+
+        assert_eq!(manifest.status, RunStatus::CrashedRecovered);
+        assert_eq!(manifest.high_watermark, expected_hwm);
+        assert_eq!(
+            snapshot_anchor.is_some(),
+            expect_snapshot_anchor,
+            "snapshot anchor presence must match crash point",
+        );
+
+        let next = open_run(
+            &config,
+            INSTANCE_ID,
+            "4000-next".to_string(),
+            outcome.parent_run_id,
+            UnixNanos::from(4_000),
+            &RegisteredComponents::default(),
+            HaltSignal::new(),
+            get_atomic_clock_static(),
+        )
+        .expect("open next run");
+        assert_eq!(next.parent_run_id(), Some(predecessor_run_id.as_str()));
+        assert_eq!(
+            next.manifest().parent_run_id.as_deref(),
+            Some(predecessor_run_id.as_str()),
+        );
     }
 
     #[rstest]
@@ -1840,6 +1972,70 @@ mod tests {
             .expect("lookup")
             .expect("indexed");
         assert_eq!(by_client, 2);
+    }
+
+    /// Fired clock events do not pass through normal message bus publish/send calls.
+    /// `TimeEventHandler::run` must still hit the installed tap so timer-driven
+    /// strategy logic has a durable trigger record.
+    #[rstest]
+    fn bus_tap_captures_time_event_handler_run() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = EventStoreLifecycle::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let event = TimeEvent::new(
+            Ustr::from("strategy.heartbeat"),
+            UUID4::new(),
+            UnixNanos::from(100),
+            UnixNanos::from(99),
+        );
+        let callback = TimeEventCallback::from(|_: TimeEvent| {});
+        TimeEventHandler::new(event, callback).run();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 2 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured TimeEvent did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+
+        assert_eq!(captured.payload_type.as_str(), PAYLOAD_TYPE_TIME_EVENT);
+        assert_eq!(captured.topic, MessagingSwitchboard::time_event_topic());
     }
 
     /// `EventStoreLifecycle::seal` must clear the bus tap so a publish issued after the

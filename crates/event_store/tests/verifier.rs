@@ -22,7 +22,11 @@
 //! manufactured gap in the entry table to confirm the verifier surfaces it as a typed
 //! finding rather than aborting the integrity scan.
 
-use std::{fs, process::Command};
+use std::{
+    fs,
+    io::{Seek, SeekFrom, Write},
+    process::Command,
+};
 
 use bincode::config::standard;
 use bytes::Bytes;
@@ -33,6 +37,7 @@ use nautilus_event_store::{
     RegisteredComponents, RunManifest, RunStatus, Topic, Verifier, VerifyFinding,
     compute_entry_hash,
 };
+use redb::ReadableTable;
 use rstest::rstest;
 use tempfile::TempDir;
 use ustr::Ustr;
@@ -133,6 +138,46 @@ fn verify_bin(path: &std::path::Path) -> std::process::Output {
         .expect("run verifier binary")
 }
 
+fn flip_stored_entry_payload_byte(path: &std::path::Path, seq: u64) {
+    let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+    let db = redb::Database::create(path).expect("open redb");
+    let txn = db.begin_write().expect("begin write");
+    {
+        let mut table = txn.open_table(entries).expect("open entries");
+        let mut bytes = {
+            let row = table.get(seq).expect("get entry").expect("entry present");
+            row.value().to_vec()
+        };
+        // `build_entry` uses this fixed payload for every entry; flipping inside it
+        // preserves the stored hash and forces the verifier's recompute check to fail.
+        let payload_offset = bytes
+            .windows(4)
+            .position(|window| window == b"\x01\x02\x03\x04")
+            .expect("payload bytes present");
+        bytes[payload_offset + 2] ^= 0xFF;
+        table
+            .insert(seq, bytes.as_slice())
+            .expect("overwrite entry");
+    }
+    txn.commit().expect("commit flip");
+}
+
+fn zero_tail_truncate(path: &std::path::Path) {
+    let original_len = fs::metadata(path).expect("metadata").len();
+    let retained_len = original_len / 2;
+    let zeroed_len = usize::try_from(original_len - retained_len).expect("tail length fits");
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open for zero-tail truncate");
+    file.set_len(retained_len).expect("truncate tail");
+    file.seek(SeekFrom::Start(retained_len)).expect("seek tail");
+    file.write_all(&vec![0_u8; zeroed_len])
+        .expect("write zero tail");
+    file.flush().expect("flush zero tail");
+}
+
 #[rstest]
 fn clean_run_reports_no_findings() {
     let tmp = TempDir::new().expect("tempdir");
@@ -207,6 +252,28 @@ fn binary_hash_mismatch_exits_corrupt_without_quarantine() {
         "stdout was: {stdout}",
     );
     assert!(stderr.is_empty(), "stderr was: {stderr}");
+}
+
+#[rstest]
+fn flipped_entry_byte_reports_hash_mismatch() {
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0109";
+    write_sealed_run(&tmp, run_id);
+    let path = run_path(&tmp, run_id);
+
+    flip_stored_entry_payload_byte(&path, 2);
+
+    let verifier = Verifier::open_redb(tmp.path(), INSTANCE_ID, run_id).expect("open verifier");
+    let report = verifier.verify().expect("verify");
+
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|finding| matches!(finding, VerifyFinding::HashMismatch { seq: 2 })),
+        "findings was: {:?}",
+        report.findings,
+    );
 }
 
 #[cfg(debug_assertions)]
@@ -325,6 +392,31 @@ fn truncated_run_file_reports_corrupt_open_error() {
         output.status.code(),
         Some(1),
         "stdout={stdout} stderr={stderr}"
+    );
+    assert!(stdout.contains("corrupt"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("quarantine=not-performed"),
+        "stdout was: {stdout}",
+    );
+}
+
+#[rstest]
+fn zero_tail_truncated_run_file_reports_corrupt() {
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0110";
+    write_sealed_run_of(&tmp, run_id, 128);
+
+    let path = run_path(&tmp, run_id);
+    zero_tail_truncate(&path);
+
+    let output = verify_bin(&path);
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout");
+    let stderr = String::from_utf8(output.stderr).expect("stderr");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={stdout} stderr={stderr}",
     );
     assert!(stdout.contains("corrupt"), "stdout was: {stdout}");
     assert!(

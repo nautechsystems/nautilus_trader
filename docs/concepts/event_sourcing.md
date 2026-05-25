@@ -8,7 +8,7 @@ and verifiers use the same log to reconstruct what happened and to rebuild state
 
 - The event store is the durable authority for state-affecting history.
 - The cache is a write-through projection, not the source of truth.
-- Replay uses captured history and named deterministic replay rules.
+- Cache replay rebuilds state by applying captured history to cache-owned state.
 - Market data stays in the data catalog; the event store records the messages that affect state.
 - External I/O becomes replayable only when Nautilus captures it as commands, raw reports, or
   other state-affecting inputs.
@@ -36,7 +36,7 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 
 - Execution commands such as submit, modify, and cancel.
 - Data subscription commands that define the actor, strategy, or agent observation window.
-- Generated time, order, position, and account events.
+- Fired time events and generated order, position, and account events.
 - Raw venue execution reports before reconciliation synthesizes derived events.
 - Reconciliation outputs produced from those raw reports.
 - Request and response messages that cross the bus and affect state.
@@ -190,6 +190,13 @@ Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the
 cache state from the sealed run, records that run as the parent of the fresh child run, and skips
 live engines, clients, startup, and venue reconciliation.
 
+The cache replay loader is state-only. It restores the cache-owned snapshot, scans the event-store
+tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
+`Cache`. It does not publish replayed entries to the live message bus, run strategy or actor code,
+query venues, run reconciliation, derive identifiers again, or re-arm clocks. Fired `TimeEvent`s and
+raw venue reports are forensic records on this path; replay applies the synthesized order, position,
+and account events captured later in the run.
+
 ## Snapshot-anchored recovery
 
 Cache snapshots are owned by the cache. The event store stores only the snapshot anchor: the
@@ -227,6 +234,22 @@ Replay correctness depends on four checks:
 - Writes reject out-of-order commits.
 - Readers detect gaps inside the high-watermark.
 - Live catch-up deduplicates by captured entry and venue identifiers.
+
+## Verification coverage
+
+The event-store test suite pins the load-bearing correctness guarantees for the current alpha
+surface:
+
+- The default encoder registry covers the audited state-affecting capture surface.
+- Fired `TimeEvent`s hit the installed event-store tap through `TimeEventHandler::run`.
+- The writer halts under bounded backpressure instead of dropping accepted entries.
+- Entry hash verification detects byte-level payload corruption.
+- Process-isolated verification reports truncated or zero-tailed run files as corrupt.
+- Cache replay reconstructs the same observed account, order, and position state as a live cache
+  for generated captured event streams.
+- Crash recovery seals predecessor runs and links the next run through `parent_run_id` across the
+  durable crash footprints before enqueue, after enqueue before commit, after commit before
+  snapshot, and after snapshot.
 
 ## Integrity and verification
 

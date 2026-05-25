@@ -512,8 +512,8 @@ fn raw_report_topics_capture_via_publish_any() {
     // The execution engine publishes raw venue reports on the
     // `reconciliation.raw.*` topics before reconciliation mutates local state.
     // Each topic must produce a captured entry whose payload decodes back to the
-    // original report so forensic replay can re-run reconciliation against the
-    // captured raw inputs.
+    // original report. Replay treats these raw inputs as forensic records; it
+    // applies the synthesized events captured later rather than running reconciliation.
     let bus = MessageBus::new(TraderId::from("TRADER-001"), UUID4::new(), None, None);
     let _bus_rc = bus.register_message_bus();
 
