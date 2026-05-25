@@ -51,7 +51,7 @@
 /// `#[repr(C)]` struct or vtable must bump it.
 ///
 /// [`PluginManifest::abi_version`]: crate::manifest::PluginManifest::abi_version
-pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 2;
+pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 3;
 
 /// Schema version for [`manifest::PluginBuildId`].
 pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;

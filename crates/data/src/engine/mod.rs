@@ -71,14 +71,14 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        BarsResponse, BookDeltasResponse, DataCommand, DataResponse, ForwardPricesResponse,
-        FundingRatesResponse, QuotesResponse, RequestBars, RequestCommand, RequestForwardPrices,
-        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain,
-        SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-        UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+        BarsResponse, BookDeltasResponse, BookDepthResponse, DataCommand, DataResponse,
+        ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars, RequestCommand,
+        RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
+        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
         self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -1737,6 +1737,11 @@ impl DataEngine {
             DataResponse::BookDeltas(r) => {
                 if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
                     self.handle_book_deltas_response(r);
+                }
+            }
+            DataResponse::BookDepth(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_book_depth_response(r);
                 }
             }
             DataResponse::ForwardPrices(r) => {
@@ -3727,6 +3732,14 @@ impl DataEngine {
         }
     }
 
+    fn handle_book_depth_response(&self, resp: &BookDepthResponse) {
+        let topic = switchboard::get_pipeline_book_depth10_topic(resp.instrument_id);
+
+        for depth in &resp.data {
+            msgbus::publish_depth10(topic, depth);
+        }
+    }
+
     /// Handles a `ForwardPricesResponse` by extracting the forward price
     /// for the pending option chain and creating the manager with instant bootstrap.
     fn handle_forward_prices_response(
@@ -5103,6 +5116,25 @@ fn rebuild_pipeline_response(
             }
             Some(DataResponse::BookDeltas(acc))
         }
+        DataResponse::BookDepth(mut acc) => {
+            for leg in iter {
+                let DataResponse::BookDepth(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|d| d.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::BookDepth(acc))
+        }
         other => {
             // Pipelines today rebuild same-variant time-series legs. Variants
             // without a per-item ts_init payload (singular Book/Instrument,
@@ -5204,6 +5236,16 @@ fn empty_response_like(
             ts_init,
             r.params.clone(),
         )),
+        DataResponse::BookDepth(r) => DataResponse::BookDepth(BookDepthResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
         other => {
             log::error!(
                 "Cannot fabricate empty leg response for variant {}",
@@ -5221,6 +5263,7 @@ fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataRes
         DataResponse::Instruments(r) => r.correlation_id = new_id,
         DataResponse::Book(r) => r.correlation_id = new_id,
         DataResponse::BookDeltas(r) => r.correlation_id = new_id,
+        DataResponse::BookDepth(r) => r.correlation_id = new_id,
         DataResponse::Quotes(r) => r.correlation_id = new_id,
         DataResponse::Trades(r) => r.correlation_id = new_id,
         DataResponse::FundingRates(r) => r.correlation_id = new_id,

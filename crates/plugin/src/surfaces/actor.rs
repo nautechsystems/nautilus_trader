@@ -42,9 +42,9 @@
 //!   bars, mark/index/funding prices, option greeks, option chain slices
 //!   (via [`crate::surfaces::option_chain::OptionChainSliceHandle`]),
 //!   instrument status, and instrument close
-//! - Historical market data: bulk historical quotes, trades, bars,
-//!   mark prices, index prices, funding rates delivered as
-//!   [`crate::boundary::Slice`] payloads
+//! - Historical market data: bulk historical book deltas, book depth,
+//!   quotes, trades, bars, mark prices, index prices, funding rates
+//!   delivered as [`crate::boundary::Slice`] payloads
 //! - Order events: filled, canceled
 //! - Custom data: values registered through `PluginCustomData`, including
 //!   historical custom-data responses routed through `on_data`
@@ -63,7 +63,7 @@ use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     instruments::InstrumentAny,
@@ -242,6 +242,12 @@ pub struct ActorVTable {
         unsafe extern "C" fn(
             handle: *mut PluginActorHandle,
             deltas: Slice<'_, OrderBookDelta>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_book_depth: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            depths: Slice<'_, OrderBookDepth10>,
         ) -> PluginResult<()>,
     >,
     pub on_historical_quotes: Option<
@@ -425,6 +431,11 @@ pub trait PluginActor: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -508,6 +519,7 @@ where
         on_order_canceled: Some(on_order_canceled_thunk::<T>),
         on_signal: Some(on_signal_thunk::<T>),
         on_historical_book_deltas: Some(on_historical_book_deltas_thunk::<T>),
+        on_historical_book_depth: Some(on_historical_book_depth_thunk::<T>),
         on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
         on_historical_trades: Some(on_historical_trades_thunk::<T>),
         on_historical_bars: Some(on_historical_bars_thunk::<T>),
@@ -691,6 +703,11 @@ slice_thunk!(
     on_historical_book_deltas_thunk,
     on_historical_book_deltas,
     OrderBookDelta
+);
+slice_thunk!(
+    on_historical_book_depth_thunk,
+    on_historical_book_depth,
+    OrderBookDepth10
 );
 slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
 slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);

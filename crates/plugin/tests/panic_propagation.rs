@@ -48,9 +48,9 @@ use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{
-            stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
+            stub_bar, stub_deltas, stub_depth10, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
         },
     },
@@ -254,6 +254,9 @@ impl PluginActor for MisbehavingActor {
     fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
         fail()
     }
+    fn on_historical_book_depth(&mut self, _d: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         fail()
     }
@@ -419,6 +422,9 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_historical_book_depth(&mut self, _d: &[OrderBookDepth10]) -> anyhow::Result<()> {
         fail()
     }
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
@@ -613,6 +619,7 @@ enum ActorThunkUnderTest {
     OnOrderCanceled,
     OnSignal,
     OnHistoricalBookDeltas,
+    OnHistoricalBookDepth,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
@@ -737,6 +744,12 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
         }
+        ActorThunkUnderTest::OnHistoricalBookDepth => {
+            let v = vec![stub_depth10()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_depth)(handle, s) }
+        }
         ActorThunkUnderTest::OnHistoricalQuotes => {
             let v = vec![quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -833,6 +846,8 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_signal_err(ActorThunkUnderTest::OnSignal, Mode::Err)]
 #[case::on_historical_book_deltas_panic(ActorThunkUnderTest::OnHistoricalBookDeltas, Mode::Panic)]
 #[case::on_historical_book_deltas_err(ActorThunkUnderTest::OnHistoricalBookDeltas, Mode::Err)]
+#[case::on_historical_book_depth_panic(ActorThunkUnderTest::OnHistoricalBookDepth, Mode::Panic)]
+#[case::on_historical_book_depth_err(ActorThunkUnderTest::OnHistoricalBookDepth, Mode::Err)]
 #[case::on_historical_quotes_panic(ActorThunkUnderTest::OnHistoricalQuotes, Mode::Panic)]
 #[case::on_historical_quotes_err(ActorThunkUnderTest::OnHistoricalQuotes, Mode::Err)]
 #[case::on_historical_trades_panic(ActorThunkUnderTest::OnHistoricalTrades, Mode::Panic)]
@@ -902,6 +917,7 @@ enum StrategyThunkUnderTest {
     OnPositionClosed,
     OnMarketExit,
     OnHistoricalBookDeltas,
+    OnHistoricalBookDepth,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
@@ -1115,6 +1131,12 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
         }
+        StrategyThunkUnderTest::OnHistoricalBookDepth => {
+            let v = vec![stub_depth10()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_depth)(handle, s) }
+        }
         StrategyThunkUnderTest::OnHistoricalQuotes => {
             let v = vec![quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -1250,6 +1272,8 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
     Mode::Panic
 )]
 #[case::on_historical_book_deltas_err(StrategyThunkUnderTest::OnHistoricalBookDeltas, Mode::Err)]
+#[case::on_historical_book_depth_panic(StrategyThunkUnderTest::OnHistoricalBookDepth, Mode::Panic)]
+#[case::on_historical_book_depth_err(StrategyThunkUnderTest::OnHistoricalBookDepth, Mode::Err)]
 #[case::on_historical_quotes_panic(StrategyThunkUnderTest::OnHistoricalQuotes, Mode::Panic)]
 #[case::on_historical_quotes_err(StrategyThunkUnderTest::OnHistoricalQuotes, Mode::Err)]
 #[case::on_historical_trades_panic(StrategyThunkUnderTest::OnHistoricalTrades, Mode::Panic)]

@@ -38,9 +38,9 @@ use bytes::Bytes;
 use nautilus_common::{
     messages::{
         data::{
-            BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
-            DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, QuotesResponse, TradesResponse,
+            BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+            DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
         },
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
@@ -173,6 +173,8 @@ pub const PAYLOAD_TYPE_INSTRUMENTS_RESPONSE: &str = "InstrumentsResponse";
 pub const PAYLOAD_TYPE_BOOK_RESPONSE: &str = "BookResponse";
 /// The canonical `payload_type` tag for [`BookDeltasResponse`].
 pub const PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE: &str = "BookDeltasResponse";
+/// The canonical `payload_type` tag for [`BookDepthResponse`].
+pub const PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE: &str = "BookDepthResponse";
 /// The canonical `payload_type` tag for [`QuotesResponse`].
 pub const PAYLOAD_TYPE_QUOTES_RESPONSE: &str = "QuotesResponse";
 /// The canonical `payload_type` tag for [`TradesResponse`].
@@ -1170,6 +1172,7 @@ pub fn encode_data_response(response: &DataResponse) -> Result<EncodedPayload, E
         DataResponse::Instruments(resp) => encode_instruments_response(resp),
         DataResponse::Book(resp) => encode_book_response(resp),
         DataResponse::BookDeltas(resp) => encode_book_deltas_response(resp),
+        DataResponse::BookDepth(resp) => encode_book_depth_response(resp),
         DataResponse::Quotes(resp) => encode_quotes_response(resp),
         DataResponse::Trades(resp) => encode_trades_response(resp),
         DataResponse::FundingRates(resp) => encode_funding_rates_response(resp),
@@ -1288,6 +1291,15 @@ fn encode_book_deltas_response(
     ))
 }
 
+fn encode_book_depth_response(response: &BookDepthResponse) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
 fn encode_trades_response(response: &TradesResponse) -> Result<EncodedPayload, EncodeError> {
     let payload = encode_serde(response)?;
     Ok(EncodedPayload::with_payload_type(
@@ -1343,7 +1355,7 @@ mod tests {
     #[cfg(feature = "defi")]
     use nautilus_model::defi::Blockchain;
     use nautilus_model::{
-        data::{Bar, BarType},
+        data::{Bar, BarType, stubs::stub_depth10},
         enums::{
             AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
             PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
@@ -3184,6 +3196,34 @@ mod tests {
         )
     }
 
+    fn make_book_deltas_response() -> BookDeltasResponse {
+        BookDeltasResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(204),
+            None,
+        )
+    }
+
+    fn make_book_depth_response() -> BookDepthResponse {
+        let mut depth = stub_depth10();
+        depth.instrument_id = instrument_id();
+        BookDepthResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            vec![depth],
+            None,
+            None,
+            UnixNanos::from(205),
+            None,
+        )
+    }
+
     fn make_quotes_response() -> QuotesResponse {
         QuotesResponse::new(
             correlation_id(),
@@ -3192,7 +3232,7 @@ mod tests {
             Vec::new(),
             None,
             None,
-            UnixNanos::from(204),
+            UnixNanos::from(206),
             None,
         )
     }
@@ -3205,7 +3245,7 @@ mod tests {
             Vec::new(),
             None,
             None,
-            UnixNanos::from(205),
+            UnixNanos::from(207),
             None,
         )
     }
@@ -3218,7 +3258,7 @@ mod tests {
             Vec::new(),
             None,
             None,
-            UnixNanos::from(206),
+            UnixNanos::from(208),
             None,
         )
     }
@@ -3229,7 +3269,7 @@ mod tests {
             client_id(),
             venue(),
             Vec::new(),
-            UnixNanos::from(207),
+            UnixNanos::from(209),
             None,
         )
     }
@@ -3242,7 +3282,7 @@ mod tests {
             Vec::<Bar>::new(),
             None,
             None,
-            UnixNanos::from(208),
+            UnixNanos::from(210),
             None,
         )
     }
@@ -3320,6 +3360,24 @@ mod tests {
         let decoded: BookResponseOwned = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded.correlation_id, response.correlation_id);
         assert_eq!(decoded.instrument_id, response.instrument_id);
+    }
+
+    #[rstest]
+    fn data_response_book_depth_payload_round_trips() {
+        let response = make_book_depth_response();
+        let envelope = DataResponse::BookDepth(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: BookDepthResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.instrument_id, response.instrument_id);
+        assert_eq!(decoded.data, response.data);
     }
 
     #[rstest]
@@ -3405,6 +3463,14 @@ mod tests {
         PAYLOAD_TYPE_INSTRUMENTS_RESPONSE
     )]
     #[case::book(DataResponse::Book(make_book_response()), PAYLOAD_TYPE_BOOK_RESPONSE)]
+    #[case::book_deltas(
+        DataResponse::BookDeltas(make_book_deltas_response()),
+        PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE
+    )]
+    #[case::book_depth(
+        DataResponse::BookDepth(make_book_depth_response()),
+        PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE
+    )]
     #[case::quotes(
         DataResponse::Quotes(make_quotes_response()),
         PAYLOAD_TYPE_QUOTES_RESPONSE
@@ -3623,6 +3689,8 @@ mod tests {
     #[case::instrument(data_response_instrument())]
     #[case::instruments(data_response_instruments())]
     #[case::book(data_response_book())]
+    #[case::book_deltas(data_response_book_deltas())]
+    #[case::book_depth(data_response_book_depth())]
     #[case::quotes(data_response_quotes())]
     #[case::trades(data_response_trades())]
     #[case::funding_rates(data_response_funding_rates())]
@@ -3666,6 +3734,18 @@ mod tests {
         let resp = make_book_response();
         let expected = resp.correlation_id;
         (DataResponse::Book(resp), expected)
+    }
+
+    fn data_response_book_deltas() -> (DataResponse, UUID4) {
+        let resp = make_book_deltas_response();
+        let expected = resp.correlation_id;
+        (DataResponse::BookDeltas(resp), expected)
+    }
+
+    fn data_response_book_depth() -> (DataResponse, UUID4) {
+        let resp = make_book_depth_response();
+        let expected = resp.correlation_id;
+        (DataResponse::BookDepth(resp), expected)
     }
 
     fn data_response_quotes() -> (DataResponse, UUID4) {

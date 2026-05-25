@@ -252,6 +252,7 @@ pub(super) fn response_params(resp: &DataResponse) -> Option<&Params> {
         DataResponse::Instruments(resp) => resp.params.as_ref(),
         DataResponse::Book(resp) => resp.params.as_ref(),
         DataResponse::BookDeltas(resp) => resp.params.as_ref(),
+        DataResponse::BookDepth(resp) => resp.params.as_ref(),
         DataResponse::Quotes(resp) => resp.params.as_ref(),
         DataResponse::Trades(resp) => resp.params.as_ref(),
         DataResponse::FundingRates(resp) => resp.params.as_ref(),

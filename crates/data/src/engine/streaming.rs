@@ -16,16 +16,17 @@
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_common::messages::data::{
-    BarsResponse, BookDeltasResponse, DataResponse, QuotesResponse, RequestBars, RequestBookDeltas,
-    RequestCommand, RequestQuotes, RequestTrades, SubscribeBars, SubscribeCommand,
-    SubscribeCustomData, SubscribeQuotes, SubscribeTrades, TradesResponse,
+    BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, QuotesResponse, RequestBars,
+    RequestBookDeltas, RequestBookDepth, RequestCommand, RequestQuotes, RequestTrades,
+    SubscribeBars, SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
+    TradesResponse,
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos,
     correctness::{FAILED, check_key_not_in_map},
 };
 use nautilus_model::{
-    data::{Bar, OrderBookDelta, QuoteTick, TradeTick},
+    data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     identifiers::ClientId,
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
@@ -433,6 +434,21 @@ impl DataEngine {
                     ts_init,
                 ))
             }
+            RequestCommand::BookDepth(cmd) => {
+                let data: Vec<OrderBookDepth10> = catalog.order_book_depth10(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_book_depth_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
             _ => {
                 anyhow::bail!("query_catalog_leg called with non-catalog-eligible variant {leg:?}")
             }
@@ -447,6 +463,7 @@ pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
             | RequestCommand::Trades(_)
             | RequestCommand::Bars(_)
             | RequestCommand::BookDeltas(_)
+            | RequestCommand::BookDepth(_)
     )
 }
 
@@ -458,6 +475,9 @@ fn request_identifier(req: &RequestCommand) -> Option<(&'static str, String)> {
         RequestCommand::BookDeltas(cmd) => {
             Some(("order_book_deltas", cmd.instrument_id.to_string()))
         }
+        RequestCommand::BookDepth(cmd) => {
+            Some(("order_book_depths", cmd.instrument_id.to_string()))
+        }
         _ => None,
     }
 }
@@ -468,6 +488,7 @@ fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Trades(cmd) => cmd.start,
         RequestCommand::Bars(cmd) => cmd.start,
         RequestCommand::BookDeltas(cmd) => cmd.start,
+        RequestCommand::BookDepth(cmd) => cmd.start,
         _ => None,
     }
 }
@@ -478,6 +499,7 @@ fn request_end(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Trades(cmd) => cmd.end,
         RequestCommand::Bars(cmd) => cmd.end,
         RequestCommand::BookDeltas(cmd) => cmd.end,
+        RequestCommand::BookDepth(cmd) => cmd.end,
         _ => None,
     }
 }
@@ -555,6 +577,17 @@ fn with_dates_for_pipeline(
             ts_init,
             params: cmd.params.clone(),
         }),
+        RequestCommand::BookDepth(cmd) => RequestCommand::BookDepth(RequestBookDepth {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            depth: cmd.depth,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
         RequestCommand::Bars(cmd) => RequestCommand::Bars(RequestBars {
             bar_type: cmd.bar_type,
             start,
@@ -611,6 +644,16 @@ fn build_empty_response(
             cmd.params.clone(),
         )),
         RequestCommand::BookDeltas(cmd) => DataResponse::BookDeltas(BookDeltasResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::BookDepth(cmd) => DataResponse::BookDepth(BookDepthResponse::new(
             cmd.request_id,
             resolve_response_client_id(cmd.client_id, used_client_id),
             cmd.instrument_id,
@@ -697,6 +740,27 @@ fn build_book_deltas_catalog_response(
 ) -> DataResponse {
     let params = catalog_response_params(cmd.params.as_ref());
     DataResponse::BookDeltas(BookDeltasResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_book_depth_catalog_response(
+    cmd: &RequestBookDepth,
+    data: Vec<OrderBookDepth10>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::BookDepth(BookDepthResponse::new(
         cmd.request_id,
         resolve_response_client_id(cmd.client_id, used_client_id),
         cmd.instrument_id,

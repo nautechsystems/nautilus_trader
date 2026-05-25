@@ -61,6 +61,7 @@ class OKXDataClientConfig:
         retry_delay_max_ms: int | None = None,
         update_instruments_interval_mins: int | None = None,
         vip_level: OKXVipLevel | None = None,
+        load_spreads: bool = False,
     ) -> None: ...
 
 @typing.final

@@ -46,8 +46,9 @@ pub use request::{
     RequestQuotes, RequestTrades,
 };
 pub use response::{
-    BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, ForwardPricesResponse,
-    FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+    BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+    ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+    QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -503,6 +504,7 @@ pub enum DataResponse {
     Instruments(InstrumentsResponse),
     Book(BookResponse),
     BookDeltas(BookDeltasResponse),
+    BookDepth(BookDepthResponse),
     Quotes(QuotesResponse),
     Trades(TradesResponse),
     FundingRates(FundingRatesResponse),
@@ -523,6 +525,7 @@ impl DataResponse {
             Self::Instruments(resp) => &resp.correlation_id,
             Self::Book(resp) => &resp.correlation_id,
             Self::BookDeltas(resp) => &resp.correlation_id,
+            Self::BookDepth(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
             Self::FundingRates(resp) => &resp.correlation_id,
@@ -540,6 +543,7 @@ impl DataResponse {
             Self::Instruments(_) => "Instruments",
             Self::Book(_) => "Book",
             Self::BookDeltas(_) => "BookDeltas",
+            Self::BookDepth(_) => "BookDepth",
             Self::Quotes(_) => "Quotes",
             Self::Trades(_) => "Trades",
             Self::FundingRates(_) => "FundingRates",
@@ -558,6 +562,7 @@ impl DataResponse {
             Self::Data(_) | Self::Instrument(_) | Self::Book(_) => None,
             Self::Instruments(resp) => Some(resp.data.len()),
             Self::BookDeltas(resp) => Some(resp.data.len()),
+            Self::BookDepth(resp) => Some(resp.data.len()),
             Self::Quotes(resp) => Some(resp.data.len()),
             Self::Trades(resp) => Some(resp.data.len()),
             Self::FundingRates(resp) => Some(resp.data.len()),
@@ -569,8 +574,9 @@ impl DataResponse {
     /// Trims vector payloads to the inclusive `[start, end]` window on `ts_init`.
     ///
     /// Applies to variants whose payload elements implement `HasTsInit`
-    /// (`Quotes`, `Trades`, `FundingRates`, `Bars`, `Instruments`). Other
-    /// variants are untouched: singular payloads (`Instrument`, `Book`),
+    /// (`BookDeltas`, `BookDepth`, `Quotes`, `Trades`, `FundingRates`,
+    /// `Bars`, `Instruments`). Other variants are untouched: singular payloads
+    /// (`Instrument`, `Book`),
     /// `ForwardPrices` (no per-item `ts_init`), and the opaque custom
     /// `Data` variant.
     pub fn trim_to_bounds(&mut self) {
@@ -581,6 +587,7 @@ impl DataResponse {
             Self::Bars(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::BookDeltas(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::BookDepth(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::Data(_) | Self::Instrument(_) | Self::Book(_) | Self::ForwardPrices(_) => {}
         }
     }

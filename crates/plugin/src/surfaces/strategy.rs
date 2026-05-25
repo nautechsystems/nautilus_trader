@@ -47,9 +47,9 @@
 //!   expired, triggered, denied, emulated, released, pending update,
 //!   pending cancel, modify rejected, cancel rejected, updated.
 //! - Market exit lifecycle: `on_market_exit`.
-//! - Historical market data: bulk historical quotes, trades, bars,
-//!   mark prices, index prices, funding rates delivered as
-//!   [`crate::boundary::Slice`] payloads.
+//! - Historical market data: bulk historical book deltas, book depth,
+//!   quotes, trades, bars, mark prices, index prices, funding rates
+//!   delivered as [`crate::boundary::Slice`] payloads.
 //! - Order commands via [`HostVTable`]: `submit_order`, `cancel_order`,
 //!   `modify_order`, `submit_order_list`, `cancel_orders`,
 //!   `cancel_all_orders`, `close_position`, `close_all_positions`,
@@ -88,7 +88,7 @@ use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -389,6 +389,12 @@ pub struct StrategyVTable {
             deltas: Slice<'_, OrderBookDelta>,
         ) -> PluginResult<()>,
     >,
+    pub on_historical_book_depth: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            depths: Slice<'_, OrderBookDepth10>,
+        ) -> PluginResult<()>,
+    >,
     pub on_historical_quotes: Option<
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
@@ -665,6 +671,11 @@ pub trait PluginStrategy: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -766,6 +777,7 @@ where
         on_position_closed: Some(on_position_closed_thunk::<T>),
         on_market_exit: Some(on_market_exit_thunk::<T>),
         on_historical_book_deltas: Some(on_historical_book_deltas_thunk::<T>),
+        on_historical_book_depth: Some(on_historical_book_depth_thunk::<T>),
         on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
         on_historical_trades: Some(on_historical_trades_thunk::<T>),
         on_historical_bars: Some(on_historical_bars_thunk::<T>),
@@ -993,6 +1005,11 @@ slice_thunk!(
     on_historical_book_deltas_thunk,
     on_historical_book_deltas,
     OrderBookDelta
+);
+slice_thunk!(
+    on_historical_book_depth_thunk,
+    on_historical_book_depth,
+    OrderBookDepth10
 );
 slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
 slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);

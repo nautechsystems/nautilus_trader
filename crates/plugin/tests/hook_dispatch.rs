@@ -45,9 +45,9 @@ use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{
-            stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
+            stub_bar, stub_deltas, stub_depth10, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
         },
     },
@@ -121,6 +121,7 @@ enum ActorHook {
     OnOrderCanceled,
     OnSignal,
     OnHistoricalBookDeltas,
+    OnHistoricalBookDepth,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
@@ -315,6 +316,11 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_historical_book_depth(&mut self, _d: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalBookDepth);
+        Ok(())
+    }
+
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnHistoricalQuotes);
         Ok(())
@@ -394,6 +400,7 @@ enum StrategyHook {
     OnPositionClosed,
     OnMarketExit,
     OnHistoricalBookDeltas,
+    OnHistoricalBookDepth,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
@@ -666,6 +673,11 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnHistoricalBookDeltas);
+        Ok(())
+    }
+
+    fn on_historical_book_depth(&mut self, _d: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalBookDepth);
         Ok(())
     }
 
@@ -1399,6 +1411,7 @@ fn actor_option_chain_thunk_dispatches_to_its_method() {
 
 #[rstest]
 #[case::on_historical_book_deltas(ActorHook::OnHistoricalBookDeltas)]
+#[case::on_historical_book_depth(ActorHook::OnHistoricalBookDepth)]
 #[case::on_historical_quotes(ActorHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(ActorHook::OnHistoricalTrades)]
 #[case::on_historical_bars(ActorHook::OnHistoricalBars)]
@@ -1426,6 +1439,12 @@ fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook
             let s = Slice::from_slice(&v.deltas);
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
+        ActorHook::OnHistoricalBookDepth => {
+            let v = vec![stub_depth10(), stub_depth10()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_depth)(handle, s) }
         }
         ActorHook::OnHistoricalQuotes => {
             let v = vec![quote_tick_value(), quote_tick_value()];
@@ -1833,6 +1852,7 @@ fn strategy_option_chain_thunk_dispatches_to_its_method() {
 
 #[rstest]
 #[case::on_historical_book_deltas(StrategyHook::OnHistoricalBookDeltas)]
+#[case::on_historical_book_depth(StrategyHook::OnHistoricalBookDepth)]
 #[case::on_historical_quotes(StrategyHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(StrategyHook::OnHistoricalTrades)]
 #[case::on_historical_bars(StrategyHook::OnHistoricalBars)]
@@ -1857,6 +1877,12 @@ fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: Strate
             let s = Slice::from_slice(&v.deltas);
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
+        StrategyHook::OnHistoricalBookDepth => {
+            let v = vec![stub_depth10(), stub_depth10()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_depth)(handle, s) }
         }
         StrategyHook::OnHistoricalQuotes => {
             let v = vec![quote_tick_value(), quote_tick_value()];

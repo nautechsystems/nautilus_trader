@@ -67,20 +67,21 @@ use crate::{
     logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
-            BarsResponse, BookDeltasResponse, BookResponse, CustomDataResponse, DataCommand,
-            FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse,
-            RequestBars, RequestBookDeltas, RequestBookSnapshot, RequestCommand, RequestCustomData,
-            RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots,
-            SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+            BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+            DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
+            UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            is_parent_subscription,
         },
         system::ShutdownSystem,
     },
@@ -523,6 +524,16 @@ pub trait DataActor:
     /// Returns an error if handling the historical book deltas fails.
     #[allow(unused_variables)]
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving historical book depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical book depth fails.
+    #[allow(unused_variables)]
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -1002,6 +1013,16 @@ pub trait DataActor:
         log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_book_deltas(&resp.data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a book depth response.
+    fn handle_book_depth_response(&mut self, resp: &BookDepthResponse) {
+        log_received_bulk("BookDepthResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.on_historical_book_depth(&resp.data) {
             log_error(&e);
         }
     }
@@ -2040,6 +2061,77 @@ pub trait DataActor:
         DataActorCore::request_book_snapshot(self, instrument_id, depth, client_id, params, handler)
     }
 
+    /// Request historical [`OrderBookDelta`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_book_deltas(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler::from_typed(move |resp: &BookDeltasResponse| {
+            get_actor_unchecked::<Self>(&actor_id).handle_book_deltas_response(resp);
+        });
+
+        DataActorCore::request_book_deltas(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`OrderBookDepth10`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
+    fn request_book_depth(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler::from_typed(move |resp: &BookDepthResponse| {
+            get_actor_unchecked::<Self>(&actor_id).handle_book_depth_response(resp);
+        });
+
+        DataActorCore::request_book_depth(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            depth,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
     /// Request historical [`QuoteTick`] data for the given `instrument_id`.
     ///
     /// # Errors
@@ -2108,14 +2200,14 @@ pub trait DataActor:
         )
     }
 
-    /// Request historical [`OrderBookDelta`] data for the given `instrument_id`.
+    /// Request historical [`Bar`] data for the given `bar_type`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
-    fn request_book_deltas(
+    fn request_bars(
         &mut self,
-        instrument_id: InstrumentId,
+        bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
@@ -2126,19 +2218,12 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BookDeltasResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_book_deltas_response(resp);
+        let handler = ShareableMessageHandler::from_typed(move |resp: &BarsResponse| {
+            get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
         });
 
-        DataActorCore::request_book_deltas(
-            self,
-            instrument_id,
-            start,
-            end,
-            limit,
-            client_id,
-            params,
-            handler,
+        DataActorCore::request_bars(
+            self, bar_type, start, end, limit, client_id, params, handler,
         )
     }
 
@@ -2173,33 +2258,6 @@ pub trait DataActor:
             client_id,
             params,
             handler,
-        )
-    }
-
-    /// Request historical [`Bar`] data for the given `bar_type`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if input parameters are invalid.
-    fn request_bars(
-        &mut self,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<NonZeroUsize>,
-        client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) -> anyhow::Result<UUID4>
-    where
-        Self: 'static + Debug + Sized,
-    {
-        let actor_id = self.actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BarsResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
-        });
-
-        DataActorCore::request_bars(
-            self, bar_type, start, end, limit, client_id, params, handler,
         )
     }
 }
@@ -4244,6 +4302,92 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Helper method for requesting book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
+    pub fn request_book_deltas(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+        handler: ShareableMessageHandler,
+    ) -> anyhow::Result<UUID4> {
+        self.check_registered();
+
+        let now = self.clock_ref().utc_now();
+        check_timestamps(now, start, end)?;
+
+        let request_id = UUID4::new();
+        let command = RequestCommand::BookDeltas(RequestBookDeltas {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id,
+            ts_init: now.into(),
+            params,
+        });
+
+        get_message_bus()
+            .borrow_mut()
+            .register_response_handler(command.request_id(), handler)?;
+
+        self.send_data_cmd(DataCommand::Request(command));
+
+        Ok(request_id)
+    }
+
+    /// Sends a request for historical book depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
+    pub fn request_book_depth(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+        handler: ShareableMessageHandler,
+    ) -> anyhow::Result<UUID4> {
+        self.check_registered();
+
+        let now = self.clock_ref().utc_now();
+        check_timestamps(now, start, end)?;
+
+        let request_id = UUID4::new();
+        let command = RequestCommand::BookDepth(RequestBookDepth {
+            instrument_id,
+            start,
+            end,
+            limit,
+            depth,
+            client_id,
+            request_id,
+            ts_init: now.into(),
+            params,
+        });
+
+        get_message_bus()
+            .borrow_mut()
+            .register_response_handler(command.request_id(), handler)?;
+
+        self.send_data_cmd(DataCommand::Request(command));
+
+        Ok(request_id)
+    }
+
     /// Helper method for requesting quotes.
     ///
     /// # Errors
@@ -4328,15 +4472,15 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting book deltas.
+    /// Helper method for requesting bars.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
-    pub fn request_book_deltas(
+    pub fn request_bars(
         &self,
-        instrument_id: InstrumentId,
+        bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
@@ -4350,8 +4494,8 @@ impl DataActorCore {
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
-        let command = RequestCommand::BookDeltas(RequestBookDeltas {
-            instrument_id,
+        let command = RequestCommand::Bars(RequestBars {
+            bar_type,
             start,
             end,
             limit,
@@ -4394,48 +4538,6 @@ impl DataActorCore {
         let request_id = UUID4::new();
         let command = RequestCommand::FundingRates(RequestFundingRates {
             instrument_id,
-            start,
-            end,
-            limit,
-            client_id,
-            request_id,
-            ts_init: now.into(),
-            params,
-        });
-
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
-
-        self.send_data_cmd(DataCommand::Request(command));
-
-        Ok(request_id)
-    }
-
-    /// Helper method for requesting bars.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if input parameters are invalid.
-    #[expect(clippy::too_many_arguments)]
-    pub fn request_bars(
-        &self,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<NonZeroUsize>,
-        client_id: Option<ClientId>,
-        params: Option<Params>,
-        handler: ShareableMessageHandler,
-    ) -> anyhow::Result<UUID4> {
-        self.check_registered();
-
-        let now = self.clock_ref().utc_now();
-        check_timestamps(now, start, end)?;
-
-        let request_id = UUID4::new();
-        let command = RequestCommand::Bars(RequestBars {
-            bar_type,
             start,
             end,
             limit,

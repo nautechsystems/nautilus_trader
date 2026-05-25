@@ -44,7 +44,7 @@ use nautilus_model::{
     data::{
         Bar, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
@@ -391,6 +391,21 @@ impl DataActor for PluginActorAdapter {
                     ActorVTable,
                     adapter.vtable.as_ptr(),
                     on_historical_book_deltas
+                )(adapter.handle, s)
+            },
+        )
+    }
+
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_book_depth",
+            depths,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_book_depth
                 )(adapter.handle, s)
             },
         )

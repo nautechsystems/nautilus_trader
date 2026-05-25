@@ -23,7 +23,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, OptionChainSlice, OptionGreeks, OptionStrikeData, OrderBookDelta,
-        OrderBookDeltas, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{OrderStatus, OrderType},
     events::{
@@ -252,6 +252,7 @@ impl_normalize_fields!(TradeTick, [instrument_id]);
 impl_normalize_fields!(Bar, [bar_type]);
 impl_normalize_fields!(OrderBookDelta, [instrument_id]);
 impl_normalize_fields!(OrderBookDeltas, [instrument_id, deltas]);
+impl_normalize_fields!(OrderBookDepth10, [instrument_id]);
 impl_normalize_fields!(MarkPriceUpdate, [instrument_id]);
 impl_normalize_fields!(IndexPriceUpdate, [instrument_id]);
 impl_normalize_fields!(FundingRateUpdate, [instrument_id]);

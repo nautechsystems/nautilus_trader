@@ -1284,6 +1284,7 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
             DataResponse::Instruments(resp) => handler.0.handle(resp),
             DataResponse::Book(resp) => handler.0.handle(resp),
             DataResponse::BookDeltas(resp) => handler.0.handle(resp),
+            DataResponse::BookDepth(resp) => handler.0.handle(resp),
             DataResponse::Quotes(resp) => handler.0.handle(resp),
             DataResponse::Trades(resp) => handler.0.handle(resp),
             DataResponse::FundingRates(resp) => handler.0.handle(resp),
