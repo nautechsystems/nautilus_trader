@@ -23,14 +23,16 @@ use nautilus_model::{
     data::{OrderBookDelta, OrderBookDeltas, QuoteTick, order::BookOrder},
     enums::{BookAction, OrderSide},
     identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny, stubs},
+    instruments::{Instrument, InstrumentAny, stubs as instrument_stubs},
+    orderbook::OrderBook,
+    stubs as model_stubs,
     types::{Price, Quantity},
 };
 use nautilus_plugin::{
     BorrowedStr, HostContext, HostVTable, Slice,
     surfaces::{
         actor::{PluginActor, actor_vtable},
-        book::OrderBookDeltasHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
         instrument::InstrumentAnyHandle,
     },
 };
@@ -52,6 +54,12 @@ impl PluginActor for BoundaryBenchActor {
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         black_box(deltas.instrument_id);
         black_box(deltas.deltas.len());
+        Ok(())
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        black_box(book.instrument_id);
+        black_box(book.update_count);
         Ok(())
     }
 
@@ -111,7 +119,11 @@ fn order_book_deltas(count: usize) -> OrderBookDeltas {
 }
 
 fn large_instrument() -> InstrumentAny {
-    InstrumentAny::Betting(stubs::betting())
+    InstrumentAny::Betting(instrument_stubs::betting())
+}
+
+fn order_book_snapshot() -> OrderBook {
+    model_stubs::stub_order_book_mbp_appl_xnas()
 }
 
 fn bench_actor_boundary_normalization(c: &mut Criterion) {
@@ -146,6 +158,18 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
             unsafe { on_book_deltas(handle, black_box(&deltas)) }
                 .into_result()
                 .expect("book deltas callback succeeds");
+        });
+    });
+
+    let on_book = vtable.on_book.expect("actor vtable has on_book");
+    let book = order_book_snapshot();
+    c.bench_function("plugin_cross/order_book_snapshot_10x10", |b| {
+        b.iter(|| {
+            let book_handle = OrderBookHandle::new(black_box(book.clone()));
+            // SAFETY: handle comes from this vtable and book_handle lives for the call.
+            unsafe { on_book(handle, black_box(&book_handle)) }
+                .into_result()
+                .expect("order book callback succeeds");
         });
     });
 

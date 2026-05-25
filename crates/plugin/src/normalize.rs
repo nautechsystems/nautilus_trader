@@ -37,6 +37,7 @@ use nautilus_model::{
         OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
+    orderbook::OrderBook,
     orders::{
         LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, MarketToLimitOrder,
         Order, OrderAny, StopLimitOrder, StopMarketOrder, TrailingStopLimitOrder,
@@ -253,6 +254,7 @@ impl_normalize_fields!(Bar, [bar_type]);
 impl_normalize_fields!(OrderBookDelta, [instrument_id]);
 impl_normalize_fields!(OrderBookDeltas, [instrument_id, deltas]);
 impl_normalize_fields!(OrderBookDepth10, [instrument_id]);
+impl_normalize_fields!(OrderBook, [instrument_id]);
 impl_normalize_fields!(MarkPriceUpdate, [instrument_id]);
 impl_normalize_fields!(IndexPriceUpdate, [instrument_id]);
 impl_normalize_fields!(FundingRateUpdate, [instrument_id]);

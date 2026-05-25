@@ -325,6 +325,7 @@ fn validate_actor_vtable(
             on_data,
             on_instrument,
             on_book_deltas,
+            on_book,
             on_quote,
             on_trade,
             on_bar,
@@ -379,6 +380,7 @@ fn validate_strategy_vtable(
             on_data,
             on_instrument,
             on_book_deltas,
+            on_book,
             on_quote,
             on_trade,
             on_bar,
@@ -1071,7 +1073,7 @@ mod tests {
         std::ptr::from_ref(&*vtable)
     }
 
-    fn actor_vtable_missing_on_quote() -> *const ActorVTable {
+    fn actor_vtable_missing_on_quote_and_on_book() -> *const ActorVTable {
         let valid = crate::surfaces::actor::actor_vtable::<ManifestTestActor>();
         // SAFETY: generated test vtable lives for the process lifetime.
         let valid = unsafe { &*valid };
@@ -1090,6 +1092,7 @@ mod tests {
             on_data: valid.on_data,
             on_instrument: valid.on_instrument,
             on_book_deltas: valid.on_book_deltas,
+            on_book: None,
             on_quote: None,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
@@ -1134,6 +1137,7 @@ mod tests {
             on_data: valid.on_data,
             on_instrument: valid.on_instrument,
             on_book_deltas: valid.on_book_deltas,
+            on_book: valid.on_book,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
@@ -1159,7 +1163,7 @@ mod tests {
         std::ptr::from_ref(&*vtable)
     }
 
-    fn strategy_vtable_missing_on_position_closed() -> *const StrategyVTable {
+    fn strategy_vtable_missing_on_book_and_on_position_closed() -> *const StrategyVTable {
         let valid = crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>();
         // SAFETY: generated test vtable lives for the process lifetime.
         let valid = unsafe { &*valid };
@@ -1178,6 +1182,7 @@ mod tests {
             on_data: valid.on_data,
             on_instrument: valid.on_instrument,
             on_book_deltas: valid.on_book_deltas,
+            on_book: None,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
@@ -1240,6 +1245,7 @@ mod tests {
             on_data: valid.on_data,
             on_instrument: valid.on_instrument,
             on_book_deltas: valid.on_book_deltas,
+            on_book: valid.on_book,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
@@ -1464,10 +1470,10 @@ mod tests {
                 "BadTick",
                 custom_data_vtable_missing_schema_ipc(),
             ),
-            actors: actor_registration("BadActor", actor_vtable_missing_on_quote()),
+            actors: actor_registration("BadActor", actor_vtable_missing_on_quote_and_on_book()),
             strategies: strategy_registration(
                 "BadStrategy",
-                strategy_vtable_missing_on_position_closed(),
+                strategy_vtable_missing_on_book_and_on_position_closed(),
             ),
             ..valid_manifest()
         };
@@ -1480,7 +1486,11 @@ mod tests {
         assert!(
             rendered.contains("custom_data[0] type 'BadTick' vtable.schema_ipc must not be null")
         );
+        assert!(rendered.contains("actors[0] type 'BadActor' vtable.on_book must not be null"));
         assert!(rendered.contains("actors[0] type 'BadActor' vtable.on_quote must not be null"));
+        assert!(
+            rendered.contains("strategies[0] type 'BadStrategy' vtable.on_book must not be null")
+        );
         assert!(rendered.contains(
             "strategies[0] type 'BadStrategy' vtable.on_position_closed must not be null"
         ));

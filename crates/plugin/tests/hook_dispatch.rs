@@ -51,7 +51,7 @@ use nautilus_model::{
             stub_trade_ethusdt_buyer,
         },
     },
-    enums::{GreeksConvention, OrderSide, PositionSide},
+    enums::{BookType, GreeksConvention, OrderSide, PositionSide},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
@@ -63,6 +63,7 @@ use nautilus_model::{
         Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, stubs::currency_pair_ethusdt},
+    orderbook::OrderBook,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
@@ -70,7 +71,7 @@ use nautilus_plugin::{
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
-        book::OrderBookDeltasHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
         custom_data::{
             CustomDataHandle, PluginCustomData, PluginCustomDataRef, custom_data_vtable,
         },
@@ -107,6 +108,7 @@ enum ActorHook {
     OnData,
     OnInstrument,
     OnBookDeltas,
+    OnBook,
     OnQuote,
     OnTrade,
     OnBar,
@@ -246,6 +248,11 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_book(&mut self, _b: &OrderBook) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnBook);
+        Ok(())
+    }
+
     fn on_quote(&mut self, _q: &QuoteTick) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnQuote);
         Ok(())
@@ -368,6 +375,7 @@ enum StrategyHook {
     OnData,
     OnInstrument,
     OnBookDeltas,
+    OnBook,
     OnQuote,
     OnTrade,
     OnBar,
@@ -513,6 +521,11 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnBookDeltas);
+        Ok(())
+    }
+
+    fn on_book(&mut self, _b: &OrderBook) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnBook);
         Ok(())
     }
 
@@ -714,6 +727,10 @@ impl PluginStrategy for HookCountingStrategy {
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn order_book_value() -> OrderBook {
+    OrderBook::new(instrument_id(), BookType::L2_MBP)
 }
 
 #[derive(Clone, PartialEq)]
@@ -1360,6 +1377,31 @@ fn actor_book_deltas_thunk_dispatches_to_its_method() {
 }
 
 #[rstest]
+fn actor_book_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OrderBookHandle::new(order_book_value());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_book)(handle, &raw const h) };
+    r.into_result().expect("on_book thunk failed");
+    assert_only_actor_hook(ActorHook::OnBook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
 fn actor_instrument_thunk_dispatches_to_its_method() {
     let _g = dispatch_lock();
     reset_actor_counters();
@@ -1793,6 +1835,31 @@ fn strategy_book_deltas_thunk_dispatches_to_its_method() {
     let r = unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const h) };
     r.into_result().expect("on_book_deltas thunk failed");
     assert_only_strategy_hook(StrategyHook::OnBookDeltas);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn strategy_book_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let h = OrderBookHandle::new(order_book_value());
+    // SAFETY: h outlives the call.
+    let r = unsafe { generated_slot!(vt, on_book)(handle, &raw const h) };
+    r.into_result().expect("on_book thunk failed");
+    assert_only_strategy_hook(StrategyHook::OnBook);
 
     // SAFETY: handle is live.
     unsafe {

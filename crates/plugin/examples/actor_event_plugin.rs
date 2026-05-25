@@ -21,6 +21,7 @@ use nautilus_model::{
     data::{OptionChainSlice, OrderBookDeltas, QuoteTick},
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::{Instrument, InstrumentAny},
+    orderbook::OrderBook,
 };
 use nautilus_plugin::prelude::*;
 
@@ -64,6 +65,10 @@ impl PluginActor for ActorEventProbe {
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.record_instrument_id(deltas.instrument_id)
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        self.record_instrument_id(book.instrument_id)
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {

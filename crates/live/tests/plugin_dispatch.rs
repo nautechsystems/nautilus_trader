@@ -98,6 +98,7 @@ use nautilus_model::{
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
+    orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -134,7 +135,14 @@ static A_DATA: AtomicU64 = AtomicU64::new(0);
 static A_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
 static A_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
 static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_BOOK: AtomicU64 = AtomicU64::new(0);
 static A_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_QUOTES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_TRADES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_BARS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_MARKS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_INDEXES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_FUNDING: AtomicU64 = AtomicU64::new(0);
 static A_QUOTE: AtomicU64 = AtomicU64::new(0);
 static A_TRADE: AtomicU64 = AtomicU64::new(0);
 static A_BAR: AtomicU64 = AtomicU64::new(0);
@@ -163,7 +171,14 @@ fn a_reset() {
         &A_DATA_VALUE,
         &A_INSTRUMENT,
         &A_BOOK_DELTAS,
+        &A_BOOK,
         &A_HIST_BOOK_DELTAS,
+        &A_HIST_QUOTES,
+        &A_HIST_TRADES,
+        &A_HIST_BARS,
+        &A_HIST_MARKS,
+        &A_HIST_INDEXES,
+        &A_HIST_FUNDING,
         &A_QUOTE,
         &A_TRADE,
         &A_BAR,
@@ -301,8 +316,36 @@ impl PluginActor for CountingActor {
         A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_book(&mut self, _: &OrderBook) -> anyhow::Result<()> {
+        A_BOOK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
         A_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_quotes(&mut self, _: &[QuoteTick]) -> anyhow::Result<()> {
+        A_HIST_QUOTES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_trades(&mut self, _: &[TradeTick]) -> anyhow::Result<()> {
+        A_HIST_TRADES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_bars(&mut self, _: &[Bar]) -> anyhow::Result<()> {
+        A_HIST_BARS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_mark_prices(&mut self, _: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        A_HIST_MARKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_index_prices(&mut self, _: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        A_HIST_INDEXES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_funding_rates(&mut self, _: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        A_HIST_FUNDING.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
@@ -365,18 +408,38 @@ impl PluginActor for CountingActor {
 // Counters for the strategy surface. Strategy-only callbacks live below
 // the actor counters and exercise the macro override block.
 static S_START: AtomicU64 = AtomicU64::new(0);
+static S_STOP: AtomicU64 = AtomicU64::new(0);
+static S_RESUME: AtomicU64 = AtomicU64::new(0);
+static S_RESET: AtomicU64 = AtomicU64::new(0);
+static S_DISPOSE: AtomicU64 = AtomicU64::new(0);
+static S_DEGRADE: AtomicU64 = AtomicU64::new(0);
+static S_FAULT: AtomicU64 = AtomicU64::new(0);
+static S_TIME: AtomicU64 = AtomicU64::new(0);
 static S_DATA: AtomicU64 = AtomicU64::new(0);
 static S_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
 static S_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
 static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_BOOK: AtomicU64 = AtomicU64::new(0);
 static S_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_QUOTES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_TRADES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_BARS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_MARKS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_INDEXES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_FUNDING: AtomicU64 = AtomicU64::new(0);
 static S_QUOTE: AtomicU64 = AtomicU64::new(0);
 static S_TRADE: AtomicU64 = AtomicU64::new(0);
 static S_BAR: AtomicU64 = AtomicU64::new(0);
+static S_MARK: AtomicU64 = AtomicU64::new(0);
+static S_INDEX: AtomicU64 = AtomicU64::new(0);
+static S_FUNDING: AtomicU64 = AtomicU64::new(0);
 static S_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
 static S_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
+static S_INSTR_STATUS: AtomicU64 = AtomicU64::new(0);
+static S_INSTR_CLOSE: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
+static S_SIGNAL: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_INITIALIZED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_SUBMITTED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_ACCEPTED: AtomicU64 = AtomicU64::new(0);
@@ -398,18 +461,38 @@ static S_POSITION_CLOSED: AtomicU64 = AtomicU64::new(0);
 fn s_reset() {
     for c in [
         &S_START,
+        &S_STOP,
+        &S_RESUME,
+        &S_RESET,
+        &S_DISPOSE,
+        &S_DEGRADE,
+        &S_FAULT,
+        &S_TIME,
         &S_DATA,
         &S_DATA_VALUE,
         &S_INSTRUMENT,
         &S_BOOK_DELTAS,
+        &S_BOOK,
         &S_HIST_BOOK_DELTAS,
+        &S_HIST_QUOTES,
+        &S_HIST_TRADES,
+        &S_HIST_BARS,
+        &S_HIST_MARKS,
+        &S_HIST_INDEXES,
+        &S_HIST_FUNDING,
         &S_QUOTE,
         &S_TRADE,
         &S_BAR,
+        &S_MARK,
+        &S_INDEX,
+        &S_FUNDING,
         &S_OPTION_GREEKS,
         &S_OPTION_CHAIN,
+        &S_INSTR_STATUS,
+        &S_INSTR_CLOSE,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
+        &S_SIGNAL,
         &S_ORDER_INITIALIZED,
         &S_ORDER_SUBMITTED,
         &S_ORDER_ACCEPTED,
@@ -448,6 +531,34 @@ impl PluginStrategy for CountingStrategy {
         S_START.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        S_STOP.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        S_RESUME.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        S_RESET.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        S_DISPOSE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        S_DEGRADE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        S_FAULT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_time_event(&mut self, _: &TimeEvent) -> anyhow::Result<()> {
+        S_TIME.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
         let Some(value) = data.downcast_ref::<DispatchCustomData>() else {
             anyhow::bail!("expected DispatchCustomData, was {}", data.type_name());
@@ -464,8 +575,36 @@ impl PluginStrategy for CountingStrategy {
         S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_book(&mut self, _: &OrderBook) -> anyhow::Result<()> {
+        S_BOOK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
         S_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_quotes(&mut self, _: &[QuoteTick]) -> anyhow::Result<()> {
+        S_HIST_QUOTES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_trades(&mut self, _: &[TradeTick]) -> anyhow::Result<()> {
+        S_HIST_TRADES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_bars(&mut self, _: &[Bar]) -> anyhow::Result<()> {
+        S_HIST_BARS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_mark_prices(&mut self, _: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        S_HIST_MARKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_index_prices(&mut self, _: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        S_HIST_INDEXES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_funding_rates(&mut self, _: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        S_HIST_FUNDING.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_quote(&mut self, _: &QuoteTick) -> anyhow::Result<()> {
@@ -480,6 +619,18 @@ impl PluginStrategy for CountingStrategy {
         S_BAR.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
+        S_MARK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_index_price(&mut self, _: &IndexPriceUpdate) -> anyhow::Result<()> {
+        S_INDEX.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_funding_rate(&mut self, _: &FundingRateUpdate) -> anyhow::Result<()> {
+        S_FUNDING.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
         S_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -488,12 +639,24 @@ impl PluginStrategy for CountingStrategy {
         S_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_instrument_status(&mut self, _: &InstrumentStatus) -> anyhow::Result<()> {
+        S_INSTR_STATUS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument_close(&mut self, _: &InstrumentClose) -> anyhow::Result<()> {
+        S_INSTR_CLOSE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_order_filled(&mut self, _: &OrderFilled) -> anyhow::Result<()> {
         S_ORDER_FILLED.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_canceled(&mut self, _: &OrderCanceled) -> anyhow::Result<()> {
         S_ORDER_CANCELED.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_signal(&mut self, _: &Signal) -> anyhow::Result<()> {
+        S_SIGNAL.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_initialized(&mut self, _: &OrderInitialized) -> anyhow::Result<()> {
@@ -580,6 +743,10 @@ fn make_quote() -> QuoteTick {
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
     )
+}
+
+fn make_order_book() -> OrderBook {
+    OrderBook::new(instrument_id(), BookType::L2_MBP)
 }
 
 fn make_trade() -> TradeTick {
@@ -912,6 +1079,7 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
 
     DataActor::on_instrument(&mut a, &make_instrument()).unwrap();
     DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
+    DataActor::on_book(&mut a, &make_order_book()).unwrap();
     DataActor::on_quote(&mut a, &make_quote()).unwrap();
     DataActor::on_trade(&mut a, &make_trade()).unwrap();
     DataActor::on_bar(&mut a, &make_bar()).unwrap();
@@ -927,6 +1095,7 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
 
     assert_eq!(A_INSTRUMENT.load(Ordering::SeqCst), 1);
     assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BOOK.load(Ordering::SeqCst), 1);
     assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
     assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
@@ -942,15 +1111,33 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
 }
 
 #[rstest]
-fn actor_adapter_historical_book_deltas_dispatch_to_plugin() {
+fn actor_adapter_historical_slice_hooks_dispatch_to_plugin() {
     let _lock = lock_counters();
     a_reset();
-    let mut a = build_actor_adapter("CountingActor-HistBookDeltas");
+    let mut a = build_actor_adapter("CountingActor-HistSlices");
     let deltas = stub_deltas();
+    let quotes = [make_quote()];
+    let trades = [make_trade()];
+    let bars = [make_bar()];
+    let mark_prices = [make_mark_price()];
+    let index_prices = [make_index_price()];
+    let funding_rates = [make_funding_rate()];
 
     DataActor::on_historical_book_deltas(&mut a, &deltas.deltas).unwrap();
+    DataActor::on_historical_quotes(&mut a, &quotes).unwrap();
+    DataActor::on_historical_trades(&mut a, &trades).unwrap();
+    DataActor::on_historical_bars(&mut a, &bars).unwrap();
+    DataActor::on_historical_mark_prices(&mut a, &mark_prices).unwrap();
+    DataActor::on_historical_index_prices(&mut a, &index_prices).unwrap();
+    DataActor::on_historical_funding_rates(&mut a, &funding_rates).unwrap();
 
     assert_eq!(A_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_QUOTES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_TRADES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_BARS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_MARKS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_INDEXES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_FUNDING.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]
@@ -1034,6 +1221,30 @@ fn actor_adapter_order_event_hooks_dispatch_to_plugin() {
 // ---- Strategy adapter event coverage ----
 
 #[rstest]
+fn strategy_adapter_lifecycle_hooks_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-Life");
+    register_strategy_adapter(&mut s);
+
+    DataActor::on_start(&mut s).unwrap();
+    DataActor::on_stop(&mut s).unwrap();
+    DataActor::on_resume(&mut s).unwrap();
+    DataActor::on_reset(&mut s).unwrap();
+    DataActor::on_dispose(&mut s).unwrap();
+    DataActor::on_degrade(&mut s).unwrap();
+    DataActor::on_fault(&mut s).unwrap();
+
+    assert_eq!(S_START.load(Ordering::SeqCst), 1);
+    assert_eq!(S_STOP.load(Ordering::SeqCst), 1);
+    assert_eq!(S_RESUME.load(Ordering::SeqCst), 1);
+    assert_eq!(S_RESET.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DISPOSE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DEGRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_FAULT.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
 fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
     let _lock = lock_counters();
     s_reset();
@@ -1041,31 +1252,69 @@ fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
 
     DataActor::on_instrument(&mut s, &make_instrument()).unwrap();
     DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
+    DataActor::on_book(&mut s, &make_order_book()).unwrap();
     DataActor::on_quote(&mut s, &make_quote()).unwrap();
+    DataActor::on_trade(&mut s, &make_trade()).unwrap();
+    DataActor::on_bar(&mut s, &make_bar()).unwrap();
+    DataActor::on_mark_price(&mut s, &make_mark_price()).unwrap();
+    DataActor::on_index_price(&mut s, &make_index_price()).unwrap();
+    DataActor::on_funding_rate(&mut s, &make_funding_rate()).unwrap();
     DataActor::on_option_greeks(&mut s, &make_option_greeks()).unwrap();
     DataActor::on_option_chain(&mut s, &make_option_chain()).unwrap();
+    DataActor::on_instrument_status(&mut s, &make_instrument_status()).unwrap();
+    DataActor::on_instrument_close(&mut s, &make_instrument_close()).unwrap();
     DataActor::on_order_filled(&mut s, &make_order_filled()).unwrap();
     DataActor::on_order_canceled(&mut s, &make_order_canceled()).unwrap();
+    DataActor::on_time_event(&mut s, &make_time_event()).unwrap();
+    DataActor::on_signal(&mut s, &make_signal()).unwrap();
 
     assert_eq!(S_INSTRUMENT.load(Ordering::SeqCst), 1);
     assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BOOK.load(Ordering::SeqCst), 1);
     assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_TRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BAR.load(Ordering::SeqCst), 1);
+    assert_eq!(S_MARK.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INDEX.load(Ordering::SeqCst), 1);
+    assert_eq!(S_FUNDING.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_GREEKS.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_CHAIN.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTR_STATUS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTR_CLOSE.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_FILLED.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_CANCELED.load(Ordering::SeqCst), 1);
+    assert_eq!(S_TIME.load(Ordering::SeqCst), 1);
+    assert_eq!(S_SIGNAL.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]
-fn strategy_adapter_historical_book_deltas_dispatch_to_plugin() {
+fn strategy_adapter_historical_slice_hooks_dispatch_to_plugin() {
     let _lock = lock_counters();
     s_reset();
-    let mut s = build_strategy_adapter("CountingStrategy-HistBookDeltas");
+    let mut s = build_strategy_adapter("CountingStrategy-HistSlices");
     let deltas = stub_deltas();
+    let quotes = [make_quote()];
+    let trades = [make_trade()];
+    let bars = [make_bar()];
+    let mark_prices = [make_mark_price()];
+    let index_prices = [make_index_price()];
+    let funding_rates = [make_funding_rate()];
 
     DataActor::on_historical_book_deltas(&mut s, &deltas.deltas).unwrap();
+    DataActor::on_historical_quotes(&mut s, &quotes).unwrap();
+    DataActor::on_historical_trades(&mut s, &trades).unwrap();
+    DataActor::on_historical_bars(&mut s, &bars).unwrap();
+    DataActor::on_historical_mark_prices(&mut s, &mark_prices).unwrap();
+    DataActor::on_historical_index_prices(&mut s, &index_prices).unwrap();
+    DataActor::on_historical_funding_rates(&mut s, &funding_rates).unwrap();
 
     assert_eq!(S_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_QUOTES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_TRADES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_BARS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_MARKS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_INDEXES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_FUNDING.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]

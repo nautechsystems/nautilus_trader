@@ -37,9 +37,9 @@
 //! - Lifecycle: `start`, `stop`, `resume`, `reset`, `dispose`, `degrade`, `fault`
 //! - Market data: instruments
 //!   (via [`crate::surfaces::instrument::InstrumentAnyHandle`]),
-//!   book deltas (via
-//!   [`crate::surfaces::book::OrderBookDeltasHandle`]), quotes, trades,
-//!   bars, mark/index/funding prices, option greeks, option chain slices
+//!   book snapshots (via [`crate::surfaces::book::OrderBookHandle`]),
+//!   book deltas (via [`crate::surfaces::book::OrderBookDeltasHandle`]),
+//!   quotes, trades, bars, mark/index/funding prices, option greeks, option chain slices
 //!   (via [`crate::surfaces::option_chain::OptionChainSliceHandle`]),
 //!   instrument status, and instrument close
 //! - Historical market data: bulk historical book deltas, book depth,
@@ -50,9 +50,9 @@
 //!   historical custom-data responses routed through `on_data`
 //! - Other: signal, time event
 //!
-//! Deferred: `on_book` (stateful), generic non-plugin `on_historical_data`
-//! (`&dyn Any` payload), DeFi pool/block events. The authoritative list
-//! lives in `tests/surface_alignment.rs`.
+//! Deferred: generic non-plugin `on_historical_data` (`&dyn Any` payload),
+//! DeFi pool/block events. The authoritative list lives in
+//! `tests/surface_alignment.rs`.
 
 #![allow(unsafe_code)]
 
@@ -67,6 +67,7 @@ use nautilus_model::{
     },
     events::{OrderCanceled, OrderFilled},
     instruments::InstrumentAny,
+    orderbook::OrderBook,
 };
 
 use crate::{
@@ -75,8 +76,10 @@ use crate::{
     normalize::BoundaryNormalize,
     panic::{guard, guard_infallible},
     surfaces::{
-        book::OrderBookDeltasHandle, custom_data::PluginCustomDataRef,
-        instrument::InstrumentAnyHandle, option_chain::OptionChainSliceHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
+        custom_data::PluginCustomDataRef,
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
     },
 };
 
@@ -158,6 +161,12 @@ pub struct ActorVTable {
         unsafe extern "C" fn(
             handle: *mut PluginActorHandle,
             deltas: *const OrderBookDeltasHandle,
+        ) -> PluginResult<()>,
+    >,
+    pub on_book: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginActorHandle,
+            book: *const OrderBookHandle,
         ) -> PluginResult<()>,
     >,
     pub on_quote: Option<
@@ -361,6 +370,11 @@ pub trait PluginActor: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
@@ -505,6 +519,7 @@ where
         on_data: Some(on_data_thunk::<T>),
         on_instrument: Some(on_instrument_thunk::<T>),
         on_book_deltas: Some(on_book_deltas_thunk::<T>),
+        on_book: Some(on_book_thunk::<T>),
         on_quote: Some(on_quote_thunk::<T>),
         on_trade: Some(on_trade_thunk::<T>),
         on_bar: Some(on_bar_thunk::<T>),
@@ -641,6 +656,19 @@ unsafe extern "C" fn on_book_deltas_thunk<T: PluginActor>(
         let v: OrderBookDeltas = unsafe { (*deltas).deltas() }.boundary_normalized();
         let actor = handle_as_mut::<T>(handle);
         ok_or_err(actor.on_book_deltas(&v))
+    })
+}
+
+unsafe extern "C" fn on_book_thunk<T: PluginActor>(
+    handle: *mut PluginActorHandle,
+    book: *const OrderBookHandle,
+) -> PluginResult<()> {
+    guard(|| {
+        // SAFETY: host keeps the handle live for the duration of the call;
+        // the plug-in only borrows the wrapped book via the trait method.
+        let v: OrderBook = unsafe { (*book).book() }.boundary_normalized();
+        let actor = handle_as_mut::<T>(handle);
+        ok_or_err(actor.on_book(&v))
     })
 }
 

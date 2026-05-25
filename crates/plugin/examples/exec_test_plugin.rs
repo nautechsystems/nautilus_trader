@@ -20,6 +20,7 @@ use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    orderbook::OrderBook,
     orders::{MarketOrder, OrderAny},
     types::Quantity,
 };
@@ -123,6 +124,21 @@ impl PluginStrategy for ExecTestStrategy {
 
         if let Some(path) = &self.callback_path {
             std::fs::write(path, quote.instrument_id.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        if book.instrument_id != self.expected_instrument_id {
+            anyhow::bail!(
+                "instrument id mismatch: expected {}, received {}",
+                self.expected_instrument_id,
+                book.instrument_id
+            );
+        }
+
+        if let Some(path) = &self.callback_path {
+            std::fs::write(path, book.instrument_id.to_string())?;
         }
         Ok(())
     }

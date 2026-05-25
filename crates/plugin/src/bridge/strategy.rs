@@ -54,6 +54,7 @@ use nautilus_model::{
     },
     identifiers::ActorId,
     instruments::InstrumentAny,
+    orderbook::OrderBook,
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -69,8 +70,10 @@ use crate::{
     host::{HostContext, HostVTable},
     manifest::ValidatedStrategyVTable,
     surfaces::{
-        book::OrderBookDeltasHandle, custom_data::PluginCustomDataRef,
-        instrument::InstrumentAnyHandle, option_chain::OptionChainSliceHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
+        custom_data::PluginCustomDataRef,
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
         strategy::PluginStrategyHandle,
     },
 };
@@ -389,6 +392,13 @@ impl DataActor for PluginStrategyAdapter {
                 adapter.handle,
                 p,
             )
+        })
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        let handle = OrderBookHandle::new(book.clone());
+        invoke_event(self, "on_book", &handle, |adapter, p| unsafe {
+            validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_book)(adapter.handle, p)
         })
     }
 

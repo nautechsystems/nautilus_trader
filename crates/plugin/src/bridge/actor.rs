@@ -49,6 +49,7 @@ use nautilus_model::{
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
     instruments::InstrumentAny,
+    orderbook::OrderBook,
 };
 
 use crate::{
@@ -60,8 +61,11 @@ use crate::{
     host::{HostContext, HostVTable},
     manifest::ValidatedActorVTable,
     surfaces::{
-        actor::PluginActorHandle, book::OrderBookDeltasHandle, custom_data::PluginCustomDataRef,
-        instrument::InstrumentAnyHandle, option_chain::OptionChainSliceHandle,
+        actor::PluginActorHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
+        custom_data::PluginCustomDataRef,
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
     },
 };
 
@@ -261,6 +265,13 @@ impl DataActor for PluginActorAdapter {
         let handle = OrderBookDeltasHandle::new(deltas.clone());
         invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book_deltas)(adapter.handle, p)
+        })
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        let handle = OrderBookHandle::new(book.clone());
+        invoke_event(self, "on_book", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book)(adapter.handle, p)
         })
     }
 

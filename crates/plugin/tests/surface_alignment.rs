@@ -27,8 +27,6 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     // State snapshots have no cdylib persistence contract in v1
     "on_save",
     "on_load",
-    // These payloads need boundary-owned representations first
-    "on_book",
     // DeFi callbacks are outside the v1 actor surface
     "on_block",
     "on_pool",
@@ -45,8 +43,6 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     // State snapshots have no cdylib persistence contract in v1
     "on_save",
     "on_load",
-    // These payloads need boundary-owned representations first
-    "on_book",
     // DeFi callbacks are outside the v1 strategy surface
     "on_block",
     "on_pool",

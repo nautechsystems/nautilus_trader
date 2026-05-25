@@ -54,7 +54,7 @@ use nautilus_model::{
             stub_trade_ethusdt_buyer,
         },
     },
-    enums::{GreeksConvention, OrderSide, PositionSide},
+    enums::{BookType, GreeksConvention, OrderSide, PositionSide},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
@@ -66,6 +66,7 @@ use nautilus_model::{
         Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, stubs::currency_pair_ethusdt},
+    orderbook::OrderBook,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
@@ -73,7 +74,7 @@ use nautilus_plugin::{
     host::{HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
-        book::OrderBookDeltasHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
         custom_data::{
             CustomDataHandle, MetadataEntry, PluginCustomData, PluginCustomDataRef,
             custom_data_vtable,
@@ -209,6 +210,9 @@ impl PluginActor for MisbehavingActor {
     fn on_book_deltas(&mut self, _deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         fail()
     }
+    fn on_book(&mut self, _book: &OrderBook) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         fail()
     }
@@ -323,6 +327,9 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_book(&mut self, _b: &OrderBook) -> anyhow::Result<()> {
         fail()
     }
     fn on_quote(&mut self, _q: &QuoteTick) -> anyhow::Result<()> {
@@ -605,6 +612,7 @@ enum ActorThunkUnderTest {
     OnData,
     OnInstrument,
     OnBookDeltas,
+    OnBook,
     OnQuote,
     OnTrade,
     OnBar,
@@ -672,6 +680,11 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = OrderBookDeltasHandle::new(stub_deltas());
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnBook => {
+            let v = OrderBookHandle::new(order_book_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnQuote => {
             let v = quote_tick_value();
@@ -818,6 +831,8 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_instrument_err(ActorThunkUnderTest::OnInstrument, Mode::Err)]
 #[case::on_book_deltas_panic(ActorThunkUnderTest::OnBookDeltas, Mode::Panic)]
 #[case::on_book_deltas_err(ActorThunkUnderTest::OnBookDeltas, Mode::Err)]
+#[case::on_book_panic(ActorThunkUnderTest::OnBook, Mode::Panic)]
+#[case::on_book_err(ActorThunkUnderTest::OnBook, Mode::Err)]
 #[case::on_quote_panic(ActorThunkUnderTest::OnQuote, Mode::Panic)]
 #[case::on_quote_err(ActorThunkUnderTest::OnQuote, Mode::Err)]
 #[case::on_trade_panic(ActorThunkUnderTest::OnTrade, Mode::Panic)]
@@ -885,6 +900,7 @@ enum StrategyThunkUnderTest {
     OnData,
     OnInstrument,
     OnBookDeltas,
+    OnBook,
     OnQuote,
     OnTrade,
     OnBar,
@@ -970,6 +986,11 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = OrderBookDeltasHandle::new(stub_deltas());
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnBook => {
+            let v = OrderBookHandle::new(order_book_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnQuote => {
             let v = quote_tick_value();
@@ -1205,6 +1226,8 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_instrument_err(StrategyThunkUnderTest::OnInstrument, Mode::Err)]
 #[case::on_book_deltas_panic(StrategyThunkUnderTest::OnBookDeltas, Mode::Panic)]
 #[case::on_book_deltas_err(StrategyThunkUnderTest::OnBookDeltas, Mode::Err)]
+#[case::on_book_panic(StrategyThunkUnderTest::OnBook, Mode::Panic)]
+#[case::on_book_err(StrategyThunkUnderTest::OnBook, Mode::Err)]
 #[case::on_quote_panic(StrategyThunkUnderTest::OnQuote, Mode::Panic)]
 #[case::on_quote_err(StrategyThunkUnderTest::OnQuote, Mode::Err)]
 #[case::on_trade_panic(StrategyThunkUnderTest::OnTrade, Mode::Panic)]
@@ -1311,6 +1334,10 @@ fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[ca
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn order_book_value() -> OrderBook {
+    OrderBook::new(instrument_id(), BookType::L2_MBP)
 }
 
 fn custom_data_handle() -> *mut CustomDataHandle {

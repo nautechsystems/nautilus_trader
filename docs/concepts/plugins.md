@@ -35,7 +35,9 @@ for current development.
 - Manifest: a `'static PluginManifest` returned from `nautilus_plugin_init` enumerating contributions.
 - VTable: a `#[repr(C)]` struct of function pointers the host calls for one plug point on one type.
 - `HostVTable`: the function-pointer table the host hands every plug-in for re-entrant callbacks.
-- `HostContext`: an opaque per-instance pointer that lets host thunks attribute callbacks to the calling adapter.
+- `HostContext`: an opaque boundary pointer that lets host thunks attribute callbacks to the
+  calling adapter. On the host side it points to a `HostContextInner` allocation carrying the
+  adapter's actor ID and whether the caller is a strategy.
 - Adapter: the host-side `PluginActorAdapter` or `PluginStrategyAdapter` that wraps a plug-in handle.
 
 ## What a plug-in contributes
@@ -50,11 +52,18 @@ Each family has its own `#[repr(C)]` vtable struct, an author-facing trait, and 
 the manifest lists in a `Slice<'static, Registration>`. Adding a future plug point means adding one
 module and one slice field, then bumping the ABI version.
 
-Each plug-point family carries a fixed callback set. The actor surface today covers the lifecycle
-hooks plus the data callbacks whose payload types are `#[repr(C)]`-clean end-to-end: quotes, trades,
-bars, mark/index/funding prices, instrument status and close, order filled and canceled events,
-signals, time events, and custom data values registered through `PluginCustomData`. The strategy
-surface adds the order lifecycle and position event callbacks on top of the actor surface.
+Each plug point family carries a fixed callback set. The actor surface today covers:
+
+- Lifecycle hooks.
+- Market-data callbacks for instruments, order books, book deltas, quotes, trades, bars,
+  mark/index/funding prices, option greeks, option chain snapshots, instrument status, and
+  instrument close.
+- Order filled and canceled events.
+- Signals and time events.
+- Custom data values registered through `PluginCustomData`.
+
+The strategy surface adds the order lifecycle and position event callbacks on top of the actor
+surface.
 
 ## Boundaries
 
@@ -64,16 +73,21 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Catalog, cache, and event-store backends as plug-ins.
 - Pre-trade risk gating as a plug-in.
 - Hot reload (plug-ins load at process startup and stay loaded).
-- `OrderBook` state and native or Python `CustomData` on the actor or strategy callback surface
-  (those payloads have no plug-in vtable and handle to downcast through).
+- Mutable host `OrderBook` state and native or Python `CustomData` on the actor or strategy
+  callback surface. Order book callbacks receive cloned snapshots, and non-plug-in custom data has
+  no plug-in vtable and handle to downcast through.
 
 ## ABI boundary
 
-Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. Two
-patterns cover the current surface:
+Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. The
+following patterns cover the current surface:
 
 - Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
   model types. No serialisation, no per-event allocation.
+- Non-`#[repr(C)]` inbound payloads flow into the plug-in as borrowed handles:
+  `InstrumentAnyHandle`, `OrderBookHandle`, `OrderBookDeltasHandle`, and `OptionChainSliceHandle`.
+  The host owns each handle for the callback duration. `OrderBookHandle` wraps a cloned book
+  snapshot, so the plug-in never receives mutable host book state.
 - Order commands flow out of the plug-in as boundary-owned `*const XHandle` pointers
   (`SubmitOrderHandle`, `CancelOrderHandle`, `ModifyOrderHandle`, `SubmitOrderListHandle`,
   `CancelOrdersHandle`, `CancelAllOrdersHandle`, `ClosePositionHandle`,
@@ -116,7 +130,7 @@ or handle layout, so it does not require an ABI version bump.
 ## Manifest
 
 The manifest is process-lifetime static data the plug-in returns from `nautilus_plugin_init`. It
-identifies the build and enumerates every plug-point contribution:
+identifies the build and enumerates every plug point contribution:
 
 - `abi_version`: must equal `NAUTILUS_PLUGIN_ABI_VERSION` or the host refuses to load.
 - `plugin_name`, `plugin_vendor`, `plugin_version`: identifier strings.
@@ -171,10 +185,11 @@ Once an adapter is registered, callbacks flow in both directions through stable 
 ```mermaid
 flowchart LR
     Engine["Live engine event"] --> Adapter["PluginActorAdapter / PluginStrategyAdapter"]
-    Adapter --> Guard["catch_unwind guard"]
-    Guard --> Thunk["plug-in extern C thunk"]
-    Thunk --> Trait["PluginActor / PluginStrategy method"]
-    Trait --> Host["HostVTable callback"]
+    Adapter --> HostGuard["host catch_unwind guard"]
+    HostGuard --> Thunk["plug-in extern C thunk"]
+    Thunk --> PluginGuard["plug-in catch_unwind guard"]
+    PluginGuard --> Trait["PluginActor / PluginStrategy method"]
+    Trait -. "optional reverse call" .-> Host["HostVTable callback"]
     Host --> Resolve["HostContextInner -> ActorId"]
     Resolve --> Live["Strategy::submit_order, cache reads, msgbus publish, timers"]
 ```
@@ -255,7 +270,7 @@ without host-side support compiled in.
 
 ## Author API
 
-Plug-in authors implement one trait per plug-point family and call the `nautilus_plugin!` macro:
+Plug-in authors implement one trait per plug point family and call the `nautilus_plugin!` macro:
 
 ```rust
 use nautilus_model::data::QuoteTick;
@@ -287,11 +302,12 @@ nautilus_plugin::nautilus_plugin! {
 }
 ```
 
-The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the per-plug-point
-vtables. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
-(`create`, `drop_handle`, and custom-data `ts_event`/`ts_init`/`clone_handle`/`eq_handles`)
-forward through `guard_infallible`; trivial slots that cannot panic (the `type_name` thunks, which
-just return a `BorrowedStr` over a `&'static str` constant) carry no guard at all.
+The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the vtables for each plug
+point. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
+(`create`, `drop_handle`, and custom-data
+`ts_event`/`ts_init`/`clone_handle`/`drop_handle`/`eq_handles`) forward through
+`guard_infallible`; trivial slots that cannot panic (the `type_name` thunks, which just return a
+`BorrowedStr` over a `&'static str` constant) carry no guard at all.
 
 Authors never write `extern "C"` or `#[repr(C)]`. `unsafe` requirements depend on what the plug-in
 holds. The example actor in `crates/plugin/examples/custom_data_plugin.rs` discards the

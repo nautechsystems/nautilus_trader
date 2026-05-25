@@ -67,13 +67,14 @@ use nautilus_model::{
         CustomData, Data, OptionChainSlice, QuoteTick, registry::deserialize_custom_from_json,
         stubs::stub_deltas,
     },
-    enums::{OmsType, OrderSide, TimeInForce},
+    enums::{BookType, OmsType, OrderSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{
         AccountId, ActorId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, stubs},
+    orderbook::OrderBook,
     orders::{MarketOrder, Order, OrderAny, stubs::TestOrderEventStubs},
     position::Position,
     types::{Price, Quantity, fixed::FIXED_PRECISION},
@@ -283,6 +284,10 @@ fn plugin_test_quote() -> QuoteTick {
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
     )
+}
+
+fn plugin_test_order_book() -> OrderBook {
+    OrderBook::new(plugin_test_instrument_id(), BookType::L2_MBP)
 }
 
 fn plugin_test_order(strategy_id: StrategyId, client_order_id: ClientOrderId) -> OrderAny {
@@ -1106,6 +1111,42 @@ fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
+fn cdylib_actor_book_handle_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
+        .expect("actor event manifest passes validation");
+    let entry = manifest.actors().next().expect("actor event entry");
+    let book = plugin_test_order_book();
+    let marker =
+        std::env::temp_dir().join(format!("nautilus-plugin-book-event-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "instrument_id": book.instrument_id.to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ActorEventProbe-Book"),
+            "actor-event-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    DataActor::on_book(&mut adapter, &book).expect("on_book dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes book marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, book.instrument_id.to_string());
+}
+
+#[rstest]
 fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1222,6 +1263,51 @@ fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
 
     DataActor::on_quote(&mut adapter, &plugin_test_quote()).expect("on_quote dispatches");
     let contents = fs::read_to_string(&marker).expect("plug-in strategy writes quote marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, plugin_test_instrument_id().to_string());
+}
+
+#[rstest]
+fn cdylib_strategy_book_normalizes_identifiers_for_plugin() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginBookCdylib-001");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-strategy-book-event-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "strategy_id": strategy_id.to_string(),
+        "instrument_id": plugin_test_instrument_id().to_string(),
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let book = plugin_test_order_book();
+    DataActor::on_book(&mut adapter, &book).expect("on_book dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in strategy writes book marker");
     let _ = fs::remove_file(marker);
 
     assert_eq!(contents, plugin_test_instrument_id().to_string());
