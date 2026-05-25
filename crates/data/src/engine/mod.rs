@@ -34,6 +34,7 @@ mod commands;
 pub mod config;
 mod handlers;
 mod requests;
+mod time_range;
 
 #[cfg(feature = "defi")]
 pub mod pool;
@@ -121,6 +122,9 @@ use requests::{
 };
 #[cfg(feature = "streaming")]
 use streaming::CatalogMap;
+use time_range::{
+    TimeRangePipelineState, has_time_range_pipeline_params, is_time_range_pipeline_variant,
+};
 use ustr::Ustr;
 
 #[cfg(feature = "defi")]
@@ -163,6 +167,8 @@ pub struct DataEngine {
     request_pipeline_n_components: AHashMap<UUID4, usize>,
     request_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
     request_pipeline_responses: AHashMap<UUID4, Vec<DataResponse>>,
+    time_range_pipeline_requests: AHashMap<UUID4, TimeRangePipelineState>,
+    time_range_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
     parent_join_request_id: AHashMap<UUID4, UUID4>,
     pending_join_requests: AHashMap<UUID4, RequestJoin>,
     continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
@@ -236,6 +242,8 @@ impl DataEngine {
             request_pipeline_n_components: AHashMap::new(),
             request_pipeline_parent_request_id: AHashMap::new(),
             request_pipeline_responses: AHashMap::new(),
+            time_range_pipeline_requests: AHashMap::new(),
+            time_range_pipeline_parent_request_id: AHashMap::new(),
             parent_join_request_id: AHashMap::new(),
             pending_join_requests: AHashMap::new(),
             continuous_future_requests: AHashMap::new(),
@@ -386,6 +394,12 @@ impl DataEngine {
     #[must_use]
     pub fn request_pipeline_count(&self) -> usize {
         self.request_pipeline_parent_request.len()
+    }
+
+    /// Returns the number of time-range pipelines awaiting child responses.
+    #[must_use]
+    pub fn time_range_pipeline_count(&self) -> usize {
+        self.time_range_pipeline_requests.len()
     }
 
     /// Returns the number of `RequestJoin` originals awaiting finalization.
@@ -541,6 +555,8 @@ impl DataEngine {
         self.request_pipeline_n_components.clear();
         self.request_pipeline_parent_request_id.clear();
         self.request_pipeline_responses.clear();
+        self.time_range_pipeline_requests.clear();
+        self.time_range_pipeline_parent_request_id.clear();
         self.parent_join_request_id.clear();
         self.pending_join_requests.clear();
         self.continuous_future_requests.clear();
@@ -1141,8 +1157,7 @@ impl DataEngine {
         }
 
         if let RequestCommand::Join(join) = req {
-            self.handle_request_join(join);
-            return Ok(());
+            return self.handle_request_join(join);
         }
 
         if has_continuous_future_params(request_params(&req)) {
@@ -1151,6 +1166,16 @@ impl DataEngine {
 
         let request_id = *req.request_id();
         self.prepare_request_bar_aggregators(&req)?;
+
+        if has_time_range_pipeline_params(request_params(&req))
+            && is_time_range_pipeline_variant(&req)
+        {
+            let result = self.execute_time_range_pipeline_request(req);
+            if result.is_err() {
+                self.cleanup_request_bar_aggregators(&request_id);
+            }
+            return result;
+        }
 
         #[cfg(feature = "streaming")]
         if self.catalogs_registered() && streaming::is_date_range_variant(&req) {
@@ -1696,6 +1721,14 @@ impl DataEngine {
             return;
         };
 
+        if let Some(parent_id) = self
+            .time_range_pipeline_parent_request_id
+            .remove(resp.correlation_id())
+        {
+            self.handle_time_range_pipeline_child_response(parent_id, &resp);
+            return;
+        }
+
         if self
             .parent_join_request_id
             .contains_key(resp.correlation_id())
@@ -1934,7 +1967,11 @@ impl DataEngine {
         resp.data = new_data;
     }
 
-    fn handle_request_join(&mut self, req: RequestJoin) {
+    fn handle_request_join(&mut self, req: RequestJoin) -> anyhow::Result<()> {
+        if has_time_range_pipeline_params(req.params.as_ref()) {
+            return self.execute_time_range_pipeline_request(RequestCommand::Join(req));
+        }
+
         let now_ns = self.clock.borrow().timestamp_ns();
         let now_dt = now_ns.to_datetime_utc();
         let zero = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(0);
@@ -1953,6 +1990,8 @@ impl DataEngine {
         for leg_id in leg_ids {
             self.register_request_pipeline_leg(leg_id, dated_id);
         }
+
+        Ok(())
     }
 
     fn finalize_request_join(&mut self, resp: DataResponse) {

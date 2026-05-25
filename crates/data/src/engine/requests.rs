@@ -309,6 +309,10 @@ pub(super) fn request_bar_aggregation_from_params(
     }))
 }
 
+pub(super) fn remove_request_bar_aggregation_params(params: &mut Params) {
+    params.shift_remove(BAR_TYPES);
+}
+
 pub(super) fn has_continuous_future_params(params: Option<&Params>) -> bool {
     params.is_some_and(|params| params.contains_key(CONTINUOUS_FUTURE_TRANSITIONS))
 }

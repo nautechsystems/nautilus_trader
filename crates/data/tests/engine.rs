@@ -14644,6 +14644,232 @@ fn leg_quotes_response(
     ))
 }
 
+fn time_range_quote_response(
+    request: &RequestQuotes,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    quotes: Vec<QuoteTick>,
+) -> DataResponse {
+    DataResponse::Quotes(QuotesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        quotes,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_trade_response(
+    request: &RequestTrades,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    trades: Vec<TradeTick>,
+) -> DataResponse {
+    DataResponse::Trades(TradesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        trades,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_bar_response(
+    request: &RequestBars,
+    client_id: ClientId,
+    data_count: u64,
+    bars: Vec<Bar>,
+) -> DataResponse {
+    DataResponse::Bars(BarsResponse::new(
+        request.request_id,
+        client_id,
+        request.bar_type,
+        bars,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_book_deltas_response(
+    request: &RequestBookDeltas,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    deltas: Vec<OrderBookDelta>,
+) -> DataResponse {
+    DataResponse::BookDeltas(BookDeltasResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        deltas,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_book_depth_response(
+    request: &RequestBookDepth,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    depths: Vec<OrderBookDepth10>,
+) -> DataResponse {
+    DataResponse::BookDepth(BookDepthResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        depths,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_funding_rates_response(
+    request: &RequestFundingRates,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    data_count: u64,
+    rates: Vec<FundingRateUpdate>,
+) -> DataResponse {
+    DataResponse::FundingRates(FundingRatesResponse::new(
+        request.request_id,
+        client_id,
+        instrument_id,
+        rates,
+        request.start.map(datetime_to_unix_nanos_for_test),
+        request.end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        Some(time_range_data_count_params(data_count)),
+    ))
+}
+
+fn time_range_data_count_params(data_count: u64) -> Params {
+    serde_json::from_value(json!({"data_count": data_count})).unwrap()
+}
+
+fn recorded_time_range_request_quotes(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestQuotes> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Quotes(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_trades(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestTrades> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Trades(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_bars(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestBars> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Bars(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_book_deltas(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDeltas> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDeltas(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_book_depth(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestBookDepth> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::BookDepth(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn recorded_time_range_request_funding_rates(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestFundingRates> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::FundingRates(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn datetime_to_unix_nanos_for_test(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn advance_test_clock_to(clock: &Rc<RefCell<dyn Clock>>, ns: u64) {
+    clock
+        .borrow_mut()
+        .as_any_mut()
+        .downcast_mut::<TestClock>()
+        .unwrap()
+        .advance_time(UnixNanos::from(ns), true);
+}
+
+fn register_time_range_recorder(
+    data_engine: &mut DataEngine,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) -> Rc<RefCell<Vec<DataCommand>>> {
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+    recorder
+}
+
 fn pipeline_bar(bar_type: BarType, ts: u64) -> Bar {
     Bar::new(
         bar_type,
@@ -14652,6 +14878,17 @@ fn pipeline_bar(bar_type: BarType, ts: u64) -> Bar {
         Price::from("0.9999"),
         Price::from("1.0000"),
         Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn pipeline_funding_rate(instrument_id: InstrumentId, ts: u64) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
         UnixNanos::from(ts),
         UnixNanos::from(ts),
     )
@@ -14675,6 +14912,1035 @@ fn leg_bars_response(
         UnixNanos::default(),
         None,
     ))
+}
+
+#[rstest]
+fn test_time_range_pipeline_issues_one_child_at_a_time(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_ne!(recorded[0].request_id, parent_id);
+    assert_eq!(
+        recorded[0]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+    assert_eq!(
+        recorded[0]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+
+    data_engine.response(time_range_quote_response(
+        &recorded[0],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 2_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        2,
+        "second child should be issued only after the first response"
+    );
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_uses_data_count_feedback(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1, 3],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(8_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let first = recorded_time_range_request_quotes(&recorder)[0].clone();
+    data_engine.response(time_range_quote_response(
+        &first,
+        instrument_id,
+        client_id,
+        0,
+        Vec::new(),
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(2_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        4,
+        Vec::new(),
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(
+        recorded[2]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_001)
+    );
+    assert_eq!(
+        recorded[2]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_point_data_uses_single_point_windows(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-point-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+        "point_data": true,
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(6_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let first = recorded_time_range_request_quotes(&recorder)[0].clone();
+    assert_eq!(
+        first.start.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+    assert_eq!(
+        first.end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(1_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &first,
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 1_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 3_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(
+        recorded[2]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+    assert_eq!(
+        recorded[2]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[2],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 5_000_000_000)],
+    ));
+
+    let recorded = recorded_time_range_request_quotes(&recorder);
+    assert_eq!(recorded.len(), 4);
+    assert_eq!(
+        recorded[3]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+    assert_eq!(
+        recorded[3]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(6_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[3],
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 6_000_000_000)],
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(recorded_time_range_request_quotes(&recorder).len(), 4);
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(4)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_updates_parent_request_bar_aggregation(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<TradesResponse>(Some(Ustr::from("time-range-agg-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let req = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_trades(&recorder)[0].clone();
+    let child_params = child.params.as_ref().expect("child params must be present");
+    assert!(!child_params.contains_key("time_range_generator"));
+    assert!(!child_params.contains_key("bar_types"));
+
+    data_engine.response(time_range_trade_response(
+        &child,
+        instrument_id,
+        client_id,
+        2,
+        vec![
+            make_trade(instrument_id, "0.65000", 1000, "time-range-1", 0),
+            make_trade(
+                instrument_id,
+                "0.65010",
+                1000,
+                "time-range-2",
+                1_000_000_000,
+            ),
+        ],
+    ));
+
+    assert_eq!(
+        cache.borrow().bar(&bar_type).map(|bar| bar.ts_event),
+        Some(UnixNanos::from(1_000_000_000)),
+        "parent request aggregator must consume time-range child trade data"
+    );
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+
+    let follow_up_params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+    let follow_up = RequestCommand::Trades(RequestTrades::new(
+        instrument_id,
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(4_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(follow_up_params),
+    ));
+    data_engine
+        .execute_request(follow_up)
+        .expect("empty parent response must clean up parent request aggregators");
+}
+
+#[rstest]
+fn test_time_range_pipeline_emits_empty_parent_response(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_quotes(&recorder)[0].clone();
+    data_engine.response(time_range_quote_response(
+        &child,
+        instrument_id,
+        client_id,
+        2,
+        Vec::new(),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_reset_clears_time_range_pipeline_state(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (parent_handler, parent_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-reset-parent")));
+    msgbus::register_response_handler(&parent_id, parent_handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_quotes(&recorder)[0].clone();
+    let (child_handler, child_saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-reset-child")));
+    msgbus::register_response_handler(&child.request_id, child_handler);
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    data_engine.reset();
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+
+    data_engine.response(time_range_quote_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![pipeline_quote(instrument_id, 2_000_000_000)],
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "reset must clear time-range child mappings so no parent response fires",
+    );
+    assert_eq!(child_saver.get_messages().len(), 1);
+    assert_eq!(
+        child_saver.get_messages()[0].correlation_id,
+        child.request_id
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_request_join_runs_end_to_end(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-join-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let join = RequestJoin::new(
+        vec![leg_a, leg_b],
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+        None,
+    );
+    data_engine
+        .execute_request(RequestCommand::Join(join))
+        .unwrap();
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 1_500_000_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 2_500_000_000)],
+        None,
+        None,
+    ));
+
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+    assert_eq!(data_engine.pending_join_request_count(), 1);
+    assert!(
+        saver.get_messages().is_empty(),
+        "parent callback must wait for the final empty response"
+    );
+
+    data_engine.response(leg_quotes_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 3_500_000_000)],
+        None,
+        None,
+    ));
+    data_engine.response(leg_quotes_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![pipeline_quote(instrument_id, 4_500_000_000)],
+        None,
+        None,
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(4)
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+    assert_eq!(
+        cache
+            .borrow()
+            .quote(&instrument_id)
+            .map(|quote| quote.ts_init),
+        Some(UnixNanos::from(4_500_000_000))
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_request_join_rejects_empty_window(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let join = RequestJoin::new(
+        vec![UUID4::new()],
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(params),
+        None,
+    );
+
+    let err = data_engine
+        .execute_request(RequestCommand::Join(join))
+        .expect_err("empty-window time-range RequestJoin must fail fast");
+    let err_message = err.to_string();
+    assert!(
+        err_message.contains("without a child window"),
+        "error must explain why the Join cannot complete, was {err_message}"
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_time_range_pipeline_child_uses_catalog_client_fanin(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_quote_catalog_with_quotes(
+        &mut data_engine,
+        "time-range-split-quotes",
+        vec![split_quote(instrument_id, 1_500_000_000)],
+        Some((1_000_000_000, 1_500_000_000)),
+    );
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<QuotesResponse>(Some(Ustr::from("time-range-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [2],
+    }))
+    .unwrap();
+    let req = RequestCommand::Quotes(RequestQuotes::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(5_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "first time-range child should split into one client leg"
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 1);
+    assert_eq!(data_engine.time_range_pipeline_count(), 1);
+
+    data_engine.response(time_range_quote_response(
+        &recorded[0],
+        instrument_id,
+        client_id,
+        1,
+        vec![split_quote(instrument_id, 2_500_000_000)],
+    ));
+
+    let recorded = recorded_request_quotes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        2,
+        "next time-range child should be issued after catalog/client fan-in"
+    );
+    assert_eq!(
+        recorded[1]
+            .start
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(3_000_000_001)
+    );
+    assert_eq!(
+        recorded[1]
+            .end
+            .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
+        Some(5_000_000_000)
+    );
+
+    data_engine.response(time_range_quote_response(
+        &recorded[1],
+        instrument_id,
+        client_id,
+        0,
+        Vec::new(),
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_bars_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", audusd_sim.id).as_str());
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("time-range-bars-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::Bars(RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_bars(&recorder)[0].clone();
+    let bar = pipeline_bar(bar_type, 1_500_000_000);
+    data_engine.response(time_range_bar_response(&child, client_id, 1, vec![bar]));
+
+    let received = saver.get_messages();
+    assert_eq!(cache.borrow().bar(&bar_type), Some(&bar));
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].bar_type, bar_type);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_book_deltas_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("time-range-deltas-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("time-range-deltas-payload")),
+    );
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_book_deltas(&recorder)[0].clone();
+    let delta = split_delta(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_book_deltas_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![delta],
+    ));
+
+    let pipeline_messages = pipeline_saver.get_messages();
+    let received = saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0].instrument_id, instrument_id);
+    assert_eq!(pipeline_messages[0].deltas.len(), 1);
+    assert_eq!(pipeline_messages[0].deltas[0], delta);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_book_depth_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("time-range-depth-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+        Some(Ustr::from("time-range-depth-payload")),
+    );
+    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let depth = NonZeroUsize::new(10).unwrap();
+    let req = RequestCommand::BookDepth(RequestBookDepth::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(depth),
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_book_depth(&recorder)[0].clone();
+    assert_eq!(child.depth, Some(depth));
+    let depth_msg = book_depth_at(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_book_depth_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![depth_msg],
+    ));
+
+    let pipeline_messages = pipeline_saver.get_messages();
+    let received = saver.get_messages();
+    assert_eq!(pipeline_messages.len(), 1);
+    assert_eq!(pipeline_messages[0], depth_msg);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[rstest]
+fn test_time_range_pipeline_supports_funding_rates_variant(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let recorder =
+        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from(
+        "time-range-funding-parent",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let child = recorded_time_range_request_funding_rates(&recorder)[0].clone();
+    let rate = pipeline_funding_rate(instrument_id, 1_500_000_000);
+    data_engine.response(time_range_funding_rates_response(
+        &child,
+        instrument_id,
+        client_id,
+        1,
+        vec![rate],
+    ));
+
+    let received = saver.get_messages();
+    assert_eq!(cache.borrow().funding_rate(&instrument_id), Some(&rate));
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get("data_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
 }
 
 #[rstest]
