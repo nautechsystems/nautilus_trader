@@ -163,6 +163,25 @@ impl HyperliquidHttpClient {
         })
     }
 
+    /// Builds the `allDexsAssetCtxs` normalization map from dex name to ordered instrument IDs.
+    ///
+    /// The order of instrument IDs must match the venue universe ordering for each perp dex so
+    /// incoming `ctxs` arrays can be normalized without leaking raw positional payloads.
+    #[pyo3(name = "build_all_dex_asset_ctxs_instrument_ids")]
+    fn py_build_all_dex_asset_ctxs_instrument_ids<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mapping = client
+                .build_all_dex_asset_ctxs_instrument_ids()
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(mapping.into_iter().collect::<HashMap<_, _>>())
+        })
+    }
+
     #[pyo3(name = "load_instrument_definitions", signature = (include_spot=true, include_perps=true, include_perps_hip3=false, include_outcomes=false))]
     fn py_load_instrument_definitions<'py>(
         &self,

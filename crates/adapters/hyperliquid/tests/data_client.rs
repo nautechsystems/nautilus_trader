@@ -56,6 +56,7 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
+    data_types::HyperliquidAllDexsAssetCtxs,
     data_types::HyperliquidOpenInterest,
     http::{
         models::{HyperliquidL2Book, PerpMeta},
@@ -149,12 +150,14 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let standard_meta = load_json("http_meta_perp_sample.json");
             let hip3_meta = json!({
                 "universe": [
+                    {"name": "xyz:XYZ100", "szDecimals": 4, "maxLeverage": 30, "growthMode": "enabled"},
                     {"name": "xyz:TSLA", "szDecimals": 3, "maxLeverage": 10, "growthMode": "enabled", "marginMode": "strictIsolated"},
                     {"name": "xyz:NVDA", "szDecimals": 3, "maxLeverage": 20}
                 ]
             });
             Json(json!([standard_meta, hip3_meta])).into_response()
         }
+        "perpDexs" => Json(json!([null, {"name": "xyz"}])).into_response(),
         "metaAndAssetCtxs" => {
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()
@@ -484,6 +487,7 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                             }
                                         }
                                     }),
+                                    "allDexsAssetCtxs" => load_json("ws_all_dexs_asset_ctxs.json"),
                                     _ => json!({"channel": sub_type, "data": {}}),
                                 };
 
@@ -588,6 +592,38 @@ async fn wait_for_open_interest_event(
     .await;
 }
 
+async fn wait_for_all_dex_asset_ctxs_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    wait_until_async(
+        || {
+            let found = rx.try_recv().is_ok_and(|event| {
+                let DataEvent::Data(Data::Custom(custom)) = event else {
+                    return false;
+                };
+
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                    .is_some_and(|payload| {
+                        payload.entries.iter().any(|entry| {
+                            entry.instrument_id == InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+                                && entry.mark_price.to_string() == "77562.0"
+                        }) && payload.entries.iter().any(|entry| {
+                            entry.instrument_id
+                                == InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID")
+                                && entry.dex == "xyz"
+                        })
+                    })
+            });
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_data_client_connect_disconnect() {
@@ -664,11 +700,12 @@ async fn test_data_client_emits_hip3_instruments() {
         }
     }
 
-    // Mock returns 3 standard perps (BTC, ETH, ATOM), 2 HIP-3 (xyz:TSLA, xyz:NVDA),
+    // Mock returns 3 standard perps (BTC, ETH, ATOM), 3 HIP-3 (xyz:XYZ100, xyz:TSLA, xyz:NVDA),
     // and 1 spot (PURR-USDC-SPOT).
     assert_eq!(standard_perp_symbols.len(), 3);
-    assert_eq!(hip3_symbols.len(), 2);
+    assert_eq!(hip3_symbols.len(), 3);
     assert_eq!(spot_symbols.len(), 1);
+    assert!(hip3_symbols.contains(&"xyz:XYZ100-USD-PERP".to_string()));
     assert!(hip3_symbols.contains(&"xyz:TSLA-USD-PERP".to_string()));
     assert!(hip3_symbols.contains(&"xyz:NVDA-USD-PERP".to_string()));
 
@@ -1063,6 +1100,82 @@ async fn test_data_client_resubscribe_custom_open_interest_emits_initial_value_a
         .unwrap();
 
     wait_for_open_interest_event(&mut rx, instrument_id, data_type).await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_subscribe_all_dex_asset_ctxs_custom_data() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    let data_type = DataType::new("HyperliquidAllDexsAssetCtxs", None, None);
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.subscriptions.lock().await.iter().any(|subscription| {
+                    subscription.get("type").and_then(|value| value.as_str())
+                        == Some("allDexsAssetCtxs")
+                })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    wait_for_all_dex_asset_ctxs_event(&mut rx).await;
+
+    client
+        .unsubscribe(&UnsubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .unsubscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str())
+                            == Some("allDexsAssetCtxs")
+                    })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
 }

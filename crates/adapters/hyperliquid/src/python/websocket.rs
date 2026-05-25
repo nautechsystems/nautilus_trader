@@ -289,6 +289,19 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
+    /// Cache the ordered instrument IDs required to normalize `allDexsAssetCtxs`.
+    #[pyo3(name = "cache_all_dex_asset_ctxs_instrument_ids")]
+    fn py_cache_all_dex_asset_ctxs_instrument_ids(
+        &self,
+        mapping: std::collections::HashMap<String, Vec<InstrumentId>>,
+    ) {
+        let ahash_mapping: ahash::AHashMap<ustr::Ustr, Vec<InstrumentId>> = mapping
+            .into_iter()
+            .map(|(dex, instrument_ids)| (ustr::Ustr::from(&dex), instrument_ids))
+            .collect();
+        self.cache_all_dex_asset_ctxs_instrument_ids(ahash_mapping);
+    }
+
     /// Caches a venue CLOID to client_order_id mapping for order/fill resolution.
     ///
     /// This mapping allows WebSocket order status and fill reports to be resolved back to
@@ -583,6 +596,23 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to aggregate asset contexts across all perp dexes.
+    #[pyo3(name = "subscribe_all_dexs_asset_ctxs")]
+    fn py_subscribe_all_dexs_asset_ctxs<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_all_dexs_asset_ctxs()
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Subscribe to all mid prices across markets, optionally scoped to a specific dex.
     #[pyo3(name = "subscribe_all_mids_with_dex")]
     fn py_subscribe_all_mids_with_dex<'py>(
@@ -772,6 +802,23 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_all_mids()
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from aggregate asset contexts across all perp dexes.
+    #[pyo3(name = "unsubscribe_all_dexs_asset_ctxs")]
+    fn py_unsubscribe_all_dexs_asset_ctxs<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_all_dexs_asset_ctxs()
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

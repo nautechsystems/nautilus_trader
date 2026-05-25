@@ -17,6 +17,7 @@
 
 use std::{
     collections::VecDeque,
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -39,6 +40,7 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
+use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -48,7 +50,8 @@ use super::{
     error::HyperliquidWsError,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
-        PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
+        PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsAllDexsAssetCtxsData,
+        WsUserEventData,
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
@@ -57,7 +60,10 @@ use super::{
     },
     post::PostRouter,
 };
-use crate::data_types::HyperliquidAllMids;
+use crate::data_types::{
+    HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
+    HyperliquidImpactPrices,
+};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -94,6 +100,8 @@ pub enum HandlerCommand {
         coin: Ustr,
         data_types: AHashSet<AssetContextDataType>,
     },
+    /// Cache the ordered instrument IDs needed to normalize `allDexsAssetCtxs`.
+    CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<InstrumentId>>),
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
@@ -162,6 +170,7 @@ pub(super) struct FeedHandler {
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<InstrumentId>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -200,6 +209,7 @@ impl FeedHandler {
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
             depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
@@ -350,6 +360,9 @@ impl FeedHandler {
                                 self.asset_context_subs.insert(coin, data_types);
                             }
                         }
+                        HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mappings) => {
+                            self.all_dex_asset_ctxs_instrument_ids = mappings;
+                        }
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
                         }
@@ -394,6 +407,7 @@ impl FeedHandler {
                                         &mut self.processed_trade_ids,
                                         &mut self.asset_context_caches,
                                         &mut self.bar_cache,
+                                        &self.all_dex_asset_ctxs_instrument_ids,
                                         &all_mids_data_types,
                                     );
 
@@ -444,6 +458,7 @@ impl FeedHandler {
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<InstrumentId>>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
@@ -568,6 +583,15 @@ impl FeedHandler {
                             CustomData::new(Arc::new(all_mids), data_type.clone()),
                         )));
                     }
+                }
+            }
+            HyperliquidWsMessage::AllDexsAssetCtxs { data } => {
+                if let Some(msg) = Self::handle_all_dexs_asset_ctxs(
+                    data,
+                    all_dex_asset_ctxs_instrument_ids,
+                    ts_init,
+                ) {
+                    result.push(msg);
                 }
             }
             HyperliquidWsMessage::Bbo { data } => {
@@ -951,6 +975,110 @@ impl FeedHandler {
         result
     }
 
+    fn handle_all_dexs_asset_ctxs(
+        data: WsAllDexsAssetCtxsData,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<InstrumentId>>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let mut entries = Vec::new();
+
+        for (dex, ctxs) in data.ctxs {
+            let dex_key = Ustr::from(dex.as_str());
+            let Some(instrument_ids) = all_dex_asset_ctxs_instrument_ids.get(&dex_key) else {
+                log::warn!("Missing Hyperliquid allDexsAssetCtxs mapping for dex='{dex}'");
+                continue;
+            };
+
+            for (index, ctx) in ctxs.into_iter().enumerate() {
+                let Some(instrument_id) = instrument_ids.get(index).copied() else {
+                    log::warn!(
+                        "Missing Hyperliquid allDexsAssetCtxs instrument mapping for dex='{dex}' index={index}"
+                    );
+                    continue;
+                };
+
+                match Self::normalize_all_dex_asset_ctx_entry(&dex, instrument_id, ctx) {
+                    Ok(entry) => entries.push(entry),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to normalize Hyperliquid allDexsAssetCtxs entry dex='{dex}' index={index}: {e}"
+                        );
+                    }
+                }
+            }
+        }
+
+        if entries.is_empty() {
+            return None;
+        }
+
+        let payload = HyperliquidAllDexsAssetCtxs::new(entries, ts_init, ts_init);
+        let data_type = DataType::new("HyperliquidAllDexsAssetCtxs", None, None);
+        Some(NautilusWsMessage::CustomData(Data::Custom(
+            CustomData::new(Arc::new(payload), data_type),
+        )))
+    }
+
+    fn normalize_all_dex_asset_ctx_entry(
+        dex: &str,
+        instrument_id: InstrumentId,
+        ctx: super::messages::PerpsAssetCtx,
+    ) -> anyhow::Result<HyperliquidDexAssetCtx> {
+        let mark_price = ctx
+            .shared
+            .mark_px
+            .parse::<Price>()
+            .map_err(anyhow::Error::msg)?;
+        let oracle_price = ctx.oracle_px.parse::<Price>().map_err(anyhow::Error::msg)?;
+        let prev_day_price = ctx
+            .shared
+            .prev_day_px
+            .parse::<Price>()
+            .map_err(anyhow::Error::msg)?;
+        let mid_price = ctx
+            .shared
+            .mid_px
+            .map(|value| value.parse::<Price>().map_err(anyhow::Error::msg))
+            .transpose()?;
+        let funding_rate = Decimal::from_str(&ctx.funding)?;
+        let open_interest = Decimal::from_str(&ctx.open_interest)?;
+        let premium = ctx.premium.as_deref().map(Decimal::from_str).transpose()?;
+        let day_ntl_volume = Decimal::from_str(&ctx.shared.day_ntl_vlm)?;
+        let day_base_volume = Decimal::from_str(
+            ctx.shared
+                .day_base_vlm
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("missing dayBaseVlm"))?,
+        )?;
+        let impact_prices = match ctx.shared.impact_pxs {
+            Some(values) => match values.as_slice() {
+                [bid, ask] => Some(HyperliquidImpactPrices {
+                    bid: bid.parse::<Price>().map_err(anyhow::Error::msg)?,
+                    ask: ask.parse::<Price>().map_err(anyhow::Error::msg)?,
+                }),
+                other => {
+                    anyhow::bail!("expected 2 impact prices, received {}", other.len());
+                }
+            },
+            None => None,
+        };
+
+        Ok(HyperliquidDexAssetCtx {
+            dex: dex.to_string(),
+            instrument_id,
+            mark_price,
+            oracle_price,
+            prev_day_price,
+            mid_price,
+            impact_prices,
+            funding_rate,
+            open_interest,
+            premium,
+            day_ntl_volume,
+            day_base_volume,
+        })
+    }
+
     fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
         let mut topics = subscriptions.all_topics();
         topics.sort_unstable();
@@ -1002,6 +1130,9 @@ pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
             } else {
                 HyperliquidWsChannel::AllMids.as_str().to_string()
             }
+        }
+        SubscriptionRequest::AllDexsAssetCtxs => {
+            HyperliquidWsChannel::AllDexsAssetCtxs.as_str().to_string()
         }
         SubscriptionRequest::Notification { user } => {
             format!("{}:{user}", HyperliquidWsChannel::Notification.as_str())
@@ -1116,13 +1247,16 @@ mod tests {
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             messages::{
                 NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
-                WsActiveAssetCtxData, WsBookData, WsLevelData,
+                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
             },
             post::PostRouter,
         },
         AssetContextCaches, FeedHandler, HandlerCommand,
     };
-    use crate::{common::consts::HYPERLIQUID_VENUE, data_types::HyperliquidOpenInterest};
+    use crate::{
+        common::consts::HYPERLIQUID_VENUE,
+        data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
+    };
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -1207,6 +1341,33 @@ mod tests {
                 oracle_px: "50005.0".to_string(),
                 premium: Some("-0.0001".to_string()),
             },
+        }
+    }
+
+    fn sample_all_dexs_asset_ctxs() -> WsAllDexsAssetCtxsData {
+        let raw = include_str!("../../test_data/ws_all_dexs_asset_ctxs.json");
+        let msg: super::super::messages::HyperliquidWsMessage =
+            serde_json::from_str(raw).expect("expected valid allDexsAssetCtxs fixture");
+
+        let super::super::messages::HyperliquidWsMessage::AllDexsAssetCtxs { data } = msg else {
+            panic!("expected allDexsAssetCtxs fixture message");
+        };
+
+        let default_entry = data
+            .ctxs
+            .iter()
+            .find(|(dex, _)| dex.is_empty())
+            .and_then(|(dex, ctxs)| ctxs.first().cloned().map(|ctx| (dex.clone(), vec![ctx])))
+            .expect("expected default dex sample");
+        let xyz_entry = data
+            .ctxs
+            .iter()
+            .find(|(dex, _)| dex == "xyz")
+            .and_then(|(dex, ctxs)| ctxs.first().cloned().map(|ctx| (dex.clone(), vec![ctx])))
+            .expect("expected xyz dex sample");
+
+        WsAllDexsAssetCtxsData {
+            ctxs: vec![default_entry, xyz_entry],
         }
     }
 
@@ -1355,6 +1516,50 @@ mod tests {
                 );
             }
             other => panic!("unexpected message type: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_all_dexs_asset_ctxs_emits_normalized_custom_data() {
+        let mapping = AHashMap::from_iter([
+            (
+                Ustr::from(""),
+                vec![InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")],
+            ),
+            (
+                Ustr::from("xyz"),
+                vec![InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")],
+            ),
+        ]);
+
+        let msg = FeedHandler::handle_all_dexs_asset_ctxs(
+            sample_all_dexs_asset_ctxs(),
+            &mapping,
+            UnixNanos::default(),
+        )
+        .expect("expected custom data");
+
+        match msg {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let payload = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                    .expect("expected HyperliquidAllDexsAssetCtxs");
+                assert_eq!(payload.entries.len(), 2);
+                assert_eq!(
+                    payload.entries[0].instrument_id,
+                    InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[1].dex, "xyz");
+                assert_eq!(
+                    payload.entries[1].instrument_id,
+                    InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
+                assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+            }
+            other => panic!("expected custom data, found {other:?}"),
         }
     }
 

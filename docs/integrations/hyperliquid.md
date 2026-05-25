@@ -543,6 +543,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.            |
 | Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.    |
 | All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.           |
+| All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.  |
 
 :::note
 Historical quote and trade requests are not supported. Hyperliquid does not publish
@@ -574,6 +575,9 @@ The adapter emits two Hyperliquid-specific custom data types:
 
 - `HyperliquidAllMids` from the WebSocket `allMids` feed. Each update carries
   all currently reported mid prices in one payload.
+- `HyperliquidAllDexsAssetCtxs` from the WebSocket `allDexsAssetCtxs` feed.
+  Each update carries normalized per-instrument asset-context entries across
+  the default perp dex and HIP-3 builder dexes.
 - `HyperliquidOpenInterest` from the shared `activeAssetCtx` feed used by
   mark prices, index prices, and funding rates.
 
@@ -627,18 +631,67 @@ self.subscribe_data(
 prices, and funding rates for the same coin. Adding OI does not open a second
 parallel `activeAssetCtx` subscription.
 
-In a Python strategy running inside a `TradingNode`, the payload arrives via
-`CustomData.data` and can be downcast by `isinstance`:
+In a Python strategy running inside a `TradingNode`, the payload is delivered
+to `on_data` as the concrete custom data type itself:
 
 ```python
 from decimal import Decimal
 
-from nautilus_trader.model.data import CustomData
+from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterest
 
-def on_data(self, data: CustomData) -> None:
-    if isinstance(data.data, HyperliquidOpenInterest):
-        if data.data.open_interest > Decimal("1000"):
-            self.log.info(f"OI {data.data.instrument_id} -> {data.data.open_interest}")
+def on_data(self, data) -> None:
+    if isinstance(data, HyperliquidOpenInterest):
+        if data.open_interest > Decimal("1000"):
+            self.log.info(f"OI {data.instrument_id} -> {data.open_interest}")
+```
+
+`HyperliquidAllDexsAssetCtxs` exposes a whole-feed aggregate rather than one
+topic per instrument, so strategies subscribe once and filter the normalized
+entries they need:
+
+| Field             | Type             | Description                                                                 |
+|------------------|------------------|-----------------------------------------------------------------------------|
+| `dex`            | `str`            | Perp dex identifier from Hyperliquid `perpDexs`. `""` is the default dex. |
+| `instrument_id`  | `InstrumentId`   | Canonical Nautilus instrument ID for the entry.                             |
+| `mark_price`     | `Price`          | Current mark price.                                                         |
+| `oracle_price`   | `Price`          | Current oracle / index reference price.                                     |
+| `prev_day_price` | `Price`          | Previous day reference price from the venue payload.                        |
+| `mid_price`      | `Price \| None`  | Mid price when present in the venue payload.                                |
+| `impact_prices`  | helper \| `None` | Best bid / ask impact prices when present.                                  |
+| `funding_rate`   | `Decimal`        | Funding rate parsed for direct arithmetic use.                              |
+| `open_interest`  | `Decimal`        | Open interest parsed for direct arithmetic use.                             |
+| `premium`        | `Decimal \| None`| Premium when present in the venue payload.                                  |
+| `day_ntl_volume` | `Decimal`        | 24h notional volume.                                                        |
+| `day_base_volume`| `Decimal`        | 24h base volume.                                                            |
+| `ts_event`       | `int`            | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`.  |
+| `ts_init`        | `int`            | UNIX timestamp in nanoseconds when the object was built.                    |
+
+The underlying Hyperliquid wire payload arrives as
+`ctxs: [[dex, ctxs[]], ...]`. The adapter decodes that live venue format and
+normalizes it into the per-entry output shown below before the strategy sees
+the data.
+
+The adapter does not invent `dex` values. It bootstraps the ordered dex
+universe from Hyperliquid `meta` / `allPerpMetas` and resolves builder dex
+identifiers from the live `perpDexs` info endpoint. The empty string `""`
+represents Hyperliquid's default perp dex; non-empty values such as `xyz`,
+`flx`, or `vntl` are venue-defined builder dex identifiers.
+
+```python
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid import HyperliquidAllDexsAssetCtxs
+from nautilus_trader.model.data import DataType
+
+self.subscribe_data(
+    data_type=DataType(HyperliquidAllDexsAssetCtxs),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+
+def on_data(self, data) -> None:
+    if isinstance(data, HyperliquidAllDexsAssetCtxs):
+        for entry in data.entries:
+            if entry.dex == "xyz":
+                self.log.info(f"{entry.instrument_id} OI={entry.open_interest}")
 ```
 
 ### Supported bar intervals

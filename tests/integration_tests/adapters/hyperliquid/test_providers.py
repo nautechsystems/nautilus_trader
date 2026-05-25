@@ -40,6 +40,7 @@ class TestHyperliquidInstrumentProvider:
 
         # Assert
         assert provider is not None
+        assert HyperliquidProductType.PERP_HIP3 in provider._product_types
 
     def test_provider_with_perp_only(self, mock_http_client):
         # Arrange & Act
@@ -107,7 +108,12 @@ class TestHyperliquidInstrumentProvider:
         await provider.load_all_async()
 
         # Assert
-        mock_http_client.load_instrument_definitions.assert_called_once()
+        mock_http_client.load_instrument_definitions.assert_called_once_with(
+            include_spot=True,
+            include_perps=True,
+            include_perps_hip3=True,
+            include_outcomes=False,
+        )
 
     @pytest.mark.asyncio
     async def test_load_all_async_with_filters(self, mock_http_client):
@@ -122,7 +128,12 @@ class TestHyperliquidInstrumentProvider:
         await provider.load_all_async(filters=filters)
 
         # Assert
-        mock_http_client.load_instrument_definitions.assert_called_once()
+        mock_http_client.load_instrument_definitions.assert_called_once_with(
+            include_spot=True,
+            include_perps=True,
+            include_perps_hip3=True,
+            include_outcomes=False,
+        )
 
     def test_instruments_pyo3_returns_list(self, mock_http_client):
         # Arrange

@@ -70,6 +70,8 @@ pub enum SubscriptionRequest {
         #[serde(skip_serializing_if = "Option::is_none")]
         dex: Option<String>,
     },
+    /// Aggregate asset contexts across all perp dexes.
+    AllDexsAssetCtxs,
     /// Notifications for a user.
     Notification { user: String },
     /// Web data for frontend.
@@ -320,6 +322,8 @@ pub enum HyperliquidWsMessage {
     Post { data: PostResponse },
     /// All mid prices.
     AllMids { data: AllMidsData },
+    /// Aggregate asset contexts across all perp dexes.
+    AllDexsAssetCtxs { data: WsAllDexsAssetCtxsData },
     /// Notifications.
     Notification { data: NotificationData },
     /// Web data.
@@ -382,6 +386,12 @@ pub enum PostResponsePayload {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AllMidsData {
     pub mids: AHashMap<Ustr, String>,
+}
+
+/// `allDexsAssetCtxs` data payload.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsAllDexsAssetCtxsData {
+    pub ctxs: Vec<(String, Vec<PerpsAssetCtx>)>,
 }
 
 /// Notification data.

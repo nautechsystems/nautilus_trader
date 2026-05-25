@@ -125,6 +125,7 @@ pub struct HyperliquidWebSocketClient {
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     bar_types: Arc<AtomicMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
+    all_dex_asset_ctxs_instrument_ids: Arc<AtomicMap<Ustr, Vec<InstrumentId>>>,
     cloid_cache: CloidCache,
     post_router: Arc<PostRouter>,
     post_ids: Arc<PostIds>,
@@ -149,6 +150,7 @@ impl Clone for HyperliquidWebSocketClient {
             instruments: Arc::clone(&self.instruments),
             bar_types: Arc::clone(&self.bar_types),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
+            all_dex_asset_ctxs_instrument_ids: Arc::clone(&self.all_dex_asset_ctxs_instrument_ids),
             cloid_cache: Arc::clone(&self.cloid_cache),
             post_router: Arc::clone(&self.post_router),
             post_ids: Arc::clone(&self.post_ids),
@@ -190,6 +192,7 @@ impl HyperliquidWebSocketClient {
             instruments: Arc::new(AtomicMap::new()),
             bar_types: Arc::new(AtomicMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
+            all_dex_asset_ctxs_instrument_ids: Arc::new(AtomicMap::new()),
             cloid_cache: Arc::new(Mutex::new(FifoCacheMap::new())),
             post_router: PostRouter::new(),
             post_ids: Arc::new(PostIds::new(1)),
@@ -258,6 +261,19 @@ impl HyperliquidWebSocketClient {
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
             log::error!("Failed to send InitializeInstruments: {e}");
+        }
+
+        let all_dex_asset_ctxs_instrument_ids = self
+            .all_dex_asset_ctxs_instrument_ids
+            .load()
+            .iter()
+            .map(|(dex, instrument_ids)| (*dex, instrument_ids.clone()))
+            .collect();
+
+        if let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(
+            all_dex_asset_ctxs_instrument_ids,
+        )) {
+            log::error!("Failed to send CacheAllDexAssetCtxsInstrumentIds: {e}");
         }
 
         // Spawn handler task
@@ -1198,6 +1214,18 @@ impl HyperliquidWebSocketClient {
         self.subscribe_all_mids_with_dex(None).await
     }
 
+    /// Subscribe to aggregate asset contexts across all perp dexes.
+    pub async fn subscribe_all_dexs_asset_ctxs(&self) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![SubscriptionRequest::AllDexsAssetCtxs],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
     /// Subscribe to all mid prices across markets, optionally scoped to a specific dex.
     pub async fn subscribe_all_mids_with_dex(&self, dex: Option<&str>) -> anyhow::Result<()> {
         let cmd_tx = self.cmd_tx.read().await;
@@ -1217,6 +1245,18 @@ impl HyperliquidWebSocketClient {
     /// Unsubscribe from all mid prices across markets.
     pub async fn unsubscribe_all_mids(&self) -> anyhow::Result<()> {
         self.unsubscribe_all_mids_with_dex(None).await
+    }
+
+    /// Unsubscribe from aggregate asset contexts across all perp dexes.
+    pub async fn unsubscribe_all_dexs_asset_ctxs(&self) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![SubscriptionRequest::AllDexsAssetCtxs],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+        Ok(())
     }
 
     /// Unsubscribe from all mid prices across markets, optionally scoped to a specific dex.
@@ -1493,6 +1533,23 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         self.unsubscribe_asset_context_data(instrument_id, AssetContextDataType::OpenInterest)
             .await
+    }
+
+    /// Cache the ordered instrument IDs required to normalize `allDexsAssetCtxs`.
+    pub fn cache_all_dex_asset_ctxs_instrument_ids(
+        &self,
+        mapping: AHashMap<Ustr, Vec<InstrumentId>>,
+    ) {
+        self.all_dex_asset_ctxs_instrument_ids
+            .store(mapping.clone());
+
+        if let Ok(cmd_tx) = self.cmd_tx.try_read()
+            && let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mapping))
+        {
+            log::debug!(
+                "Failed to send CacheAllDexAssetCtxsInstrumentIds command (handler may not be connected yet): {e}"
+            );
+        }
     }
 
     async fn subscribe_asset_context_data(
@@ -1779,6 +1836,7 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
         HyperliquidWsChannel::AllMids => Ok(SubscriptionRequest::AllMids {
             dex: rest.map(|s| s.to_string()),
         }),
+        HyperliquidWsChannel::AllDexsAssetCtxs => Ok(SubscriptionRequest::AllDexsAssetCtxs),
         HyperliquidWsChannel::Notification => Ok(SubscriptionRequest::Notification {
             user: rest.context("Missing user")?.to_string(),
         }),

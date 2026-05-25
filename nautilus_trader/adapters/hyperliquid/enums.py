@@ -50,4 +50,10 @@ class HyperliquidProductType(str, Enum):
         return self is HyperliquidProductType.OUTCOME
 
 
-DEFAULT_PRODUCT_TYPES = frozenset({HyperliquidProductType.SPOT, HyperliquidProductType.PERP})
+DEFAULT_PRODUCT_TYPES = frozenset(
+    {
+        HyperliquidProductType.SPOT,
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.PERP_HIP3,
+    },
+)
