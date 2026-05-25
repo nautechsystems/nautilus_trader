@@ -40,13 +40,14 @@
 //!
 //! Phase 1 covers the full Phase 1 actor callback set plus:
 //!
+//! - Custom data: values registered through `PluginCustomData`.
 //! - Position events: opened, closed, changed.
 //! - Order lifecycle events: initialized, submitted, accepted, rejected,
 //!   expired, triggered, denied, emulated, released, pending update,
 //!   pending cancel, modify rejected, cancel rejected, updated.
 //! - Market exit lifecycle: `on_market_exit`.
 //! - Historical market data: bulk historical quotes, trades, bars,
-//!   funding rates, mark prices, index prices delivered as
+//!   mark prices, index prices, funding rates delivered as
 //!   [`crate::boundary::Slice`] payloads.
 //! - Order commands via [`HostVTable`]: `submit_order`, `cancel_order`,
 //!   `modify_order`, `submit_order_list`, `cancel_orders`,
@@ -71,9 +72,9 @@
 //! because [`OptionChainSlice`] owns `BTreeMap<Price, OptionStrikeData>`
 //! call and put maps.
 //!
-//! Deferred: `on_book` (stateful), `on_data` (CustomData routing through
-//! actors), `on_historical_data` (`&dyn Any` payload), DeFi pool/block
-//! events, and the cache-state-mutation methods (`mark_order_pending_*`,
+//! Deferred: `on_book` (stateful), `on_historical_data` (`&dyn Any`
+//! payload), DeFi pool/block events, and the cache-state-mutation methods
+//! (`mark_order_pending_*`,
 //! `generate_order_pending_*`). The authoritative list lives in
 //! `tests/surface_alignment.rs`.
 
@@ -103,8 +104,8 @@ use crate::{
     normalize::BoundaryNormalize,
     panic::{guard, guard_infallible},
     surfaces::{
-        book::OrderBookDeltasHandle, instrument::InstrumentAnyHandle,
-        option_chain::OptionChainSliceHandle,
+        book::OrderBookDeltasHandle, custom_data::PluginCustomDataRef,
+        instrument::InstrumentAnyHandle, option_chain::OptionChainSliceHandle,
     },
 };
 
@@ -176,7 +177,25 @@ pub struct StrategyVTable {
             event: *const TimeEvent,
         ) -> PluginResult<()>,
     >,
+    pub on_data: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            data: PluginCustomDataRef,
+        ) -> PluginResult<()>,
+    >,
 
+    pub on_instrument: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            instrument: *const InstrumentAnyHandle,
+        ) -> PluginResult<()>,
+    >,
+    pub on_book_deltas: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            deltas: *const OrderBookDeltasHandle,
+        ) -> PluginResult<()>,
+    >,
     pub on_quote: Option<
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
@@ -193,24 +212,6 @@ pub struct StrategyVTable {
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
             bar: *const Bar,
-        ) -> PluginResult<()>,
-    >,
-    pub on_book_deltas: Option<
-        unsafe extern "C" fn(
-            handle: *mut PluginStrategyHandle,
-            deltas: *const OrderBookDeltasHandle,
-        ) -> PluginResult<()>,
-    >,
-    pub on_instrument: Option<
-        unsafe extern "C" fn(
-            handle: *mut PluginStrategyHandle,
-            instrument: *const InstrumentAnyHandle,
-        ) -> PluginResult<()>,
-    >,
-    pub on_option_chain: Option<
-        unsafe extern "C" fn(
-            handle: *mut PluginStrategyHandle,
-            chain: *const OptionChainSliceHandle,
         ) -> PluginResult<()>,
     >,
     pub on_mark_price: Option<
@@ -235,6 +236,12 @@ pub struct StrategyVTable {
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
             greeks: *const OptionGreeks,
+        ) -> PluginResult<()>,
+    >,
+    pub on_option_chain: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            chain: *const OptionChainSliceHandle,
         ) -> PluginResult<()>,
     >,
     pub on_instrument_status: Option<
@@ -399,12 +406,6 @@ pub struct StrategyVTable {
             bars: Slice<'_, Bar>,
         ) -> PluginResult<()>,
     >,
-    pub on_historical_funding_rates: Option<
-        unsafe extern "C" fn(
-            handle: *mut PluginStrategyHandle,
-            funding_rates: Slice<'_, FundingRateUpdate>,
-        ) -> PluginResult<()>,
-    >,
     pub on_historical_mark_prices: Option<
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
@@ -415,6 +416,12 @@ pub struct StrategyVTable {
         unsafe extern "C" fn(
             handle: *mut PluginStrategyHandle,
             index_prices: Slice<'_, IndexPriceUpdate>,
+        ) -> PluginResult<()>,
+    >,
+    pub on_historical_funding_rates: Option<
+        unsafe extern "C" fn(
+            handle: *mut PluginStrategyHandle,
+            funding_rates: Slice<'_, FundingRateUpdate>,
         ) -> PluginResult<()>,
     >,
 }
@@ -482,6 +489,21 @@ pub trait PluginStrategy: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
@@ -493,21 +515,6 @@ pub trait PluginStrategy: 'static + Send + Sized {
 
     #[allow(unused_variables)]
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[allow(unused_variables)]
-    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[allow(unused_variables)]
-    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[allow(unused_variables)]
-    fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -528,6 +535,11 @@ pub trait PluginStrategy: 'static + Send + Sized {
 
     #[allow(unused_variables)]
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -667,14 +679,6 @@ pub trait PluginStrategy: 'static + Send + Sized {
     }
 
     #[allow(unused_variables)]
-    fn on_historical_funding_rates(
-        &mut self,
-        funding_rates: &[FundingRateUpdate],
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[allow(unused_variables)]
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         Ok(())
     }
@@ -683,6 +687,14 @@ pub trait PluginStrategy: 'static + Send + Sized {
     fn on_historical_index_prices(
         &mut self,
         index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -718,16 +730,17 @@ where
         on_degrade: Some(on_degrade_thunk::<T>),
         on_fault: Some(on_fault_thunk::<T>),
         on_time_event: Some(on_time_event_thunk::<T>),
+        on_data: Some(on_data_thunk::<T>),
+        on_instrument: Some(on_instrument_thunk::<T>),
+        on_book_deltas: Some(on_book_deltas_thunk::<T>),
         on_quote: Some(on_quote_thunk::<T>),
         on_trade: Some(on_trade_thunk::<T>),
         on_bar: Some(on_bar_thunk::<T>),
-        on_book_deltas: Some(on_book_deltas_thunk::<T>),
-        on_instrument: Some(on_instrument_thunk::<T>),
-        on_option_chain: Some(on_option_chain_thunk::<T>),
         on_mark_price: Some(on_mark_price_thunk::<T>),
         on_index_price: Some(on_index_price_thunk::<T>),
         on_funding_rate: Some(on_funding_rate_thunk::<T>),
         on_option_greeks: Some(on_option_greeks_thunk::<T>),
+        on_option_chain: Some(on_option_chain_thunk::<T>),
         on_instrument_status: Some(on_instrument_status_thunk::<T>),
         on_instrument_close: Some(on_instrument_close_thunk::<T>),
         on_signal: Some(on_signal_thunk::<T>),
@@ -755,9 +768,9 @@ where
         on_historical_quotes: Some(on_historical_quotes_thunk::<T>),
         on_historical_trades: Some(on_historical_trades_thunk::<T>),
         on_historical_bars: Some(on_historical_bars_thunk::<T>),
-        on_historical_funding_rates: Some(on_historical_funding_rates_thunk::<T>),
         on_historical_mark_prices: Some(on_historical_mark_prices_thunk::<T>),
         on_historical_index_prices: Some(on_historical_index_prices_thunk::<T>),
+        on_historical_funding_rates: Some(on_historical_funding_rates_thunk::<T>),
     };
 }
 
@@ -840,20 +853,14 @@ macro_rules! event_thunk {
 }
 
 event_thunk!(on_time_event_thunk, on_time_event, TimeEvent);
-event_thunk!(on_quote_thunk, on_quote, QuoteTick);
-event_thunk!(on_trade_thunk, on_trade, TradeTick);
-event_thunk!(on_bar_thunk, on_bar, Bar);
 
-unsafe extern "C" fn on_book_deltas_thunk<T: PluginStrategy>(
+unsafe extern "C" fn on_data_thunk<T: PluginStrategy>(
     handle: *mut PluginStrategyHandle,
-    deltas: *const OrderBookDeltasHandle,
+    data: PluginCustomDataRef,
 ) -> PluginResult<()> {
     guard(|| {
-        // SAFETY: host keeps the handle live for the duration of the call;
-        // the plug-in only borrows the wrapped deltas via the trait method.
-        let v: OrderBookDeltas = unsafe { (*deltas).deltas() }.boundary_normalized();
         let strategy = handle_as_mut::<T>(handle);
-        ok_or_err(strategy.on_book_deltas(&v))
+        ok_or_err(strategy.on_data(data))
     })
 }
 
@@ -870,6 +877,27 @@ unsafe extern "C" fn on_instrument_thunk<T: PluginStrategy>(
     })
 }
 
+unsafe extern "C" fn on_book_deltas_thunk<T: PluginStrategy>(
+    handle: *mut PluginStrategyHandle,
+    deltas: *const OrderBookDeltasHandle,
+) -> PluginResult<()> {
+    guard(|| {
+        // SAFETY: host keeps the handle live for the duration of the call;
+        // the plug-in only borrows the wrapped deltas via the trait method.
+        let v: OrderBookDeltas = unsafe { (*deltas).deltas() }.boundary_normalized();
+        let strategy = handle_as_mut::<T>(handle);
+        ok_or_err(strategy.on_book_deltas(&v))
+    })
+}
+
+event_thunk!(on_quote_thunk, on_quote, QuoteTick);
+event_thunk!(on_trade_thunk, on_trade, TradeTick);
+event_thunk!(on_bar_thunk, on_bar, Bar);
+event_thunk!(on_mark_price_thunk, on_mark_price, MarkPriceUpdate);
+event_thunk!(on_index_price_thunk, on_index_price, IndexPriceUpdate);
+event_thunk!(on_funding_rate_thunk, on_funding_rate, FundingRateUpdate);
+event_thunk!(on_option_greeks_thunk, on_option_greeks, OptionGreeks);
+
 unsafe extern "C" fn on_option_chain_thunk<T: PluginStrategy>(
     handle: *mut PluginStrategyHandle,
     chain: *const OptionChainSliceHandle,
@@ -883,10 +911,6 @@ unsafe extern "C" fn on_option_chain_thunk<T: PluginStrategy>(
     })
 }
 
-event_thunk!(on_mark_price_thunk, on_mark_price, MarkPriceUpdate);
-event_thunk!(on_index_price_thunk, on_index_price, IndexPriceUpdate);
-event_thunk!(on_funding_rate_thunk, on_funding_rate, FundingRateUpdate);
-event_thunk!(on_option_greeks_thunk, on_option_greeks, OptionGreeks);
 event_thunk!(
     on_instrument_status_thunk,
     on_instrument_status,
@@ -973,11 +997,6 @@ slice_thunk!(on_historical_quotes_thunk, on_historical_quotes, QuoteTick);
 slice_thunk!(on_historical_trades_thunk, on_historical_trades, TradeTick);
 slice_thunk!(on_historical_bars_thunk, on_historical_bars, Bar);
 slice_thunk!(
-    on_historical_funding_rates_thunk,
-    on_historical_funding_rates,
-    FundingRateUpdate
-);
-slice_thunk!(
     on_historical_mark_prices_thunk,
     on_historical_mark_prices,
     MarkPriceUpdate
@@ -986,4 +1005,9 @@ slice_thunk!(
     on_historical_index_prices_thunk,
     on_historical_index_prices,
     IndexPriceUpdate
+);
+slice_thunk!(
+    on_historical_funding_rates_thunk,
+    on_historical_funding_rates,
+    FundingRateUpdate
 );

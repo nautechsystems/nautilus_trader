@@ -47,7 +47,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
@@ -73,7 +74,10 @@ use nautilus_plugin::{
     surfaces::{
         actor::{PluginActor, actor_vtable},
         book::OrderBookDeltasHandle,
-        custom_data::{CustomDataHandle, MetadataEntry, PluginCustomData, custom_data_vtable},
+        custom_data::{
+            CustomDataHandle, MetadataEntry, PluginCustomData, PluginCustomDataRef,
+            custom_data_vtable,
+        },
         instrument::InstrumentAnyHandle,
         option_chain::OptionChainSliceHandle,
         strategy::{PluginStrategy, strategy_vtable},
@@ -196,6 +200,15 @@ impl PluginActor for MisbehavingActor {
     fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
         fail()
     }
+    fn on_data(&mut self, _data: PluginCustomDataRef) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_instrument(&mut self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_book_deltas(&mut self, _deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         fail()
     }
@@ -203,15 +216,6 @@ impl PluginActor for MisbehavingActor {
         fail()
     }
     fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_book_deltas(&mut self, _deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_instrument(&mut self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_option_chain(&mut self, _chain: &OptionChainSlice) -> anyhow::Result<()> {
         fail()
     }
     fn on_mark_price(&mut self, _mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -225,6 +229,10 @@ impl PluginActor for MisbehavingActor {
     }
 
     fn on_option_greeks(&mut self, _greeks: &OptionGreeks) -> anyhow::Result<()> {
+        fail()
+    }
+
+    fn on_option_chain(&mut self, _chain: &OptionChainSlice) -> anyhow::Result<()> {
         fail()
     }
 
@@ -243,6 +251,9 @@ impl PluginActor for MisbehavingActor {
     fn on_signal(&mut self, _signal: &Signal) -> anyhow::Result<()> {
         fail()
     }
+    fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         fail()
     }
@@ -252,13 +263,13 @@ impl PluginActor for MisbehavingActor {
     fn on_historical_bars(&mut self, _b: &[Bar]) -> anyhow::Result<()> {
         fail()
     }
-    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
-        fail()
-    }
     fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         fail()
     }
     fn on_historical_index_prices(&mut self, _p: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
         fail()
     }
 }
@@ -302,6 +313,15 @@ impl PluginStrategy for MisbehavingStrategy {
     fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
         fail()
     }
+    fn on_data(&mut self, _data: PluginCustomDataRef) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_quote(&mut self, _q: &QuoteTick) -> anyhow::Result<()> {
         fail()
     }
@@ -309,15 +329,6 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_bar(&mut self, _b: &Bar) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
-        fail()
-    }
-    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
         fail()
     }
     fn on_mark_price(&mut self, _p: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -331,6 +342,10 @@ impl PluginStrategy for MisbehavingStrategy {
     }
 
     fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
+        fail()
+    }
+
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
         fail()
     }
 
@@ -403,6 +418,9 @@ impl PluginStrategy for MisbehavingStrategy {
     fn on_market_exit(&mut self) -> anyhow::Result<()> {
         fail()
     }
+    fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
+        fail()
+    }
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         fail()
     }
@@ -412,13 +430,13 @@ impl PluginStrategy for MisbehavingStrategy {
     fn on_historical_bars(&mut self, _b: &[Bar]) -> anyhow::Result<()> {
         fail()
     }
-    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
-        fail()
-    }
     fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         fail()
     }
     fn on_historical_index_prices(&mut self, _p: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
         fail()
     }
 }
@@ -578,27 +596,29 @@ enum ActorThunkUnderTest {
     OnDegrade,
     OnFault,
     OnTimeEvent,
+    OnData,
+    OnInstrument,
+    OnBookDeltas,
     OnQuote,
     OnTrade,
     OnBar,
-    OnBookDeltas,
-    OnInstrument,
-    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
     OnOptionGreeks,
+    OnOptionChain,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnOrderFilled,
     OnOrderCanceled,
     OnSignal,
+    OnHistoricalBookDeltas,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
-    OnHistoricalFundingRates,
     OnHistoricalMarkPrices,
     OnHistoricalIndexPrices,
+    OnHistoricalFundingRates,
 }
 
 fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
@@ -628,6 +648,24 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_time_event)(handle, &raw const v) }
         }
+        ActorThunkUnderTest::OnData => {
+            let data_handle = custom_data_handle();
+            let data = plugin_custom_data_ref(data_handle.cast_const());
+            // SAFETY: both handles are live for the duration of the call.
+            let r = unsafe { generated_slot!(vt, on_data)(handle, data) };
+            drop_custom_data_handle(data_handle);
+            r
+        }
+        ActorThunkUnderTest::OnInstrument => {
+            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnBookDeltas => {
+            let v = OrderBookDeltasHandle::new(stub_deltas());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
         ActorThunkUnderTest::OnQuote => {
             let v = quote_tick_value();
             // SAFETY: v outlives the call.
@@ -642,21 +680,6 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = stub_bar();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
-        }
-        ActorThunkUnderTest::OnBookDeltas => {
-            let v = OrderBookDeltasHandle::new(stub_deltas());
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
-        }
-        ActorThunkUnderTest::OnInstrument => {
-            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
-        }
-        ActorThunkUnderTest::OnOptionChain => {
-            let v = OptionChainSliceHandle::new(option_chain_value());
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -677,6 +700,11 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let v = option_greeks_value();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
+        }
+        ActorThunkUnderTest::OnOptionChain => {
+            let v = OptionChainSliceHandle::new(option_chain_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         ActorThunkUnderTest::OnInstrumentStatus => {
             let v = stub_instrument_status();
@@ -703,6 +731,12 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_signal)(handle, &raw const v) }
         }
+        ActorThunkUnderTest::OnHistoricalBookDeltas => {
+            let v = stub_deltas();
+            let s = Slice::from_slice(&v.deltas);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
         ActorThunkUnderTest::OnHistoricalQuotes => {
             let v = vec![quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -721,12 +755,6 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
         }
-        ActorThunkUnderTest::OnHistoricalFundingRates => {
-            let v = vec![funding_rate_value()];
-            let s = Slice::from_slice(&v);
-            // SAFETY: see above.
-            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
-        }
         ActorThunkUnderTest::OnHistoricalMarkPrices => {
             let v = vec![mark_price_value()];
             let s = Slice::from_slice(&v);
@@ -738,6 +766,12 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
             let s = Slice::from_slice(&v);
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        ActorThunkUnderTest::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
         }
     };
 
@@ -765,18 +799,18 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_fault_err(ActorThunkUnderTest::OnFault, Mode::Err)]
 #[case::on_time_event_panic(ActorThunkUnderTest::OnTimeEvent, Mode::Panic)]
 #[case::on_time_event_err(ActorThunkUnderTest::OnTimeEvent, Mode::Err)]
+#[case::on_data_panic(ActorThunkUnderTest::OnData, Mode::Panic)]
+#[case::on_data_err(ActorThunkUnderTest::OnData, Mode::Err)]
+#[case::on_instrument_panic(ActorThunkUnderTest::OnInstrument, Mode::Panic)]
+#[case::on_instrument_err(ActorThunkUnderTest::OnInstrument, Mode::Err)]
+#[case::on_book_deltas_panic(ActorThunkUnderTest::OnBookDeltas, Mode::Panic)]
+#[case::on_book_deltas_err(ActorThunkUnderTest::OnBookDeltas, Mode::Err)]
 #[case::on_quote_panic(ActorThunkUnderTest::OnQuote, Mode::Panic)]
 #[case::on_quote_err(ActorThunkUnderTest::OnQuote, Mode::Err)]
 #[case::on_trade_panic(ActorThunkUnderTest::OnTrade, Mode::Panic)]
 #[case::on_trade_err(ActorThunkUnderTest::OnTrade, Mode::Err)]
 #[case::on_bar_panic(ActorThunkUnderTest::OnBar, Mode::Panic)]
 #[case::on_bar_err(ActorThunkUnderTest::OnBar, Mode::Err)]
-#[case::on_book_deltas_panic(ActorThunkUnderTest::OnBookDeltas, Mode::Panic)]
-#[case::on_book_deltas_err(ActorThunkUnderTest::OnBookDeltas, Mode::Err)]
-#[case::on_instrument_panic(ActorThunkUnderTest::OnInstrument, Mode::Panic)]
-#[case::on_instrument_err(ActorThunkUnderTest::OnInstrument, Mode::Err)]
-#[case::on_option_chain_panic(ActorThunkUnderTest::OnOptionChain, Mode::Panic)]
-#[case::on_option_chain_err(ActorThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_mark_price_panic(ActorThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(ActorThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(ActorThunkUnderTest::OnIndexPrice, Mode::Panic)]
@@ -785,6 +819,8 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_funding_rate_err(ActorThunkUnderTest::OnFundingRate, Mode::Err)]
 #[case::on_option_greeks_panic(ActorThunkUnderTest::OnOptionGreeks, Mode::Panic)]
 #[case::on_option_greeks_err(ActorThunkUnderTest::OnOptionGreeks, Mode::Err)]
+#[case::on_option_chain_panic(ActorThunkUnderTest::OnOptionChain, Mode::Panic)]
+#[case::on_option_chain_err(ActorThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_instrument_status_panic(ActorThunkUnderTest::OnInstrumentStatus, Mode::Panic)]
 #[case::on_instrument_status_err(ActorThunkUnderTest::OnInstrumentStatus, Mode::Err)]
 #[case::on_instrument_close_panic(ActorThunkUnderTest::OnInstrumentClose, Mode::Panic)]
@@ -795,21 +831,23 @@ fn drive_actor_thunk(thunk: ActorThunkUnderTest) -> PluginResult<()> {
 #[case::on_order_canceled_err(ActorThunkUnderTest::OnOrderCanceled, Mode::Err)]
 #[case::on_signal_panic(ActorThunkUnderTest::OnSignal, Mode::Panic)]
 #[case::on_signal_err(ActorThunkUnderTest::OnSignal, Mode::Err)]
+#[case::on_historical_book_deltas_panic(ActorThunkUnderTest::OnHistoricalBookDeltas, Mode::Panic)]
+#[case::on_historical_book_deltas_err(ActorThunkUnderTest::OnHistoricalBookDeltas, Mode::Err)]
 #[case::on_historical_quotes_panic(ActorThunkUnderTest::OnHistoricalQuotes, Mode::Panic)]
 #[case::on_historical_quotes_err(ActorThunkUnderTest::OnHistoricalQuotes, Mode::Err)]
 #[case::on_historical_trades_panic(ActorThunkUnderTest::OnHistoricalTrades, Mode::Panic)]
 #[case::on_historical_trades_err(ActorThunkUnderTest::OnHistoricalTrades, Mode::Err)]
 #[case::on_historical_bars_panic(ActorThunkUnderTest::OnHistoricalBars, Mode::Panic)]
 #[case::on_historical_bars_err(ActorThunkUnderTest::OnHistoricalBars, Mode::Err)]
+#[case::on_historical_mark_prices_panic(ActorThunkUnderTest::OnHistoricalMarkPrices, Mode::Panic)]
+#[case::on_historical_mark_prices_err(ActorThunkUnderTest::OnHistoricalMarkPrices, Mode::Err)]
+#[case::on_historical_index_prices_panic(ActorThunkUnderTest::OnHistoricalIndexPrices, Mode::Panic)]
+#[case::on_historical_index_prices_err(ActorThunkUnderTest::OnHistoricalIndexPrices, Mode::Err)]
 #[case::on_historical_funding_rates_panic(
     ActorThunkUnderTest::OnHistoricalFundingRates,
     Mode::Panic
 )]
 #[case::on_historical_funding_rates_err(ActorThunkUnderTest::OnHistoricalFundingRates, Mode::Err)]
-#[case::on_historical_mark_prices_panic(ActorThunkUnderTest::OnHistoricalMarkPrices, Mode::Panic)]
-#[case::on_historical_mark_prices_err(ActorThunkUnderTest::OnHistoricalMarkPrices, Mode::Err)]
-#[case::on_historical_index_prices_panic(ActorThunkUnderTest::OnHistoricalIndexPrices, Mode::Panic)]
-#[case::on_historical_index_prices_err(ActorThunkUnderTest::OnHistoricalIndexPrices, Mode::Err)]
 fn actor_thunk_propagates_failure(#[case] thunk: ActorThunkUnderTest, #[case] mode: Mode) {
     set_mode(mode);
     let r = drive_actor_thunk(thunk);
@@ -829,16 +867,17 @@ enum StrategyThunkUnderTest {
     OnDegrade,
     OnFault,
     OnTimeEvent,
+    OnData,
+    OnInstrument,
+    OnBookDeltas,
     OnQuote,
     OnTrade,
     OnBar,
-    OnBookDeltas,
-    OnInstrument,
-    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
     OnOptionGreeks,
+    OnOptionChain,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnSignal,
@@ -862,12 +901,13 @@ enum StrategyThunkUnderTest {
     OnPositionChanged,
     OnPositionClosed,
     OnMarketExit,
+    OnHistoricalBookDeltas,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
-    OnHistoricalFundingRates,
     OnHistoricalMarkPrices,
     OnHistoricalIndexPrices,
+    OnHistoricalFundingRates,
 }
 
 fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
@@ -897,6 +937,24 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_time_event)(handle, &raw const v) }
         }
+        StrategyThunkUnderTest::OnData => {
+            let data_handle = custom_data_handle();
+            let data = plugin_custom_data_ref(data_handle.cast_const());
+            // SAFETY: both handles are live for the duration of the call.
+            let r = unsafe { generated_slot!(vt, on_data)(handle, data) };
+            drop_custom_data_handle(data_handle);
+            r
+        }
+        StrategyThunkUnderTest::OnInstrument => {
+            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnBookDeltas => {
+            let v = OrderBookDeltasHandle::new(stub_deltas());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
+        }
         StrategyThunkUnderTest::OnQuote => {
             let v = quote_tick_value();
             // SAFETY: v outlives the call.
@@ -911,21 +969,6 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = stub_bar();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_bar)(handle, &raw const v) }
-        }
-        StrategyThunkUnderTest::OnBookDeltas => {
-            let v = OrderBookDeltasHandle::new(stub_deltas());
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_book_deltas)(handle, &raw const v) }
-        }
-        StrategyThunkUnderTest::OnInstrument => {
-            let v = InstrumentAnyHandle::new(InstrumentAny::CurrencyPair(currency_pair_ethusdt()));
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_instrument)(handle, &raw const v) }
-        }
-        StrategyThunkUnderTest::OnOptionChain => {
-            let v = OptionChainSliceHandle::new(option_chain_value());
-            // SAFETY: v outlives the call.
-            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnMarkPrice => {
             let v = mark_price_value();
@@ -946,6 +989,11 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let v = option_greeks_value();
             // SAFETY: v outlives the call.
             unsafe { generated_slot!(vt, on_option_greeks)(handle, &raw const v) }
+        }
+        StrategyThunkUnderTest::OnOptionChain => {
+            let v = OptionChainSliceHandle::new(option_chain_value());
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_option_chain)(handle, &raw const v) }
         }
         StrategyThunkUnderTest::OnInstrumentStatus => {
             let v = stub_instrument_status();
@@ -1061,6 +1109,12 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             // SAFETY: handle is live; on_market_exit takes no payload.
             unsafe { generated_slot!(vt, on_market_exit)(handle) }
         }
+        StrategyThunkUnderTest::OnHistoricalBookDeltas => {
+            let v = stub_deltas();
+            let s = Slice::from_slice(&v.deltas);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
         StrategyThunkUnderTest::OnHistoricalQuotes => {
             let v = vec![quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -1079,12 +1133,6 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
         }
-        StrategyThunkUnderTest::OnHistoricalFundingRates => {
-            let v = vec![funding_rate_value()];
-            let s = Slice::from_slice(&v);
-            // SAFETY: see above.
-            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
-        }
         StrategyThunkUnderTest::OnHistoricalMarkPrices => {
             let v = vec![mark_price_value()];
             let s = Slice::from_slice(&v);
@@ -1096,6 +1144,12 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
             let s = Slice::from_slice(&v);
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        StrategyThunkUnderTest::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
         }
     };
 
@@ -1123,18 +1177,18 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_fault_err(StrategyThunkUnderTest::OnFault, Mode::Err)]
 #[case::on_time_event_panic(StrategyThunkUnderTest::OnTimeEvent, Mode::Panic)]
 #[case::on_time_event_err(StrategyThunkUnderTest::OnTimeEvent, Mode::Err)]
+#[case::on_data_panic(StrategyThunkUnderTest::OnData, Mode::Panic)]
+#[case::on_data_err(StrategyThunkUnderTest::OnData, Mode::Err)]
+#[case::on_instrument_panic(StrategyThunkUnderTest::OnInstrument, Mode::Panic)]
+#[case::on_instrument_err(StrategyThunkUnderTest::OnInstrument, Mode::Err)]
+#[case::on_book_deltas_panic(StrategyThunkUnderTest::OnBookDeltas, Mode::Panic)]
+#[case::on_book_deltas_err(StrategyThunkUnderTest::OnBookDeltas, Mode::Err)]
 #[case::on_quote_panic(StrategyThunkUnderTest::OnQuote, Mode::Panic)]
 #[case::on_quote_err(StrategyThunkUnderTest::OnQuote, Mode::Err)]
 #[case::on_trade_panic(StrategyThunkUnderTest::OnTrade, Mode::Panic)]
 #[case::on_trade_err(StrategyThunkUnderTest::OnTrade, Mode::Err)]
 #[case::on_bar_panic(StrategyThunkUnderTest::OnBar, Mode::Panic)]
 #[case::on_bar_err(StrategyThunkUnderTest::OnBar, Mode::Err)]
-#[case::on_book_deltas_panic(StrategyThunkUnderTest::OnBookDeltas, Mode::Panic)]
-#[case::on_book_deltas_err(StrategyThunkUnderTest::OnBookDeltas, Mode::Err)]
-#[case::on_instrument_panic(StrategyThunkUnderTest::OnInstrument, Mode::Panic)]
-#[case::on_instrument_err(StrategyThunkUnderTest::OnInstrument, Mode::Err)]
-#[case::on_option_chain_panic(StrategyThunkUnderTest::OnOptionChain, Mode::Panic)]
-#[case::on_option_chain_err(StrategyThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_mark_price_panic(StrategyThunkUnderTest::OnMarkPrice, Mode::Panic)]
 #[case::on_mark_price_err(StrategyThunkUnderTest::OnMarkPrice, Mode::Err)]
 #[case::on_index_price_panic(StrategyThunkUnderTest::OnIndexPrice, Mode::Panic)]
@@ -1143,6 +1197,8 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_funding_rate_err(StrategyThunkUnderTest::OnFundingRate, Mode::Err)]
 #[case::on_option_greeks_panic(StrategyThunkUnderTest::OnOptionGreeks, Mode::Panic)]
 #[case::on_option_greeks_err(StrategyThunkUnderTest::OnOptionGreeks, Mode::Err)]
+#[case::on_option_chain_panic(StrategyThunkUnderTest::OnOptionChain, Mode::Panic)]
+#[case::on_option_chain_err(StrategyThunkUnderTest::OnOptionChain, Mode::Err)]
 #[case::on_instrument_status_panic(StrategyThunkUnderTest::OnInstrumentStatus, Mode::Panic)]
 #[case::on_instrument_status_err(StrategyThunkUnderTest::OnInstrumentStatus, Mode::Err)]
 #[case::on_instrument_close_panic(StrategyThunkUnderTest::OnInstrumentClose, Mode::Panic)]
@@ -1189,20 +1245,17 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
 #[case::on_position_closed_err(StrategyThunkUnderTest::OnPositionClosed, Mode::Err)]
 #[case::on_market_exit_panic(StrategyThunkUnderTest::OnMarketExit, Mode::Panic)]
 #[case::on_market_exit_err(StrategyThunkUnderTest::OnMarketExit, Mode::Err)]
+#[case::on_historical_book_deltas_panic(
+    StrategyThunkUnderTest::OnHistoricalBookDeltas,
+    Mode::Panic
+)]
+#[case::on_historical_book_deltas_err(StrategyThunkUnderTest::OnHistoricalBookDeltas, Mode::Err)]
 #[case::on_historical_quotes_panic(StrategyThunkUnderTest::OnHistoricalQuotes, Mode::Panic)]
 #[case::on_historical_quotes_err(StrategyThunkUnderTest::OnHistoricalQuotes, Mode::Err)]
 #[case::on_historical_trades_panic(StrategyThunkUnderTest::OnHistoricalTrades, Mode::Panic)]
 #[case::on_historical_trades_err(StrategyThunkUnderTest::OnHistoricalTrades, Mode::Err)]
 #[case::on_historical_bars_panic(StrategyThunkUnderTest::OnHistoricalBars, Mode::Panic)]
 #[case::on_historical_bars_err(StrategyThunkUnderTest::OnHistoricalBars, Mode::Err)]
-#[case::on_historical_funding_rates_panic(
-    StrategyThunkUnderTest::OnHistoricalFundingRates,
-    Mode::Panic
-)]
-#[case::on_historical_funding_rates_err(
-    StrategyThunkUnderTest::OnHistoricalFundingRates,
-    Mode::Err
-)]
 #[case::on_historical_mark_prices_panic(
     StrategyThunkUnderTest::OnHistoricalMarkPrices,
     Mode::Panic
@@ -1213,6 +1266,14 @@ fn drive_strategy_thunk(thunk: StrategyThunkUnderTest) -> PluginResult<()> {
     Mode::Panic
 )]
 #[case::on_historical_index_prices_err(StrategyThunkUnderTest::OnHistoricalIndexPrices, Mode::Err)]
+#[case::on_historical_funding_rates_panic(
+    StrategyThunkUnderTest::OnHistoricalFundingRates,
+    Mode::Panic
+)]
+#[case::on_historical_funding_rates_err(
+    StrategyThunkUnderTest::OnHistoricalFundingRates,
+    Mode::Err
+)]
 fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[case] mode: Mode) {
     set_mode(mode);
     let r = drive_strategy_thunk(thunk);
@@ -1226,6 +1287,30 @@ fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[ca
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+fn custom_data_handle() -> *mut CustomDataHandle {
+    Box::into_raw(Box::new(MisbehavingTick)).cast::<CustomDataHandle>()
+}
+
+fn plugin_custom_data_ref(handle: *const CustomDataHandle) -> PluginCustomDataRef {
+    // SAFETY: the handle is allocated as MisbehavingTick and remains live
+    // until the caller drops it through the same vtable.
+    unsafe {
+        PluginCustomDataRef::from_raw_parts(
+            BorrowedStr::from_str(MisbehavingTick::TYPE_NAME),
+            custom_data_vtable::<MisbehavingTick>(),
+            handle,
+        )
+    }
+}
+
+fn drop_custom_data_handle(handle: *mut CustomDataHandle) {
+    // SAFETY: handle was allocated as MisbehavingTick by
+    // custom_data_handle and remains valid for this vtable.
+    let vtable = unsafe { &*custom_data_vtable::<MisbehavingTick>() };
+    // SAFETY: handle was allocated as MisbehavingTick and has not been dropped.
+    unsafe { generated_slot!(vtable, drop_handle)(handle) };
 }
 
 fn option_chain_value() -> OptionChainSlice {

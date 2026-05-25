@@ -58,16 +58,16 @@ impl PluginActor for ActorEventProbe {
         }
     }
 
-    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.record_instrument_id(quote.instrument_id)
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.record_instrument_id(instrument.id())
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.record_instrument_id(deltas.instrument_id)
     }
 
-    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        self.record_instrument_id(instrument.id())
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.record_instrument_id(quote.instrument_id)
     }
 
     fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {

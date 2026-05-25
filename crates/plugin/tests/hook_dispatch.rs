@@ -44,7 +44,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
         stubs::{
             stub_bar, stub_deltas, stub_instrument_close, stub_instrument_status,
             stub_trade_ethusdt_buyer,
@@ -70,6 +71,9 @@ use nautilus_plugin::{
     surfaces::{
         actor::{PluginActor, actor_vtable},
         book::OrderBookDeltasHandle,
+        custom_data::{
+            CustomDataHandle, PluginCustomData, PluginCustomDataRef, custom_data_vtable,
+        },
         instrument::InstrumentAnyHandle,
         option_chain::OptionChainSliceHandle,
         strategy::{PluginStrategy, strategy_vtable},
@@ -100,30 +104,32 @@ enum ActorHook {
     OnDegrade,
     OnFault,
     OnTimeEvent,
+    OnData,
+    OnInstrument,
+    OnBookDeltas,
     OnQuote,
     OnTrade,
     OnBar,
-    OnBookDeltas,
-    OnInstrument,
-    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
     OnOptionGreeks,
+    OnOptionChain,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnOrderFilled,
     OnOrderCanceled,
     OnSignal,
+    OnHistoricalBookDeltas,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
-    OnHistoricalFundingRates,
     OnHistoricalMarkPrices,
     OnHistoricalIndexPrices,
+    OnHistoricalFundingRates,
 }
 
-const ACTOR_HOOK_COUNT: usize = ActorHook::OnHistoricalIndexPrices as usize + 1;
+const ACTOR_HOOK_COUNT: usize = ActorHook::OnHistoricalFundingRates as usize + 1;
 static ACTOR_HOOK_CALLS: [AtomicU64; ACTOR_HOOK_COUNT] =
     [const { AtomicU64::new(0) }; ACTOR_HOOK_COUNT];
 
@@ -211,6 +217,34 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            data.type_name() == HookCountingCustomData::TYPE_NAME,
+            "custom data type mismatch: expected {}, received {}",
+            HookCountingCustomData::TYPE_NAME,
+            data.type_name()
+        );
+        let value = data
+            .downcast_ref::<HookCountingCustomData>()
+            .map(|v| v.value);
+        anyhow::ensure!(
+            value == Some(42),
+            "custom data value mismatch: expected 42, received {value:?}"
+        );
+        bump_actor(ActorHook::OnData);
+        Ok(())
+    }
+
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnInstrument);
+        Ok(())
+    }
+
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnBookDeltas);
+        Ok(())
+    }
+
     fn on_quote(&mut self, _q: &QuoteTick) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnQuote);
         Ok(())
@@ -223,21 +257,6 @@ impl PluginActor for HookCountingActor {
 
     fn on_bar(&mut self, _b: &Bar) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnBar);
-        Ok(())
-    }
-
-    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
-        bump_actor(ActorHook::OnBookDeltas);
-        Ok(())
-    }
-
-    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
-        bump_actor(ActorHook::OnInstrument);
-        Ok(())
-    }
-
-    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
-        bump_actor(ActorHook::OnOptionChain);
         Ok(())
     }
 
@@ -258,6 +277,11 @@ impl PluginActor for HookCountingActor {
 
     fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnOptionGreeks);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnOptionChain);
         Ok(())
     }
 
@@ -286,6 +310,11 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
+    fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalBookDeltas);
+        Ok(())
+    }
+
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnHistoricalQuotes);
         Ok(())
@@ -301,11 +330,6 @@ impl PluginActor for HookCountingActor {
         Ok(())
     }
 
-    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
-        bump_actor(ActorHook::OnHistoricalFundingRates);
-        Ok(())
-    }
-
     fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnHistoricalMarkPrices);
         Ok(())
@@ -313,6 +337,11 @@ impl PluginActor for HookCountingActor {
 
     fn on_historical_index_prices(&mut self, _p: &[IndexPriceUpdate]) -> anyhow::Result<()> {
         bump_actor(ActorHook::OnHistoricalIndexPrices);
+        Ok(())
+    }
+
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        bump_actor(ActorHook::OnHistoricalFundingRates);
         Ok(())
     }
 }
@@ -330,16 +359,17 @@ enum StrategyHook {
     OnDegrade,
     OnFault,
     OnTimeEvent,
+    OnData,
+    OnInstrument,
+    OnBookDeltas,
     OnQuote,
     OnTrade,
     OnBar,
-    OnBookDeltas,
-    OnInstrument,
-    OnOptionChain,
     OnMarkPrice,
     OnIndexPrice,
     OnFundingRate,
     OnOptionGreeks,
+    OnOptionChain,
     OnInstrumentStatus,
     OnInstrumentClose,
     OnSignal,
@@ -363,15 +393,16 @@ enum StrategyHook {
     OnPositionChanged,
     OnPositionClosed,
     OnMarketExit,
+    OnHistoricalBookDeltas,
     OnHistoricalQuotes,
     OnHistoricalTrades,
     OnHistoricalBars,
-    OnHistoricalFundingRates,
     OnHistoricalMarkPrices,
     OnHistoricalIndexPrices,
+    OnHistoricalFundingRates,
 }
 
-const STRATEGY_HOOK_COUNT: usize = StrategyHook::OnHistoricalIndexPrices as usize + 1;
+const STRATEGY_HOOK_COUNT: usize = StrategyHook::OnHistoricalFundingRates as usize + 1;
 static STRATEGY_HOOK_CALLS: [AtomicU64; STRATEGY_HOOK_COUNT] =
     [const { AtomicU64::new(0) }; STRATEGY_HOOK_COUNT];
 
@@ -450,6 +481,34 @@ impl PluginStrategy for HookCountingStrategy {
         Ok(())
     }
 
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            data.type_name() == HookCountingCustomData::TYPE_NAME,
+            "custom data type mismatch: expected {}, received {}",
+            HookCountingCustomData::TYPE_NAME,
+            data.type_name()
+        );
+        let value = data
+            .downcast_ref::<HookCountingCustomData>()
+            .map(|v| v.value);
+        anyhow::ensure!(
+            value == Some(42),
+            "custom data value mismatch: expected 42, received {value:?}"
+        );
+        bump_strategy(StrategyHook::OnData);
+        Ok(())
+    }
+
+    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnInstrument);
+        Ok(())
+    }
+
+    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnBookDeltas);
+        Ok(())
+    }
+
     fn on_quote(&mut self, _q: &QuoteTick) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnQuote);
         Ok(())
@@ -462,21 +521,6 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_bar(&mut self, _b: &Bar) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnBar);
-        Ok(())
-    }
-
-    fn on_book_deltas(&mut self, _d: &OrderBookDeltas) -> anyhow::Result<()> {
-        bump_strategy(StrategyHook::OnBookDeltas);
-        Ok(())
-    }
-
-    fn on_instrument(&mut self, _i: &InstrumentAny) -> anyhow::Result<()> {
-        bump_strategy(StrategyHook::OnInstrument);
-        Ok(())
-    }
-
-    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
-        bump_strategy(StrategyHook::OnOptionChain);
         Ok(())
     }
 
@@ -497,6 +541,11 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_option_greeks(&mut self, _g: &OptionGreeks) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnOptionGreeks);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _c: &OptionChainSlice) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnOptionChain);
         Ok(())
     }
 
@@ -615,6 +664,11 @@ impl PluginStrategy for HookCountingStrategy {
         Ok(())
     }
 
+    fn on_historical_book_deltas(&mut self, _d: &[OrderBookDelta]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalBookDeltas);
+        Ok(())
+    }
+
     fn on_historical_quotes(&mut self, _q: &[QuoteTick]) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnHistoricalQuotes);
         Ok(())
@@ -630,11 +684,6 @@ impl PluginStrategy for HookCountingStrategy {
         Ok(())
     }
 
-    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
-        bump_strategy(StrategyHook::OnHistoricalFundingRates);
-        Ok(())
-    }
-
     fn on_historical_mark_prices(&mut self, _p: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnHistoricalMarkPrices);
         Ok(())
@@ -644,10 +693,82 @@ impl PluginStrategy for HookCountingStrategy {
         bump_strategy(StrategyHook::OnHistoricalIndexPrices);
         Ok(())
     }
+
+    fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        bump_strategy(StrategyHook::OnHistoricalFundingRates);
+        Ok(())
+    }
 }
 
 fn instrument_id() -> InstrumentId {
     InstrumentId::from("ETH-USDT.BINANCE")
+}
+
+#[derive(Clone, PartialEq)]
+struct HookCountingCustomData {
+    value: u64,
+}
+
+impl PluginCustomData for HookCountingCustomData {
+    const TYPE_NAME: &'static str = "HookCountingCustomData";
+
+    fn ts_event(&self) -> u64 {
+        0
+    }
+
+    fn ts_init(&self) -> u64 {
+        0
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(self.value.to_string().into_bytes())
+    }
+
+    fn from_json(payload: &[u8]) -> anyhow::Result<Self> {
+        let text = std::str::from_utf8(payload)?;
+        Ok(Self {
+            value: text.parse()?,
+        })
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+}
+
+fn custom_data_handle(value: u64) -> *mut CustomDataHandle {
+    Box::into_raw(Box::new(HookCountingCustomData { value })).cast::<CustomDataHandle>()
+}
+
+fn plugin_custom_data_ref(handle: *const CustomDataHandle) -> PluginCustomDataRef {
+    // SAFETY: the handle is allocated as HookCountingCustomData and remains
+    // live until the caller drops it through the same vtable.
+    unsafe {
+        PluginCustomDataRef::from_raw_parts(
+            BorrowedStr::from_str(HookCountingCustomData::TYPE_NAME),
+            custom_data_vtable::<HookCountingCustomData>(),
+            handle,
+        )
+    }
+}
+
+fn drop_custom_data_handle(handle: *mut CustomDataHandle) {
+    // SAFETY: handle was allocated as HookCountingCustomData by
+    // custom_data_handle and remains valid for this vtable.
+    let vtable = unsafe { &*custom_data_vtable::<HookCountingCustomData>() };
+    // SAFETY: handle was allocated as HookCountingCustomData and has not been dropped.
+    unsafe { generated_slot!(vtable, drop_handle)(handle) };
 }
 
 fn option_chain_value() -> OptionChainSlice {
@@ -1064,6 +1185,33 @@ fn actor_lifecycle_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
 }
 
 #[rstest]
+fn actor_data_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_actor_counters();
+    let vt = actor_vtable::<HookCountingActor>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingActor never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+    let data_handle = custom_data_handle(42);
+    let data = plugin_custom_data_ref(data_handle.cast_const());
+
+    // SAFETY: both handles are live for the duration of the call.
+    let r = unsafe { generated_slot!(vt, on_data)(handle, data) };
+    r.into_result().expect("on_data thunk failed");
+    assert_only_actor_hook(ActorHook::OnData);
+
+    drop_custom_data_handle(data_handle);
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
 #[case::on_time_event(ActorHook::OnTimeEvent)]
 #[case::on_quote(ActorHook::OnQuote)]
 #[case::on_trade(ActorHook::OnTrade)]
@@ -1250,12 +1398,13 @@ fn actor_option_chain_thunk_dispatches_to_its_method() {
 }
 
 #[rstest]
+#[case::on_historical_book_deltas(ActorHook::OnHistoricalBookDeltas)]
 #[case::on_historical_quotes(ActorHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(ActorHook::OnHistoricalTrades)]
 #[case::on_historical_bars(ActorHook::OnHistoricalBars)]
-#[case::on_historical_funding_rates(ActorHook::OnHistoricalFundingRates)]
 #[case::on_historical_mark_prices(ActorHook::OnHistoricalMarkPrices)]
 #[case::on_historical_index_prices(ActorHook::OnHistoricalIndexPrices)]
+#[case::on_historical_funding_rates(ActorHook::OnHistoricalFundingRates)]
 fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook) {
     let _g = dispatch_lock();
     reset_actor_counters();
@@ -1272,6 +1421,12 @@ fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook
     // as a Slice descriptor, and calls the corresponding slice thunk. The
     // backing Vec lives until the end of the arm.
     let r = match hook {
+        ActorHook::OnHistoricalBookDeltas => {
+            let v = stub_deltas();
+            let s = Slice::from_slice(&v.deltas);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
         ActorHook::OnHistoricalQuotes => {
             let v = vec![quote_tick_value(), quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -1290,12 +1445,6 @@ fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
         }
-        ActorHook::OnHistoricalFundingRates => {
-            let v = vec![funding_rate_value()];
-            let s = Slice::from_slice(&v);
-            // SAFETY: see above.
-            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
-        }
         ActorHook::OnHistoricalMarkPrices => {
             let v = vec![mark_price_value(), mark_price_value()];
             let s = Slice::from_slice(&v);
@@ -1307,6 +1456,12 @@ fn actor_historical_slice_thunk_dispatches_to_its_method(#[case] hook: ActorHook
             let s = Slice::from_slice(&v);
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        ActorHook::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
         }
         _ => panic!("non-historical hook"),
     };
@@ -1355,6 +1510,33 @@ fn strategy_lifecycle_thunk_dispatches_to_its_method(#[case] hook: StrategyHook)
     r.into_result().expect("lifecycle thunk failed");
     assert_only_strategy_hook(hook);
 
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn strategy_data_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_strategy_counters();
+    let vt = strategy_vtable::<HookCountingStrategy>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const HostVTable = std::ptr::null();
+    let ctx: *const HostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingStrategy never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+    let data_handle = custom_data_handle(42);
+    let data = plugin_custom_data_ref(data_handle.cast_const());
+
+    // SAFETY: both handles are live for the duration of the call.
+    let r = unsafe { generated_slot!(vt, on_data)(handle, data) };
+    r.into_result().expect("on_data thunk failed");
+    assert_only_strategy_hook(StrategyHook::OnData);
+
+    drop_custom_data_handle(data_handle);
     // SAFETY: handle is live.
     unsafe {
         generated_slot!(vt, drop_handle)(handle);
@@ -1650,12 +1832,13 @@ fn strategy_option_chain_thunk_dispatches_to_its_method() {
 }
 
 #[rstest]
+#[case::on_historical_book_deltas(StrategyHook::OnHistoricalBookDeltas)]
 #[case::on_historical_quotes(StrategyHook::OnHistoricalQuotes)]
 #[case::on_historical_trades(StrategyHook::OnHistoricalTrades)]
 #[case::on_historical_bars(StrategyHook::OnHistoricalBars)]
-#[case::on_historical_funding_rates(StrategyHook::OnHistoricalFundingRates)]
 #[case::on_historical_mark_prices(StrategyHook::OnHistoricalMarkPrices)]
 #[case::on_historical_index_prices(StrategyHook::OnHistoricalIndexPrices)]
+#[case::on_historical_funding_rates(StrategyHook::OnHistoricalFundingRates)]
 fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: StrategyHook) {
     let _g = dispatch_lock();
     reset_strategy_counters();
@@ -1669,6 +1852,12 @@ fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: Strate
     let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
 
     let r = match hook {
+        StrategyHook::OnHistoricalBookDeltas => {
+            let v = stub_deltas();
+            let s = Slice::from_slice(&v.deltas);
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_historical_book_deltas)(handle, s) }
+        }
         StrategyHook::OnHistoricalQuotes => {
             let v = vec![quote_tick_value(), quote_tick_value()];
             let s = Slice::from_slice(&v);
@@ -1687,12 +1876,6 @@ fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: Strate
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_bars)(handle, s) }
         }
-        StrategyHook::OnHistoricalFundingRates => {
-            let v = vec![funding_rate_value()];
-            let s = Slice::from_slice(&v);
-            // SAFETY: see above.
-            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
-        }
         StrategyHook::OnHistoricalMarkPrices => {
             let v = vec![mark_price_value(), mark_price_value()];
             let s = Slice::from_slice(&v);
@@ -1704,6 +1887,12 @@ fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: Strate
             let s = Slice::from_slice(&v);
             // SAFETY: see above.
             unsafe { generated_slot!(vt, on_historical_index_prices)(handle, s) }
+        }
+        StrategyHook::OnHistoricalFundingRates => {
+            let v = vec![funding_rate_value()];
+            let s = Slice::from_slice(&v);
+            // SAFETY: see above.
+            unsafe { generated_slot!(vt, on_historical_funding_rates)(handle, s) }
         }
         _ => panic!("non-historical hook"),
     };

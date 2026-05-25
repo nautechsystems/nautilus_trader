@@ -546,19 +546,6 @@ pub trait DataActor:
         Ok(())
     }
 
-    /// Actions to be performed when receiving historical funding rates.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if handling the historical funding rates fails.
-    #[allow(unused_variables)]
-    fn on_historical_funding_rates(
-        &mut self,
-        funding_rates: &[FundingRateUpdate],
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     /// Actions to be performed when receiving historical bars.
     ///
     /// # Errors
@@ -588,6 +575,19 @@ pub trait DataActor:
     fn on_historical_index_prices(
         &mut self,
         index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving historical funding rates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical funding rates fails.
+    #[allow(unused_variables)]
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -996,6 +996,16 @@ pub trait DataActor:
         }
     }
 
+    /// Handles a book deltas response.
+    fn handle_book_deltas_response(&mut self, resp: &BookDeltasResponse) {
+        log_received_bulk("BookDeltasResponse", &resp.correlation_id, resp.data.len());
+        log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.on_historical_book_deltas(&resp.data) {
+            log_error(&e);
+        }
+    }
+
     /// Handles a quotes response.
     fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
         log_received_bulk("QuotesResponse", &resp.correlation_id, resp.data.len());
@@ -1016,12 +1026,12 @@ pub trait DataActor:
         }
     }
 
-    /// Handles a book deltas response.
-    fn handle_book_deltas_response(&mut self, resp: &BookDeltasResponse) {
-        log_received_bulk("BookDeltasResponse", &resp.correlation_id, resp.data.len());
+    /// Handles a bars response.
+    fn handle_bars_response(&mut self, resp: &BarsResponse) {
+        log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
 
-        if let Err(e) = self.on_historical_book_deltas(&resp.data) {
+        if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
         }
     }
@@ -1036,16 +1046,6 @@ pub trait DataActor:
         log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_funding_rates(&resp.data) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a bars response.
-    fn handle_bars_response(&mut self, resp: &BarsResponse) {
-        log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
-        log::trace!("{RECV} {resp:?}");
-
-        if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
         }
     }

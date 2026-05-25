@@ -19,13 +19,6 @@
 //! `crates/plugin/examples/custom_data_plugin.rs`, load it through the
 //! live-node-bound [`PluginLoader`], and exercise the host-side adapter pieces.
 //!
-//! Those broader cdylib tests are marked `#[ignore]` so default `cargo test`
-//! stays focused. Run them explicitly with:
-//!
-//! ```text
-//! cargo test -p nautilus-live --features node --test plugin -- --ignored
-//! ```
-//!
 //! The runtime smoke test builds
 //! `crates/plugin/examples/runtime_smoke_plugin.rs` and runs by default. It
 //! proves a configured real plug-in loads through [`LiveNode`], instantiates
@@ -34,7 +27,11 @@
 //! The complementary `plugin_dispatch.rs` integration tests run on every
 //! `cargo test` and exercise the adapters via in-process [`PluginActor`]
 //! and [`PluginStrategy`] types without the cdylib build.
+//!
+//! These cdylib build/load tests run on Linux only because the plug-in system
+//! is supported on Linux only.
 
+#![cfg(target_os = "linux")]
 #![allow(unsafe_code)]
 
 use std::{
@@ -67,7 +64,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     data::{
-        Data, OptionChainSlice, QuoteTick, registry::deserialize_custom_from_json,
+        CustomData, Data, OptionChainSlice, QuoteTick, registry::deserialize_custom_from_json,
         stubs::stub_deltas,
     },
     enums::{OmsType, OrderSide, TimeInForce},
@@ -79,7 +76,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, stubs},
     orders::{MarketOrder, Order, OrderAny, stubs::TestOrderEventStubs},
     position::Position,
-    types::{Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_plugin::{
     PLUGIN_BUILD_ID_VERSION,
@@ -93,6 +90,7 @@ const EXAMPLE_NAME: &str = "custom_data_plugin";
 const RUNTIME_SMOKE_EXAMPLE_NAME: &str = "runtime_smoke_plugin";
 const EXEC_TEST_EXAMPLE_NAME: &str = "exec_test_plugin";
 const ACTOR_EVENT_EXAMPLE_NAME: &str = "actor_event_plugin";
+const PLUGIN_TEST_PROFILE: &str = "nextest";
 
 fn workspace_root() -> PathBuf {
     let p = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo");
@@ -117,26 +115,7 @@ fn cdylib_filename(name: &str) -> String {
 fn build_example_once() -> PathBuf {
     static EXAMPLE_PATH: OnceLock<PathBuf> = OnceLock::new();
     EXAMPLE_PATH
-        .get_or_init(|| {
-            let root = workspace_root();
-            let status = Command::new(env!("CARGO"))
-                .current_dir(&root)
-                .args(["build", "-p", "nautilus-plugin", "--example", EXAMPLE_NAME])
-                .status()
-                .expect("cargo build of example cdylib");
-            assert!(status.success(), "failed to build example cdylib");
-
-            let artifact = cargo_target_dir(&root)
-                .join("debug")
-                .join("examples")
-                .join(cdylib_filename(EXAMPLE_NAME));
-            assert!(
-                artifact.exists(),
-                "example cdylib artifact not at {}",
-                artifact.display()
-            );
-            artifact
-        })
+        .get_or_init(|| build_plugin_example(EXAMPLE_NAME))
         .clone()
     // OnceLock cloned PathBuf so callers can use it without holding the lock.
 }
@@ -144,32 +123,7 @@ fn build_example_once() -> PathBuf {
 fn build_runtime_smoke_example_once() -> PathBuf {
     static EXAMPLE_PATH: OnceLock<PathBuf> = OnceLock::new();
     EXAMPLE_PATH
-        .get_or_init(|| {
-            let root = workspace_root();
-            let status = Command::new(env!("CARGO"))
-                .current_dir(&root)
-                .args([
-                    "build",
-                    "-p",
-                    "nautilus-plugin",
-                    "--example",
-                    RUNTIME_SMOKE_EXAMPLE_NAME,
-                ])
-                .status()
-                .expect("cargo build of runtime smoke cdylib");
-            assert!(status.success(), "failed to build runtime smoke cdylib");
-
-            let artifact = cargo_target_dir(&root)
-                .join("debug")
-                .join("examples")
-                .join(cdylib_filename(RUNTIME_SMOKE_EXAMPLE_NAME));
-            assert!(
-                artifact.exists(),
-                "runtime smoke cdylib artifact not at {}",
-                artifact.display()
-            );
-            artifact
-        })
+        .get_or_init(|| build_plugin_example(RUNTIME_SMOKE_EXAMPLE_NAME))
         .clone()
 }
 
@@ -189,15 +143,29 @@ fn build_actor_event_example_once() -> PathBuf {
 
 fn build_plugin_example(name: &str) -> PathBuf {
     let root = workspace_root();
+    let mut args = vec![
+        "build",
+        "-p",
+        "nautilus-plugin",
+        "--example",
+        name,
+        "--profile",
+        PLUGIN_TEST_PROFILE,
+    ];
+
+    if host_model_uses_high_precision() {
+        args.extend(["--features", "nautilus-model/high-precision"]);
+    }
+
     let status = Command::new(env!("CARGO"))
         .current_dir(&root)
-        .args(["build", "-p", "nautilus-plugin", "--example", name])
+        .args(args)
         .status()
         .expect("cargo build of plug-in example cdylib");
     assert!(status.success(), "failed to build plug-in example cdylib");
 
     let artifact = cargo_target_dir(&root)
-        .join("debug")
+        .join(PLUGIN_TEST_PROFILE)
         .join("examples")
         .join(cdylib_filename(name));
     assert!(
@@ -206,6 +174,10 @@ fn build_plugin_example(name: &str) -> PathBuf {
         artifact.display()
     );
     artifact
+}
+
+fn host_model_uses_high_precision() -> bool {
+    FIXED_PRECISION > 9
 }
 
 fn cargo_target_dir(root: &Path) -> PathBuf {
@@ -384,8 +356,31 @@ fn plugin_test_option_chain() -> OptionChainSlice {
     OptionChainSlice::new(plugin_test_option_series_id())
 }
 
+fn plugin_test_custom_data(value: f64) -> CustomData {
+    let manifest = ValidatedPluginManifest::new(loaded_manifest())
+        .expect("live example manifest passes validation");
+    register_custom_data_from_manifest(manifest).expect("custom data registration succeeds");
+    let envelope = serde_json::json!({
+        "type": "Custom",
+        "data_type": {
+            "type_name": "ExampleTick",
+        },
+        "payload": {
+            "value": value,
+            "ts_event": 10,
+            "ts_init": 11,
+        },
+    });
+    let data = deserialize_custom_from_json("ExampleTick", &envelope)
+        .expect("deserializer returns Ok")
+        .expect("custom data type is registered");
+    let Data::Custom(custom) = data else {
+        panic!("expected Custom variant");
+    };
+    custom
+}
+
 #[rstest]
-#[ignore]
 fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
     assert!(example_manifest.matches_compiled_abi());
     let manifest = ValidatedPluginManifest::new(example_manifest)
@@ -421,7 +416,6 @@ fn loader_loads_example_cdylib(example_manifest: &'static PluginManifest) {
 }
 
 #[rstest]
-#[ignore]
 fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -448,7 +442,6 @@ fn actor_adapter_construct_and_dispatch_lifecycle(example_manifest: &'static Plu
 }
 
 #[rstest]
-#[ignore]
 fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -480,7 +473,88 @@ fn strategy_adapter_construct(example_manifest: &'static PluginManifest) {
 }
 
 #[rstest]
-#[ignore]
+fn cdylib_actor_custom_data_dispatches_to_on_data(example_manifest: &'static PluginManifest) {
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest.actors().next().expect("example actor entry");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-actor-custom-data-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ExampleActorCustomData-001"),
+            "example-custom-data-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    let custom = plugin_test_custom_data(7.25);
+    DataActor::on_data(&mut adapter, &custom).expect("on_data dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in actor writes custom data marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "7.25");
+}
+
+#[rstest]
+fn cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest: &'static PluginManifest) {
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest
+        .strategies()
+        .next()
+        .expect("example strategy entry");
+    let strategy_id = StrategyId::from("ExampleStrategyCustomData-001");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-strategy-custom-data-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "example-custom-data-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let custom = plugin_test_custom_data(8.5);
+    DataActor::on_data(&mut adapter, &custom).expect("on_data dispatches");
+    let contents = fs::read_to_string(&marker).expect("plug-in strategy writes custom data marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "8.5");
+}
+
+#[rstest]
 fn cdylib_strategy_submit_order_normalizes_identifiers() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -544,7 +618,6 @@ fn cdylib_strategy_submit_order_normalizes_identifiers() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -616,7 +689,6 @@ fn cdylib_strategy_query_order_normalizes_identifiers_for_cache_lookup() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -688,7 +760,6 @@ fn cdylib_strategy_cancel_order_normalizes_identifiers_for_cache_lookup() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -761,7 +832,6 @@ fn cdylib_strategy_modify_order_normalizes_identifiers_for_cache_lookup() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -837,7 +907,6 @@ fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -911,7 +980,6 @@ fn cdylib_actor_quote_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -950,7 +1018,6 @@ fn cdylib_actor_book_deltas_handle_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -990,7 +1057,6 @@ fn cdylib_actor_instrument_handle_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_actor_event_manifest())
         .expect("actor event manifest passes validation");
@@ -1030,7 +1096,6 @@ fn cdylib_actor_option_chain_handle_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
-#[ignore]
 fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
     let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
         .expect("exec test manifest passes validation");
@@ -1075,7 +1140,6 @@ fn cdylib_strategy_quote_normalizes_identifiers_for_plugin() {
 }
 
 #[rstest]
-#[ignore]
 fn custom_data_registration_round_trips_via_registry(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -1108,7 +1172,6 @@ fn custom_data_registration_round_trips_via_registry(example_manifest: &'static 
 }
 
 #[rstest]
-#[ignore]
 fn live_node_loads_configured_plugin_actor_strategy_and_custom_data() {
     let path = build_example_once();
     let config = LiveNodeConfig {
@@ -1172,7 +1235,6 @@ fn live_node_loads_configured_plugin_actor_strategy_and_custom_data() {
 }
 
 #[rstest]
-#[ignore]
 fn live_node_accepts_matching_plugin_sha256() {
     let path = build_example_once();
     let bytes = fs::read(&path).expect("example cdylib can be read");
@@ -1205,7 +1267,6 @@ fn live_node_accepts_matching_plugin_sha256() {
 }
 
 #[rstest]
-#[ignore]
 fn live_node_checks_sha256_for_each_configured_plugin_instance() {
     let path = build_example_once();
     let config = LiveNodeConfig {

@@ -33,7 +33,7 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
-    CustomDataTrait, HasTsInit,
+    CustomData, CustomDataTrait, HasTsInit,
     registry::{JsonDeserializer, ensure_json_deserializer_registered},
 };
 
@@ -42,7 +42,7 @@ use crate::{
     manifest::{
         ValidatedCustomDataRegistration, ValidatedCustomDataVTable, ValidatedPluginManifest,
     },
-    surfaces::custom_data::CustomDataHandle,
+    surfaces::custom_data::{CustomDataHandle, PluginCustomDataRef},
 };
 
 /// Walks a [`ValidatedPluginManifest`] and registers a JSON deserializer for every
@@ -118,6 +118,47 @@ pub struct PluginCustomDataValue {
     vtable: ValidatedCustomDataVTable,
     handle: *mut CustomDataHandle,
     type_name: &'static str,
+}
+
+impl PluginCustomDataValue {
+    /// Returns the boundary reference used for plug-in `on_data` callbacks.
+    #[must_use]
+    pub fn boundary_ref(&self) -> PluginCustomDataRef {
+        // SAFETY: this wrapper owns a live handle allocated by `vtable`, and
+        // type_name is process-lifetime static registration data.
+        unsafe {
+            PluginCustomDataRef::from_raw_parts(
+                BorrowedStr::from_str(self.type_name),
+                self.vtable.as_ptr(),
+                self.handle.cast_const(),
+            )
+        }
+    }
+}
+
+/// Returns the plug-in boundary reference for a host custom-data value when it
+/// came from a plug-in custom-data registration.
+#[must_use]
+pub fn try_custom_data_boundary_ref(data: &CustomData) -> Option<PluginCustomDataRef> {
+    data.data
+        .as_any()
+        .downcast_ref::<PluginCustomDataValue>()
+        .map(PluginCustomDataValue::boundary_ref)
+}
+
+/// Returns the plug-in boundary reference for a host custom-data value.
+///
+/// # Errors
+///
+/// Returns an error when the value was not decoded from a `PluginCustomData`
+/// registration and therefore has no plug-in vtable or handle.
+pub fn custom_data_boundary_ref(data: &CustomData) -> anyhow::Result<PluginCustomDataRef> {
+    try_custom_data_boundary_ref(data).ok_or_else(|| {
+        anyhow::anyhow!(
+            "custom data type '{}' is not backed by a plug-in custom-data handle",
+            data.data.type_name()
+        )
+    })
 }
 
 // SAFETY: the inner handle is owned exclusively; the vtable is process-
@@ -224,6 +265,7 @@ impl CustomDataTrait for PluginCustomDataValue {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::data::Data;
     use rstest::rstest;
 
     use super::*;
@@ -231,7 +273,56 @@ mod tests {
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
         manifest::{CustomDataRegistration, PluginBuildId, PluginManifest},
+        surfaces::custom_data::{PluginCustomData, custom_data_vtable},
     };
+
+    #[derive(Clone, PartialEq)]
+    struct BridgeBoundaryTick {
+        value: u64,
+    }
+
+    impl PluginCustomData for BridgeBoundaryTick {
+        const TYPE_NAME: &'static str = "BridgeBoundaryTick";
+
+        fn ts_event(&self) -> u64 {
+            0
+        }
+
+        fn ts_init(&self) -> u64 {
+            0
+        }
+
+        fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+            Ok(serde_json::json!({ "value": self.value })
+                .to_string()
+                .into_bytes())
+        }
+
+        fn from_json(payload: &[u8]) -> anyhow::Result<Self> {
+            let value: serde_json::Value = serde_json::from_slice(payload)?;
+            Ok(Self {
+                value: value
+                    .get("value")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or_default(),
+            })
+        }
+
+        fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn decode_batch(
+            _ipc_bytes: &[u8],
+            _metadata: &[(String, String)],
+        ) -> anyhow::Result<Vec<Self>> {
+            Ok(Vec::new())
+        }
+    }
 
     #[rstest]
     fn register_custom_data_from_manifest_rejects_null_vtable() {
@@ -256,6 +347,67 @@ mod tests {
             err.to_string()
                 .contains("custom_data[0].vtable must not be null"),
             "expected null vtable error, was: {err}",
+        );
+    }
+
+    #[rstest]
+    fn custom_data_boundary_ref_accepts_plugin_custom_data() {
+        let custom_data = Box::leak(Box::new([CustomDataRegistration {
+            type_name: BorrowedStr::from_str(BridgeBoundaryTick::TYPE_NAME),
+            vtable: custom_data_vtable::<BridgeBoundaryTick>(),
+        }]));
+        let manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+            plugin_name: BorrowedStr::from_str("test-plugin"),
+            plugin_vendor: BorrowedStr::from_str("nautech"),
+            plugin_version: BorrowedStr::from_str("0.0.0"),
+            build_id: PluginBuildId::current(),
+            custom_data: Slice::from_slice(custom_data),
+            actors: Slice::empty(),
+            strategies: Slice::empty(),
+        };
+        let manifest =
+            ValidatedPluginManifest::new(&manifest).expect("test manifest passes validation");
+        register_custom_data_from_manifest(manifest).expect("custom data registration succeeds");
+        let envelope = serde_json::json!({
+            "type": "Custom",
+            "data_type": {
+                "type_name": BridgeBoundaryTick::TYPE_NAME,
+            },
+            "payload": {
+                "value": 42,
+            },
+        });
+        let data = nautilus_model::data::registry::deserialize_custom_from_json(
+            BridgeBoundaryTick::TYPE_NAME,
+            &envelope,
+        )
+        .expect("deserializer succeeds")
+        .expect("custom data type is registered");
+        let Data::Custom(custom) = data else {
+            panic!("expected Custom variant");
+        };
+        let data_ref =
+            custom_data_boundary_ref(&custom).expect("plug-in custom data has boundary ref");
+        let value = data_ref
+            .downcast_ref::<BridgeBoundaryTick>()
+            .expect("boundary ref downcasts to registered plug-in type");
+
+        assert_eq!(value.value, 42);
+    }
+
+    #[rstest]
+    fn custom_data_boundary_ref_rejects_non_plugin_custom_data() {
+        let data = nautilus_model::data::stubs::stub_custom_data(1, 42, None, None);
+        let err = match custom_data_boundary_ref(&data) {
+            Ok(_) => panic!("expected non-plugin custom data to fail"),
+            Err(e) => e,
+        };
+
+        assert!(
+            err.to_string()
+                .contains("not backed by a plug-in custom-data handle"),
+            "expected non-plugin custom-data error, was: {err}",
         );
     }
 }

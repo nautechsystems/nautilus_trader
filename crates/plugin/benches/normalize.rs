@@ -44,8 +44,8 @@ impl PluginActor for BoundaryBenchActor {
         Self
     }
 
-    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        black_box(quote.instrument_id);
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        black_box(instrument.id());
         Ok(())
     }
 
@@ -55,8 +55,8 @@ impl PluginActor for BoundaryBenchActor {
         Ok(())
     }
 
-    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        black_box(instrument.id());
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        black_box(quote.instrument_id);
         Ok(())
     }
 
@@ -123,14 +123,16 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
     let handle = unsafe { create(ptr::null(), ptr::null(), BorrowedStr::empty()) };
     assert!(!handle.is_null(), "actor vtable create returned null");
 
-    let on_quote = vtable.on_quote.expect("actor vtable has on_quote");
-    let quote = quote_tick();
-    c.bench_function("plugin_normalize/quote_tick", |b| {
+    let on_instrument = vtable
+        .on_instrument
+        .expect("actor vtable has on_instrument");
+    let instrument = InstrumentAnyHandle::new(large_instrument());
+    c.bench_function("plugin_normalize/large_instrument_any", |b| {
         b.iter(|| {
-            // SAFETY: handle comes from this vtable and quote lives for the call.
-            unsafe { on_quote(handle, black_box(&quote)) }
+            // SAFETY: handle comes from this vtable and instrument lives for the call.
+            unsafe { on_instrument(handle, black_box(&instrument)) }
                 .into_result()
-                .expect("quote callback succeeds");
+                .expect("instrument callback succeeds");
         });
     });
 
@@ -147,6 +149,17 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
         });
     });
 
+    let on_quote = vtable.on_quote.expect("actor vtable has on_quote");
+    let quote = quote_tick();
+    c.bench_function("plugin_normalize/quote_tick", |b| {
+        b.iter(|| {
+            // SAFETY: handle comes from this vtable and quote lives for the call.
+            unsafe { on_quote(handle, black_box(&quote)) }
+                .into_result()
+                .expect("quote callback succeeds");
+        });
+    });
+
     let on_historical_quotes = vtable
         .on_historical_quotes
         .expect("actor vtable has on_historical_quotes");
@@ -157,19 +170,6 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
             unsafe { on_historical_quotes(handle, black_box(Slice::from_slice(&quotes))) }
                 .into_result()
                 .expect("historical quotes callback succeeds");
-        });
-    });
-
-    let on_instrument = vtable
-        .on_instrument
-        .expect("actor vtable has on_instrument");
-    let instrument = InstrumentAnyHandle::new(large_instrument());
-    c.bench_function("plugin_normalize/large_instrument_any", |b| {
-        b.iter(|| {
-            // SAFETY: handle comes from this vtable and instrument lives for the call.
-            unsafe { on_instrument(handle, black_box(&instrument)) }
-                .into_result()
-                .expect("instrument callback succeeds");
         });
     });
 

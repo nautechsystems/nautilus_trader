@@ -45,9 +45,10 @@ point means adding one module and one `Slice` field.
 | Pricing / greeks    | Not yet | `surfaces::pricing`        |
 
 Out of scope: async client adapters (data and execution), catalog and cache
-backends, pre-trade risk gating, event store backends, and hot reload of any
-plug-in while the live node is running. Plug-ins load at process startup and
-live for the process lifetime.
+backends, pre-trade risk gating, event store backends, native or Python
+custom-data callbacks that are not backed by a plug-in vtable, and hot reload
+of any plug-in while the live node is running. Plug-ins load at process startup
+and live for the process lifetime.
 
 `OrderBookDeltas` cross the boundary via `OrderBookDeltasHandle`, a
 `#[repr(C)]` wrapper owned by the host that boxes the deltas for the
@@ -68,6 +69,14 @@ for the same reason: the snapshot owns
 `BTreeMap<Price, OptionStrikeData>` call and put maps and cannot be
 `#[repr(C)]`. The host boxes the slice in the handle for the duration
 of the callback.
+
+Custom data registered through `PluginCustomData` can flow into actor
+and strategy `on_data` callbacks. The host wraps each decoded value in a
+plug-in-owned handle plus vtable, then passes a borrowed
+`PluginCustomDataRef` to the cdylib. Plug-in code can inspect the type
+name and downcast to its concrete type locally. The host rejects custom
+data that did not come from a plug-in registration, because those values
+do not carry the vtable and handle needed for that downcast.
 
 ## Identifier interning
 
@@ -126,11 +135,10 @@ identifier in ABI mismatch diagnostics so operators can spot stale or cross-buil
 The build identifier remains diagnostic; the loader validates only the build-id schema version,
 not the specific crate version, compiler version, target triple, or build profile values.
 
-`NAUTILUS_PLUGIN_ABI_VERSION` stays pinned at `1` while this early-alpha surface is unreleased
-and unstable. During this phase, the value does not promise compatibility between Nautilus
-versions. Once the surface is released, every breaking change to any `#[repr(C)]` struct or
-vtable in this crate must bump it. The host refuses to load a plug-in whose
-`PluginManifest::abi_version` does not match.
+`NAUTILUS_PLUGIN_ABI_VERSION` tracks the current boundary layout while this early-alpha surface
+is unreleased and unstable. During this phase, the value does not promise compatibility between
+Nautilus versions. Every breaking change to any `#[repr(C)]` struct or vtable in this crate must
+bump it. The host refuses to load a plug-in whose `PluginManifest::abi_version` does not match.
 
 ## Documentation
 

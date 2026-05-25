@@ -71,14 +71,16 @@ use nautilus_live::plugin::{
     ClosePositionCommand, ClosePositionHandle, HostContextInner, ModifyOrderCommand,
     ModifyOrderHandle, PluginActorAdapter, PluginStrategyAdapter, QueryAccountCommand,
     QueryAccountHandle, QueryOrderCommand, QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle,
-    SubmitOrderListCommand, SubmitOrderListHandle, host_vtable,
+    SubmitOrderListCommand, SubmitOrderListHandle, host_vtable, register_custom_data_from_manifest,
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{
-        Bar, BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDeltas,
-        QuoteTick, TradeTick, stubs::stub_deltas,
+        Bar, BarSpecification, BarType, CustomData, Data, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OptionChainSlice, OptionGreeks,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        registry::deserialize_custom_from_json,
+        stubs::{stub_custom_data, stub_deltas},
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, GreeksConvention,
@@ -101,11 +103,16 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
+    NAUTILUS_PLUGIN_ABI_VERSION,
     boundary::{BorrowedStr, Slice},
     host::{HostContext, HostVTable},
-    manifest::{ValidatedActorVTable, ValidatedStrategyVTable},
+    manifest::{
+        CustomDataRegistration, PluginBuildId, PluginManifest, ValidatedActorVTable,
+        ValidatedPluginManifest, ValidatedStrategyVTable,
+    },
     surfaces::{
         actor::{PluginActor, actor_vtable},
+        custom_data::{PluginCustomData, PluginCustomDataRef, custom_data_vtable},
         strategy::{PluginStrategy, strategy_vtable},
     },
 };
@@ -123,16 +130,19 @@ static A_DISPOSE: AtomicU64 = AtomicU64::new(0);
 static A_DEGRADE: AtomicU64 = AtomicU64::new(0);
 static A_FAULT: AtomicU64 = AtomicU64::new(0);
 static A_TIME: AtomicU64 = AtomicU64::new(0);
+static A_DATA: AtomicU64 = AtomicU64::new(0);
+static A_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
+static A_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
 static A_QUOTE: AtomicU64 = AtomicU64::new(0);
 static A_TRADE: AtomicU64 = AtomicU64::new(0);
 static A_BAR: AtomicU64 = AtomicU64::new(0);
-static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
-static A_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
-static A_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static A_MARK: AtomicU64 = AtomicU64::new(0);
 static A_INDEX: AtomicU64 = AtomicU64::new(0);
 static A_FUNDING: AtomicU64 = AtomicU64::new(0);
 static A_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
+static A_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static A_INSTR_STATUS: AtomicU64 = AtomicU64::new(0);
 static A_INSTR_CLOSE: AtomicU64 = AtomicU64::new(0);
 static A_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
@@ -149,16 +159,19 @@ fn a_reset() {
         &A_DEGRADE,
         &A_FAULT,
         &A_TIME,
+        &A_DATA,
+        &A_DATA_VALUE,
+        &A_INSTRUMENT,
+        &A_BOOK_DELTAS,
+        &A_HIST_BOOK_DELTAS,
         &A_QUOTE,
         &A_TRADE,
         &A_BAR,
-        &A_BOOK_DELTAS,
-        &A_INSTRUMENT,
-        &A_OPTION_CHAIN,
         &A_MARK,
         &A_INDEX,
         &A_FUNDING,
         &A_OPTION_GREEKS,
+        &A_OPTION_CHAIN,
         &A_INSTR_STATUS,
         &A_INSTR_CLOSE,
         &A_ORDER_FILLED,
@@ -170,6 +183,68 @@ fn a_reset() {
 }
 
 struct CountingActor;
+
+#[derive(Clone, PartialEq)]
+struct DispatchCustomData {
+    value: u64,
+    ts_event: u64,
+    ts_init: u64,
+}
+
+impl PluginCustomData for DispatchCustomData {
+    const TYPE_NAME: &'static str = "DispatchCustomData";
+
+    fn ts_event(&self) -> u64 {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> u64 {
+        self.ts_init
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(serde_json::json!({
+            "value": self.value,
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
+        })
+        .to_string()
+        .into_bytes())
+    }
+
+    fn from_json(payload: &[u8]) -> anyhow::Result<Self> {
+        let value: serde_json::Value = serde_json::from_slice(payload)?;
+        Ok(Self {
+            value: value
+                .get("value")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            ts_event: value
+                .get("ts_event")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            ts_init: value
+                .get("ts_init")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+        })
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+}
 
 impl PluginActor for CountingActor {
     const TYPE_NAME: &'static str = "CountingActor";
@@ -210,6 +285,26 @@ impl PluginActor for CountingActor {
         A_TIME.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let Some(value) = data.downcast_ref::<DispatchCustomData>() else {
+            anyhow::bail!("expected DispatchCustomData, was {}", data.type_name());
+        };
+        A_DATA_VALUE.store(value.value, Ordering::SeqCst);
+        A_DATA.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        A_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
+        A_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         A_QUOTE.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -220,18 +315,6 @@ impl PluginActor for CountingActor {
     }
     fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
         A_BAR.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
-        A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
-        A_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
-        A_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -249,6 +332,11 @@ impl PluginActor for CountingActor {
 
     fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
         A_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
+        A_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
@@ -277,11 +365,15 @@ impl PluginActor for CountingActor {
 // Counters for the strategy surface. Strategy-only callbacks live below
 // the actor counters and exercise the macro override block.
 static S_START: AtomicU64 = AtomicU64::new(0);
+static S_DATA: AtomicU64 = AtomicU64::new(0);
+static S_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
+static S_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
 static S_QUOTE: AtomicU64 = AtomicU64::new(0);
 static S_TRADE: AtomicU64 = AtomicU64::new(0);
 static S_BAR: AtomicU64 = AtomicU64::new(0);
-static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
-static S_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static S_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
 static S_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
@@ -302,16 +394,19 @@ static S_ORDER_UPDATED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_OPENED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_CHANGED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_CLOSED: AtomicU64 = AtomicU64::new(0);
-static S_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
 
 fn s_reset() {
     for c in [
         &S_START,
+        &S_DATA,
+        &S_DATA_VALUE,
+        &S_INSTRUMENT,
+        &S_BOOK_DELTAS,
+        &S_HIST_BOOK_DELTAS,
         &S_QUOTE,
         &S_TRADE,
         &S_BAR,
-        &S_BOOK_DELTAS,
-        &S_INSTRUMENT,
+        &S_OPTION_GREEKS,
         &S_OPTION_CHAIN,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
@@ -332,7 +427,6 @@ fn s_reset() {
         &S_POSITION_OPENED,
         &S_POSITION_CHANGED,
         &S_POSITION_CLOSED,
-        &S_OPTION_GREEKS,
     ] {
         c.store(0, Ordering::SeqCst);
     }
@@ -354,6 +448,26 @@ impl PluginStrategy for CountingStrategy {
         S_START.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let Some(value) = data.downcast_ref::<DispatchCustomData>() else {
+            anyhow::bail!("expected DispatchCustomData, was {}", data.type_name());
+        };
+        S_DATA_VALUE.store(value.value, Ordering::SeqCst);
+        S_DATA.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        S_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
+        S_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_quote(&mut self, _: &QuoteTick) -> anyhow::Result<()> {
         S_QUOTE.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -366,12 +480,8 @@ impl PluginStrategy for CountingStrategy {
         S_BAR.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
-    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
-        S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
-        S_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+    fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
+        S_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
@@ -452,11 +562,6 @@ impl PluginStrategy for CountingStrategy {
     }
     fn on_position_closed(&mut self, _: &PositionClosed) -> anyhow::Result<()> {
         S_POSITION_CLOSED.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-
-    fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
-        S_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -805,35 +910,73 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     a_reset();
     let mut a = build_actor_adapter("CountingActor-Data");
 
+    DataActor::on_instrument(&mut a, &make_instrument()).unwrap();
+    DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
     DataActor::on_quote(&mut a, &make_quote()).unwrap();
     DataActor::on_trade(&mut a, &make_trade()).unwrap();
     DataActor::on_bar(&mut a, &make_bar()).unwrap();
-    DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
-    DataActor::on_instrument(&mut a, &make_instrument()).unwrap();
-    DataActor::on_option_chain(&mut a, &make_option_chain()).unwrap();
     DataActor::on_mark_price(&mut a, &make_mark_price()).unwrap();
     DataActor::on_index_price(&mut a, &make_index_price()).unwrap();
     DataActor::on_funding_rate(&mut a, &make_funding_rate()).unwrap();
     DataActor::on_option_greeks(&mut a, &make_option_greeks()).unwrap();
+    DataActor::on_option_chain(&mut a, &make_option_chain()).unwrap();
     DataActor::on_instrument_status(&mut a, &make_instrument_status()).unwrap();
     DataActor::on_instrument_close(&mut a, &make_instrument_close()).unwrap();
     DataActor::on_time_event(&mut a, &make_time_event()).unwrap();
     DataActor::on_signal(&mut a, &make_signal()).unwrap();
 
+    assert_eq!(A_INSTRUMENT.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
     assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
     assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
-    assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
-    assert_eq!(A_INSTRUMENT.load(Ordering::SeqCst), 1);
-    assert_eq!(A_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(A_MARK.load(Ordering::SeqCst), 1);
     assert_eq!(A_INDEX.load(Ordering::SeqCst), 1);
     assert_eq!(A_FUNDING.load(Ordering::SeqCst), 1);
     assert_eq!(A_OPTION_GREEKS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(A_INSTR_STATUS.load(Ordering::SeqCst), 1);
     assert_eq!(A_INSTR_CLOSE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TIME.load(Ordering::SeqCst), 1);
     assert_eq!(A_SIGNAL.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn actor_adapter_historical_book_deltas_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistBookDeltas");
+    let deltas = stub_deltas();
+
+    DataActor::on_historical_book_deltas(&mut a, &deltas.deltas).unwrap();
+
+    assert_eq!(A_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn actor_adapter_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-CustomData");
+    let custom = plugin_dispatch_custom_data(42);
+
+    DataActor::on_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 42);
+}
+
+#[rstest]
+fn actor_adapter_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-ForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
 }
 
 #[rstest]
@@ -857,21 +1000,97 @@ fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
     s_reset();
     let mut s = build_strategy_adapter("CountingStrategy-Data");
 
-    DataActor::on_quote(&mut s, &make_quote()).unwrap();
-    DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
     DataActor::on_instrument(&mut s, &make_instrument()).unwrap();
-    DataActor::on_option_chain(&mut s, &make_option_chain()).unwrap();
+    DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
+    DataActor::on_quote(&mut s, &make_quote()).unwrap();
     DataActor::on_option_greeks(&mut s, &make_option_greeks()).unwrap();
+    DataActor::on_option_chain(&mut s, &make_option_chain()).unwrap();
     DataActor::on_order_filled(&mut s, &make_order_filled()).unwrap();
     DataActor::on_order_canceled(&mut s, &make_order_canceled()).unwrap();
 
-    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
-    assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
     assert_eq!(S_INSTRUMENT.load(Ordering::SeqCst), 1);
-    assert_eq!(S_OPTION_CHAIN.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_GREEKS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_FILLED.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_CANCELED.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn strategy_adapter_historical_book_deltas_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistBookDeltas");
+    let deltas = stub_deltas();
+
+    DataActor::on_historical_book_deltas(&mut s, &deltas.deltas).unwrap();
+
+    assert_eq!(S_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn strategy_adapter_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-CustomData");
+    let custom = plugin_dispatch_custom_data(43);
+
+    DataActor::on_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 43);
+}
+
+#[rstest]
+fn strategy_adapter_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-ForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+fn plugin_dispatch_custom_data(value: u64) -> CustomData {
+    let custom_data = Box::leak(Box::new([CustomDataRegistration {
+        type_name: BorrowedStr::from_str(DispatchCustomData::TYPE_NAME),
+        vtable: custom_data_vtable::<DispatchCustomData>(),
+    }]));
+    let manifest = PluginManifest {
+        abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+        plugin_name: BorrowedStr::from_str("plugin-dispatch-test"),
+        plugin_vendor: BorrowedStr::from_str("nautech"),
+        plugin_version: BorrowedStr::from_str("0.0.0"),
+        build_id: PluginBuildId::current(),
+        custom_data: Slice::from_slice(custom_data),
+        actors: Slice::empty(),
+        strategies: Slice::empty(),
+    };
+    let manifest =
+        ValidatedPluginManifest::new(&manifest).expect("test manifest passes validation");
+    register_custom_data_from_manifest(manifest).expect("custom data registration succeeds");
+    let envelope = serde_json::json!({
+        "type": "Custom",
+        "data_type": {
+            "type_name": DispatchCustomData::TYPE_NAME,
+        },
+        "payload": {
+            "value": value,
+            "ts_event": 10,
+            "ts_init": 11,
+        },
+    });
+    let data = deserialize_custom_from_json(DispatchCustomData::TYPE_NAME, &envelope)
+        .expect("deserializer succeeds")
+        .expect("custom data type is registered");
+    let Data::Custom(custom) = data else {
+        panic!("expected Custom variant");
+    };
+    custom
 }
 
 #[rstest]

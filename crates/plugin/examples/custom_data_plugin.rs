@@ -25,19 +25,36 @@
 //! dependency. Production plug-ins serialize their schema via
 //! `arrow::ipc::writer::StreamWriter`.
 
+use std::{fs, path::PathBuf};
+
 use nautilus_model::data::QuoteTick;
 use nautilus_plugin::prelude::*;
 
 #[derive(Default)]
 pub struct ExampleActor {
     quotes_seen: u64,
+    callback_path: Option<PathBuf>,
 }
 
 impl PluginActor for ExampleActor {
     const TYPE_NAME: &'static str = "ExampleActor";
 
-    fn new(_host: *const HostVTable, _ctx: *const HostContext, _config_json: &str) -> Self {
-        Self::default()
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, config_json: &str) -> Self {
+        Self {
+            quotes_seen: 0,
+            callback_path: config_callback_path(config_json),
+        }
+    }
+
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let tick = data
+            .downcast_ref::<ExampleTick>()
+            .ok_or_else(|| anyhow::anyhow!("expected ExampleTick custom data"))?;
+
+        if let Some(path) = &self.callback_path {
+            fs::write(path, tick.value.to_string())?;
+        }
+        Ok(())
     }
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
@@ -50,6 +67,7 @@ pub struct ExampleStrategy {
     _host: *const HostVTable,
     _ctx: *const HostContext,
     quotes_seen: u64,
+    callback_path: Option<PathBuf>,
 }
 
 // SAFETY: ExampleStrategy holds opaque host pointers the host commits to
@@ -59,12 +77,24 @@ unsafe impl Send for ExampleStrategy {}
 impl PluginStrategy for ExampleStrategy {
     const TYPE_NAME: &'static str = "ExampleStrategy";
 
-    fn new(host: *const HostVTable, ctx: *const HostContext, _config_json: &str) -> Self {
+    fn new(host: *const HostVTable, ctx: *const HostContext, config_json: &str) -> Self {
         Self {
             _host: host,
             _ctx: ctx,
             quotes_seen: 0,
+            callback_path: config_callback_path(config_json),
         }
+    }
+
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let tick = data
+            .downcast_ref::<ExampleTick>()
+            .ok_or_else(|| anyhow::anyhow!("expected ExampleTick custom data"))?;
+
+        if let Some(path) = &self.callback_path {
+            fs::write(path, tick.value.to_string())?;
+        }
+        Ok(())
     }
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
@@ -152,6 +182,14 @@ impl PluginCustomData for ExampleTick {
         }
         Ok(out)
     }
+}
+
+fn config_callback_path(config_json: &str) -> Option<PathBuf> {
+    let config = serde_json::from_str::<serde_json::Value>(config_json).ok()?;
+    config
+        .get("callback_path")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
 }
 
 nautilus_plugin::nautilus_plugin! {

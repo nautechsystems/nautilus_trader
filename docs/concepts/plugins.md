@@ -5,6 +5,10 @@ loads each cdylib at process startup and runs its actors, strategies, and custom
 alongside compiled-in components. The host owns the C-ABI boundary; plug-in authors write standard
 Rust traits, and a macro emits the boundary glue.
 
+:::note
+The plug-in system is supported on Linux only.
+:::
+
 **The core philosophy**:
 
 - The boundary is C ABI, because Rust's `#[repr(Rust)]` layout is unstable across compilations.
@@ -18,10 +22,10 @@ Rust traits, and a macro emits the boundary glue.
   unwinds across the FFI boundary.
 
 :::warning
-The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` stays
-pinned at `1` and does not promise compatibility between Nautilus versions. Pin plug-in builds to
-the matching host version, and treat the concepts here as the design contract for current
-development.
+The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` tracks
+the current boundary layout and does not promise compatibility between Nautilus versions. Pin
+plug-in builds to the matching host version, and treat the concepts here as the design contract
+for current development.
 :::
 
 ## Terms
@@ -36,7 +40,7 @@ development.
 
 ## What a plug-in contributes
 
-A v1 plug-in cdylib can publish three families of contributions through its manifest:
+A plug-in cdylib can publish three families of contributions through its manifest:
 
 - Custom-data types via `PluginCustomData` (`surfaces::custom_data`).
 - Plug-in actors via `PluginActor` (`surfaces::actor`).
@@ -49,8 +53,8 @@ module and one slice field, then bumping the ABI version.
 Each plug-point family carries a fixed callback set. The actor surface today covers the lifecycle
 hooks plus the data callbacks whose payload types are `#[repr(C)]`-clean end-to-end: quotes, trades,
 bars, mark/index/funding prices, instrument status and close, order filled and canceled events,
-signals, and time events. The strategy surface adds the order lifecycle and position event
-callbacks on top of the actor surface.
+signals, time events, and custom data values registered through `PluginCustomData`. The strategy
+surface adds the order lifecycle and position event callbacks on top of the actor surface.
 
 ## Boundaries
 
@@ -60,13 +64,13 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Catalog, cache, and event-store backends as plug-ins.
 - Pre-trade risk gating as a plug-in.
 - Hot reload (plug-ins load at process startup and stay loaded).
-- `OrderBook` state and arbitrary `CustomData` on the actor or strategy callback surface
-  (payload shapes are not `#[repr(C)]`-clean).
+- `OrderBook` state and native or Python `CustomData` on the actor or strategy callback surface
+  (those payloads have no plug-in vtable and handle to downcast through).
 
 ## ABI boundary
 
 Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. Two
-patterns cover the v1 surface:
+patterns cover the current surface:
 
 - Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
   model types. No serialisation, no per-event allocation.
@@ -77,6 +81,10 @@ patterns cover the v1 surface:
   plug-in owns for the duration of the call. The host derefs the handle and dispatches into the
   matching `Strategy` command, leaving the in-engine `TradingCommand` shape untouched. No JSON
   crosses the boundary on any per-call command path.
+- Plug-in custom data flows into actor and strategy `on_data` callbacks as a borrowed
+  `PluginCustomDataRef`. The host only dispatches custom data values that came from a
+  `PluginCustomData` registration in a loaded manifest, because that wrapper carries the plug-in
+  vtable and opaque handle needed for a local downcast inside the cdylib.
 
 The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
 documented in `nautilus_plugin::boundary`.
@@ -198,8 +206,8 @@ Key points:
   pointer, its `HostContextInner` pointer, and the verbatim JSON config payload.
 - Adapter drop runs the plug-in's `drop_handle` thunk and releases the heap-allocated
   `HostContextInner` allocation.
-- `dlclose` is intentionally never called in v1. The `LoadedPlugin` wraps its `libloading::Library`
-  in `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
+- `dlclose` is intentionally never called. The `LoadedPlugin` wraps its `libloading::Library` in
+  `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
 
 ## Configuration
 
