@@ -92,8 +92,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
+        AggressorSide, AssetClass, BookAction, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, OrderSide, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -17499,5 +17499,566 @@ fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exis
     assert!(
         after_count > before_count,
         "historical deltas must apply to a cache book when no live subscription owns it (was {before_count}, now {after_count})"
+    );
+}
+
+#[cfg(feature = "streaming")]
+fn book_replay_delta(
+    instrument_id: InstrumentId,
+    ts: u64,
+    flags: u8,
+    price: &str,
+    order_id: u64,
+) -> OrderBookDelta {
+    OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from(price),
+            Quantity::from("1"),
+            order_id,
+        ))
+        .flags(flags)
+        .sequence(order_id)
+        .ts_event(UnixNanos::from(ts))
+        .ts_init(UnixNanos::from(ts))
+        .build()
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_replays_day_start_snapshot(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-assemble",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500, 0, "1.00010", 2),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 3),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 4),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-assemble")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // Pre-start deltas (ts 0, 500, 1500) collapse into one synthesized snapshot keyed at the
+    // crossing delta (ts 1500); the post-start delta (ts 2000) is forwarded unchanged.
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert!(
+        ts_inits.iter().all(|&t| t >= 1_000),
+        "no pre-start deltas survive the replay, was {ts_inits:?}"
+    );
+    assert_eq!(
+        ts_inits[0], 1_500,
+        "snapshot keyed at the crossing delta ts"
+    );
+    assert_eq!(*ts_inits.last().unwrap(), 2_000);
+    assert_eq!(
+        data[0].action,
+        BookAction::Clear,
+        "snapshot opens with a clear"
+    );
+    assert!(
+        RecordFlag::F_SNAPSHOT.matches(data[1].flags),
+        "synthesized adds carry F_SNAPSHOT"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_without_snapshot_flag(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-noflag",
+        vec![
+            book_replay_delta(instrument_id, 0, 0, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-noflag")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // First delta lacks F_SNAPSHOT, so no replay: data is forwarded and trimmed to [start, end].
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(
+        data[0].action,
+        BookAction::Clear,
+        "no snapshot was synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_when_snapshot_not_on_day_boundary(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    // The first snapshot delta sits at ts 500, not a UTC day boundary, so replay must bail.
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-offboundary",
+        vec![
+            book_replay_delta(instrument_id, 500, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-offboundary")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(
+        data[0].action,
+        BookAction::Clear,
+        "no snapshot was synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_skips_replay_when_start_at_day_boundary(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-atboundary",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-atboundary")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    // Request starts exactly on the day boundary, so there is nothing to fast-forward.
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(0).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![0, 1_500]);
+    assert_eq!(
+        data[0].action,
+        BookAction::Add,
+        "original day-start snapshot delta is preserved, not re-synthesized"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_replays_end_snapshot_when_exhausted(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-exhausted",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 500, f_last, "1.00010", 2),
+        ],
+        Some((0, 500)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-exhausted")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    // All catalog deltas precede the original start, so the end-state snapshot is keyed at it.
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert!(
+        ts_inits.iter().all(|&t| t == 1_000),
+        "the synthesized end-state snapshot is keyed at the original start, was {ts_inits:?}"
+    );
+    assert_eq!(data[0].action, BookAction::Clear);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_request_from_day_start_false_skips_floor(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-nofloor",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+            book_replay_delta(instrument_id, 2_000, f_last, "1.00030", 3),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-nofloor")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let params: Params = serde_json::from_value(json!({ "from_day_start": false })).unwrap();
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    let data = &received[0].data;
+
+    // Without the day-start floor the catalog read never returns the ts-0 snapshot frame, so the
+    // first in-window delta lacks F_SNAPSHOT and no replay occurs.
+    let ts_inits: Vec<u64> = data.iter().map(|d| d.ts_init.as_u64()).collect();
+    assert_eq!(ts_inits, vec![1_500, 2_000]);
+    assert_ne!(data[0].action, BookAction::Clear);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_replay_writes_assembled_snapshot_to_cache(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L2_MBP))
+        .unwrap();
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-cache",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, _saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-cache")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    // No live subscription owns the book, so the assembled snapshot is applied to the cache.
+    let cache_ref = cache.borrow();
+    let book = cache_ref
+        .order_book(&instrument_id)
+        .expect("seeded book present");
+    assert!(
+        book.update_count > 0,
+        "replayed snapshot must mutate the cache book"
+    );
+    assert!(
+        book.best_ask_price().is_some(),
+        "snapshot levels reach the cache book"
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_book_deltas_replay_respects_cache_ownership(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let sub = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
+
+    let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
+    data_engine.process_data(Data::Delta(live_delta));
+    let owned_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("managed sub seeds a cache book")
+        .update_count;
+
+    let f_snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let f_last = RecordFlag::F_LAST as u8;
+    let _catalog_dir = register_deltas_catalog_with_deltas(
+        &mut data_engine,
+        "deltas-replay-owned",
+        vec![
+            book_replay_delta(instrument_id, 0, f_snapshot | f_last, "1.00000", 1),
+            book_replay_delta(instrument_id, 1_500, f_last, "1.00020", 2),
+        ],
+        Some((0, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, _saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-owned")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let after_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("cache book remains under active subscription")
+        .update_count;
+    assert_eq!(
+        after_count, owned_count,
+        "replayed snapshot must not mutate a cache book owned by a live subscription"
     );
 }

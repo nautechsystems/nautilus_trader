@@ -37,6 +37,7 @@ use super::{DataEngine, requests::request_params};
 const PARAM_SKIP_CATALOG_DATA: &str = "skip_catalog_data";
 const PARAM_UPDATE_CATALOG: &str = "update_catalog";
 const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
+const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
 
 pub(crate) type CatalogMap = AHashMap<Ustr, ParquetDataCatalog>;
@@ -226,23 +227,48 @@ impl DataEngine {
             .get_client(client_id.as_ref(), venue.as_ref())
             .map(|client| client.client_id());
 
+        // Floor the catalog window to the UTC day boundary so the day-start F_SNAPSHOT frame is
+        // selected and read for the snapshot replay; client gaps keep the original window.
+        // The parent request keeps its original start, so the merged response trims back to it.
+        let (catalog_start_dt, catalog_start_ns) = if matches!(req, RequestCommand::BookDeltas(_))
+            && request_params(&req)
+                .and_then(|p| p.get_bool(PARAM_FROM_DAY_START))
+                .unwrap_or(true)
+        {
+            let floored = floor_to_utc_day(start_dt);
+            (floored, datetime_to_unix_nanos_or_zero(floored))
+        } else {
+            (start_dt, start_ns)
+        };
+
         let query_interval = vec![(start_ns.as_u64(), end_ns.as_u64())];
+        let catalog_query_interval = vec![(catalog_start_ns.as_u64(), end_ns.as_u64())];
         let mut missing_intervals = query_interval.clone();
         let mut has_catalog_data = false;
         let mut winning_catalog: Option<Ustr> = None;
 
         for (name, catalog) in &self.catalogs {
-            let intervals = catalog.get_missing_intervals_for_request(
-                start_ns.as_u64(),
+            let catalog_intervals = catalog.get_missing_intervals_for_request(
+                catalog_start_ns.as_u64(),
                 end_ns.as_u64(),
                 data_cls,
                 Some(&identifier),
             )?;
 
-            if intervals != query_interval {
-                missing_intervals = intervals;
+            if catalog_intervals != catalog_query_interval {
                 has_catalog_data = true;
                 winning_catalog = Some(*name);
+                // Client legs fill only the requested window, not the pre-start range
+                missing_intervals = if catalog_start_ns == start_ns {
+                    catalog_intervals
+                } else {
+                    catalog.get_missing_intervals_for_request(
+                        start_ns.as_u64(),
+                        end_ns.as_u64(),
+                        data_cls,
+                        Some(&identifier),
+                    )?
+                };
                 break;
             }
         }
@@ -278,14 +304,14 @@ impl DataEngine {
         if n_catalog_requests == 1
             && let Some(catalog_name) = winning_catalog
         {
-            let leg = with_dates_for_pipeline(&req, Some(start_dt), Some(end_dt), now_ns);
+            let leg = with_dates_for_pipeline(&req, Some(catalog_start_dt), Some(end_dt), now_ns);
             let leg_id = *leg.request_id();
             self.register_request_pipeline_leg(leg_id, parent_id);
 
             match self.query_catalog_leg(
                 &leg,
                 catalog_name,
-                start_ns,
+                catalog_start_ns,
                 end_ns,
                 used_client_id,
                 now_ns,
@@ -481,6 +507,13 @@ fn bound_request_dates(
 
 fn datetime_to_unix_nanos_or_zero(dt: DateTime<Utc>) -> UnixNanos {
     UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn floor_to_utc_day(dt: DateTime<Utc>) -> DateTime<Utc> {
+    dt.date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always a valid time")
+        .and_utc()
 }
 
 fn with_dates_for_pipeline(

@@ -92,7 +92,7 @@ use nautilus_core::{
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
-    datetime::millis_to_nanos_unchecked,
+    datetime::{NANOSECONDS_IN_DAY, millis_to_nanos_unchecked},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -1820,17 +1820,113 @@ impl DataEngine {
             );
         }
 
+        let mut rebuilt = rebuilt?;
+
+        // Replay must run before `trim_to_bounds`, which would otherwise discard the pre-start
+        // deltas the replay folds into the snapshot.
+        if let DataResponse::BookDeltas(r) = &mut rebuilt {
+            self.book_deltas_snapshot_replay(r);
+        }
+
         // Trim against the parent window only when the parent supplied one. With no
         // parent window the rebuilt response inherits the first leg's bounds; legs are
         // already trimmed against their own bounds at the top of `response()`, so a
         // second pass would discard data from later legs whose bounds the parent never
         // constrained.
-        rebuilt.map(|mut resp| {
-            if parent_start.is_some() || parent_end.is_some() {
-                resp.trim_to_bounds();
+        if parent_start.is_some() || parent_end.is_some() {
+            rebuilt.trim_to_bounds();
+        }
+
+        Some(rebuilt)
+    }
+
+    // Replays a day-start snapshot forward to the request's original start: when the first delta
+    // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the pre-start deltas and
+    // replaces them with one snapshot keyed at the original start, then forwards the rest.
+    // Mirrors the Cython `_handle_order_book_deltas_snapshot_replay`.
+    fn book_deltas_snapshot_replay(&self, resp: &mut BookDeltasResponse) {
+        let Some(original_start_ns) = resp.start else {
+            return;
+        };
+
+        let Some(first) = resp.data.first().copied() else {
+            return;
+        };
+
+        if !RecordFlag::F_SNAPSHOT.matches(first.flags) {
+            return;
+        }
+
+        if first.ts_init.as_u64() % NANOSECONDS_IN_DAY != 0 {
+            return;
+        }
+
+        // Nothing to fast-forward when the request starts at or before the day-start snapshot
+        if original_start_ns <= first.ts_init {
+            return;
+        }
+
+        if self
+            .cache
+            .borrow()
+            .instrument(&resp.instrument_id)
+            .is_none()
+        {
+            log::warn!(
+                "Instrument {} not found in cache, skipping snapshot replay",
+                resp.instrument_id,
+            );
+            return;
+        }
+
+        let book_type = resp
+            .params
+            .as_ref()
+            .and_then(|p| p.get_str("book_type"))
+            .and_then(|s| BookType::from_str(s).ok())
+            .unwrap_or(BookType::L2_MBP);
+
+        let mut book = OrderBook::new(resp.instrument_id, book_type);
+        let mut before: Vec<OrderBookDelta> = Vec::new();
+        let mut after: Vec<OrderBookDelta> = Vec::new();
+        let mut last_applied_ts: Option<UnixNanos> = None;
+        let mut crossed = false;
+
+        for delta in &resp.data {
+            if crossed {
+                after.push(*delta);
+            } else {
+                before.push(*delta);
+                if delta.ts_init >= original_start_ns {
+                    crossed = true;
+                    last_applied_ts = Some(delta.ts_init);
+                }
             }
-            resp
-        })
+        }
+
+        if !before.is_empty() {
+            if last_applied_ts.is_none() {
+                last_applied_ts = before.last().map(|d| d.ts_init);
+            }
+
+            let batch = OrderBookDeltas::new(resp.instrument_id, before);
+            if let Err(e) = book.apply_deltas(&batch) {
+                log::error!(
+                    "Failed to rebuild book for snapshot replay on {}: {e}",
+                    resp.instrument_id,
+                );
+                return;
+            }
+        }
+
+        let Some(last_ts) = last_applied_ts else {
+            return;
+        };
+
+        let snapshot_ts = last_ts.max(original_start_ns);
+        let mut new_data = book.to_deltas(snapshot_ts, snapshot_ts).deltas;
+        new_data.extend(after);
+        resp.data = new_data;
     }
 
     fn handle_request_join(&mut self, req: RequestJoin) {
