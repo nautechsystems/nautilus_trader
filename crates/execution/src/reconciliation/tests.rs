@@ -19,8 +19,18 @@
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
-    events::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    events::{
+        OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
+        OrderSubmitted,
+        order::spec::{
+            OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderSubmittedSpec,
+        },
+    },
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
+    },
     instruments::{
         Instrument, InstrumentAny,
         stubs::{audusd_sim, crypto_perpetual_ethusdt},
@@ -46,6 +56,150 @@ fn instrument() -> InstrumentAny {
 
 fn create_test_venue_order_id(value: &str) -> VenueOrderId {
     VenueOrderId::new(value)
+}
+
+fn build_order_submitted(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderSubmitted {
+    OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(event_id)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+}
+
+fn build_order_accepted(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: bool,
+) -> OrderAccepted {
+    OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .event_id(event_id)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .reconciliation(reconciliation)
+        .build()
+}
+
+fn build_order_pending_cancel(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: bool,
+    venue_order_id: Option<VenueOrderId>,
+) -> OrderPendingCancel {
+    OrderPendingCancelSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(event_id)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .reconciliation(reconciliation)
+        .maybe_venue_order_id(venue_order_id)
+        .build()
+}
+
+fn build_order_pending_update(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: bool,
+    venue_order_id: Option<VenueOrderId>,
+) -> OrderPendingUpdate {
+    OrderPendingUpdateSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(event_id)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .reconciliation(reconciliation)
+        .maybe_venue_order_id(venue_order_id)
+        .build()
+}
+
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: bool,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .event_id(event_id)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .reconciliation(reconciliation)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
 }
 
 fn submit_accept(order: &mut OrderAny, account_id: AccountId, venue_order_id: VenueOrderId) {
@@ -1340,7 +1494,7 @@ fn test_reconcile_fill_report_duplicate_detected(instrument: InstrumentAny) {
     let trade_id = TradeId::from("T-001");
 
     // Submit the order first
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1353,7 +1507,7 @@ fn test_reconcile_fill_report_duplicate_detected(instrument: InstrumentAny) {
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
     // Accept the order
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1368,7 +1522,7 @@ fn test_reconcile_fill_report_duplicate_detected(instrument: InstrumentAny) {
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
     // Now apply a fill to the order
-    let filled_event = OrderFilled::new(
+    let filled_event = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1781,7 +1935,7 @@ fn test_should_reconciliation_update(
             .build(),
     };
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1793,7 +1947,7 @@ fn test_should_reconciliation_update(
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1835,7 +1989,7 @@ fn test_reconcile_order_report_already_in_sync(instrument: InstrumentAny) {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1847,7 +2001,7 @@ fn test_reconcile_order_report_already_in_sync(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1889,7 +2043,7 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1901,7 +2055,7 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1943,7 +2097,7 @@ fn test_generate_reconciliation_order_events_accepts_before_cancel(instrument: I
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1990,7 +2144,7 @@ fn test_generate_reconciliation_order_events_accepts_before_fill(instrument: Ins
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2040,7 +2194,7 @@ fn test_generate_reconciliation_order_events_does_not_accept_before_reject(
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2087,7 +2241,7 @@ fn test_reconcile_order_report_generates_expired(instrument: InstrumentAny) {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2099,7 +2253,7 @@ fn test_reconcile_order_report_generates_expired(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2141,7 +2295,7 @@ fn test_reconcile_order_report_generates_rejected(instrument: InstrumentAny) {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2187,7 +2341,7 @@ fn test_reconcile_order_report_generates_updated(instrument: InstrumentAny) {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2199,7 +2353,7 @@ fn test_reconcile_order_report_generates_updated(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2243,7 +2397,7 @@ fn test_reconcile_order_report_generates_fill_for_qty_mismatch(instrument: Instr
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2255,7 +2409,7 @@ fn test_reconcile_order_report_generates_fill_for_qty_mismatch(instrument: Instr
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let accepted = OrderAccepted::new(
+    let accepted = build_order_accepted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2299,7 +2453,7 @@ fn test_create_reconciliation_rejected_with_reason() {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -2336,7 +2490,7 @@ fn test_create_reconciliation_rejected_without_reason() {
         .price(Price::from("1.00000"))
         .build();
 
-    let submitted = OrderSubmitted::new(
+    let submitted = build_order_submitted(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -4413,7 +4567,6 @@ fn test_continuous_reconciliation_skips_pre_emit_when_local_pending_cancel(
     // guard must skip the pre-emit rather than fail apply silently. The
     // inferred Filled still flows; qty drift persists as a documented
     // limitation until the pending cancel resolves.
-    use nautilus_model::events::OrderPendingCancel;
 
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
@@ -4428,7 +4581,7 @@ fn test_continuous_reconciliation_skips_pre_emit_when_local_pending_cancel(
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let pending_cancel = OrderPendingCancel::new(
+    let pending_cancel = build_order_pending_cancel(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -4481,7 +4634,6 @@ fn test_continuous_reconciliation_skips_update_when_local_pending_update(
     // surfaces a confirmed status, reconciliation must not synthesize an
     // OrderUpdated; doing so resolves the local PendingUpdate back to the
     // previous status and mutates qty/price ahead of venue confirmation.
-    use nautilus_model::events::OrderPendingUpdate;
 
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
@@ -4496,7 +4648,7 @@ fn test_continuous_reconciliation_skips_update_when_local_pending_update(
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let pending_update = OrderPendingUpdate::new(
+    let pending_update = build_order_pending_update(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),

@@ -29,6 +29,7 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted, PortfolioSnapshot,
         PositionChanged, PositionClosed, PositionEvent, PositionOpened,
         account::stubs::cash_account_state,
+        order::spec::OrderFilledSpec,
         order::stubs::{order_accepted, order_filled, order_submitted},
     },
     identifiers::{
@@ -78,6 +79,43 @@ fn instrument_gbpusd() -> InstrumentAny {
         Symbol::from("GBP/USD"),
         Some(Venue::test_default()),
     ))
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
 }
 
 #[fixture]
@@ -749,7 +787,7 @@ fn test_update_order_filled_restores_account_before_unrealized_pnl(
 
     let cache = Rc::new(RefCell::new(simple_cache));
     let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -763,10 +801,6 @@ fn test_update_order_filled_restores_account_before_unrealized_pnl(
         order.price().unwrap(),
         Currency::USDT(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-001")),
         Some(Money::new(0.0, Currency::USDT())),
     );
@@ -1253,7 +1287,7 @@ fn test_opening_one_short_position_updates_portfolio(
         .quantity(Quantity::from("2"))
         .build();
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1267,10 +1301,6 @@ fn test_opening_one_short_position_updates_portfolio(
         Price::new(10.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
@@ -1380,7 +1410,7 @@ fn test_opening_positions_with_multi_asset_account(
 
     let account_id = AccountId::new("BITMEX-01234");
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1394,10 +1424,6 @@ fn test_opening_positions_with_multi_asset_account(
         Price::new(376.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
@@ -1462,7 +1488,7 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
         .quantity(Quantity::from("100"))
         .build();
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1476,10 +1502,6 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
         Price::new(376.05, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
@@ -1569,7 +1591,7 @@ fn test_opening_several_positions_updates_portfolio(
         .add_order(order2.clone(), None, None, true)
         .unwrap();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -1583,14 +1605,10 @@ fn test_opening_several_positions_updates_portfolio(
         Price::new(376.05, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -1604,10 +1622,6 @@ fn test_opening_several_positions_updates_portfolio(
         Price::new(376.05, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
@@ -1740,7 +1754,7 @@ fn test_modifying_position_updates_portfolio(
         .quantity(Quantity::from("100000"))
         .build();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -1754,10 +1768,6 @@ fn test_modifying_position_updates_portfolio(
         Price::new(376.05, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
@@ -1777,7 +1787,7 @@ fn test_modifying_position_updates_portfolio(
         .quantity(Quantity::from("50000"))
         .build();
 
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -1791,10 +1801,6 @@ fn test_modifying_position_updates_portfolio(
         Price::new(1.00, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("SSD")),
         Some(Money::from("1.2 USD")),
     );
@@ -1908,7 +1914,7 @@ fn test_closing_position_updates_portfolio(
         .quantity(Quantity::from("100000"))
         .build();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         StrategyId::new("S-1"),
         order1.instrument_id(),
@@ -1922,10 +1928,6 @@ fn test_closing_position_updates_portfolio(
         Price::new(1.00000, 5), // Fill at 1.00000
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(2.0, Currency::USD())), // Commission for opening trade
     );
@@ -1957,7 +1959,7 @@ fn test_closing_position_updates_portfolio(
         .quantity(Quantity::from("100000"))
         .build();
 
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         StrategyId::new("S-1"),
         order2.instrument_id(),
@@ -1971,10 +1973,6 @@ fn test_closing_position_updates_portfolio(
         Price::new(1.00010, 5), // Fill at 1.00010 (10 pip profit)
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(2.0, Currency::USD())), // Commission for closing trade
     );
@@ -2114,7 +2112,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
         .add_order(order2.clone(), None, None, true)
         .unwrap();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -2128,10 +2126,6 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
         Price::new(1.00000, 5),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(2.0, Currency::USD())),
     );
@@ -2151,7 +2145,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
         .unwrap();
     portfolio.update_quote_tick(&quote_tick);
 
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -2165,10 +2159,6 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
         Price::new(1.00010, 5),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(2.0, Currency::USD())),
     );
@@ -2250,7 +2240,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
         .add_order(order2.clone(), None, None, true)
         .unwrap();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -2264,10 +2254,6 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
         Price::new(1.00000, 5),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(2.0, Currency::USD())),
     );
@@ -2287,7 +2273,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
         .unwrap();
     portfolio.update_quote_tick(&quote_tick);
 
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -2301,10 +2287,6 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
         Price::new(1.00010, 5),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-123456")),
         Some(Money::new(3.0, Currency::USD())),
     );
@@ -2368,7 +2350,7 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         .quantity(Quantity::from("100000"))
         .build();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         StrategyId::new("S-1"),
         order1.instrument_id(),
@@ -2382,14 +2364,10 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         Price::new(1.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-1")),
         None,
     );
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         StrategyId::new("S-1"),
         order2.instrument_id(),
@@ -2403,14 +2381,10 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         Price::new(1.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-2")),
         None,
     );
-    let fill3 = OrderFilled::new(
+    let fill3 = build_order_filled(
         order3.trader_id(),
         StrategyId::new("S-1"),
         order3.instrument_id(),
@@ -2424,14 +2398,10 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         Price::new(1.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-3")),
         None,
     );
-    let fill4 = OrderFilled::new(
+    let fill4 = build_order_filled(
         order4.trader_id(),
         StrategyId::new("S-1"),
         order4.instrument_id(),
@@ -2445,10 +2415,6 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         Price::new(1.0, 0),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-4")),
         None,
     );
@@ -2564,7 +2530,7 @@ fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
 
     let position_id = PositionId::new("P-001");
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         TraderId::new("TRADER-001"),
         StrategyId::new("S-001"),
         instrument_audusd.id(),
@@ -2578,10 +2544,6 @@ fn test_realized_pnl_with_missing_exchange_rate_returns_zero_instead_of_panic(
         Price::new(0.6789, 4),
         Currency::AUD(),
         LiquiditySide::Taker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(position_id),
         Some(Money::new(1000.0, Currency::AUD())),
     );
@@ -2621,7 +2583,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         .quantity(Quantity::from("100000.00"))
         .build();
 
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -2635,10 +2597,6 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         Price::from("0.80000"),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-001")),
         Some(Money::from("2.0 USD")),
     );
@@ -2659,7 +2617,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         .quantity(Quantity::from("100000.00"))
         .build();
 
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -2673,10 +2631,6 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         Price::from("0.80020"), // 20 pips profit
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-001")),
         Some(Money::from("2.0 USD")),
     );
@@ -2704,7 +2658,7 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         .quantity(Quantity::from("50000.00"))
         .build();
 
-    let fill3 = OrderFilled::new(
+    let fill3 = build_order_filled(
         order3.trader_id(),
         order3.strategy_id(),
         order3.instrument_id(),
@@ -2718,10 +2672,6 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
         Price::from("0.80050"),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-001")), // Same position ID
         Some(Money::from("1.0 USD")),
     );
@@ -2762,7 +2712,7 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         .side(OrderSide::Buy)
         .quantity(Quantity::from("100000.00"))
         .build();
-    let fill1 = OrderFilled::new(
+    let fill1 = build_order_filled(
         order1.trader_id(),
         order1.strategy_id(),
         order1.instrument_id(),
@@ -2776,10 +2726,6 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         Price::from("0.80000"),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-MULTI")),
         Some(Money::from("2.0 USD")),
     );
@@ -2795,7 +2741,7 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         .side(OrderSide::Sell)
         .quantity(Quantity::from("100000.00"))
         .build();
-    let fill2 = OrderFilled::new(
+    let fill2 = build_order_filled(
         order2.trader_id(),
         order2.strategy_id(),
         order2.instrument_id(),
@@ -2809,10 +2755,6 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         Price::from("0.80020"),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-MULTI")),
         Some(Money::from("2.0 USD")),
     );
@@ -2839,7 +2781,7 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         .side(OrderSide::Buy)
         .quantity(Quantity::from("50000.00"))
         .build();
-    let fill3 = OrderFilled::new(
+    let fill3 = build_order_filled(
         order3.trader_id(),
         order3.strategy_id(),
         order3.instrument_id(),
@@ -2853,10 +2795,6 @@ fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
         Price::from("0.80050"),
         Currency::USD(),
         LiquiditySide::Taker,
-        uuid4(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("AUDUSD-MULTI")),
         Some(Money::from("1.0 USD")),
     );
@@ -2887,27 +2825,18 @@ fn make_fill_for_account(
     position_id: PositionId,
 ) -> OrderFilled {
     let tag = format!("{position_id}-{}-{quantity}", side.as_ref());
-    OrderFilled::new(
-        TraderId::test_default(),
-        StrategyId::test_default(),
-        instrument.id(),
-        ClientOrderId::new(format!("O-{tag}")),
-        VenueOrderId::new(format!("V-{tag}")),
-        account_id,
-        TradeId::new(format!("T-{tag}")),
-        side,
-        OrderType::Market,
-        quantity,
-        price,
-        instrument.settlement_currency(),
-        LiquiditySide::Taker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(position_id),
-        None,
-    )
+    OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new(format!("O-{tag}")))
+        .venue_order_id(VenueOrderId::new(format!("V-{tag}")))
+        .account_id(account_id)
+        .trade_id(TradeId::new(format!("T-{tag}")))
+        .order_side(side)
+        .last_qty(quantity)
+        .last_px(price)
+        .currency(instrument.settlement_currency())
+        .position_id(position_id)
+        .build()
 }
 
 #[rstest]

@@ -26,7 +26,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::{OrderEventAny, OrderSubmitted},
+    events::{OrderEventAny, order::spec::OrderSubmittedSpec},
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TradeId,
         TraderId,
@@ -741,16 +741,13 @@ impl OrderTestBuilder {
         };
 
         if self.submitted {
-            let submit_event = OrderSubmitted::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                AccountId::from("ACCOUNT-001"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let submit_event = OrderSubmittedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .build();
             order.apply(OrderEventAny::Submitted(submit_event)).unwrap();
         }
 

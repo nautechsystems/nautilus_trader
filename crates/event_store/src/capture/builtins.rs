@@ -1360,7 +1360,10 @@ mod tests {
             AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
             PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
         },
-        events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
+        events::{
+            PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+            order::spec::{OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec},
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, Venue, VenueOrderId,
@@ -1397,41 +1400,14 @@ mod tests {
     }
 
     fn make_submit_order() -> SubmitOrder {
-        let order_init = OrderInitialized::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(2))
+            .build();
         SubmitOrder::new(
             trader_id(),
             Some(ClientId::from("BINANCE")),
@@ -1449,27 +1425,19 @@ mod tests {
     }
 
     fn make_order_filled() -> OrderFilled {
-        OrderFilled::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            venue_order_id(),
-            AccountId::from("BINANCE-001"),
-            TradeId::from("T-9999"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            Price::from("100.00"),
-            Currency::USDT(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(10),
-            UnixNanos::from(11),
-            false,
-            None,
-            Some(Money::new(0.10, Currency::USDT())),
-        )
+        OrderFilledSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .venue_order_id(venue_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("T-9999"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("100.00"))
+            .currency(Currency::USDT())
+            .ts_event(UnixNanos::from(10))
+            .ts_init(UnixNanos::from(11))
+            .commission(Money::new(0.10, Currency::USDT()))
+            .build()
     }
 
     fn make_order_status_report() -> OrderStatusReport {
@@ -1663,16 +1631,13 @@ mod tests {
     }
 
     fn make_order_submitted() -> OrderSubmitted {
-        OrderSubmitted::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            AccountId::from("BINANCE-001"),
-            UUID4::new(),
-            UnixNanos::from(30),
-            UnixNanos::from(31),
-        )
+        OrderSubmittedSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .ts_event(UnixNanos::from(30))
+            .ts_init(UnixNanos::from(31))
+            .build()
     }
 
     fn make_modify_order(venue: Option<VenueOrderId>) -> ModifyOrder {

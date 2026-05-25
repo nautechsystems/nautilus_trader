@@ -14,11 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::actor::DataActor;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::QuoteTick,
     enums::OrderSide,
-    events::{OrderCanceled, OrderExpired, OrderRejected},
+    events::{
+        OrderCanceled, OrderExpired, OrderRejected,
+        order::spec::{OrderCanceledSpec, OrderExpiredSpec, OrderRejectedSpec},
+    },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
@@ -276,18 +279,12 @@ fn test_compute_quotes_skew_preserves_spread() {
 }
 
 fn order_canceled(client_order_id: &str) -> OrderCanceled {
-    OrderCanceled::new(
-        TraderId::from("TESTER-001"),
-        StrategyId::from("COMPOSITE_MM-001"),
-        instrument_id(),
-        ClientOrderId::from(client_order_id),
-        UUID4::new(),
-        0.into(),
-        0.into(),
-        false,
-        None,
-        None,
-    )
+    OrderCanceledSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("COMPOSITE_MM-001"))
+        .instrument_id(instrument_id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .build()
 }
 
 fn create_cancel_resubmit_strategy() -> CompositeMarketMaker {
@@ -397,34 +394,24 @@ fn test_on_order_canceled_without_resubmit_does_nothing() {
 }
 
 fn order_rejected(client_order_id: &str) -> OrderRejected {
-    OrderRejected::new(
-        TraderId::from("TESTER-001"),
-        StrategyId::from("COMPOSITE_MM-001"),
-        instrument_id(),
-        ClientOrderId::from(client_order_id),
-        AccountId::from("ACC-001"),
-        Ustr::from("POST_ONLY_ORDER"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        true,
-    )
+    OrderRejectedSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("COMPOSITE_MM-001"))
+        .instrument_id(instrument_id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .account_id(AccountId::from("ACC-001"))
+        .reason(Ustr::from("POST_ONLY_ORDER"))
+        .due_post_only(true)
+        .build()
 }
 
 fn order_expired(client_order_id: &str) -> OrderExpired {
-    OrderExpired::new(
-        TraderId::from("TESTER-001"),
-        StrategyId::from("COMPOSITE_MM-001"),
-        instrument_id(),
-        ClientOrderId::from(client_order_id),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        None,
-        None,
-    )
+    OrderExpiredSpec::builder()
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("COMPOSITE_MM-001"))
+        .instrument_id(instrument_id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .build()
 }
 
 #[rstest]

@@ -40,11 +40,15 @@ use nautilus_model::{
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
         OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
+        order::spec::{
+            OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
+            OrderUpdatedSpec,
+        },
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, TradeId, Venue, VenueOrderId,
+        OrderListId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
@@ -69,6 +73,118 @@ use crate::{
     },
     signal::Signal,
 };
+
+fn build_order_canceled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+) -> OrderCanceled {
+    OrderCanceledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .build()
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_updated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    quantity: Quantity,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    protection_price: Option<Price>,
+) -> OrderUpdated {
+    OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .quantity(quantity)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .maybe_price(price)
+        .maybe_trigger_price(trigger_price)
+        .maybe_protection_price(protection_price)
+        .build()
+}
+
+fn build_order_released(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    released_price: Price,
+) -> OrderReleased {
+    OrderReleasedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .released_price(released_price)
+        .build()
+}
+
+fn build_order_emulated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderEmulated {
+    OrderEmulatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .build()
+}
 
 #[fixture]
 fn cache() -> Cache {
@@ -759,15 +875,11 @@ fn test_update_order_rejects_venue_fallback_when_event_client_id_differs(
     update_order_with_event(&mut cache, &mut order, accepted);
     let event_count = cache.order(&client_order_id).unwrap().event_count();
 
-    let canceled = OrderEventAny::Canceled(OrderCanceled::new(
+    let canceled = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         ClientOrderId::from("UNKNOWN"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(venue_order_id),
         Some(account_id),
     ));
@@ -4374,7 +4486,7 @@ fn test_update_order_venue_id_conflict_still_removes_closed_from_own_book(mut ca
             .contains(&live_order.client_order_id())
     );
 
-    let filled = OrderFilled::new(
+    let filled = build_order_filled(
         live_order.trader_id(),
         live_order.strategy_id(),
         audusd_sim.id(),
@@ -4388,10 +4500,6 @@ fn test_update_order_venue_id_conflict_still_removes_closed_from_own_book(mut ca
         Price::from("1.00000"),
         audusd_sim.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-CONFLICT")),
         Some(Money::from("0 USD")),
     );
@@ -4445,22 +4553,17 @@ fn test_update_order_allows_venue_id_change_for_order_updated(mut cache: Cache) 
     update_order_with_event(&mut cache, &mut live_order, accepted);
 
     let new_venue_order_id = VenueOrderId::new("V-UPDATED");
-    let updated = OrderEventAny::Updated(OrderUpdated::new(
+    let updated = OrderEventAny::Updated(build_order_updated(
         live_order.trader_id(),
         live_order.strategy_id(),
         audusd_sim.id(),
         live_order.client_order_id(),
         live_order.quantity(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(new_venue_order_id),
         Some(AccountId::new("SIM-001")),
         live_order.price(),
         None,
         None,
-        false,
     ));
     update_order_with_event(&mut cache, &mut live_order, updated);
 
@@ -5678,15 +5781,12 @@ fn test_released_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let released = OrderReleased::new(
+    let released = build_order_released(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         Price::from("1.00010"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
@@ -5717,14 +5817,11 @@ fn test_emulated_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let emulated = OrderEmulated::new(
+    let emulated = build_order_emulated(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
@@ -5767,15 +5864,12 @@ fn test_update_released_order_removes_from_orders_emulated(
     );
 
     // Apply released event (order sent to venue, no longer emulated)
-    let released = OrderReleased::new(
+    let released = build_order_released(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         Price::from("1.00010"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
@@ -5814,14 +5908,11 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
     );
 
     // Apply emulated event first
-    let emulated = OrderEmulated::new(
+    let emulated = build_order_emulated(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
     );
     let mut order = order;
     update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
@@ -5836,15 +5927,11 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
     );
 
     // Apply canceled event (order is now closed)
-    let canceled = OrderCanceled::new(
+    let canceled = build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         None,
     );

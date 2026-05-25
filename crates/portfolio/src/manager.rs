@@ -955,19 +955,18 @@ mod tests {
     use nautilus_common::{cache::Cache, clock::TestClock};
     use nautilus_model::{
         accounts::{BettingAccount, CashAccount, MarginAccount},
-        enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
-        events::{AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
-        identifiers::{
-            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
+        enums::{AccountType, OmsType, OrderSide, OrderType},
+        events::{
+            AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
+            order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
         },
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{audusd_sim, betting, currency_pair_btcusdt},
         },
         orders::{OrderAny, OrderTestBuilder},
         position::Position,
-        stubs::TestDefault,
         types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -1031,83 +1030,20 @@ mod tests {
         let mut order2 = order2;
         let mut order3 = order3;
 
-        let submitted1 = OrderSubmitted::new(
-            order1.trader_id(),
-            order1.strategy_id(),
-            order1.instrument_id(),
-            order1.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-
-        let accepted1 = OrderAccepted::new(
-            order1.trader_id(),
-            order1.strategy_id(),
-            order1.instrument_id(),
-            order1.client_order_id(),
-            order1.venue_order_id().unwrap_or(VenueOrderId::new("1")),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted1 = order_submitted_for(&order1);
+        let accepted1 = order_accepted_for(&order1, VenueOrderId::new("1"));
 
         order1.apply(OrderEventAny::Submitted(submitted1)).unwrap();
         order1.apply(OrderEventAny::Accepted(accepted1)).unwrap();
 
-        let submitted2 = OrderSubmitted::new(
-            order2.trader_id(),
-            order2.strategy_id(),
-            order2.instrument_id(),
-            order2.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-
-        let accepted2 = OrderAccepted::new(
-            order2.trader_id(),
-            order2.strategy_id(),
-            order2.instrument_id(),
-            order2.client_order_id(),
-            order2.venue_order_id().unwrap_or(VenueOrderId::new("2")),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted2 = order_submitted_for(&order2);
+        let accepted2 = order_accepted_for(&order2, VenueOrderId::new("2"));
 
         order2.apply(OrderEventAny::Submitted(submitted2)).unwrap();
         order2.apply(OrderEventAny::Accepted(accepted2)).unwrap();
 
-        let submitted3 = OrderSubmitted::new(
-            order3.trader_id(),
-            order3.strategy_id(),
-            order3.instrument_id(),
-            order3.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-
-        let accepted3 = OrderAccepted::new(
-            order3.trader_id(),
-            order3.strategy_id(),
-            order3.instrument_id(),
-            order3.client_order_id(),
-            order3.venue_order_id().unwrap_or(VenueOrderId::new("3")),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted3 = order_submitted_for(&order3);
+        let accepted3 = order_accepted_for(&order3, VenueOrderId::new("3"));
 
         order3.apply(OrderEventAny::Submitted(submitted3)).unwrap();
         order3.apply(OrderEventAny::Accepted(accepted3)).unwrap();
@@ -1183,27 +1119,12 @@ mod tests {
             .price(Price::from("3.00"))
             .build();
 
-        let submitted_back = OrderSubmitted::new(
-            back_order.trader_id(),
-            back_order.strategy_id(),
-            back_order.instrument_id(),
-            back_order.client_order_id(),
-            AccountId::new("BETTING-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted_back = OrderAccepted::new(
-            back_order.trader_id(),
-            back_order.strategy_id(),
-            back_order.instrument_id(),
-            back_order.client_order_id(),
+        let submitted_back =
+            order_submitted_for_account(&back_order, AccountId::new("BETTING-001"));
+        let accepted_back = order_accepted_for_account(
+            &back_order,
             VenueOrderId::new("B1"),
             AccountId::new("BETTING-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
         );
         back_order
             .apply(OrderEventAny::Submitted(submitted_back))
@@ -1212,27 +1133,11 @@ mod tests {
             .apply(OrderEventAny::Accepted(accepted_back))
             .unwrap();
 
-        let submitted_lay = OrderSubmitted::new(
-            lay_order.trader_id(),
-            lay_order.strategy_id(),
-            lay_order.instrument_id(),
-            lay_order.client_order_id(),
-            AccountId::new("BETTING-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted_lay = OrderAccepted::new(
-            lay_order.trader_id(),
-            lay_order.strategy_id(),
-            lay_order.instrument_id(),
-            lay_order.client_order_id(),
+        let submitted_lay = order_submitted_for_account(&lay_order, AccountId::new("BETTING-001"));
+        let accepted_lay = order_accepted_for_account(
+            &lay_order,
             VenueOrderId::new("L1"),
             AccountId::new("BETTING-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
         );
         lay_order
             .apply(OrderEventAny::Submitted(submitted_lay))
@@ -1305,27 +1210,11 @@ mod tests {
             .price(Price::from("5.0"))
             .build();
 
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::new("BETFAIR-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+        let submitted = order_submitted_for_account(&order, AccountId::new("BETFAIR-001"));
+        let accepted = order_accepted_for_account(
+            &order,
             VenueOrderId::new("B2"),
             AccountId::new("BETFAIR-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
         );
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1436,28 +1325,8 @@ mod tests {
             .build();
 
         // Submit and accept orders
-        let submitted_buy = OrderSubmitted::new(
-            buy_order.trader_id(),
-            buy_order.strategy_id(),
-            buy_order.instrument_id(),
-            buy_order.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted_buy = OrderAccepted::new(
-            buy_order.trader_id(),
-            buy_order.strategy_id(),
-            buy_order.instrument_id(),
-            buy_order.client_order_id(),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted_buy = order_submitted_for(&buy_order);
+        let accepted_buy = order_accepted_for(&buy_order, VenueOrderId::new("1"));
         buy_order
             .apply(OrderEventAny::Submitted(submitted_buy))
             .unwrap();
@@ -1465,28 +1334,8 @@ mod tests {
             .apply(OrderEventAny::Accepted(accepted_buy))
             .unwrap();
 
-        let submitted_sell = OrderSubmitted::new(
-            sell_order.trader_id(),
-            sell_order.strategy_id(),
-            sell_order.instrument_id(),
-            sell_order.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted_sell = OrderAccepted::new(
-            sell_order.trader_id(),
-            sell_order.strategy_id(),
-            sell_order.instrument_id(),
-            sell_order.client_order_id(),
-            VenueOrderId::new("2"),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted_sell = order_submitted_for(&sell_order);
+        let accepted_sell = order_accepted_for(&sell_order, VenueOrderId::new("2"));
         sell_order
             .apply(OrderEventAny::Submitted(submitted_sell))
             .unwrap();
@@ -1617,28 +1466,8 @@ mod tests {
             .quantity(Quantity::from("100000"))
             .build();
 
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted = order_submitted_for(&order);
+        let accepted = order_accepted_for(&order, VenueOrderId::new("1"));
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
@@ -1648,27 +1477,17 @@ mod tests {
             .unwrap();
 
         // Fill with large cost ($80k) that exceeds $100 balance
-        let fill = OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            order.client_order_id(),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            TradeId::new("1"),
-            OrderSide::Buy,
-            order.order_type(),
-            Quantity::from("100000"),
-            Price::from("0.80000"),
-            usd,
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-            false,
-            Some(PositionId::new("P-001")),
-            Some(Money::new(20.0, usd)),
-        );
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::new("1"))
+            .last_qty(Quantity::from("100000"))
+            .last_px(Price::from("0.80000"))
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(1))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(20.0, usd))
+            .build();
 
         let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
         cache
@@ -1676,27 +1495,18 @@ mod tests {
             .add_position(&position, OmsType::Netting)
             .unwrap();
 
-        let fill2 = OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            order.client_order_id(),
-            VenueOrderId::new("2"),
-            AccountId::new("SIM-001"),
-            TradeId::new("2"),
-            OrderSide::Buy,
-            order.order_type(),
-            Quantity::from("100000"),
-            Price::from("0.80000"),
-            usd,
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(2),
-            UnixNanos::from(2),
-            false,
-            Some(PositionId::new("P-001")),
-            Some(Money::new(20.0, usd)),
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::new("2"))
+            .trade_id(TradeId::new("2"))
+            .last_qty(Quantity::from("100000"))
+            .last_px(Price::from("0.80000"))
+            .ts_event(UnixNanos::from(2))
+            .ts_init(UnixNanos::from(2))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(20.0, usd))
+            .build();
         let _state = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
@@ -1755,29 +1565,8 @@ mod tests {
             .price(Price::from("0.80000"))
             .build();
 
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-
-        let accepted = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            order.venue_order_id().unwrap_or(VenueOrderId::new("1")),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted = order_submitted_for(&order);
+        let accepted = order_accepted_for(&order, VenueOrderId::new("1"));
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
@@ -1932,28 +1721,8 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("100000"))
             .build();
-        let submitted = OrderSubmitted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let accepted = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-        );
+        let submitted = order_submitted_for(&order);
+        let accepted = order_accepted_for(&order, VenueOrderId::new("1"));
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
         cache
@@ -1961,27 +1730,17 @@ mod tests {
             .add_order(order.clone(), None, None, false)
             .unwrap();
 
-        let fill = OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            order.client_order_id(),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            TradeId::new("1"),
-            OrderSide::Buy,
-            order.order_type(),
-            Quantity::from("100000"),
-            Price::from("0.80000"),
-            usd,
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-            false,
-            Some(PositionId::new("P-001")),
-            Some(Money::new(20.0, usd)),
-        );
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::new("1"))
+            .last_qty(Quantity::from("100000"))
+            .last_px(Price::from("0.80000"))
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(1))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(20.0, usd))
+            .build();
         let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
         cache
             .borrow_mut()
@@ -2041,27 +1800,59 @@ mod tests {
     fn buy_audusd_fill(qty: &str, px: &str, commission: f64) -> OrderFilled {
         let instrument = audusd_sim();
         let usd = Currency::USD();
-        OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            ClientOrderId::new("O-001"),
-            VenueOrderId::new("1"),
-            AccountId::new("SIM-001"),
-            TradeId::new("1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from(qty),
-            Price::from(px),
-            usd,
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-            false,
-            Some(PositionId::new("P-001")),
-            Some(Money::new(commission, usd)),
-        )
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from(px))
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(1))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(commission, usd))
+            .build()
+    }
+
+    fn order_submitted_for(order: &OrderAny) -> OrderSubmitted {
+        OrderSubmittedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .build()
+    }
+
+    fn order_submitted_for_account(order: &OrderAny, account_id: AccountId) -> OrderSubmitted {
+        OrderSubmittedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .build()
+    }
+
+    fn order_accepted_for(order: &OrderAny, venue_order_id: VenueOrderId) -> OrderAccepted {
+        OrderAcceptedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .build()
+    }
+
+    fn order_accepted_for_account(
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+    ) -> OrderAccepted {
+        OrderAcceptedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build()
     }
 
     #[rstest]
@@ -2257,27 +2048,19 @@ mod tests {
         id: &str,
         ts_event: UnixNanos,
     ) -> Position {
-        let fill = OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            ClientOrderId::new(id),
-            VenueOrderId::new(id),
-            AccountId::new("SIM-001"),
-            TradeId::new(id),
-            side,
-            OrderType::Market,
-            Quantity::from(qty),
-            Price::from(price),
-            instrument.settlement_currency(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            ts_event,
-            ts_event,
-            false,
-            Some(PositionId::new(id)),
-            None,
-        );
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::new(id))
+            .venue_order_id(VenueOrderId::new(id))
+            .trade_id(TradeId::new(id))
+            .order_side(side)
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from(price))
+            .currency(instrument.settlement_currency())
+            .ts_event(ts_event)
+            .ts_init(ts_event)
+            .position_id(PositionId::new(id))
+            .build();
         Position::new(instrument, fill)
     }
 
@@ -2694,27 +2477,19 @@ mod tests {
             "C",
             UnixNanos::from(1),
         );
-        let close_fill = OrderFilled::new(
-            TraderId::test_default(),
-            StrategyId::test_default(),
-            instrument.id(),
-            ClientOrderId::new("Cclose"),
-            VenueOrderId::new("Cclose"),
-            AccountId::new("SIM-001"),
-            TradeId::new("Cclose"),
-            OrderSide::Sell,
-            OrderType::Market,
-            Quantity::from("100"),
-            Price::from("1.00000"),
-            instrument.settlement_currency(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(2),
-            UnixNanos::from(2),
-            false,
-            Some(PositionId::new("C")),
-            None,
-        );
+        let close_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::new("Cclose"))
+            .venue_order_id(VenueOrderId::new("Cclose"))
+            .trade_id(TradeId::new("Cclose"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from("100"))
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.settlement_currency())
+            .ts_event(UnixNanos::from(2))
+            .ts_init(UnixNanos::from(2))
+            .position_id(PositionId::new("C"))
+            .build();
         let mut closed = open_long;
         closed.apply(&close_fill);
         assert!(closed.is_closed());

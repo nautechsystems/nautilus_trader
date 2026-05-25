@@ -3031,11 +3031,10 @@ impl ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
-        identifiers::{AccountId, ClientOrderId, TradeId, TraderId, VenueOrderId},
+        enums::{LiquiditySide, OrderSide, PositionSideSpecified},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
         types::Price,
     };
@@ -3163,27 +3162,21 @@ mod tests {
         quantity: Quantity,
     ) -> Position {
         let client_order_id = ClientOrderId::from(format!("O-{position_id}"));
-        let fill = OrderFilled::new(
-            TraderId::default(),
-            strategy_id,
-            instrument.id(),
-            client_order_id,
-            VenueOrderId::from(format!("V-{position_id}")),
-            account_id,
-            TradeId::new(format!("T-{position_id}")),
-            order_side,
-            OrderType::Market,
-            quantity,
-            Price::from_str("1.0").unwrap(),
-            instrument.quote_currency(),
-            LiquiditySide::Maker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(position_id),
-            Some(Money::from("2 USD")),
-        );
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from(format!("V-{position_id}")))
+            .account_id(account_id)
+            .trade_id(TradeId::new(format!("T-{position_id}")))
+            .order_side(order_side)
+            .last_qty(quantity)
+            .last_px(Price::from("1.0"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .position_id(position_id)
+            .commission(Money::from("2 USD"))
+            .build();
 
         Position::new(instrument, fill)
     }

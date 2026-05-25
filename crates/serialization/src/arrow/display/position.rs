@@ -239,13 +239,10 @@ mod tests {
         },
         datatypes::{DataType, TimeUnit},
     };
-    use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType},
-        events::OrderFilled,
-        identifiers::{
-            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId,
-        },
+        enums::OrderSide,
+        events::{OrderFilled, order::spec::OrderFilledSpec},
+        identifiers::{ClientOrderId, PositionId, TradeId, VenueOrderId},
         instruments::{CurrencyPair, InstrumentAny, stubs::currency_pair_btcusdt},
         types::{Money, Price, Quantity},
     };
@@ -264,27 +261,20 @@ mod tests {
         ts: u64,
         commission: Option<Money>,
     ) -> OrderFilled {
-        OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            instrument.id,
-            ClientOrderId::from(order_id),
-            VenueOrderId::from(order_id),
-            AccountId::from("SIM-001"),
-            TradeId::from(trade_id),
-            side,
-            OrderType::Market,
-            Quantity::from(qty),
-            Price::from(price),
-            instrument.quote_currency,
-            LiquiditySide::Taker,
-            UUID4::default(),
-            ts.into(),
-            (ts + 1).into(),
-            false,
-            Some(PositionId::from("P-001")),
-            commission,
-        )
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from(order_id))
+            .venue_order_id(VenueOrderId::from(order_id))
+            .trade_id(TradeId::from(trade_id))
+            .order_side(side)
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from(price))
+            .currency(instrument.quote_currency)
+            .ts_event(ts.into())
+            .ts_init((ts + 1).into())
+            .position_id(PositionId::from("P-001"))
+            .maybe_commission(commission)
+            .build()
     }
 
     fn make_position(ts: u64) -> Position {

@@ -26,7 +26,7 @@ use nautilus_common::{
         stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     },
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
         IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
@@ -36,10 +36,12 @@ use nautilus_model::{
         AggressorSide, BookType, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::{OrderAccepted, OrderEventAny, OrderPendingCancel},
+    events::{
+        OrderEventAny,
+        order::spec::{OrderAcceptedSpec, OrderPendingCancelSpec},
+    },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orderbook::OrderBook,
@@ -1508,18 +1510,12 @@ fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
     let strategy_id = order.strategy_id();
     let instrument_id = order.instrument_id();
 
-    let accepted = OrderAccepted::new(
-        TraderId::from("TRADER-001"),
-        strategy_id,
-        instrument_id,
-        cid,
-        VenueOrderId::from("V-1"),
-        AccountId::from("SIM-001"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-    );
+    let accepted = OrderAcceptedSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(cid)
+        .venue_order_id(VenueOrderId::from("V-1"))
+        .build();
 
     cache
         .borrow_mut()
@@ -1893,18 +1889,13 @@ fn ack_order_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId, venue_orde
         .order(&cid)
         .map(|o| o.cloned())
         .expect("order present");
-    let accepted = OrderAccepted::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        cid,
-        VenueOrderId::from(venue_order_id),
-        AccountId::from("SIM-001"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-    );
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .venue_order_id(VenueOrderId::from(venue_order_id))
+        .build();
     cache
         .borrow_mut()
         .update_order(&OrderEventAny::Accepted(accepted))
@@ -2041,18 +2032,14 @@ fn apply_pending_cancel_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId)
         .order(&cid)
         .map(|o| o.cloned())
         .expect("order present");
-    let event = OrderPendingCancel::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        cid,
-        order.account_id().expect("account id"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        order.venue_order_id(),
-    );
+    let event = OrderPendingCancelSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .account_id(order.account_id().expect("account id"))
+        .maybe_venue_order_id(order.venue_order_id())
+        .build();
     cache
         .borrow_mut()
         .update_order(&OrderEventAny::PendingCancel(event))

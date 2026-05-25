@@ -4617,7 +4617,10 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
 mod tests {
     use capnp::message::Builder;
     use nautilus_core::UnixNanos;
-    use nautilus_model::{data::stubs::*, events::order::stubs::*};
+    use nautilus_model::{
+        data::stubs::*,
+        events::order::{spec::OrderCanceledSpec, stubs::*},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -5220,18 +5223,15 @@ mod tests {
     }
 
     fn sample_order_canceled() -> OrderCanceled {
-        OrderCanceled::new(
-            trader_id(),
-            strategy_id_ema_cross(),
-            instrument_id_btc_usdt(),
-            client_order_id(),
-            uuid4(),
-            UnixNanos::from(7),
-            UnixNanos::from(8),
-            true,
-            Some(venue_order_id()),
-            Some(account_id()),
-        )
+        OrderCanceledSpec::builder()
+            .strategy_id(strategy_id_ema_cross())
+            .instrument_id(instrument_id_btc_usdt())
+            .ts_event(UnixNanos::from(7))
+            .ts_init(UnixNanos::from(8))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id())
+            .account_id(account_id())
+            .build()
     }
 
     fn sample_order_book_depth10() -> OrderBookDepth10 {

@@ -43,6 +43,7 @@ use nautilus_model::{
     events::{
         AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
         account::stubs::cash_account_state_million_usd,
+        order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -479,16 +480,13 @@ fn test_counters_increment_and_reset(get_stub_submit_order: (OrderAny, SubmitOrd
 }
 
 fn order_submitted(order: &OrderAny) -> OrderSubmitted {
-    OrderSubmitted::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        order.account_id().unwrap_or(account_id()),
-        UUID4::new(),
-        0.into(),
-        0.into(),
-    )
+    OrderSubmittedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .account_id(order.account_id().unwrap_or(account_id()))
+        .build()
 }
 
 fn order_accepted(
@@ -496,18 +494,14 @@ fn order_accepted(
     venue_order_id: Option<VenueOrderId>,
     account_id: Option<AccountId>,
 ) -> OrderAccepted {
-    OrderAccepted::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        venue_order_id.expect("venue_order_id required for order_accepted"),
-        account_id.unwrap_or_else(|| AccountId::new("SIM-001")),
-        UUID4::new(),
-        0.into(),
-        0.into(),
-        false,
-    )
+    OrderAcceptedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .venue_order_id(venue_order_id.expect("venue_order_id required for order_accepted"))
+        .account_id(account_id.unwrap_or_else(|| AccountId::new("SIM-001")))
+        .build()
 }
 
 fn order_filled(
@@ -543,27 +537,23 @@ fn order_filled(
         .calculate_commission(instrument, order.quantity(), last_px, liquidity_side, None)
         .unwrap();
 
-    OrderFilled::new(
-        trader_id(),
-        strategy_id,
-        instrument.id(),
-        order.client_order_id(),
-        venue_order_id,
-        account_id,
-        trade_id,
-        order.order_side(),
-        order.order_type(),
-        last_qty,
-        last_px,
-        instrument.quote_currency(),
-        liquidity_side,
-        UUID4::new(),
-        ts_filled_ns,
-        0.into(),
-        false,
-        None,
-        Some(commission),
-    )
+    OrderFilledSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(order.client_order_id())
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order.order_side())
+        .order_type(order.order_type())
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(instrument.quote_currency())
+        .liquidity_side(liquidity_side)
+        .ts_event(ts_filled_ns)
+        .commission(commission)
+        .build()
 }
 
 #[rstest]

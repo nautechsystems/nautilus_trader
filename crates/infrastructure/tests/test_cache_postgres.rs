@@ -27,12 +27,15 @@ mod serial_tests {
     use std::time::Duration;
 
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::{cache::get_pg_cache_database, queries::DatabaseQueries};
     use nautilus_model::{
         accounts::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
-        events::{OrderCancelRejected, OrderEventAny, OrderModifyRejected},
+        events::{
+            OrderEventAny,
+            order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
+        },
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
@@ -187,29 +190,20 @@ mod serial_tests {
         let client_id_str = UUID4::new().to_string();
         let client_order_id = ClientOrderId::from(client_id_str.as_str());
 
-        let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-1");
         let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
         let reason = Ustr::from("TEST_REJECT");
-        let event_id = UUID4::new();
-        let ts_event = UnixNanos::from(0);
-        let ts_init = UnixNanos::from(0);
         let venue_order_id = Some(VenueOrderId::from("V1"));
         let account_id = Some(AccountId::from("A-1"));
 
-        let event = OrderCancelRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            reason,
-            event_id,
-            ts_event,
-            ts_init,
-            false,
-            venue_order_id,
-            account_id,
-        );
+        let event = OrderCancelRejectedSpec::builder()
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .reason(reason)
+            .maybe_venue_order_id(venue_order_id)
+            .maybe_account_id(account_id)
+            .build();
 
         // Insert into database
         DatabaseQueries::add_order_event(pool, Box::new(event), None)
@@ -256,25 +250,19 @@ mod serial_tests {
         let strategy_id = StrategyId::from("S-2");
         let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
         let reason = Ustr::from("TEST_MOD_REJECT");
-        let event_id = UUID4::new();
-        let ts_event = UnixNanos::from(0);
-        let ts_init = UnixNanos::from(0);
         let venue_order_id = Some(VenueOrderId::from("V2"));
         let account_id = Some(AccountId::from("A-2"));
 
-        let event = OrderModifyRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            reason,
-            event_id,
-            ts_event,
-            ts_init,
-            true,
-            venue_order_id,
-            account_id,
-        );
+        let event = OrderModifyRejectedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .reason(reason)
+            .reconciliation(true)
+            .maybe_venue_order_id(venue_order_id)
+            .maybe_account_id(account_id)
+            .build();
 
         DatabaseQueries::add_order_event(pool, Box::new(event), None)
             .await

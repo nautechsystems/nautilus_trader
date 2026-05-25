@@ -1033,8 +1033,11 @@ mod tests {
     };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
-        events::{OrderEventAny, OrderFilled, OrderInitialized},
+        enums::TimeInForce,
+        events::{
+            OrderEventAny, OrderFilled,
+            order::spec::{OrderFilledSpec, OrderInitializedSpec},
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
             VenueOrderId,
@@ -1880,41 +1883,12 @@ mod tests {
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000001");
-        let order_init = OrderInitialized::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .build();
         let submit_order = SubmitOrder::new(
             trader_id,
             Some(ClientId::from("BINANCE")),
@@ -2112,41 +2086,12 @@ mod tests {
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000002");
-        let order_init = OrderInitialized::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .build();
         let submit_order = SubmitOrder::new(
             trader_id,
             Some(ClientId::from("BINANCE")),
@@ -2237,32 +2182,22 @@ mod tests {
             .expect("open run");
         let run_id = store.run_id().expect("run open").to_string();
 
-        let trader_id = TraderId::from("TRADER-001");
-        let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000003");
         let venue_order_id = VenueOrderId::from("V-99");
-        let filled = OrderFilled::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            AccountId::from("BINANCE-001"),
-            TradeId::from("T-1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            Price::from("100.00"),
-            Currency::USDT(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(10),
-            UnixNanos::from(11),
-            false,
-            None,
-            Some(Money::new(0.10, Currency::USDT())),
-        );
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .venue_order_id(venue_order_id)
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("100.00"))
+            .currency(Currency::USDT())
+            .ts_event(UnixNanos::from(10))
+            .ts_init(UnixNanos::from(11))
+            .commission(Money::new(0.10, Currency::USDT()))
+            .build();
         let event = OrderEventAny::Filled(filled);
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");

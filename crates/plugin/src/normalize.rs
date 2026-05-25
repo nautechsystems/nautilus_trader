@@ -840,10 +840,14 @@ mod tests {
 
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+        enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+        events::order::spec::{
+            OrderCancelRejectedSpec, OrderDeniedSpec, OrderFilledSpec, OrderModifyRejectedSpec,
+            OrderRejectedSpec,
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
-            TradeId, TraderId, Venue, VenueOrderId,
+            TraderId, Venue,
         },
         instruments::stubs,
         orders::{MarketOrder, Order, stubs::TestOrderEventStubs},
@@ -1563,27 +1567,10 @@ mod tests {
 
     #[rstest]
     fn order_filled_normalizes_currency_and_commission() {
-        let event = OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("ETH-USDT.BINANCE"),
-            ClientOrderId::from("O-1"),
-            VenueOrderId::from("V-1"),
-            AccountId::from("SIM-001"),
-            TradeId::from("T-1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1.0"),
-            Price::from("100.00"),
-            foreign_currency("USD"),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-001")),
-            Some(foreign_money("USD")),
-        );
+        let event = OrderFilledSpec::builder()
+            .currency(foreign_currency("USD"))
+            .commission(foreign_money("USD"))
+            .build();
 
         let normalized = event.boundary_normalized();
 
@@ -1593,55 +1580,18 @@ mod tests {
 
     #[rstest]
     fn rejection_events_normalize_reason() {
-        let rejected = OrderRejected::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("ETH-USDT.BINANCE"),
-            ClientOrderId::from("O-1"),
-            AccountId::from("SIM-001"),
-            foreign_ustr("VENUE_REJECTED"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            false,
-        );
-        let denied = OrderDenied::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("ETH-USDT.BINANCE"),
-            ClientOrderId::from("O-1"),
-            foreign_ustr("RISK_DENIED"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-        let modify_rejected = OrderModifyRejected::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("ETH-USDT.BINANCE"),
-            ClientOrderId::from("O-1"),
-            foreign_ustr("MODIFY_REJECTED"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(VenueOrderId::from("V-1")),
-            Some(AccountId::from("SIM-001")),
-        );
-        let cancel_rejected = OrderCancelRejected::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("ETH-USDT.BINANCE"),
-            ClientOrderId::from("O-1"),
-            foreign_ustr("CANCEL_REJECTED"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(VenueOrderId::from("V-1")),
-            Some(AccountId::from("SIM-001")),
-        );
+        let rejected = OrderRejectedSpec::builder()
+            .reason(foreign_ustr("VENUE_REJECTED"))
+            .build();
+        let denied = OrderDeniedSpec::builder()
+            .reason(foreign_ustr("RISK_DENIED"))
+            .build();
+        let modify_rejected = OrderModifyRejectedSpec::builder()
+            .reason(foreign_ustr("MODIFY_REJECTED"))
+            .build();
+        let cancel_rejected = OrderCancelRejectedSpec::builder()
+            .reason(foreign_ustr("CANCEL_REJECTED"))
+            .build();
 
         assert_local_ustr(rejected.boundary_normalized().reason);
         assert_local_ustr(denied.boundary_normalized().reason);

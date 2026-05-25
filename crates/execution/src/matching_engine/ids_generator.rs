@@ -207,12 +207,12 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::cache::Cache;
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{LiquiditySide, OmsType, OrderSide, OrderType},
-        events::OrderFilled,
+        enums::{OmsType, OrderSide, OrderType},
+        events::{OrderFilled, order::spec::OrderFilledSpec},
         identifiers::{
-            AccountId, ClientOrderId, PositionId, TradeId, Venue, VenueOrderId, stubs::account_id,
+            AccountId, ClientOrderId, PositionId, Venue, VenueOrderId, stubs::account_id,
         },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
@@ -258,27 +258,18 @@ mod tests {
         account_id: AccountId,
         market_order_buy: OrderAny,
     ) -> OrderFilled {
-        OrderFilled::new(
-            market_order_buy.trader_id(),
-            market_order_buy.strategy_id(),
-            market_order_buy.instrument_id(),
-            market_order_buy.client_order_id(),
-            VenueOrderId::new("BINANCE-1"),
-            account_id,
-            TradeId::new("1"),
-            market_order_buy.order_side(),
-            market_order_buy.order_type(),
-            Quantity::from("1"),
-            Price::from("1000.000"),
-            instrument_eth_usdt.quote_currency(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::new("P-1")),
-            None,
-        )
+        OrderFilledSpec::builder()
+            .trader_id(market_order_buy.trader_id())
+            .strategy_id(market_order_buy.strategy_id())
+            .instrument_id(market_order_buy.instrument_id())
+            .client_order_id(market_order_buy.client_order_id())
+            .venue_order_id(VenueOrderId::new("BINANCE-1"))
+            .account_id(account_id)
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("1000.000"))
+            .currency(instrument_eth_usdt.quote_currency())
+            .position_id(PositionId::new("P-1"))
+            .build()
     }
 
     fn get_ids_generator(

@@ -706,11 +706,10 @@ mod tests {
 
     use crate::{
         accounts::{Account, MarginAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
-        events::{AccountState, OrderFilled, account::stubs::*},
+        enums::{AccountType, OrderSide, OrderType},
+        events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
         identifiers::{
-            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
+            AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
             stubs::{uuid4, *},
         },
         instruments::{
@@ -1112,52 +1111,33 @@ mod tests {
         let btcusdt_any = InstrumentAny::CurrencyPair(btcusdt);
 
         // Create initial position with BUY 0.001 BTC at 50000.00
-        let fill1 = OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            btcusdt_any.id(),
-            ClientOrderId::from("O-1"),
-            VenueOrderId::from("V-1"),
-            AccountId::from("SIM-001"),
-            TradeId::from("T-1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("0.001"),
-            Price::from("50000.00"),
-            btcusdt_any.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-GITHUB-2657")),
-            None,
-        );
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(btcusdt_any.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .venue_order_id(VenueOrderId::from("V-1"))
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("0.001"))
+            .last_px(Price::from("50000.00"))
+            .currency(btcusdt_any.quote_currency())
+            .ts_event(UnixNanos::from(1_000_000_000))
+            .position_id(PositionId::from("P-GITHUB-2657"))
+            .build();
 
         let position = Position::new(&btcusdt_any, fill1);
 
         // Create second fill that sells MORE than position size (0.002 > 0.001)
-        let fill2 = OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            btcusdt_any.id(),
-            ClientOrderId::from("O-2"),
-            VenueOrderId::from("V-2"),
-            AccountId::from("SIM-001"),
-            TradeId::from("T-2"),
-            OrderSide::Sell,
-            OrderType::Market,
-            Quantity::from("0.002"), // This is larger than position quantity!
-            Price::from("50075.00"),
-            btcusdt_any.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-GITHUB-2657")),
-            None,
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(btcusdt_any.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .venue_order_id(VenueOrderId::from("V-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from("0.002")) // This is larger than position quantity!
+            .last_px(Price::from("50075.00"))
+            .currency(btcusdt_any.quote_currency())
+            .ts_event(UnixNanos::from(2_000_000_000))
+            .position_id(PositionId::from("P-GITHUB-2657"))
+            .build();
 
         // Test the fix - should only calculate PnL for position quantity (0.001), not fill quantity (0.002)
         let pnls = account
@@ -1199,12 +1179,8 @@ mod tests {
         use nautilus_core::UnixNanos;
 
         use crate::{
-            enums::{LiquiditySide, OrderSide, OrderType},
-            events::OrderFilled,
-            identifiers::{
-                AccountId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId,
-                stubs::uuid4,
-            },
+            events::order::spec::OrderFilledSpec,
+            identifiers::{ClientOrderId, PositionId, TradeId, VenueOrderId},
             instruments::InstrumentAny,
             position::Position,
             types::{Price, Quantity},
@@ -1219,52 +1195,32 @@ mod tests {
         let btcusdt_any = InstrumentAny::CurrencyPair(btcusdt.clone());
 
         // Create initial position with BUY 1.0 BTC at 50000.00
-        let fill1 = OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            btcusdt.id,
-            ClientOrderId::from("O-1"),
-            VenueOrderId::from("V-1"),
-            AccountId::from("SIM-001"),
-            TradeId::from("T-1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1.0"),
-            Price::from("50000.00"),
-            btcusdt.quote_currency,
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            None,
-        );
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .client_order_id(ClientOrderId::from("O-1"))
+            .venue_order_id(VenueOrderId::from("V-1"))
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("1.0"))
+            .last_px(Price::from("50000.00"))
+            .currency(btcusdt.quote_currency)
+            .ts_event(UnixNanos::from(1_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .build();
 
         let position = Position::new(&btcusdt_any, fill1);
 
         // Create second fill that also BUYS (same side as position entry)
-        let fill2 = OrderFilled::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            btcusdt.id,
-            ClientOrderId::from("O-2"),
-            VenueOrderId::from("V-2"),
-            AccountId::from("SIM-001"),
-            TradeId::from("T-2"),
-            OrderSide::Buy, // Same side as position entry
-            OrderType::Market,
-            Quantity::from("0.5"),
-            Price::from("51000.00"),
-            btcusdt.quote_currency,
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            None,
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .client_order_id(ClientOrderId::from("O-2"))
+            .venue_order_id(VenueOrderId::from("V-2"))
+            .trade_id(TradeId::from("T-2"))
+            .last_qty(Quantity::from("0.5"))
+            .last_px(Price::from("51000.00"))
+            .currency(btcusdt.quote_currency)
+            .ts_event(UnixNanos::from(2_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .build();
 
         // Test that no PnL is calculated for same-side fills
         let pnls = account

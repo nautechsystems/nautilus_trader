@@ -25,11 +25,17 @@ use crate::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, order::spec::OrderFilledSpec,
+        OrderUpdated,
+        order::spec::{
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderDeniedSpec, OrderEmulatedSpec,
+            OrderExpiredSpec, OrderFilledSpec, OrderInitializedSpec, OrderModifyRejectedSpec,
+            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderReleasedSpec,
+            OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
+        },
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
-        VenueOrderId, stubs as id_stubs,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        stubs as id_stubs,
     },
     stubs::TestDefault,
     types::{Currency, Money, Price, Quantity},
@@ -85,8 +91,6 @@ pub fn order_filled(
         .instrument_id(instrument_id_btc_usdt)
         .client_order_id(client_order_id)
         .venue_order_id(VenueOrderId::new("123456"))
-        .account_id(AccountId::new("SIM-001"))
-        .trade_id(TradeId::new("1"))
         .order_type(OrderType::Limit)
         .last_qty(Quantity::from_str("0.561").unwrap())
         .last_px(Price::from_str("22000").unwrap())
@@ -104,16 +108,14 @@ pub fn order_denied_max_submitted_rate(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderDenied {
-    OrderDenied::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OrderDeniedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .reason(Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"))
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -125,19 +127,15 @@ pub fn order_rejected_insufficient_margin(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderRejected {
-    OrderRejected::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        account_id,
-        Ustr::from("INSUFFICIENT_MARGIN"),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        false,
-    )
+    OrderRejectedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .reason(Ustr::from("INSUFFICIENT_MARGIN"))
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -150,41 +148,23 @@ pub fn order_initialized_buy_limit(
 ) -> OrderInitialized {
     let order_list_id = OrderListId::new("1");
     let linked_order_ids = vec![ClientOrderId::new("O-2020872378424")];
-    OrderInitialized::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        OrderSide::Buy,
-        OrderType::Limit,
-        Quantity::from_str("0.561").unwrap(),
-        TimeInForce::Day,
-        true,
-        true,
-        false,
-        false,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        Some(Price::from_str("22000").unwrap()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(TriggerType::BidAsk),
-        Some(instrument_id_btc_usdt),
-        Some(ContingencyType::Oto),
-        Some(order_list_id),
-        Some(linked_order_ids),
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    OrderInitializedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .order_type(OrderType::Limit)
+        .quantity(Quantity::from_str("0.561").unwrap())
+        .post_only(true)
+        .reduce_only(true)
+        .event_id(uuid4)
+        .price(Price::from_str("22000").unwrap())
+        .emulation_trigger(TriggerType::BidAsk)
+        .trigger_instrument_id(instrument_id_btc_usdt)
+        .contingency_type(ContingencyType::Oto)
+        .order_list_id(order_list_id)
+        .linked_order_ids(linked_order_ids)
+        .build()
 }
 
 #[fixture]
@@ -196,16 +176,14 @@ pub fn order_submitted(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderSubmitted {
-    OrderSubmitted::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        account_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -218,18 +196,15 @@ pub fn order_triggered(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderTriggered {
-    OrderTriggered::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-        Some(account_id),
-    )
+    OrderTriggeredSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build()
 }
 
 #[fixture]
@@ -240,15 +215,13 @@ pub fn order_emulated(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderEmulated {
-    OrderEmulated::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OrderEmulatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -259,16 +232,14 @@ pub fn order_released(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderReleased {
-    OrderReleased::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Price::from_str("22000").unwrap(),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OrderReleasedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .released_price(Price::from_str("22000").unwrap())
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -281,23 +252,17 @@ pub fn order_updated(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderUpdated {
-    OrderUpdated::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Quantity::from(100),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-        Some(account_id),
-        Some(Price::from("22000")),
-        None,
-        None,
-        false, // is_quote_quantity
-    )
+    OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .quantity(Quantity::from(100))
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .price(Price::from("22000"))
+        .build()
 }
 
 #[fixture]
@@ -310,18 +275,15 @@ pub fn order_pending_update(
     venue_order_id: VenueOrderId,
     uuid4: UUID4,
 ) -> OrderPendingUpdate {
-    OrderPendingUpdate::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        account_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-    )
+    OrderPendingUpdateSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .build()
 }
 
 #[fixture]
@@ -334,18 +296,15 @@ pub fn order_pending_cancel(
     venue_order_id: VenueOrderId,
     uuid4: UUID4,
 ) -> OrderPendingCancel {
-    OrderPendingCancel::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        account_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-    )
+    OrderPendingCancelSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .build()
 }
 
 #[fixture]
@@ -358,19 +317,16 @@ pub fn order_modify_rejected(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderModifyRejected {
-    OrderModifyRejected::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Ustr::from("ORDER_DOES_NOT_EXIST"),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-        Some(account_id),
-    )
+    OrderModifyRejectedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .reason(Ustr::from("ORDER_DOES_NOT_EXIST"))
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build()
 }
 
 #[fixture]
@@ -383,18 +339,15 @@ pub fn order_accepted(
     venue_order_id: VenueOrderId,
     uuid4: UUID4,
 ) -> OrderAccepted {
-    OrderAccepted::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        venue_order_id,
-        account_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-    )
+    OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .event_id(uuid4)
+        .build()
 }
 
 #[fixture]
@@ -407,19 +360,16 @@ pub fn order_cancel_rejected(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderCancelRejected {
-    OrderCancelRejected::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Ustr::from("ORDER_DOES_NOT_EXIST"),
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-        Some(account_id),
-    )
+    OrderCancelRejectedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .reason(Ustr::from("ORDER_DOES_NOT_EXIST"))
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build()
 }
 
 #[fixture]
@@ -432,18 +382,15 @@ pub fn order_expired(
     account_id: AccountId,
     uuid4: UUID4,
 ) -> OrderExpired {
-    OrderExpired::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-        Some(account_id),
-    )
+    OrderExpiredSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .event_id(uuid4)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build()
 }
 
 // TestDefault implementations for order events
