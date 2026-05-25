@@ -118,20 +118,42 @@ spot markets, and HIP-4 binary outcome markets.
 
 | Product Type      | Data Feed | Trading | Notes                                           |
 |-------------------|-----------|---------|-------------------------------------------------|
-| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
-| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Excluded by default.    |
 | Spot              | ✓         | ✓       | Native spot markets.                            |
-| HIP‑4 Outcomes    | ✓         | ✓       | USDH‑settled binary outcomes. See [HIP-4 outcome markets](#hip-4-outcome-markets). |
+| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
+| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Opt‑in.                 |
+| HIP‑4 Outcomes    | ✓         | ✓       | USDH‑settled binary outcomes. Opt‑in.           |
 
 :::note
 All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
 currency pairs. See [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals)
 and [HIP-4 outcome markets](#hip-4-outcome-markets) for configuration and opt-in details.
+Hyperliquid's current API docs mark `outcomeMeta` as testnet-only, so HIP-4 discovery
+depends on that payload being available from the selected environment.
 :::
 
 ## Symbology
 
 Hyperliquid uses a specific symbol format for instruments:
+
+### Spot markets
+
+Format: `{Base}-{Quote}-SPOT`
+
+Examples:
+
+- `PURR-USDC-SPOT` - PURR/USDC spot pair
+- `HYPE-USDC-SPOT` - HYPE/USDC spot pair
+
+To subscribe in your strategy:
+
+```python
+InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
+```
+
+:::note
+Spot instruments may include vault tokens (prefixed with `vntls:`). These are automatically
+handled by the instrument provider.
+:::
 
 ### Perpetual futures
 
@@ -170,26 +192,6 @@ To subscribe in your strategy:
 ```python
 InstrumentId.from_str("xyz:TSLA-USD-PERP.HYPERLIQUID")
 ```
-
-### Spot markets
-
-Format: `{Base}-{Quote}-SPOT`
-
-Examples:
-
-- `PURR-USDC-SPOT` - PURR/USDC spot pair
-- `HYPE-USDC-SPOT` - HYPE/USDC spot pair
-
-To subscribe in your strategy:
-
-```python
-InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
-```
-
-:::note
-Spot instruments may include vault tokens (prefixed with `vntls:`). These are automatically
-handled by the instrument provider.
-:::
 
 ### HIP-4 outcome side tokens
 
@@ -336,16 +338,20 @@ through Nautilus until the venue rename resolves the collision.
 
 ## HIP-4 outcome markets
 
-[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
+[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids#outcomes)
 markets are fully-collateralized binary contracts. Each market has two side
 tokens (Yes / No) that settle to `1 USDH` (winner) or `0 USDH` (loser) on the
-resolution date. The current live market is the recurring BTC daily binary,
-which settles at 06:00 UTC against the BTC mark price.
+resolution date. Hyperliquid's current API docs expose outcome metadata through
+`outcomeMeta` and mark that endpoint as testnet-only. The adapter treats outcome
+metadata as best-effort and skips HIP-4 instruments when the venue does not
+return that payload.
 
 ### Loading outcome instruments
 
 Include `HyperliquidProductType.OUTCOME` in `product_types` on both the data
-and exec client configs:
+and exec client configs. This opts into outcome discovery where the venue
+exposes `outcomeMeta`; current Hyperliquid docs mark that metadata endpoint as
+testnet-only.
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
@@ -554,7 +560,11 @@ a public trade-tape endpoint; real-time trades are available via the WebSocket
 
 The `l2Book` subscription accepts optional `nSigFigs` and `mantissa` parameters
 that thin the venue-side book aggregation. The adapter forwards them when
-passed through `subscribe_params` on book deltas and depth subscriptions:
+passed through `subscribe_params` on book deltas and depth subscriptions.
+
+Hyperliquid accepts `nSigFigs` values `2`, `3`, `4`, `5`, or omitted for full
+precision. `mantissa` is only valid when `nSigFigs=5` and accepts `1`, `2`, or
+`5`.
 
 ```python
 from nautilus_trader.model.data import BookType
@@ -689,9 +699,9 @@ against the [mark price](https://hyperliquid.gitbook.io/hyperliquid-docs/trading
 
 :::note
 Market orders require cached quote data. The adapter uses the best ask (for buys) or best bid
-(for sells) with a configurable slippage buffer (default 50 bps). Prices are rounded to 5
-significant figures, which is a Hyperliquid API requirement for all limit prices. Ensure you
-subscribe to quotes for any instrument you intend to trade with market orders.
+(for sells) with a configurable slippage buffer (default 50 bps). Prices are rounded to
+Hyperliquid's price constraints before submission. Ensure you subscribe to quotes for any
+instrument you intend to trade with market orders.
 
 When using the Rust-native execution client, the slippage buffer is controlled by
 `market_order_slippage_bps` on `HyperliquidExecClientConfig` and can be overridden per-order
@@ -702,20 +712,21 @@ uses a fixed 50 bps slippage and does not expose this knob on its config.
 :::note
 `STOP_MARKET` and `MARKET_IF_TOUCHED` orders do not carry a limit price. The adapter derives
 one from the trigger price with the same configurable slippage buffer (default 50 bps), rounds
-to 5 significant figures, and clamps to the instrument's price precision (ceiling for buys,
-floor for sells). This guarantees Hyperliquid's `limit_px >= trigger_px` (buys) /
+to 5 significant figures, and clamps to the venue decimal limit (ceiling for buys, floor for
+sells). This guarantees Hyperliquid's `limit_px >= trigger_px` (buys) /
 `limit_px <= trigger_px` (sells) constraint.
 :::
 
 :::warning
 **Price normalization is enabled by default.** Hyperliquid enforces a maximum of 5 significant
-figures on all order prices. This is a dynamic constraint that depends on the price magnitude
-and cannot be fully encoded in the static instrument price precision. For example, if ETH is
-trading at $2,600 (4 integer digits), only 1 decimal place is allowed despite the instrument
-having `price_precision=2`.
+figures on order prices, plus a per-asset decimal limit based on `szDecimals`
+(`6 - szDecimals` for perps, `8 - szDecimals` for spot). For example, if ETH is trading at
+$2,600 (4 integer digits), only 1 decimal place is allowed despite the instrument having
+`price_precision=2`.
 
 By default, the adapter normalizes all outgoing limit and trigger prices to 5 significant
-figures to prevent order rejections. This means your submitted prices may shift slightly.
+figures and clamps them to the instrument price precision to prevent order rejections. This
+means your submitted prices may shift slightly.
 To disable this and take full control of price formatting, set `normalize_prices=False`
 in your `HyperliquidExecClientConfig`.
 
@@ -953,10 +964,10 @@ We recommend using environment variables to manage your credentials.
 
 ## Agent wallets
 
-Hyperliquid lets a master account approve an [agent wallet](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets)
-(also called an API wallet or sub-key) that signs orders on the master's
-behalf. Orders signed by the agent belong to the master account, not to the
-agent's address.
+Hyperliquid lets a master account approve an
+[agent wallet](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets)
+(also called an API wallet or sub-key) that signs orders on the master's behalf.
+Orders signed by the agent belong to the master account, not to the agent's address.
 
 If your `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK`) is an agent wallet, you
 must also set `account_address` (or the `HYPERLIQUID_ACCOUNT_ADDRESS`
@@ -965,12 +976,22 @@ queries the agent's address for balances, orders, and WebSocket events, which
 owns nothing, and submitted orders will never reconcile (no
 `OrderStatusReport`, no fills surfaced).
 
-Resolution order for the user address used by info queries and WebSocket
-subscriptions:
+The execution factory resolves one account address and passes that same value
+to REST account queries and WebSocket user subscriptions. Signing still uses
+the configured private key, and vault trading still sends `vaultAddress` in the
+signed exchange payload when `vault_address` is set.
+
+Explicit config values take precedence over environment variables. Environment
+variables fill only omitted config values.
+
+Resolution order for the execution account address used by info queries and
+WebSocket subscriptions:
 
 1. `account_address` (master account when using an agent wallet).
 2. `vault_address` (vault sub-account).
-3. The address derived from the private key (the wallet itself).
+3. `HYPERLIQUID_ACCOUNT_ADDRESS`.
+4. `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`.
+5. The address derived from the private key (the wallet itself).
 
 :::note
 `HYPERLIQUID_ACCOUNT_ADDRESS` is a single env var shared by both mainnet and
@@ -988,17 +1009,20 @@ relying on the shared environment variable.
 
 ## Vault trading
 
-Hyperliquid supports [vault trading](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/vaults),
-where a wallet operates on behalf of a vault (sub-account). Orders are signed with the
-wallet's private key but include the vault address in the signature payload.
+Hyperliquid supports
+[vault trading](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/vaults), where a wallet
+operates on behalf of a vault (sub-account). Orders are signed with the wallet's private key
+but include the vault address in the signature payload.
 
 To trade via a vault, set the `vault_address` in your execution client config (or set the
 `HYPERLIQUID_VAULT` / `HYPERLIQUID_TESTNET_VAULT` environment variable).
 
 :::warning
-When vault trading is enabled, WebSocket subscriptions for order and fill updates automatically
-use the vault address instead of the wallet address. This is required to receive the vault's
-order and fill events.
+For normal vault trading, leave `account_address` unset so `vault_address`
+becomes the account address used for REST queries and WebSocket user
+subscriptions. If both `account_address` and `vault_address` are set,
+`account_address` wins for queries and subscriptions, while `vault_address`
+still goes into the signed exchange payload.
 :::
 
 ## Funding rates
@@ -1011,6 +1035,8 @@ Hyperliquid perpetual futures use a fixed 1-hour funding interval. The adapter s
 The adapter implements a token bucket rate limiter for Hyperliquid's REST API with a capacity
 of 1200 weight per minute. HTTP info requests are automatically retried with exponential
 backoff (full jitter) on rate limit (429) and server error (5xx) responses.
+For WebSocket post trading requests, the adapter caps simultaneous inflight messages at 100 to
+match the venue limit.
 
 ## Configuration
 

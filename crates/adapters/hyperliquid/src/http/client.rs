@@ -22,7 +22,6 @@
 
 use std::{
     collections::HashMap,
-    env,
     num::NonZeroU32,
     sync::{Arc, LazyLock, Mutex},
     time::Duration,
@@ -57,9 +56,10 @@ use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
+    account::resolve_execution_account_address,
     common::{
         consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS, exchange_url, info_url},
-        credential::{Secrets, VaultAddress},
+        credential::{Secrets, VaultAddress, credential_env_vars},
         enums::{
             HyperliquidBarInterval, HyperliquidEnvironment,
             HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType,
@@ -993,37 +993,49 @@ impl HyperliquidHttpClient {
     pub fn with_credentials(
         private_key: Option<String>,
         vault_address: Option<String>,
+        account_address: Option<&str>,
+        environment: HyperliquidEnvironment,
+        timeout_secs: u64,
+        proxy_url: Option<String>,
+    ) -> Result<Self> {
+        let (pk_env_var, vault_env_var) = credential_env_vars(environment);
+
+        let resolved_account_address = resolve_execution_account_address(
+            private_key.as_deref(),
+            vault_address.as_deref(),
+            account_address,
+            environment,
+        )?;
+
+        // Resolve private key: explicit value -> env var -> None (unauthenticated)
+        let resolved_pk = private_key.or_else(|| std::env::var(pk_env_var).ok());
+
+        // Resolve vault address: explicit value -> env var -> None
+        let resolved_vault = vault_address.or_else(|| std::env::var(vault_env_var).ok());
+
+        Self::from_resolved_credentials(
+            resolved_pk,
+            resolved_vault.as_deref(),
+            resolved_account_address,
+            environment,
+            timeout_secs,
+            proxy_url,
+        )
+    }
+
+    fn from_resolved_credentials(
+        private_key: Option<String>,
+        vault_address: Option<&str>,
         account_address: Option<String>,
         environment: HyperliquidEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
     ) -> Result<Self> {
-        let (pk_env_var, vault_env_var) =
-            crate::common::credential::credential_env_vars(environment);
-
-        // Resolve private key: explicit value -> env var -> None (unauthenticated)
-        let resolved_pk = match private_key {
-            Some(pk) => Some(pk),
-            None => env::var(pk_env_var).ok(),
-        };
-
-        // Resolve vault address: explicit value -> env var -> None
-        let resolved_vault = match vault_address {
-            Some(vault) => Some(vault),
-            None => env::var(vault_env_var).ok(),
-        };
-
-        // Resolve account address: explicit value -> env var -> None
-        let resolved_account_address = match account_address {
-            Some(addr) => Some(addr),
-            None => env::var("HYPERLIQUID_ACCOUNT_ADDRESS").ok(),
-        };
-
-        match resolved_pk {
+        match private_key {
             Some(pk) => {
                 let raw_client = HyperliquidRawHttpClient::from_credentials(
                     &pk,
-                    resolved_vault.as_deref(),
+                    vault_address,
                     environment,
                     timeout_secs,
                     proxy_url,
@@ -1037,15 +1049,17 @@ impl HyperliquidHttpClient {
                     spot_fill_coins: Arc::new(AtomicMap::new()),
                     client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
                     account_id: None,
-                    account_address: resolved_account_address,
+                    account_address,
                     normalize_prices: true,
                     market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
                 })
             }
             None => {
                 // No credentials available, create unauthenticated client
-                Self::new(environment, timeout_secs, proxy_url)
-                    .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
+                let mut client = Self::new(environment, timeout_secs, proxy_url)
+                    .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))?;
+                client.set_account_address(account_address);
+                Ok(client)
             }
         }
     }
@@ -3175,6 +3189,9 @@ mod tests {
         http::{models::Cloid, query::InfoRequest},
     };
 
+    const TEST_PRIVATE_KEY: &str =
+        "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
     #[derive(Clone, Default)]
     struct OutcomeMetaServerState {
         last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -3301,6 +3318,38 @@ mod tests {
         assert_eq!(meta.outcomes[0].side_specs.len(), 2);
         assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
         assert_eq!(meta.outcomes[0].side_specs[1].name, "No");
+    }
+
+    #[rstest]
+    fn test_with_credentials_preserves_explicit_account_address() {
+        let account_address = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let client = HyperliquidHttpClient::with_credentials(
+            Some(TEST_PRIVATE_KEY.to_string()),
+            None,
+            Some(account_address),
+            HyperliquidEnvironment::Mainnet,
+            60,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(client.get_account_address().unwrap(), account_address);
+    }
+
+    #[rstest]
+    fn test_from_resolved_credentials_preserves_account_address_without_private_key() {
+        let account_address = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let client = HyperliquidHttpClient::from_resolved_credentials(
+            None,
+            None,
+            Some(account_address.to_string()),
+            HyperliquidEnvironment::Mainnet,
+            60,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(client.get_account_address().unwrap(), account_address);
     }
 
     #[rstest]

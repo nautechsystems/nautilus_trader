@@ -69,7 +69,8 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         When set, this address is used for balance queries, position reports,
         and WebSocket subscriptions instead of the address derived from the private key.
         Signing still uses the agent wallet's private key.
-        If ``None`` then will source the `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
+        If ``None`` and no explicit `vault_address` is set, then will source the
+        `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
     product_types : tuple[HyperliquidProductType, ...], optional
         The Hyperliquid product types to load for the client instrument provider.
         If ``None`` then the instrument provider defaults are used.

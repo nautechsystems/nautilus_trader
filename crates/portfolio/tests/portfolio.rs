@@ -29,8 +29,10 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted, PortfolioSnapshot,
         PositionChanged, PositionClosed, PositionEvent, PositionOpened,
         account::stubs::cash_account_state,
-        order::spec::OrderFilledSpec,
-        order::stubs::{order_accepted, order_filled, order_submitted},
+        order::{
+            spec::OrderFilledSpec,
+            stubs::{order_accepted, order_filled, order_submitted},
+        },
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
