@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
+- Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 - Added `clamp_to_instrument_price_range` to `ExecTesterConfig` to keep computed prices within instrument bounds (Rust)
 
@@ -136,6 +137,7 @@ Released on TBD (UTC).
 - Added FFI and Rust unsafe-code guidance for `PyCapsule` ownership and scoped TLS access
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
+- Refined OKX integration guide with product capabilities and Nitro spread order notes
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 

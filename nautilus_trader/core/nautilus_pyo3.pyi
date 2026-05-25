@@ -3925,6 +3925,8 @@ type Instrument = Union[
     BettingInstrument,
     BinaryOption,
     CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOptionSpread,
     CryptoPerpetual,
     CurrencyPair,
     Equity,
@@ -8563,6 +8565,13 @@ class OKXHttpClient:
     async def request_instruments(
         self, instrument_type: OKXInstrumentType, instrument_family: str | None = None
     ) -> tuple[list[Instrument], list[tuple[str, int]]]: ...
+    async def request_spread_instruments(
+        self,
+        base_currency: str | None = None,
+        instrument_id: InstrumentId | None = None,
+        spread_id: str | None = None,
+        state: str | None = None,
+    ) -> list[CryptoFuturesSpread | CryptoOptionSpread]: ...
     async def request_event_contract_series(
         self,
         series_id: str | None = None,
@@ -8713,6 +8722,13 @@ class OKXHttpClient:
         self,
         orders: list[tuple[InstrumentId, str]],
     ) -> list[Any]: ...
+    async def cancel_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> Any: ...
+    async def cancel_all_orders(self, instrument_id: InstrumentId) -> Any: ...
     async def amend_algo_order(
         self,
         instrument_id: InstrumentId,
@@ -8816,6 +8832,8 @@ class OKXWebSocketClient:
     async def unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
     async def unsubscribe_orders(self, instrument_type: OKXInstrumentType) -> None: ...
+    async def subscribe_spread_orders(self) -> None: ...
+    async def unsubscribe_spread_orders(self) -> None: ...
     async def subscribe_orders_algo(self, instrument_type: OKXInstrumentType) -> None: ...
     async def unsubscribe_orders_algo(self, instrument_type: OKXInstrumentType) -> None: ...
     async def subscribe_algo_advance(self, instrument_type: OKXInstrumentType) -> None: ...

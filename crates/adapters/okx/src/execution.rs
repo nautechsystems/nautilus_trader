@@ -64,7 +64,7 @@ use crate::{
             resolve_instrument_families, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
-        parse::{nanos_to_datetime, okx_instrument_type_from_symbol},
+        parse::{is_okx_spread_symbol, nanos_to_datetime, okx_instrument_type_from_symbol},
     },
     config::OKXExecClientConfig,
     http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
@@ -77,23 +77,6 @@ use crate::{
         parse::OrderStateSnapshot,
     },
 };
-
-fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
-    params.as_ref().and_then(|p| {
-        p.get(key).and_then(|v| {
-            v.as_str()
-                .map(ToString::to_string)
-                .or_else(|| v.as_f64().map(|n| n.to_string()))
-        })
-    })
-}
-
-fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
-    !matches!(
-        instrument_type,
-        OKXInstrumentType::Option | OKXInstrumentType::Events
-    )
-}
 
 #[derive(Debug)]
 pub struct OKXExecutionClient {
@@ -263,6 +246,63 @@ impl OKXExecutionClient {
         OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
     }
 
+    fn submit_order_route(
+        &self,
+        instrument_id: InstrumentId,
+        order_type: OrderType,
+    ) -> anyhow::Result<OrderCommandRoute> {
+        if self.is_conditional_order(order_type) {
+            if is_spread_instrument(instrument_id) {
+                anyhow::bail!(
+                    "Trigger/conditional orders ({order_type:?}) are not supported for OKX spreads"
+                );
+            }
+
+            let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+            if inst_type == OKXInstrumentType::Option {
+                anyhow::bail!(
+                    "Trigger/conditional orders ({order_type:?}) are not supported for OKX options"
+                );
+            }
+
+            return Ok(OrderCommandRoute::AlgoHttp);
+        }
+
+        if is_spread_instrument(instrument_id) {
+            Ok(OrderCommandRoute::SpreadHttp)
+        } else {
+            Ok(OrderCommandRoute::RegularWs)
+        }
+    }
+
+    fn cancel_order_route(
+        &self,
+        instrument_id: InstrumentId,
+        order_state: Option<(OrderType, Option<bool>)>,
+    ) -> OrderCommandRoute {
+        if is_spread_instrument(instrument_id) {
+            return OrderCommandRoute::SpreadHttp;
+        }
+
+        if order_state.is_some_and(|(order_type, is_triggered)| {
+            self.is_conditional_order(order_type) && is_triggered != Some(true)
+        }) {
+            OrderCommandRoute::AlgoHttp
+        } else {
+            OrderCommandRoute::RegularWs
+        }
+    }
+
+    fn cancel_all_orders_route(&self, instrument_id: InstrumentId) -> CancelAllOrdersRoute {
+        if is_spread_instrument(instrument_id) {
+            CancelAllOrdersRoute::SpreadHttp
+        } else if self.config.use_mm_mass_cancel {
+            CancelAllOrdersRoute::MassCancelHttp
+        } else {
+            CancelAllOrdersRoute::BatchWs
+        }
+    }
+
     fn submit_regular_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
@@ -330,6 +370,83 @@ impl OKXExecutionClient {
                     speed_bump,
                     outcome,
                     slippage_pct,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
+
+            if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
+                emitter.emit_order_rejected_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    &format!("submit-order-error: {e}"),
+                    ts_event,
+                    false,
+                );
+                return Err(e);
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn submit_order_http(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+        let order = {
+            let cache = self.core.cache();
+            cache
+                .order(&cmd.client_order_id)
+                .map(|o| o.clone())
+                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
+        };
+        let http_client = self.http_client.clone();
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
+
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+            },
+        );
+        let order_side = order.order_side();
+        let order_type = order.order_type();
+        let quantity = order.quantity();
+        let time_in_force = order.time_in_force();
+        let price = order.price();
+        let is_post_only = order.is_post_only();
+
+        self.spawn_task("submit_order_http", async move {
+            let result = http_client
+                .place_order_with_domain_types(
+                    instrument_id,
+                    trade_mode,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    Some(time_in_force),
+                    price,
+                    Some(is_post_only),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -498,6 +615,41 @@ impl OKXExecutionClient {
         });
     }
 
+    fn cancel_order_http(&self, cmd: &CancelOrder) {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
+
+        let http_client = self.http_client.clone();
+        let command = cmd.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        self.spawn_task("cancel_order_http", async move {
+            let result = http_client
+                .cancel_order(
+                    command.instrument_id,
+                    Some(command.client_order_id),
+                    command.venue_order_id,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
+
+            if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
+                emitter.emit_order_cancel_rejected_event(
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    command.venue_order_id,
+                    &format!("cancel-order-error: {e}"),
+                    ts_event,
+                );
+                return Err(e);
+            }
+
+            Ok(())
+        });
+    }
+
     fn cancel_algo_order(&self, cmd: &CancelOrder) {
         let http_client = self.http_client.clone();
         let command = cmd.clone();
@@ -571,6 +723,18 @@ impl OKXExecutionClient {
     }
 
     fn mass_cancel_instrument(&self, instrument_id: InstrumentId) {
+        if is_spread_instrument(instrument_id) {
+            let http_client = self.http_client.clone();
+            self.spawn_task("mass_cancel_orders_http", async move {
+                http_client
+                    .cancel_all_orders(instrument_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Mass cancel orders failed: {e}"))?;
+                Ok(())
+            });
+            return;
+        }
+
         let ws_private = self.ws_private.clone();
 
         self.spawn_task("mass_cancel_orders", async move {
@@ -966,6 +1130,11 @@ impl ExecutionClient for OKXExecutionClient {
 
         self.ws_private.subscribe_account().await?;
 
+        if self.config.load_spreads {
+            log::info!("Subscribing to Nitro spread orders channel");
+            self.ws_business.subscribe_spread_orders().await?;
+        }
+
         // Subscribe to algo orders on business WebSocket (OKX requires this endpoint)
         for inst_type in &instrument_types {
             if supports_algo_orders(*inst_type) {
@@ -1037,9 +1206,10 @@ impl ExecutionClient for OKXExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
-        let should_query_algo = supports_algo_orders(okx_instrument_type_from_symbol(
-            instrument_id.symbol.as_str(),
-        ));
+        let should_query_algo = !is_spread_instrument(instrument_id)
+            && supports_algo_orders(okx_instrument_type_from_symbol(
+                instrument_id.symbol.as_str(),
+            ));
 
         self.spawn_task("query_order", async move {
             let mut reports = match http_client
@@ -1056,7 +1226,7 @@ impl ExecutionClient for OKXExecutionClient {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    log::error!("OKX query_order failed to fetch regular orders: {e}");
+                    log::error!("OKX query_order failed to fetch orders: {e}");
                     Vec::new()
                 }
             };
@@ -1110,6 +1280,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.http_client.cache_instrument(instrument.clone());
         self.ws_private.cache_instrument(instrument.clone());
         self.ws_business.cache_instrument(instrument);
     }
@@ -1253,9 +1424,11 @@ impl ExecutionClient for OKXExecutionClient {
             )
             .await?;
 
-        if supports_algo_orders(okx_instrument_type_from_symbol(
-            instrument_id.symbol.as_str(),
-        )) {
+        if !is_spread_instrument(instrument_id)
+            && supports_algo_orders(okx_instrument_type_from_symbol(
+                instrument_id.symbol.as_str(),
+            ))
+        {
             // Merge algo orders (stop, OCO, TP/SL, trailing). They live on a
             // separate OKX endpoint and would otherwise be dropped from
             // reconciliation, leaving stop/conditional orders unrecovered after
@@ -1314,9 +1487,11 @@ impl ExecutionClient for OKXExecutionClient {
                 .await?;
             reports.append(&mut fetched);
 
-            if supports_algo_orders(okx_instrument_type_from_symbol(
-                instrument_id.symbol.as_str(),
-            )) {
+            if !is_spread_instrument(instrument_id)
+                && supports_algo_orders(okx_instrument_type_from_symbol(
+                    instrument_id.symbol.as_str(),
+                ))
+            {
                 // Merge algo orders for the requested instrument so reconciliation
                 // recovers stop, OCO, TP/SL, and trailing orders alongside regular
                 // ones. Failure here is logged but does not abort the regular
@@ -1380,6 +1555,25 @@ impl ExecutionClient for OKXExecutionClient {
                     }
                 }
             }
+
+            if self.config.load_spreads {
+                match self
+                    .http_client
+                    .request_order_status_reports(
+                        self.core.account_id,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                    )
+                    .await
+                {
+                    Ok(mut spreads) => reports.append(&mut spreads),
+                    Err(e) => log::warn!("Failed to fetch spread order status reports: {e}"),
+                }
+            }
         }
 
         if cmd.open_only {
@@ -1433,6 +1627,17 @@ impl ExecutionClient for OKXExecutionClient {
                     .await?;
                 reports.append(&mut fetched);
             }
+
+            if self.config.load_spreads {
+                match self
+                    .http_client
+                    .request_fill_reports(self.core.account_id, None, None, start_dt, end_dt, None)
+                    .await
+                {
+                    Ok(mut spreads) => reports.append(&mut spreads),
+                    Err(e) => log::warn!("Failed to fetch spread fill reports: {e}"),
+                }
+            }
         }
 
         if let Some(venue_order_id) = cmd.venue_order_id {
@@ -1451,6 +1656,10 @@ impl ExecutionClient for OKXExecutionClient {
         // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
         // Note: The positions endpoint does not support Spot or Margin - those are handled separately
         if let Some(instrument_id) = cmd.instrument_id {
+            if is_spread_instrument(instrument_id) {
+                return Ok(reports);
+            }
+
             let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
             if inst_type != OKXInstrumentType::Spot && inst_type != OKXInstrumentType::Margin {
                 let mut fetched = self
@@ -1551,7 +1760,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order_type = {
+        let route = {
             let cache = self.core.cache();
             let order = cache
                 .order(&cmd.client_order_id)
@@ -1568,33 +1777,34 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             let order_type = order.order_type();
-
-            // OKX trigger/algo orders are not supported for options.
-            // Reject before emitting OrderSubmitted to avoid an invalid state transition.
-            if self.is_conditional_order(order_type) {
-                let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
-
-                if inst_type == OKXInstrumentType::Option {
-                    anyhow::bail!(
-                        "Trigger/conditional orders ({order_type:?}) are not supported for OKX options"
-                    );
-                }
-            }
+            let route = self.submit_order_route(cmd.instrument_id, order_type)?;
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(&order);
 
-            order_type
+            route
         };
 
-        if self.is_conditional_order(order_type) {
-            self.submit_conditional_order(&cmd)
-        } else {
-            self.submit_regular_order(&cmd)
+        match route {
+            OrderCommandRoute::RegularWs => self.submit_regular_order(&cmd),
+            OrderCommandRoute::AlgoHttp => self.submit_conditional_order(&cmd),
+            OrderCommandRoute::SpreadHttp => self.submit_order_http(&cmd),
         }
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        if is_spread_instrument(cmd.instrument_id) {
+            let cache = self.core.cache();
+            for client_order_id in &cmd.order_list.client_order_ids {
+                let order = cache
+                    .order(client_order_id)
+                    .ok_or_else(|| anyhow::anyhow!("Order not found: {client_order_id}"))?;
+                self.emitter
+                    .emit_order_denied(&order, "OKX spread order lists are not supported");
+            }
+            return Ok(());
+        }
+
         let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
 
         // Validate all orders before emitting any submitted events
@@ -1730,6 +1940,18 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        if is_spread_instrument(cmd.instrument_id) {
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                "OKX spread orders do not support modify requests",
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
 
         let ws_private = self.ws_private.clone();
@@ -1779,147 +2001,152 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let cache = self.core.cache();
-        let is_pending_algo = cache.order(&cmd.client_order_id).is_some_and(|o| {
-            self.is_conditional_order(o.order_type()) && o.is_triggered() != Some(true)
-        });
-        drop(cache);
+        let route = {
+            let cache = self.core.cache();
+            let order_state = cache
+                .order(&cmd.client_order_id)
+                .map(|order| (order.order_type(), order.is_triggered()));
+            self.cancel_order_route(cmd.instrument_id, order_state)
+        };
 
-        if is_pending_algo {
-            self.cancel_algo_order(&cmd);
-        } else {
-            self.cancel_ws_order(&cmd);
+        match route {
+            OrderCommandRoute::RegularWs => self.cancel_ws_order(&cmd),
+            OrderCommandRoute::AlgoHttp => self.cancel_algo_order(&cmd),
+            OrderCommandRoute::SpreadHttp => self.cancel_order_http(&cmd),
         }
         Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        if self.config.use_mm_mass_cancel {
-            // Use OKX's mass-cancel endpoint (requires market maker permissions)
-            self.mass_cancel_instrument(cmd.instrument_id);
-            Ok(())
-        } else {
-            // Cancel orders via batch cancel (works for all users)
-            let cache = self.core.cache();
-            let open_orders = cache.orders_open(None, Some(&cmd.instrument_id), None, None, None);
-
-            if open_orders.is_empty() {
-                log::debug!("No open orders to cancel for {}", cmd.instrument_id);
-                return Ok(());
+        match self.cancel_all_orders_route(cmd.instrument_id) {
+            CancelAllOrdersRoute::SpreadHttp | CancelAllOrdersRoute::MassCancelHttp => {
+                self.mass_cancel_instrument(cmd.instrument_id);
+                Ok(())
             }
+            CancelAllOrdersRoute::BatchWs => {
+                let cache = self.core.cache();
+                let open_orders =
+                    cache.orders_open(None, Some(&cmd.instrument_id), None, None, None);
 
-            let mut regular_payload = Vec::new();
-            let mut regular_cancel_contexts = Vec::new();
-            let mut algo_orders: Vec<(
-                InstrumentId,
-                ClientOrderId,
-                Option<VenueOrderId>,
-                TraderId,
-                StrategyId,
-            )> = Vec::new();
-
-            for order in &open_orders {
-                // Triggered stop orders become regular orders on OKX
-                let is_pending_algo = self.is_conditional_order(order.order_type())
-                    && order.is_triggered() != Some(true);
-
-                if is_pending_algo {
-                    algo_orders.push((
-                        order.instrument_id(),
-                        order.client_order_id(),
-                        order.venue_order_id(),
-                        order.trader_id(),
-                        order.strategy_id(),
-                    ));
-                } else {
-                    self.ensure_order_identity(
-                        order.client_order_id(),
-                        order.strategy_id(),
-                        order.instrument_id(),
-                    );
-                    regular_payload.push((
-                        order.instrument_id(),
-                        Some(order.client_order_id()),
-                        order.venue_order_id(),
-                    ));
-                    regular_cancel_contexts.push((
-                        order.client_order_id(),
-                        order.instrument_id(),
-                        order.strategy_id(),
-                    ));
+                if open_orders.is_empty() {
+                    log::debug!("No open orders to cancel for {}", cmd.instrument_id);
+                    return Ok(());
                 }
-            }
-            drop(open_orders);
-            drop(cache);
 
-            log::debug!(
-                "Canceling {} regular orders and {} algo orders for {}",
-                regular_payload.len(),
-                algo_orders.len(),
-                cmd.instrument_id
-            );
+                let mut regular_payload = Vec::new();
+                let mut regular_cancel_contexts = Vec::new();
+                let mut algo_orders: Vec<(
+                    InstrumentId,
+                    ClientOrderId,
+                    Option<VenueOrderId>,
+                    TraderId,
+                    StrategyId,
+                )> = Vec::new();
 
-            if !regular_payload.is_empty() {
-                let ws_private = self.ws_private.clone();
-                let emitter = self.emitter.clone();
-                let clock = self.clock;
-
-                self.spawn_task("batch_cancel_orders", async move {
-                    if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
-                        let ts = clock.get_time_ns();
-
-                        for (cid, inst_id, strat_id) in &regular_cancel_contexts {
-                            emitter.emit_order_cancel_rejected_event(
-                                *strat_id,
-                                *inst_id,
-                                *cid,
-                                None,
-                                &format!("batch-cancel-error: {e}"),
-                                ts,
+                for order in &open_orders {
+                    let order_state = Some((order.order_type(), order.is_triggered()));
+                    match self.cancel_order_route(order.instrument_id(), order_state) {
+                        OrderCommandRoute::RegularWs => {
+                            self.ensure_order_identity(
+                                order.client_order_id(),
+                                order.strategy_id(),
+                                order.instrument_id(),
                             );
+                            regular_payload.push((
+                                order.instrument_id(),
+                                Some(order.client_order_id()),
+                                order.venue_order_id(),
+                            ));
+                            regular_cancel_contexts.push((
+                                order.client_order_id(),
+                                order.instrument_id(),
+                                order.strategy_id(),
+                            ));
                         }
-                        anyhow::bail!("Batch cancel orders failed: {e}");
+                        OrderCommandRoute::AlgoHttp => {
+                            algo_orders.push((
+                                order.instrument_id(),
+                                order.client_order_id(),
+                                order.venue_order_id(),
+                                order.trader_id(),
+                                order.strategy_id(),
+                            ));
+                        }
+                        OrderCommandRoute::SpreadHttp => {}
                     }
-                    Ok(())
-                });
-            }
+                }
+                drop(open_orders);
+                drop(cache);
 
-            // OKX doesn't support algo cancel via private WebSocket, must use HTTP
-            if !algo_orders.is_empty() {
-                let items: Vec<_> = algo_orders
-                    .into_iter()
-                    .map(
-                        |(
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            _trader_id,
-                            strategy_id,
-                        )| {
-                            let request = OKXCancelAlgoOrderRequest {
-                                inst_id: instrument_id.symbol.to_string(),
-                                inst_id_code: None,
-                                algo_id: venue_order_id.map(|id| id.to_string()),
-                                algo_cl_ord_id: if venue_order_id.is_none() {
-                                    Some(client_order_id.to_string())
-                                } else {
-                                    None
-                                },
-                            };
-                            let ctx = AlgoCancelContext {
-                                client_order_id,
+                log::debug!(
+                    "Canceling {} regular orders and {} algo orders for {}",
+                    regular_payload.len(),
+                    algo_orders.len(),
+                    cmd.instrument_id
+                );
+
+                if !regular_payload.is_empty() {
+                    let ws_private = self.ws_private.clone();
+                    let emitter = self.emitter.clone();
+                    let clock = self.clock;
+
+                    self.spawn_task("batch_cancel_orders", async move {
+                        if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
+                            let ts = clock.get_time_ns();
+
+                            for (cid, inst_id, strat_id) in &regular_cancel_contexts {
+                                emitter.emit_order_cancel_rejected_event(
+                                    *strat_id,
+                                    *inst_id,
+                                    *cid,
+                                    None,
+                                    &format!("batch-cancel-error: {e}"),
+                                    ts,
+                                );
+                            }
+                            anyhow::bail!("Batch cancel orders failed: {e}");
+                        }
+                        Ok(())
+                    });
+                }
+
+                // OKX doesn't support algo cancel via private WebSocket, must use HTTP
+                if !algo_orders.is_empty() {
+                    let items: Vec<_> = algo_orders
+                        .into_iter()
+                        .map(
+                            |(
                                 instrument_id,
-                                strategy_id,
+                                client_order_id,
                                 venue_order_id,
-                            };
-                            (request, ctx)
-                        },
-                    )
-                    .collect();
-                self.dispatch_algo_cancels(items);
-            }
+                                _trader_id,
+                                strategy_id,
+                            )| {
+                                let request = OKXCancelAlgoOrderRequest {
+                                    inst_id: instrument_id.symbol.to_string(),
+                                    inst_id_code: None,
+                                    algo_id: venue_order_id.map(|id| id.to_string()),
+                                    algo_cl_ord_id: if venue_order_id.is_none() {
+                                        Some(client_order_id.to_string())
+                                    } else {
+                                        None
+                                    },
+                                };
+                                let ctx = AlgoCancelContext {
+                                    client_order_id,
+                                    instrument_id,
+                                    strategy_id,
+                                    venue_order_id,
+                                };
+                                (request, ctx)
+                            },
+                        )
+                        .collect();
+                    self.dispatch_algo_cancels(items);
+                }
 
-            Ok(())
+                Ok(())
+            }
         }
     }
 
@@ -1928,26 +2155,40 @@ impl ExecutionClient for OKXExecutionClient {
 
         let mut regular_payload = Vec::new();
         let mut algo_orders = Vec::new();
+        let mut http_orders = Vec::new();
 
         for cancel in &cmd.cancels {
-            // Triggered stop orders become regular orders on OKX
-            let is_pending_algo = cache.order(&cancel.client_order_id).is_some_and(|o| {
-                self.is_conditional_order(o.order_type()) && o.is_triggered() != Some(true)
-            });
+            let order_state = cache
+                .order(&cancel.client_order_id)
+                .map(|order| (order.order_type(), order.is_triggered()));
 
-            if is_pending_algo {
-                algo_orders.push(cancel.clone());
-            } else {
-                self.ensure_order_identity(
-                    cancel.client_order_id,
-                    cancel.strategy_id,
-                    cancel.instrument_id,
-                );
-                regular_payload.push((
-                    cancel.instrument_id,
-                    Some(cancel.client_order_id),
-                    cancel.venue_order_id,
-                ));
+            match self.cancel_order_route(cancel.instrument_id, order_state) {
+                OrderCommandRoute::RegularWs => {
+                    self.ensure_order_identity(
+                        cancel.client_order_id,
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                    );
+                    regular_payload.push((
+                        cancel.instrument_id,
+                        Some(cancel.client_order_id),
+                        cancel.venue_order_id,
+                    ));
+                }
+                OrderCommandRoute::AlgoHttp => algo_orders.push(cancel.clone()),
+                OrderCommandRoute::SpreadHttp => {
+                    self.ensure_order_identity(
+                        cancel.client_order_id,
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                    );
+                    http_orders.push((
+                        cancel.client_order_id,
+                        cancel.instrument_id,
+                        cancel.strategy_id,
+                        cancel.venue_order_id,
+                    ));
+                }
             }
         }
         drop(cache);
@@ -2014,8 +2255,69 @@ impl ExecutionClient for OKXExecutionClient {
             self.dispatch_algo_cancels(items);
         }
 
+        if !http_orders.is_empty() {
+            let client = self.http_client.clone();
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
+
+            self.spawn_task("cancel_http_orders", async move {
+                for (client_order_id, instrument_id, strategy_id, venue_order_id) in http_orders {
+                    if let Err(e) = client
+                        .cancel_order(instrument_id, Some(client_order_id), venue_order_id)
+                        .await
+                    {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_cancel_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("cancel-http-order-error: {e}"),
+                            ts_event,
+                        );
+                    }
+                }
+                Ok(())
+            });
+        }
+
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrderCommandRoute {
+    RegularWs,
+    AlgoHttp,
+    SpreadHttp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelAllOrdersRoute {
+    BatchWs,
+    MassCancelHttp,
+    SpreadHttp,
+}
+
+fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
+    params.as_ref().and_then(|p| {
+        p.get(key).and_then(|v| {
+            v.as_str()
+                .map(ToString::to_string)
+                .or_else(|| v.as_f64().map(|n| n.to_string()))
+        })
+    })
+}
+
+fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
+    !matches!(
+        instrument_type,
+        OKXInstrumentType::Option | OKXInstrumentType::Events
+    )
+}
+
+fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
+    is_okx_spread_symbol(instrument_id.symbol.as_str())
 }
 
 // Picks the report that best answers the query. Tiered so a strong signal
@@ -2406,20 +2708,27 @@ mod tests {
     }
 
     #[rstest]
-    fn test_on_instrument_writes_through_to_ws_caches() {
+    fn test_on_instrument_writes_through_to_client_caches() {
         // Bus-delivered instrument updates must land in both the private and
-        // business WebSocket caches so the dispatch loops resolve fresh
-        // tickSz, lotSz, and instIdCode without a session restart.
+        // business WebSocket caches, and in the HTTP cache used by reconciliation.
         use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
 
         let mut client = build_test_exec_client();
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let symbol = instrument.symbol().inner();
+        let raw_symbol = instrument.raw_symbol().inner();
 
         client.on_instrument(instrument.clone());
 
         let private_cache = client.ws_private.instruments_cache_arc();
         let business_cache = client.ws_business.instruments_cache_arc();
+        assert_eq!(
+            client
+                .http_client
+                .get_instrument(&raw_symbol)
+                .map(|i| i.id()),
+            Some(instrument.id()),
+        );
         assert_eq!(
             private_cache.load().get(&symbol).map(|i| i.id()),
             Some(instrument.id()),

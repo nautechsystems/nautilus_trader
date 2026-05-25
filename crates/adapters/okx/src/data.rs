@@ -559,6 +559,7 @@ impl OKXDataClient {
                 }
             }
             OKXWsMessage::Orders(_)
+            | OKXWsMessage::SpreadOrders(_)
             | OKXWsMessage::AlgoOrders(_)
             | OKXWsMessage::OrderResponse { .. }
             | OKXWsMessage::Account(_)

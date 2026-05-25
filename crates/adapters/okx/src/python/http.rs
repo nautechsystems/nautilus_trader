@@ -22,7 +22,7 @@ use nautilus_core::python::{
 use nautilus_model::{
     data::{BarType, forward::ForwardPrice},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
@@ -43,7 +43,7 @@ use crate::{
         models::{OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest},
         query::{
             GetEventContractEventsParams, GetEventContractMarketsParams,
-            GetEventContractSeriesParams,
+            GetEventContractSeriesParams, GetSpreadsParams,
         },
     },
 };
@@ -303,6 +303,40 @@ impl OKXHttpClient {
                     .into_any()
                     .unbind();
                 Ok(result)
+            })
+        })
+    }
+
+    /// Requests spread instruments from OKX.
+    #[pyo3(name = "request_spread_instruments")]
+    #[pyo3(signature = (base_currency=None, instrument_id=None, spread_id=None, state=None))]
+    fn py_request_spread_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        base_currency: Option<String>,
+        instrument_id: Option<InstrumentId>,
+        spread_id: Option<String>,
+        state: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instruments = client
+                .request_spread_instruments(GetSpreadsParams {
+                    base_ccy: base_currency,
+                    inst_id: instrument_id.map(|id| id.symbol.to_string()),
+                    sprd_id: spread_id,
+                    state,
+                })
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_instruments: PyResult<Vec<_>> = instruments
+                    .into_iter()
+                    .map(|inst| instrument_any_to_pyobject(py, inst))
+                    .collect();
+                Ok(PyList::new(py, py_instruments?)?.into_py_any_unwrap(py))
             })
         })
     }
@@ -1067,6 +1101,95 @@ impl OKXHttpClient {
                     dict.set_item("s_msg", s_msg)?;
                 }
                 Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Cancels an order via HTTP, routing spread instruments to the spread endpoint.
+    #[pyo3(name = "cancel_order")]
+    #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None))]
+    fn py_cancel_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let resp = client
+                .cancel_order(instrument_id, client_order_id, venue_order_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("ord_id", resp.ord_id)?;
+
+                if let Some(cl_ord_id) = resp.cl_ord_id {
+                    dict.set_item("cl_ord_id", cl_ord_id)?;
+                }
+
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+
+                if let Some(ts) = resp.ts {
+                    dict.set_item("ts", ts)?;
+                }
+
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Cancels all open orders for an instrument via HTTP.
+    #[pyo3(name = "cancel_all_orders")]
+    fn py_cancel_all_orders<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let responses = client
+                .cancel_all_orders(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let results: PyResult<Vec<_>> = responses
+                    .into_iter()
+                    .map(|resp| {
+                        let dict = PyDict::new(py);
+                        dict.set_item("ord_id", resp.ord_id)?;
+
+                        if let Some(cl_ord_id) = resp.cl_ord_id {
+                            dict.set_item("cl_ord_id", cl_ord_id)?;
+                        }
+
+                        if let Some(s_code) = resp.s_code {
+                            dict.set_item("s_code", s_code)?;
+                        }
+
+                        if let Some(s_msg) = resp.s_msg {
+                            dict.set_item("s_msg", s_msg)?;
+                        }
+
+                        if let Some(ts) = resp.ts {
+                            dict.set_item("ts", ts)?;
+                        }
+
+                        Ok(dict)
+                    })
+                    .collect();
+                Ok(PyList::new(py, results?)?.into_py_any_unwrap(py))
             })
         })
     }

@@ -1,0 +1,33 @@
+{
+  "arg": {
+    "channel": "sprd-orders"
+  },
+  "data": [
+    {
+      "sprdId": "BCH-USDT_BCH-USDT-SWAP",
+      "ordId": "3386544889978159104",
+      "clOrdId": "O202605250630050010011",
+      "tag": "",
+      "px": "1.0",
+      "sz": "0.01",
+      "ordType": "limit",
+      "side": "buy",
+      "fillSz": "",
+      "fillPx": "",
+      "tradeId": "",
+      "accFillSz": "0",
+      "pendingFillSz": "0",
+      "pendingSettleSz": "0",
+      "canceledSz": "0",
+      "state": "live",
+      "avgPx": "",
+      "cancelSource": "",
+      "uTime": "1779648155000",
+      "cTime": "1779648154000",
+      "code": "",
+      "msg": "",
+      "reqId": "",
+      "amendResult": ""
+    }
+  ]
+}

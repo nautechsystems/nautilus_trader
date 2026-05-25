@@ -196,6 +196,9 @@ pub struct OKXExecClientConfig {
     /// Enables consumption of the fills WebSocket channel when true.
     #[builder(default)]
     pub use_fills_channel: bool,
+    /// Whether to subscribe to spread order updates from the separate spread channel.
+    #[builder(default)]
+    pub load_spreads: bool,
     /// Enables mass-cancel support when true.
     #[builder(default)]
     pub use_mm_mass_cancel: bool,
@@ -315,7 +318,20 @@ load_spreads = true
         assert_eq!(config.instrument_types, expected.instrument_types);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
         assert_eq!(config.use_fills_channel, expected.use_fills_channel);
+        assert_eq!(config.load_spreads, expected.load_spreads);
         assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_load_spreads() {
+        let config: OKXExecClientConfig = toml::from_str(
+            "
+load_spreads = true
+",
+        )
+        .unwrap();
+
+        assert!(config.load_spreads);
     }
 }

@@ -17,15 +17,22 @@ Live example scripts are available in
 
 ### Product support
 
-| Product type      | Data feed            | Trading | Notes                                           |
-|-------------------|----------------------|---------|-------------------------------------------------|
-| Spot              | ✓                    | ✓       | Spot trading pairs.                             |
-| Margin            | ✓                    | ✓       | Spot trading with margin or leverage.           |
-| Perpetual swaps   | ✓                    | ✓       | Linear and inverse contracts.                   |
-| Futures           | ✓                    | ✓       | Dated futures contracts.                        |
-| Options           | ✓                    | ✓       | Limit‑style orders only.                        |
-| Spreads           | Instrument discovery | -       | Opt‑in `CryptoFuturesSpread` loading.           |
-| Event contracts   | ✓                    | ✓       | Parsed as Nautilus `BinaryOption` instruments.  |
+| Product         | Instrument source            | Data | Exec | Notes                                      |
+|-----------------|------------------------------|------|------|--------------------------------------------|
+| Spot            | `public/instruments`         | Yes  | Yes  | Spot trading pairs.                        |
+| Margin          | `public/instruments`         | Yes  | Yes  | Spot instruments with margin or leverage.  |
+| Perpetual swaps | `public/instruments`         | Yes  | Yes  | Linear and inverse contracts.              |
+| Futures         | `public/instruments`         | Yes  | Yes  | Dated futures contracts.                   |
+| Options         | `public/instruments`         | Yes  | Yes  | Limit‑style order execution.               |
+| Spreads         | `sprd/spreads`               | Yes  | Yes  | OKX Nitro spread books and private orders. |
+| Event contracts | `event-contract/*` endpoints | Yes  | Yes  | Parsed as Nautilus `BinaryOption`.         |
+
+Relevant OKX docs:
+
+- [Get instruments](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-instruments).
+- [Get Spreads (Public)](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-spreads-public).
+- [Spread trading place order](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-place-order).
+- [Event contract series](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-series).
 
 :::note
 **Options support**: The adapter supports options market data, venue-provided Greeks
@@ -118,8 +125,17 @@ Examples:
 - `ETH-USD-SWAP_ETH-USD-231229` - Spread between ETH-USD perpetual swap and dated future
 
 Set `load_spreads=True` on the data client to load live OKX spread instruments from
-the separate spread endpoint. The adapter currently supports spread instrument
-discovery, but not OKX spread order routing.
+the OKX [Get Spreads (Public)](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-spreads-public)
+endpoint. The adapter maps each OKX `sprdId` to a Nautilus spread instrument ID
+with the `.OKX` venue suffix.
+
+Concise spread instrument notes:
+
+- Current OKX live spread discovery returns spot, swap, and futures leg combinations.
+- The parser can represent option-leg spread definitions if OKX exposes them through
+  the same spread endpoint.
+- OKX option RFQ and block trading workflows are separate from the Nitro spread order
+  book API and are not routed by this spread path.
 
 #### OPTIONS
 
@@ -213,6 +229,38 @@ use_hyphens_in_client_order_ids=False
 `TRAILING_STOP_MARKET` path uses OKX's advance algo order API (`move_order_stop`) and
 requires the `cancel-advance-algos` endpoint for cancellation.
 :::
+
+### Spread orders
+
+OKX spread instruments use a separate spread trading order book and API family. The
+execution client currently routes spread orders by spread instrument ID, for example
+`ETH-USD-SWAP_ETH-USD-231229.OKX`, through the HTTP `/api/v5/sprd/*` endpoints.
+
+The adapter uses OKX's spread REST endpoints for submit, cancel, mass cancel, order
+status, and trade reports. It subscribes to the OKX business WebSocket
+[`sprd-orders` channel](https://www.okx.com/docs-v5/en/#spread-trading-websocket-private-channel-order-channel)
+for live spread order updates.
+
+OKX `sprd-orders` WebSocket updates do not include fee fields. Live spread fill
+reports emitted from that channel use zero commission; historical and reconciliation
+fill reports from the REST
+[`sprd/trades` endpoint](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-trades)
+include OKX fee data.
+
+Supported spread order instructions:
+
+- `LIMIT` with GTC time-in-force.
+- `LIMIT` with IOC time-in-force.
+- `LIMIT` with post-only execution.
+
+Spread order lists, conditional orders, FOK time-in-force, and modify requests are not
+supported by the OKX spread trading API path.
+
+Relevant OKX docs:
+
+- [Spread order placement](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-place-order).
+- [Spread order details](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-order-details).
+- [Spread order channel](https://www.okx.com/docs-v5/en/#spread-trading-websocket-private-channel-order-channel).
 
 ### Quantity semantics for spot margin trading
 
@@ -857,33 +905,75 @@ and WebSocket calls.
 
 - Connection establishment: 3 requests per second (per IP).
 - Subscription operations (subscribe/unsubscribe/login): 480 requests per hour per connection.
-- Order actions (place/cancel/amend): 250 requests per second.
+- Order operation buckets appear in the table below and mirror OKX's published limits
+  where available.
+
+| Operation key  | Limit (req/sec) | Notes                                                     |
+|----------------|-----------------|-----------------------------------------------------------|
+| `order`        | 30              | OKX 60 requests / 2 seconds.                              |
+| `cancel`       | 30              | OKX 60 requests / 2 seconds.                              |
+| `amend`        | 30              | OKX 60 requests / 2 seconds.                              |
+| `batch-order`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
+| `batch-cancel` | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
+| `batch-amend`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
+| `mass-cancel`  | 2               | OKX 5 requests / 2 seconds, rounded down.                 |
+| `algo-order`   | 10              | OKX 20 requests / 2 seconds.                              |
+| `algo-cancel`  | 1               | OKX 20 orders / 2 seconds, rounded down for full batches.  |
 
 :::warning
 OKX enforces per-endpoint and per-account quotas. Exceeding them leads to HTTP 429
 responses and temporary throttling on that key.
 :::
 
-| Key / endpoint                          | Limit (req/sec) | Notes                                          |
-|-----------------------------------------|-----------------|------------------------------------------------|
-| `okx:global`                            | 250             | Adapter‑level shared bucket.                   |
-| `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                   |
-| `/api/v5/public/event-contract/series`  | 5               | OKX 10 requests / 2 seconds.                   |
-| `/api/v5/public/event-contract/events`  | 5               | OKX 10 requests / 2 seconds.                   |
-| `/api/v5/public/event-contract/markets` | 5               | OKX 10 requests / 2 seconds.                   |
-| `/api/v5/market/candles`                | 50              | Higher allowance for streaming candles.        |
-| `/api/v5/market/history-candles`        | 20              | Conservative quota for large historical pulls. |
-| `/api/v5/market/history-trades`         | 30              | Trade history pulls.                           |
-| `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                   |
-| `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                   |
-| `/api/v5/trade/orders-pending`          | 20              | Open order fetch.                              |
-| `/api/v5/trade/orders-history`          | 20              | Historical orders.                             |
-| `/api/v5/trade/fills`                   | 30              | Execution reports.                             |
-| `/api/v5/trade/order-algo`              | 10              | Algo placements.                               |
-| `/api/v5/trade/cancel-algos`            | 10              | Algo cancellation.                             |
+| Key / endpoint                          | Limit (req/sec) | Notes                                             |
+|-----------------------------------------|-----------------|---------------------------------------------------|
+| `okx:global`                            | 250             | Adapter‑level shared bucket.                      |
+| `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down.         |
+| `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down.         |
+| `/api/v5/account/positions`             | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/account/positions-history`     | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/public/position-tiers`         | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/event-contract/series`  | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/event-contract/events`  | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/event-contract/markets` | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/opt-summary`            | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/public/time`                   | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/mark-price`             | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/public/funding-rate-history`   | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/market/index-tickers`          | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/market/books`                  | 20              | OKX 40 requests / 2 seconds.                      |
+| `/api/v5/market/candles`                | 20              | OKX 40 requests / 2 seconds.                      |
+| `/api/v5/market/history-candles`        | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/market/history-trades`         | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/sprd/spreads`                  | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/sprd/order`                    | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/sprd/cancel-order`             | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/sprd/mass-cancel`              | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/sprd/orders-pending`           | 5               | OKX 10 requests / 2 seconds.                      |
+| `/api/v5/sprd/orders-history`           | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/sprd/trades`                   | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                      |
+| `/api/v5/trade/cancel-batch-orders`     | 7               | OKX 300 orders / 2 seconds, rounded down.         |
+| `/api/v5/trade/orders-pending`          | 30              | OKX 60 requests / 2 seconds.                      |
+| `/api/v5/trade/orders-history`          | 20              | OKX 40 requests / 2 seconds.                      |
+| `/api/v5/trade/fills`                   | 30              | OKX 60 requests / 2 seconds.                      |
+| `/api/v5/trade/order-algo`              | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/trade/cancel-algos`            | 1               | OKX 20 orders / 2 seconds.                        |
+| `/api/v5/trade/cancel-advance-algos`    | 1               | Conservative bucket for advance algo cancels.     |
+| `/api/v5/trade/amend-algos`             | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/trade/orders-algo-pending`     | 10              | OKX 20 requests / 2 seconds.                      |
+| `/api/v5/trade/orders-algo-history`     | 10              | OKX 20 requests / 2 seconds.                      |
 
 All keys include the `okx:global` bucket. URLs are normalized with query strings removed
 before rate limiting, so requests with different filters share the same quota.
+
+For order-based cancel quotas, the adapter uses request-level buckets that assume full
+batch sizes: 20 orders per request for regular batch cancels and 10 orders per request
+for algo cancels. OKX's current public docs no longer list a rate limit for
+`/api/v5/trade/cancel-advance-algos`, but the adapter still has an endpoint-specific
+bucket because the HTTP client can call that legacy path.
 
 :::info
 See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-rate-limit).
@@ -935,6 +1025,7 @@ The OKX execution client provides the following configuration options:
 |-----------------------------------|-----------------------------|---------------------------------------------|
 | `instrument_types`                | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
 | `contract_types`                  | `None`                      | Tradable contract styles to load.           |
+| `load_spreads`                    | `False`                     | Loads live spread instruments.              |
 | `instrument_families`             | `None`                      | Families or event `seriesId` values.        |
 | `base_url_http`                   | `None`                      | Override for the OKX trading REST endpoint. |
 | `base_url_ws_private`             | `None`                      | Override for the private WebSocket URL.     |
@@ -959,7 +1050,9 @@ Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP
 `FUTURES`, `OPTION`, and `EVENTS`.
 
 `instrument_families` has the same meaning for execution clients as it does for data
-clients. The execution client does not route OKX spread orders.
+clients. Spread instruments use OKX spread IDs instead of `instrument_types`; load them
+with `load_spreads=True` on the data client and, for Python v1 execution-only nodes, on
+the execution client before trading them.
 
 Below is an example configuration for a live trading node using OKX data and execution clients:
 

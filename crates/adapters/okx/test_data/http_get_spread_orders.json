@@ -1,0 +1,24 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "sprdId": "ETH-USD-SWAP_ETH-USD-231229",
+      "ordId": "12345",
+      "clOrdId": "O-spread-entry",
+      "tag": "nautilus",
+      "side": "buy",
+      "ordType": "limit",
+      "sz": "10",
+      "px": "1.25",
+      "avgPx": "1.20",
+      "state": "partially_filled",
+      "accFillSz": "5",
+      "fillSz": "5",
+      "fillPx": "1.20",
+      "tradeId": "9001",
+      "cTime": "1700000000000",
+      "uTime": "1700000001000"
+    }
+  ]
+}

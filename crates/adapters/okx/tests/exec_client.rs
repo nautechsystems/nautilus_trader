@@ -15,47 +15,61 @@
 
 //! Integration tests for `OKXExecutionClient`.
 
-use std::{cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc, time::Duration,
+};
 
-use axum::{Router, http::HeaderMap, response::IntoResponse, routing::get};
+use ahash::AHashMap;
+use axum::{Json, Router, extract::Query, http::HeaderMap, response::IntoResponse, routing::get};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{BatchCancelOrders, CancelOrder, QueryAccount, SubmitOrder, SubmitOrderList},
+        execution::{
+            BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, QueryAccount,
+            SubmitOrder, SubmitOrderList,
+            report::{GenerateFillReports, GenerateOrderStatusReports},
+        },
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderInitialized},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
+    instruments::{CryptoFuturesSpread, InstrumentAny},
     orders::{OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
-    common::consts::{OKX_CLIENT_ID, OKX_VENUE},
+    common::{
+        consts::{OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE},
+        enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
+    },
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
-    http::models::OKXCancelAlgoOrderResponse,
+    http::models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
     websocket::{
         dispatch::{
-            AlgoCancelContext, WsDispatchState, dispatch_execution_reports,
-            emit_algo_cancel_rejections, emit_batch_cancel_failure,
+            AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_execution_reports,
+            dispatch_ws_message, emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
-        messages::ExecutionReport,
+        messages::{ExecutionReport, OKXWsMessage},
+        parse::OrderStateSnapshot,
     },
 };
 use rstest::rstest;
+use serde_json::json;
+use ustr::Ustr;
 
 fn test_emitter() -> (
     ExecutionEventEmitter,
@@ -110,6 +124,117 @@ fn make_order_status_report(cid: &str, status: OrderStatus) -> OrderStatusReport
         UnixNanos::default(),
         None,
     )
+}
+
+fn make_spread_instrument() -> InstrumentAny {
+    let instrument = CryptoFuturesSpread::new(
+        InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
+        Symbol::from("BCH-USDT_BCH-USDT-SWAP"),
+        Currency::get_or_create_crypto("BCH"),
+        Currency::USDT(),
+        Currency::USDT(),
+        false,
+        Ustr::from("linear"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        1,
+        2,
+        Price::from("0.1"),
+        Quantity::from("0.01"),
+        None,
+        Some(Quantity::from("0.01")),
+        None,
+        Some(Quantity::from("0.01")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    InstrumentAny::CryptoFuturesSpread(instrument)
+}
+
+fn spread_instruments_cache() -> AtomicMap<Ustr, InstrumentAny> {
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("BCH-USDT_BCH-USDT-SWAP"),
+        make_spread_instrument(),
+    );
+    instruments
+}
+
+fn make_spread_order_msg(
+    state: OKXOrderStatus,
+    client_order_id: ClientOrderId,
+    venue_order_id: &str,
+) -> OKXSpreadOrder {
+    OKXSpreadOrder {
+        sprd_id: Ustr::from("BCH-USDT_BCH-USDT-SWAP"),
+        ord_id: Ustr::from(venue_order_id),
+        cl_ord_id: Ustr::from(client_order_id.as_str()),
+        tag: String::new(),
+        side: OKXSide::Buy,
+        ord_type: OKXOrderType::Limit,
+        sz: "0.01".to_string(),
+        px: "1.0".to_string(),
+        avg_px: String::new(),
+        state,
+        acc_fill_sz: "0".to_string(),
+        pending_fill_sz: "0".to_string(),
+        pending_settle_sz: "0".to_string(),
+        canceled_sz: "0".to_string(),
+        fill_sz: String::new(),
+        fill_px: String::new(),
+        trade_id: Ustr::default(),
+        cancel_source: String::new(),
+        req_id: String::new(),
+        amend_result: String::new(),
+        code: String::new(),
+        msg: String::new(),
+        c_time: Some(1_779_648_154_000),
+        u_time: Some(1_779_648_155_000),
+    }
+}
+
+fn dispatch_spread_message(
+    message: OKXSpreadOrder,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
+) {
+    let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+    dispatch_ws_message(
+        OKXWsMessage::SpreadOrders(vec![message]),
+        emitter,
+        state,
+        AccountId::from("OKX-001"),
+        instruments,
+        &mut fee_cache,
+        filled_qty_cache,
+        order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+}
+
+fn track_spread_order(state: &WsDispatchState, client_order_id: ClientOrderId) {
+    state.order_identities.insert(
+        client_order_id,
+        OrderIdentity {
+            instrument_id: InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        },
+    );
 }
 
 fn drain_events(
@@ -470,6 +595,294 @@ fn test_dispatch_full_lifecycle_stale_accepted_skipped() {
     let events = drain_events(&mut rx);
     // Only the first Triggered report and the Fill should have been emitted
     assert_eq!(events.len(), 2);
+}
+
+#[rstest]
+fn test_dispatch_spread_order_accept_then_cancel() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD001");
+    let venue_order_id = "3386544889978159104";
+    track_spread_order(&state, cid);
+
+    dispatch_spread_message(
+        make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let accepted = drain_events(&mut rx);
+    assert_eq!(accepted.len(), 1);
+    match &accepted[0] {
+        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+            assert_eq!(event.client_order_id, cid);
+            assert_eq!(event.venue_order_id, VenueOrderId::new(venue_order_id));
+            assert_eq!(
+                event.instrument_id,
+                InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX")
+            );
+        }
+        other => panic!("Expected Accepted spread order event, was {other:?}"),
+    }
+
+    dispatch_spread_message(
+        make_spread_order_msg(OKXOrderStatus::Canceled, cid, venue_order_id),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let canceled = drain_events(&mut rx);
+    assert_eq!(canceled.len(), 1);
+    match &canceled[0] {
+        ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+            assert_eq!(event.client_order_id, cid);
+            assert_eq!(
+                event.venue_order_id,
+                Some(VenueOrderId::new(venue_order_id))
+            );
+        }
+        other => panic!("Expected Canceled spread order event, was {other:?}"),
+    }
+
+    assert!(state.order_identities.get(&cid).is_none());
+    assert!(!state.emitted_accepted.contains(&cid));
+}
+
+#[rstest]
+fn test_dispatch_spread_order_cancel_synthesizes_accepted() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD002");
+    let venue_order_id = "3386544889978159105";
+    track_spread_order(&state, cid);
+
+    dispatch_spread_message(
+        make_spread_order_msg(OKXOrderStatus::Canceled, cid, venue_order_id),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    match (&events[0], &events[1]) {
+        (
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)),
+            ExecutionEvent::Order(OrderEventAny::Canceled(canceled)),
+        ) => {
+            assert_eq!(accepted.client_order_id, cid);
+            assert_eq!(accepted.venue_order_id, VenueOrderId::new(venue_order_id));
+            assert_eq!(canceled.client_order_id, cid);
+            assert_eq!(
+                canceled.venue_order_id,
+                Some(VenueOrderId::new(venue_order_id))
+            );
+        }
+        other => panic!("Expected Accepted then Canceled spread events, was {other:?}"),
+    }
+
+    assert!(state.order_identities.get(&cid).is_none());
+}
+
+#[rstest]
+fn test_dispatch_spread_order_live_update_emits_updated() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD003");
+    let venue_order_id = "3386544889978159106";
+    track_spread_order(&state, cid);
+
+    dispatch_spread_message(
+        make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let accepted = drain_events(&mut rx);
+    assert_eq!(accepted.len(), 1);
+    assert!(matches!(
+        &accepted[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+
+    let mut updated = make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id);
+    updated.px = "1.1".to_string();
+    updated.sz = "0.02".to_string();
+
+    dispatch_spread_message(
+        updated,
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+            assert_eq!(event.client_order_id, cid);
+            assert_eq!(
+                event.venue_order_id,
+                Some(VenueOrderId::new(venue_order_id))
+            );
+            assert_eq!(event.quantity, Quantity::from("0.02"));
+            assert_eq!(event.price, Some(Price::from("1.1")));
+        }
+        other => panic!("Expected Updated spread order event, was {other:?}"),
+    }
+
+    assert!(state.order_identities.get(&cid).is_some());
+}
+
+#[rstest]
+fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD004");
+    let venue_order_id = "3386544889978159107";
+    track_spread_order(&state, cid);
+
+    let mut fill = make_spread_order_msg(OKXOrderStatus::Filled, cid, venue_order_id);
+    fill.fill_sz = "0.01".to_string();
+    fill.fill_px = "1.0".to_string();
+    fill.acc_fill_sz = "0.01".to_string();
+    fill.trade_id = Ustr::from("TSPRD001");
+
+    dispatch_spread_message(
+        fill.clone(),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    match (&events[0], &events[1]) {
+        (
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)),
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)),
+        ) => {
+            assert_eq!(accepted.client_order_id, cid);
+            assert_eq!(filled.client_order_id, cid);
+            assert_eq!(filled.trade_id, TradeId::new("TSPRD001"));
+            assert_eq!(filled.last_qty, Quantity::from("0.01"));
+            assert_eq!(filled.last_px, Price::from("1.0"));
+        }
+        other => panic!("Expected Accepted then Filled spread events, was {other:?}"),
+    }
+
+    assert!(state.order_identities.get(&cid).is_none());
+    assert!(state.filled_orders.contains(&cid));
+
+    dispatch_spread_message(
+        fill,
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let replay_events = drain_events(&mut rx);
+    assert_eq!(replay_events.len(), 0);
+}
+
+#[rstest]
+fn test_dispatch_spread_post_only_cancel_emits_rejected() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD005");
+    let venue_order_id = "3386544889978159108";
+    track_spread_order(&state, cid);
+
+    let mut canceled = make_spread_order_msg(OKXOrderStatus::Canceled, cid, venue_order_id);
+    canceled.cancel_source = OKX_POST_ONLY_CANCEL_SOURCE.to_string();
+
+    dispatch_spread_message(
+        canceled,
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, cid);
+            assert!(event.due_post_only);
+        }
+        other => panic!("Expected Rejected spread order event, was {other:?}"),
+    }
+
+    assert!(state.order_identities.get(&cid).is_none());
+}
+
+#[rstest]
+fn test_dispatch_untracked_spread_order_emits_status_report() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = spread_instruments_cache();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+    let cid = ClientOrderId::new("OSPRD006");
+    let venue_order_id = "3386544889978159109";
+
+    dispatch_spread_message(
+        make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id),
+        &emitter,
+        &state,
+        &instruments,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+            assert_eq!(report.client_order_id, Some(cid));
+            assert_eq!(report.venue_order_id, VenueOrderId::new(venue_order_id));
+            assert_eq!(
+                report.instrument_id,
+                InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX")
+            );
+            assert_eq!(report.order_status, OrderStatus::Accepted);
+        }
+        other => panic!("Expected untracked spread order status report, was {other:?}"),
+    }
 }
 
 fn make_order_init(
@@ -841,10 +1254,7 @@ fn test_batch_cancel_failure_empty_contexts() {
 #[rstest]
 #[tokio::test]
 async fn test_trade_dedup_concurrent_inserts_only_one_wins() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let state = Arc::new(WsDispatchState::default());
     let trade_id = TradeId::new("t-race");
@@ -891,6 +1301,16 @@ fn create_exec_test_router() -> Router {
     )
 }
 
+#[derive(Default)]
+struct ReportRouteState {
+    regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    spread_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    spread_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    regular_fill_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    spread_trade_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+}
+
 async fn start_exec_test_server() -> SocketAddr {
     let router = create_exec_test_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -918,8 +1338,126 @@ async fn start_exec_test_server() -> SocketAddr {
     addr
 }
 
+async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAddr {
+    let router = create_exec_report_test_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/health");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    addr
+}
+
+fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
+    let regular_pending_state = Arc::clone(&state);
+    let regular_history_state = Arc::clone(&state);
+    let spread_pending_state = Arc::clone(&state);
+    let spread_history_state = Arc::clone(&state);
+    let regular_fill_state = Arc::clone(&state);
+    let spread_trade_state = state;
+
+    Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_pending_state);
+                async move {
+                    state
+                        .regular_order_pending_queries
+                        .lock()
+                        .await
+                        .push(params);
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_history_state);
+                async move {
+                    state
+                        .regular_order_history_queries
+                        .lock()
+                        .await
+                        .push(params);
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/sprd/orders-pending",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&spread_pending_state);
+                async move {
+                    state.spread_order_pending_queries.lock().await.push(params);
+                    Json(load_test_data("http_get_spread_orders.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/sprd/orders-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&spread_history_state);
+                async move {
+                    state.spread_order_history_queries.lock().await.push(params);
+                    Json(load_test_data("http_get_spread_orders.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/fills",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_fill_state);
+                async move {
+                    state.regular_fill_queries.lock().await.push(params);
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/sprd/trades",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&spread_trade_state);
+                async move {
+                    state.spread_trade_queries.lock().await.push(params);
+                    Json(load_test_data("http_get_spread_trades.json")).into_response()
+                }
+            }),
+        )
+}
+
 fn create_test_execution_client(
     base_url: &str,
+) -> (
+    OKXExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_configured(base_url, |_| {})
+}
+
+fn create_test_execution_client_configured(
+    base_url: &str,
+    configure: impl FnOnce(&mut OKXExecClientConfig),
 ) -> (
     OKXExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -942,7 +1480,7 @@ fn create_test_execution_client(
         cache.clone(),
     );
 
-    let config = OKXExecClientConfig {
+    let mut config = OKXExecClientConfig {
         trader_id,
         account_id,
         base_url_http: Some(base_url.to_string()),
@@ -953,6 +1491,7 @@ fn create_test_execution_client(
         api_passphrase: Some("test_passphrase".to_string()),
         ..Default::default()
     };
+    configure(&mut config);
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -995,6 +1534,129 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_includes_spreads_when_enabled() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+        config.load_spreads = true;
+    });
+    client.on_instrument(make_report_spread_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let regular_pending_queries = state.regular_order_pending_queries.lock().await;
+    let regular_history_queries = state.regular_order_history_queries.lock().await;
+    let spread_pending_queries = state.spread_order_pending_queries.lock().await;
+    let spread_history_queries = state.spread_order_history_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX")
+    );
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from("O-spread-entry"))
+    );
+    assert_eq!(regular_pending_queries.len(), 1);
+    assert_eq!(regular_history_queries.len(), 1);
+    assert_eq!(spread_pending_queries.len(), 1);
+    assert_eq!(spread_history_queries.len(), 1);
+    assert!(!spread_pending_queries[0].contains_key("sprdId"));
+    assert!(!spread_history_queries[0].contains_key("sprdId"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_includes_spreads_when_enabled() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+        config.load_spreads = true;
+    });
+    client.on_instrument(make_report_spread_instrument());
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let regular_fill_queries = state.regular_fill_queries.lock().await;
+    let spread_trade_queries = state.spread_trade_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX")
+    );
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from("O-spread-entry"))
+    );
+    assert_eq!(reports[0].trade_id, TradeId::new("9001"));
+    assert_eq!(regular_fill_queries.len(), 1);
+    assert_eq!(spread_trade_queries.len(), 1);
+    assert!(!spread_trade_queries[0].contains_key("sprdId"));
+}
+
+fn make_report_spread_instrument() -> InstrumentAny {
+    let instrument = CryptoFuturesSpread::new(
+        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
+        Symbol::from("ETH-USD-SWAP_ETH-USD-231229"),
+        Currency::get_or_create_crypto("ETH"),
+        Currency::USD(),
+        Currency::USD(),
+        false,
+        Ustr::from("inverse"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        None,
+        Some(Quantity::from("1")),
+        None,
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    InstrumentAny::CryptoFuturesSpread(instrument)
 }
 
 fn build_test_limit_order(instrument_id: InstrumentId, client_order_id: ClientOrderId) -> OrderAny {

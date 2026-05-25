@@ -1,0 +1,19 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "sprdId": "ETH-USD-SWAP_ETH-USD-231229",
+      "tradeId": "9001",
+      "ordId": "12345",
+      "clOrdId": "O-spread-entry",
+      "fillPx": "1.20",
+      "fillSz": "5",
+      "side": "buy",
+      "execType": "T",
+      "feeCcy": "USDT",
+      "fee": "-0.01",
+      "ts": "1700000001000"
+    }
+  ]
+}
