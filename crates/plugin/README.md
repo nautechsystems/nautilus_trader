@@ -78,6 +78,12 @@ name and downcast to its concrete type locally. The host rejects custom
 data that did not come from a plug-in registration, because those values
 do not carry the vtable and handle needed for that downcast.
 
+Historical plug-in custom-data responses use the same boundary only when the
+value came from a `PluginCustomData` registration. The host inspects `&dyn Any`
+only inside the adapter, extracts registered plug-in `CustomData`, and calls
+the existing `on_data` slot with `PluginCustomDataRef`. No `&dyn Any` value
+crosses the cdylib boundary.
+
 ## Identifier interning
 
 Nautilus identifier types such as `ClientOrderId`, `InstrumentId`,

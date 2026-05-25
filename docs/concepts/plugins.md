@@ -85,6 +85,10 @@ patterns cover the current surface:
   `PluginCustomDataRef`. The host only dispatches custom data values that came from a
   `PluginCustomData` registration in a loaded manifest, because that wrapper carries the plug-in
   vtable and opaque handle needed for a local downcast inside the cdylib.
+- Historical plug-in custom-data responses use the same boundary only when the value came from a
+  `PluginCustomData` registration. The host inspects `&dyn Any` only inside the adapter, extracts
+  registered plug-in `CustomData`, and calls the existing `on_data` slot with `PluginCustomDataRef`.
+  No `&dyn Any` value crosses the cdylib boundary.
 
 The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
 documented in `nautilus_plugin::boundary`.

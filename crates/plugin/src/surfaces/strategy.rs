@@ -40,7 +40,8 @@
 //!
 //! Phase 1 covers the full Phase 1 actor callback set plus:
 //!
-//! - Custom data: values registered through `PluginCustomData`.
+//! - Custom data: values registered through `PluginCustomData`, including
+//!   historical custom-data responses routed through `on_data`.
 //! - Position events: opened, closed, changed.
 //! - Order lifecycle events: initialized, submitted, accepted, rejected,
 //!   expired, triggered, denied, emulated, released, pending update,
@@ -72,9 +73,9 @@
 //! because [`OptionChainSlice`] owns `BTreeMap<Price, OptionStrikeData>`
 //! call and put maps.
 //!
-//! Deferred: `on_book` (stateful), `on_historical_data` (`&dyn Any`
-//! payload), DeFi pool/block events, and the cache-state-mutation methods
-//! (`mark_order_pending_*`,
+//! Deferred: `on_book` (stateful), generic non-plugin `on_historical_data`
+//! (`&dyn Any` payload), DeFi pool/block events, and the cache-state-mutation
+//! methods (`mark_order_pending_*`,
 //! `generate_order_pending_*`). The authoritative list lives in
 //! `tests/surface_alignment.rs`.
 

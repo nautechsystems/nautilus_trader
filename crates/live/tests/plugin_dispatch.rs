@@ -967,6 +967,19 @@ fn actor_adapter_custom_data_dispatches_to_plugin_on_data() {
 }
 
 #[rstest]
+fn actor_adapter_historical_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalCustomData");
+    let custom = plugin_dispatch_custom_data(44);
+
+    DataActor::on_historical_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 44);
+}
+
+#[rstest]
 fn actor_adapter_non_plugin_custom_data_is_ignored() {
     let _lock = lock_counters();
     a_reset();
@@ -974,6 +987,32 @@ fn actor_adapter_non_plugin_custom_data_is_ignored() {
     let custom = stub_custom_data(1, 42, None, None);
 
     DataActor::on_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn actor_adapter_historical_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_historical_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn actor_adapter_historical_non_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalNonCustomData");
+    let payload = 42_u64;
+
+    DataActor::on_historical_data(&mut a, &payload).unwrap();
 
     assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
     assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
@@ -1043,6 +1082,19 @@ fn strategy_adapter_custom_data_dispatches_to_plugin_on_data() {
 }
 
 #[rstest]
+fn strategy_adapter_historical_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalCustomData");
+    let custom = plugin_dispatch_custom_data(45);
+
+    DataActor::on_historical_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 45);
+}
+
+#[rstest]
 fn strategy_adapter_non_plugin_custom_data_is_ignored() {
     let _lock = lock_counters();
     s_reset();
@@ -1050,6 +1102,32 @@ fn strategy_adapter_non_plugin_custom_data_is_ignored() {
     let custom = stub_custom_data(1, 42, None, None);
 
     DataActor::on_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn strategy_adapter_historical_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_historical_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn strategy_adapter_historical_non_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalNonCustomData");
+    let payload = 43_u64;
+
+    DataActor::on_historical_data(&mut s, &payload).unwrap();
 
     assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
     assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);

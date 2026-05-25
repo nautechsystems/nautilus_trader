@@ -46,12 +46,13 @@
 //!   mark prices, index prices, funding rates delivered as
 //!   [`crate::boundary::Slice`] payloads
 //! - Order events: filled, canceled
-//! - Custom data: values registered through `PluginCustomData`
+//! - Custom data: values registered through `PluginCustomData`, including
+//!   historical custom-data responses routed through `on_data`
 //! - Other: signal, time event
 //!
-//! Deferred: `on_book` (stateful), `on_historical_data` (`&dyn Any`
-//! payload), DeFi pool/block events. The authoritative list lives in
-//! `tests/surface_alignment.rs`.
+//! Deferred: `on_book` (stateful), generic non-plugin `on_historical_data`
+//! (`&dyn Any` payload), DeFi pool/block events. The authoritative list
+//! lives in `tests/surface_alignment.rs`.
 
 #![allow(unsafe_code)]
 

@@ -34,6 +34,7 @@
 )]
 
 use std::{
+    any::Any,
     fmt::Debug,
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -62,7 +63,7 @@ use nautilus_trading::{
 use crate::{
     boundary::{BorrowedStr, PluginResult, Slice},
     bridge::{
-        custom_data::try_custom_data_boundary_ref,
+        custom_data::{try_custom_data_boundary_ref, try_historical_custom_data_boundary_ref},
         registry::{HostContextInner, drop_host_context, leak_host_context},
     },
     host::{HostContext, HostVTable},
@@ -496,6 +497,23 @@ impl DataActor for PluginStrategyAdapter {
         invoke_event(self, "on_signal", signal, |adapter, p| unsafe {
             validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_signal)(adapter.handle, p)
         })
+    }
+
+    fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        let Some(data_ref) = try_historical_custom_data_boundary_ref(data) else {
+            return Ok(());
+        };
+        invoke_custom_data(
+            self,
+            "on_historical_data",
+            data_ref,
+            |adapter, value| unsafe {
+                validated_slot!(StrategyVTable, adapter.vtable.as_ptr(), on_data)(
+                    adapter.handle,
+                    value,
+                )
+            },
+        )
     }
 
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {

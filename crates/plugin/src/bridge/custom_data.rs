@@ -146,6 +146,14 @@ pub fn try_custom_data_boundary_ref(data: &CustomData) -> Option<PluginCustomDat
         .map(PluginCustomDataValue::boundary_ref)
 }
 
+/// Returns the plug-in boundary reference for historical custom-data payloads
+/// that carry a plug-in custom-data value.
+#[must_use]
+pub fn try_historical_custom_data_boundary_ref(data: &dyn Any) -> Option<PluginCustomDataRef> {
+    data.downcast_ref::<CustomData>()
+        .and_then(try_custom_data_boundary_ref)
+}
+
 /// Returns the plug-in boundary reference for a host custom-data value.
 ///
 /// # Errors

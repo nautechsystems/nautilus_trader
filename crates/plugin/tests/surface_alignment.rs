@@ -36,7 +36,8 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
+    // Generic historical data stays out of the vtable; registered plug-in
+    // custom data reaches `on_data`.
     "on_historical_data",
 ];
 
@@ -53,7 +54,8 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
+    // Generic historical data stays out of the vtable; registered plug-in
+    // custom data reaches `on_data`.
     "on_historical_data",
 ];
 

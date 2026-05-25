@@ -510,6 +510,46 @@ fn cdylib_actor_custom_data_dispatches_to_on_data(example_manifest: &'static Plu
 }
 
 #[rstest]
+fn cdylib_actor_historical_custom_data_dispatches_to_on_data(
+    example_manifest: &'static PluginManifest,
+) {
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest.actors().next().expect("example actor entry");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-actor-historical-custom-data-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginActorAdapter::new(
+            ActorId::from("ExampleActorHistoricalCustomData-001"),
+            "example-custom-data-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("actor adapter construction succeeds");
+    register_actor_adapter(&mut adapter);
+
+    let custom = plugin_test_custom_data(7.75);
+    DataActor::on_historical_data(&mut adapter, &custom).expect("on_historical_data dispatches");
+    let contents =
+        fs::read_to_string(&marker).expect("plug-in actor writes historical custom data marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "7.75");
+}
+
+#[rstest]
 fn cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest: &'static PluginManifest) {
     let manifest = ValidatedPluginManifest::new(example_manifest)
         .expect("live example manifest passes validation");
@@ -552,6 +592,54 @@ fn cdylib_strategy_custom_data_dispatches_to_on_data(example_manifest: &'static 
     let _ = fs::remove_file(marker);
 
     assert_eq!(contents, "8.5");
+}
+
+#[rstest]
+fn cdylib_strategy_historical_custom_data_dispatches_to_on_data(
+    example_manifest: &'static PluginManifest,
+) {
+    let manifest = ValidatedPluginManifest::new(example_manifest)
+        .expect("live example manifest passes validation");
+    let entry = manifest
+        .strategies()
+        .next()
+        .expect("example strategy entry");
+    let strategy_id = StrategyId::from("ExampleStrategyHistoricalCustomData-001");
+    let marker = std::env::temp_dir().join(format!(
+        "nautilus-plugin-strategy-historical-custom-data-{}.txt",
+        UUID4::new()
+    ));
+    let _ = fs::remove_file(&marker);
+    let config_json = serde_json::json!({
+        "callback_path": marker.display().to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "example-custom-data-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let custom = plugin_test_custom_data(8.75);
+    DataActor::on_historical_data(&mut adapter, &custom).expect("on_historical_data dispatches");
+    let contents =
+        fs::read_to_string(&marker).expect("plug-in strategy writes historical custom data marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "8.75");
 }
 
 #[rstest]
