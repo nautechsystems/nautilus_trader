@@ -357,8 +357,9 @@ impl Logger {
     ) -> anyhow::Result<LogGuard> {
         // Fast path: already initialized
         if super::LOGGING_INITIALIZED.load(Ordering::SeqCst) {
-            return LogGuard::new()
-                .ok_or_else(|| anyhow::anyhow!("Logging already initialized but sender missing"));
+            return LogGuard::new().ok_or_else(|| {
+                anyhow::anyhow!("Logging already initialized but new guard could not be created")
+            });
         }
 
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
@@ -724,26 +725,22 @@ pub struct LogGuard {
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance from the global logger.
     ///
-    /// Returns `None` if logging has not been initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number of active `LogGuard`s would exceed 255.
+    /// Returns `None` if logging has not been initialized or the active `LogGuard`
+    /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
-        LOGGER_TX.get().map(|tx| {
-            LOGGING_GUARDS_ACTIVE
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                    if count == u8::MAX {
-                        None // Reject the update if we're at the limit
-                    } else {
-                        Some(count + 1)
-                    }
-                })
-                .expect("Maximum number of active LogGuards (255) exceeded");
+        let tx = LOGGER_TX.get()?;
+        LOGGING_GUARDS_ACTIVE
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                if count == u8::MAX {
+                    None
+                } else {
+                    Some(count + 1)
+                }
+            })
+            .ok()?;
 
-            Self { tx: tx.clone() }
-        })
+        Some(Self { tx: tx.clone() })
     }
 }
 
@@ -1595,6 +1592,32 @@ mod tests {
 
             drop(guard);
             assert!(!logging_is_initialized());
+        }
+
+        #[rstest]
+        fn test_init_returns_error_when_log_guard_limit_reached() {
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            )
+            .expect("Failed to initialize logger");
+
+            LOGGING_GUARDS_ACTIVE.store(u8::MAX, Ordering::SeqCst);
+            let result = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            );
+            LOGGING_GUARDS_ACTIVE.store(1, Ordering::SeqCst);
+            drop(guard);
+
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "Logging already initialized but new guard could not be created"
+            );
         }
 
         #[rstest]
