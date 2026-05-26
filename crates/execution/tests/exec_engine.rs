@@ -38,8 +38,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessageBus, MessagingSwitchboard, TypedHandler, stubs::get_any_saving_handler,
-        switchboard,
+        self, MessageBus, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
+        stubs::get_any_saving_handler, switchboard,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -48,7 +48,7 @@ use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
 };
 use nautilus_model::{
-    accounts::CashAccount,
+    accounts::{AccountAny, CashAccount},
     enums::{
         AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
         OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
@@ -1301,6 +1301,140 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
 }
 
 #[rstest]
+fn test_process_cash_account_fill_sends_portfolio_update_order_endpoint(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let received = Rc::new(RefCell::new(
+        Vec::<(OrderEventAny, OrderStatus, usize)>::new(),
+    ));
+    let handler = TypedIntoHandler::from({
+        let cache = Rc::clone(execution_engine.cache());
+        let received = received.clone();
+        move |event: OrderEventAny| {
+            let status = cache
+                .borrow()
+                .order(&event.client_order_id())
+                .expect("portfolio update should see cached order")
+                .status();
+            let positions = cache
+                .borrow()
+                .positions_total_count(None, None, None, None, None);
+            received.borrow_mut().push((event, status, positions));
+        }
+    });
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::portfolio_update_order(), handler);
+
+    let event = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-CASH-001"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+
+    execution_engine.process(&event);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert!(matches!(received[0].0, OrderEventAny::Filled(_)));
+    assert_eq!(received[0].0.client_order_id(), order.client_order_id());
+    assert_eq!(received[0].1, OrderStatus::Filled);
+    assert_eq!(received[0].2, 0);
+}
+
+#[rstest]
+fn test_process_margin_account_fill_sends_single_portfolio_update_before_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::test_default();
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("0 USD"),
+            Money::from("1000000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+    let (instrument, order) =
+        prepare_accepted_order_with_account(&mut execution_engine, account_state.into());
+    let received = Rc::new(RefCell::new(
+        Vec::<(OrderEventAny, OrderStatus, usize)>::new(),
+    ));
+    let handler = TypedIntoHandler::from({
+        let cache = Rc::clone(execution_engine.cache());
+        let received = received.clone();
+        move |event: OrderEventAny| {
+            let status = cache
+                .borrow()
+                .order(&event.client_order_id())
+                .expect("portfolio update should see cached order")
+                .status();
+            let positions = cache
+                .borrow()
+                .positions_total_count(None, None, None, None, None);
+            received.borrow_mut().push((event, status, positions));
+        }
+    });
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::portfolio_update_order(), handler);
+
+    let event = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        account_id,
+        TradeId::new("T-MARGIN-001"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+
+    execution_engine.process(&event);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert!(matches!(received[0].0, OrderEventAny::Filled(_)));
+    assert_eq!(received[0].0.client_order_id(), order.client_order_id());
+    assert_eq!(received[0].1, OrderStatus::Filled);
+    assert_eq!(received[0].2, 0);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .positions_total_count(None, None, None, None, None),
+        1,
+    );
+}
+
+#[rstest]
 fn test_process_canceled_order_publishes_order_cancels_topic(
     mut execution_engine: ExecutionEngine,
 ) {
@@ -1345,6 +1479,13 @@ fn test_process_canceled_order_publishes_order_cancels_topic(
 }
 
 fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (InstrumentAny, OrderAny) {
+    prepare_accepted_order_with_account(execution_engine, CashAccount::default().into())
+}
+
+fn prepare_accepted_order_with_account(
+    execution_engine: &mut ExecutionEngine,
+    account: AccountAny,
+) -> (InstrumentAny, OrderAny) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = InstrumentAny::from(audusd_sim());
@@ -1358,7 +1499,7 @@ fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (Instrument
     execution_engine
         .cache()
         .borrow_mut()
-        .add_account(CashAccount::default().into())
+        .add_account(account)
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)

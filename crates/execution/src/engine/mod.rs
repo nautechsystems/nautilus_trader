@@ -2625,7 +2625,24 @@ impl ExecutionEngine {
             self.create_order_state_snapshot(&order);
         }
 
+        if let OrderEventAny::Filled(fill) = event {
+            self.send_non_margin_fill_to_portfolio(fill);
+        }
+
         Some(order)
+    }
+
+    fn send_non_margin_fill_to_portfolio(&self, fill: &OrderFilled) {
+        let send_to_portfolio = self
+            .cache
+            .borrow()
+            .account(&fill.account_id)
+            .is_none_or(|account| !account.is_margin_account());
+
+        if send_to_portfolio {
+            let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
+            msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(*fill));
+        }
     }
 
     fn publish_order_event(&self, event: &OrderEventAny) {
