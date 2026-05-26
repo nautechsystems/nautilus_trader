@@ -100,6 +100,24 @@ flowchart LR
 The writer uses a bounded channel. If the writer stalls past its configured threshold, Nautilus
 halts instead of dropping entries or allowing unaudited state changes.
 
+## Lifecycle options
+
+`EventStoreConfig` remains the serializable run policy. Process-local construction policy lives in
+`EventStoreLifecycleOptions`, which advanced callers pass through
+`EventStoreLifecycle::boot_with_options(...)`.
+
+By default, the lifecycle opens `RedbBackend` and installs the default encoder registry. Callers can
+use lifecycle options to:
+
+- Supply a custom encoder registry before the bus tap starts capture.
+- Supply a backend opener that returns any `EventStore` implementation for the new run.
+
+The backend opener is the simulation-safe path for memory capture. A DST harness or focused test can
+open `MemoryBackend` through the normal lifecycle, keep the same bus tap and writer semantics, and
+read the captured entries in-process after seal. Under `cfg(madsim)`, the writer commits each submit
+synchronously, so the captured `seq` order is deterministic. With a `MemoryBackend` opener, capture
+needs no `redb` run file.
+
 ## Entry model
 
 Each event-store entry is one captured message plus metadata:
@@ -422,8 +440,10 @@ The event store and deterministic simulation testing (DST) solve different parts
 - Together they let a run identified by `(seed, binary_hash, config_hash, schema_version, log)`
   reproduce engine behavior inside the deterministic simulation scope.
 
-Under `cfg(madsim)`, tests use a synchronous in-memory event store instead of the writer thread, so
-they can assert against an authoritative log without disk I/O or thread scheduling.
+Under `cfg(madsim)`, the writer commits synchronously instead of spawning its writer thread. When a
+simulation harness supplies a `MemoryBackend` opener through lifecycle options, capture stays
+in-process and does not require `redb` files. Redb remains the default durable backend outside that
+advanced options path.
 
 Adapter network I/O remains outside bit-identical replay unless Nautilus captures the relevant
 raw inputs and routes them through deterministic interfaces.

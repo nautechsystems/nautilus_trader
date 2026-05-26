@@ -1159,6 +1159,8 @@ impl KernelEventStoreTrait for EventStoreLifecycle {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(madsim)]
+    use std::path::Path;
     use std::path::PathBuf;
 
     use indexmap::IndexMap;
@@ -1583,6 +1585,73 @@ mod tests {
         assert_eq!(captured.payload.as_ref(), &[7]);
     }
 
+    #[cfg(madsim)]
+    #[rstest]
+    fn lifecycle_options_memory_backend_opener_captures_deterministic_seq_order_under_madsim() {
+        let first = capture_madsim_memory_lifecycle_summary(42);
+        let second = capture_madsim_memory_lifecycle_summary(42);
+        let expected = expected_madsim_memory_entries();
+
+        assert_eq!(first.entries, second.entries);
+        assert_eq!(first.entries, expected);
+        assert_eq!(
+            first
+                .entries
+                .iter()
+                .map(|entry| entry.seq)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4],
+        );
+        assert!(
+            first.redb_files.is_empty(),
+            "memory opener must not create redb files, was {:?}",
+            first.redb_files,
+        );
+        assert!(
+            second.redb_files.is_empty(),
+            "memory opener must not create redb files, was {:?}",
+            second.redb_files,
+        );
+    }
+
+    #[cfg(madsim)]
+    fn expected_madsim_memory_entries() -> Vec<CapturedEntrySummary> {
+        vec![
+            CapturedEntrySummary {
+                seq: 1,
+                topic: RUN_STARTED_TOPIC.to_string(),
+                payload_type: RUN_STARTED_PAYLOAD_TYPE.to_string(),
+                payload: encode_run_started(&RegisteredComponents::default()).to_vec(),
+                ts_init: UnixNanos::from(0),
+                ts_publish: UnixNanos::from(10_000),
+            },
+            CapturedEntrySummary {
+                seq: 2,
+                topic: "events.test.madsim".to_string(),
+                payload_type: "TestAuditMessage".to_string(),
+                payload: vec![1],
+                ts_init: UnixNanos::from(20_000),
+                ts_publish: UnixNanos::from(20_000),
+            },
+            CapturedEntrySummary {
+                seq: 3,
+                topic: "events.test.madsim".to_string(),
+                payload_type: "TestAuditMessage".to_string(),
+                payload: vec![2],
+                ts_init: UnixNanos::from(30_000),
+                ts_publish: UnixNanos::from(30_000),
+            },
+            CapturedEntrySummary {
+                seq: 4,
+                topic: RUN_ENDED_TOPIC.to_string(),
+                payload_type: RUN_ENDED_PAYLOAD_TYPE.to_string(),
+                payload: Vec::new(),
+                ts_init: UnixNanos::from(40_000),
+                ts_publish: UnixNanos::from(40_000),
+            },
+        ]
+    }
+
     #[rstest]
     fn open_run_with_options_surfaces_backend_opener_error() {
         let tmp = TempDir::new().expect("tempdir");
@@ -1611,6 +1680,122 @@ mod tests {
                 assert!(msg.contains("test backend open failed"));
             }
             other => panic!("expected backend open failure, was {other:?}"),
+        }
+    }
+
+    #[cfg(madsim)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct MadsimMemoryLifecycleCapture {
+        entries: Vec<CapturedEntrySummary>,
+        redb_files: Vec<PathBuf>,
+    }
+
+    #[cfg(madsim)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct CapturedEntrySummary {
+        seq: u64,
+        topic: String,
+        payload_type: String,
+        payload: Vec<u8>,
+        ts_init: UnixNanos,
+        ts_publish: UnixNanos,
+    }
+
+    #[cfg(madsim)]
+    fn capture_madsim_memory_lifecycle_summary(seed: u64) -> MadsimMemoryLifecycleCapture {
+        get_atomic_clock_static().set_time(UnixNanos::from(10_000));
+
+        let tmp = TempDir::new().expect("tempdir");
+        let memory = Arc::new(Mutex::new(MemoryBackend::new()));
+        let opener_memory = Arc::clone(&memory);
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let mut config = make_config(tmp.path().to_path_buf());
+        config.identity.seed = Some(seed);
+        let options = EventStoreLifecycleOptions::new()
+            .with_encoder_registry(test_registry())
+            .with_backend_opener(move |_, manifest| {
+                opener_memory
+                    .lock()
+                    .expect("memory backend")
+                    .open_run(manifest.clone())?;
+                Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
+            });
+
+        let mut store =
+            EventStoreLifecycle::boot_with_options(Some(config), instance_id, clock_rc, options)
+                .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.test.madsim");
+        get_atomic_clock_static().set_time(UnixNanos::from(20_000));
+        msgbus::publish_any(topic, &TestAuditMessage { value: 1 });
+        get_atomic_clock_static().set_time(UnixNanos::from(30_000));
+        msgbus::publish_any(topic, &TestAuditMessage { value: 2 });
+        assert_eq!(
+            store
+                .session
+                .as_ref()
+                .expect("open session")
+                .high_watermark(),
+            3
+        );
+
+        get_atomic_clock_static().set_time(UnixNanos::from(40_000));
+        store.seal(UnixNanos::from(40_000));
+
+        let backend = memory.lock().expect("memory backend");
+        let manifest = backend.manifest().expect("manifest");
+        assert_eq!(manifest.seed, Some(seed));
+        assert_eq!(manifest.status, RunStatus::Ended);
+        assert_eq!(manifest.high_watermark, 4);
+        let entries = backend
+            .scan_range(1, manifest.high_watermark, ScanDirection::Forward)
+            .expect("scan entries")
+            .into_iter()
+            .map(|entry| CapturedEntrySummary {
+                seq: entry.seq,
+                topic: entry.topic.as_ref().to_string(),
+                payload_type: entry.payload_type.as_str().to_string(),
+                payload: entry.payload.to_vec(),
+                ts_init: entry.ts_init,
+                ts_publish: entry.ts_publish,
+            })
+            .collect();
+        drop(backend);
+
+        MadsimMemoryLifecycleCapture {
+            entries,
+            redb_files: redb_files_under(tmp.path()),
+        }
+    }
+
+    #[cfg(madsim)]
+    fn redb_files_under(dir: &Path) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        collect_redb_files(dir, &mut paths);
+        paths.sort();
+        paths
+    }
+
+    #[cfg(madsim)]
+    fn collect_redb_files(dir: &Path, paths: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                collect_redb_files(&path, paths);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "redb")
+            {
+                paths.push(path);
+            }
         }
     }
 
