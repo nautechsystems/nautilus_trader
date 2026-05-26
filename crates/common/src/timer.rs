@@ -307,6 +307,7 @@ impl TimeEventHandler {
     /// Executes the handler by invoking its callback for the associated event.
     pub fn run(self) {
         let Self { event, callback } = self;
+        crate::msgbus::dispatch_tap_time_event(&event);
         callback.call(event);
     }
 }
@@ -490,13 +491,16 @@ impl Iterator for TestTimer {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
+    use std::{cell::RefCell, num::NonZeroU64, rc::Rc};
 
     use nautilus_core::{UUID4, UnixNanos};
     use rstest::*;
     use ustr::Ustr;
 
     use super::{TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler};
+    use crate::msgbus::{
+        BusTap, Endpoint, MStr, MessagingSwitchboard, Topic, clear_bus_tap, set_bus_tap,
+    };
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -693,6 +697,60 @@ mod tests {
         assert!(earlier_name < later_init);
         assert!(earlier_name < later_id);
         assert_ne!(earlier_name, later_id);
+    }
+
+    #[derive(Default)]
+    struct RecordingTimeEventTap {
+        time_events: RefCell<Vec<(String, TimeEvent)>>,
+    }
+
+    impl RecordingTimeEventTap {
+        fn time_events(&self) -> Vec<(String, TimeEvent)> {
+            self.time_events.borrow().clone()
+        }
+    }
+
+    impl BusTap for RecordingTimeEventTap {
+        fn on_publish(&self, topic: MStr<Topic>, message: &dyn std::any::Any) {
+            if let Some(event) = message.downcast_ref::<TimeEvent>() {
+                self.time_events
+                    .borrow_mut()
+                    .push((topic.to_string(), event.clone()));
+            }
+        }
+
+        fn on_send(&self, _endpoint: MStr<Endpoint>, _message: &dyn std::any::Any) {}
+    }
+
+    #[rstest]
+    fn test_time_event_handler_run_dispatches_tap_before_callback() {
+        let event = TimeEvent::new(
+            Ustr::from("strategy.heartbeat"),
+            UUID4::from("00000000-0000-4000-8000-000000000006"),
+            UnixNanos::from(100),
+            UnixNanos::from(99),
+        );
+        let tap = Rc::new(RecordingTimeEventTap::default());
+        let callback_seen: Rc<RefCell<Vec<TimeEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let expected_topic = MessagingSwitchboard::time_event_topic().to_string();
+        let callback_expected = event.clone();
+        let callback_expected_topic = expected_topic.clone();
+        let callback_tap = Rc::clone(&tap);
+        let callback_seen_ref = Rc::clone(&callback_seen);
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |callback_event| {
+            assert_eq!(
+                callback_tap.time_events(),
+                vec![(callback_expected_topic.clone(), callback_expected.clone())],
+            );
+            callback_seen_ref.borrow_mut().push(callback_event);
+        });
+
+        set_bus_tap(tap.clone());
+        TimeEventHandler::new(event.clone(), TimeEventCallback::from(callback)).run();
+        clear_bus_tap();
+
+        assert_eq!(tap.time_events(), vec![(expected_topic, event.clone())]);
+        assert_eq!(*callback_seen.borrow(), vec![event]);
     }
 
     ////////////////////////////////////////////////////////////////////////////////

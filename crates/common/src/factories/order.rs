@@ -532,22 +532,34 @@ impl OrderFactory {
     /// Creates a new [`OrderList`] from the given orders, generating a fresh
     /// order list ID and propagating it back to each order.
     ///
-    /// Construction is infallible; the caller is responsible for passing
-    /// orders with a consistent `instrument_id` and the factory's
-    /// `strategy_id`. The returned list's invariants are checked by
-    /// [`OrderList::validate`] at submission time.
+    /// All orders must share the same venue; the caller is responsible for
+    /// passing orders with the factory's `strategy_id`. The returned list's
+    /// invariants are checked by [`OrderList::validate`] at submission time.
     ///
     /// # Panics
     ///
-    /// Panics if `orders` is empty. Callers are expected to guard
-    /// non-empty input; `Strategy::submit_order_list` filters out the
-    /// empty case before reaching this constructor.
+    /// Panics if `orders` is empty or if orders span more than one venue.
+    /// Callers are expected to guard non-empty input; `Strategy::submit_order_list`
+    /// filters out the empty case and bails on mixed venues before reaching
+    /// this constructor.
     #[must_use]
     pub fn create_list(&mut self, orders: &mut [OrderAny], ts_init: UnixNanos) -> OrderList {
         let instrument_id = orders
             .first()
             .expect("OrderFactory::create_list requires non-empty orders")
             .instrument_id();
+        let venue = instrument_id.venue;
+
+        for order in orders.iter() {
+            assert!(
+                order.instrument_id().venue == venue,
+                "OrderFactory::create_list requires all orders to share the same venue; \
+                 expected {venue}, found {} on {}",
+                order.instrument_id().venue,
+                order.client_order_id(),
+            );
+        }
+
         let order_list_id = self.generate_order_list_id();
         let order_ids: Vec<ClientOrderId> = orders.iter().map(OrderAny::client_order_id).collect();
 
@@ -1960,6 +1972,38 @@ pub mod tests {
             .tp_price(Price::from("55000.00"))
             .sl_trigger_price(Price::from("45000.00"))
             .call();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "share the same venue")]
+    fn test_create_list_panics_on_mixed_venues(mut order_factory: OrderFactory) {
+        let binance = order_factory.market(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            100.into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let bybit = order_factory.market(
+            InstrumentId::from("BTCUSDT.BYBIT"),
+            OrderSide::Buy,
+            100.into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut orders = vec![binance, bybit];
+        let _ = order_factory.create_list(&mut orders, UnixNanos::default());
     }
 
     #[rstest]

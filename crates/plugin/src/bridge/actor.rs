@@ -29,6 +29,7 @@
 )]
 
 use std::{
+    any::Any,
     fmt::Debug,
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -41,19 +42,31 @@ use nautilus_common::{
 };
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
+        Bar, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+        MarkPriceUpdate, OptionChainSlice, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     events::{OrderCanceled, OrderFilled},
     identifiers::ActorId,
+    instruments::InstrumentAny,
+    orderbook::OrderBook,
 };
 
 use crate::{
     boundary::{BorrowedStr, PluginResult, Slice},
-    bridge::registry::{HostContextInner, drop_host_context, leak_host_context},
+    bridge::{
+        custom_data::{try_custom_data_boundary_ref, try_historical_custom_data_boundary_ref},
+        registry::{HostContextInner, drop_host_context, leak_host_context},
+    },
     host::{HostContext, HostVTable},
     manifest::ValidatedActorVTable,
-    surfaces::{actor::PluginActorHandle, book::OrderBookDeltasHandle},
+    surfaces::{
+        actor::PluginActorHandle,
+        book::{OrderBookDeltasHandle, OrderBookHandle},
+        custom_data::PluginCustomDataRef,
+        instrument::InstrumentAnyHandle,
+        option_chain::OptionChainSliceHandle,
+    },
 };
 
 /// Adapts a plug-in actor (vtable + handle from a cdylib) into a host-side
@@ -232,6 +245,36 @@ impl DataActor for PluginActorAdapter {
         })
     }
 
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        let Some(data_ref) = try_custom_data_boundary_ref(data) else {
+            return Ok(());
+        };
+        invoke_custom_data(self, "on_data", data_ref, |adapter, value| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_data)(adapter.handle, value)
+        })
+    }
+
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let handle = InstrumentAnyHandle::new(instrument.clone());
+        invoke_event(self, "on_instrument", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_instrument)(adapter.handle, p)
+        })
+    }
+
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        let handle = OrderBookDeltasHandle::new(deltas.clone());
+        invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book_deltas)(adapter.handle, p)
+        })
+    }
+
+    fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+        let handle = OrderBookHandle::new(book.clone());
+        invoke_event(self, "on_book", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book)(adapter.handle, p)
+        })
+    }
+
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         invoke_event(self, "on_quote", quote, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_quote)(adapter.handle, p)
@@ -247,13 +290,6 @@ impl DataActor for PluginActorAdapter {
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         invoke_event(self, "on_bar", bar, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_bar)(adapter.handle, p)
-        })
-    }
-
-    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        let handle = OrderBookDeltasHandle::new(deltas.clone());
-        invoke_event(self, "on_book_deltas", &handle, |adapter, p| unsafe {
-            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_book_deltas)(adapter.handle, p)
         })
     }
 
@@ -281,6 +317,16 @@ impl DataActor for PluginActorAdapter {
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
         invoke_event(self, "on_option_greeks", greeks, |adapter, p| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_option_greeks)(
+                adapter.handle,
+                p,
+            )
+        })
+    }
+
+    fn on_option_chain(&mut self, chain: &OptionChainSlice) -> anyhow::Result<()> {
+        let handle = OptionChainSliceHandle::new(chain.clone());
+        invoke_event(self, "on_option_chain", &handle, |adapter, p| unsafe {
+            validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_option_chain)(
                 adapter.handle,
                 p,
             )
@@ -329,6 +375,53 @@ impl DataActor for PluginActorAdapter {
         })
     }
 
+    fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        let Some(data_ref) = try_historical_custom_data_boundary_ref(data) else {
+            return Ok(());
+        };
+        invoke_custom_data(
+            self,
+            "on_historical_data",
+            data_ref,
+            |adapter, value| unsafe {
+                validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_data)(
+                    adapter.handle,
+                    value,
+                )
+            },
+        )
+    }
+
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_book_deltas",
+            deltas,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_book_deltas
+                )(adapter.handle, s)
+            },
+        )
+    }
+
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_book_depth",
+            depths,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_book_depth
+                )(adapter.handle, s)
+            },
+        )
+    }
+
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         invoke_slice(self, "on_historical_quotes", quotes, |adapter, s| unsafe {
             validated_slot!(ActorVTable, adapter.vtable.as_ptr(), on_historical_quotes)(
@@ -354,24 +447,6 @@ impl DataActor for PluginActorAdapter {
                 s,
             )
         })
-    }
-
-    fn on_historical_funding_rates(
-        &mut self,
-        funding_rates: &[FundingRateUpdate],
-    ) -> anyhow::Result<()> {
-        invoke_slice(
-            self,
-            "on_historical_funding_rates",
-            funding_rates,
-            |adapter, s| unsafe {
-                validated_slot!(
-                    ActorVTable,
-                    adapter.vtable.as_ptr(),
-                    on_historical_funding_rates
-                )(adapter.handle, s)
-            },
-        )
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
@@ -402,6 +477,24 @@ impl DataActor for PluginActorAdapter {
                     ActorVTable,
                     adapter.vtable.as_ptr(),
                     on_historical_index_prices
+                )(adapter.handle, s)
+            },
+        )
+    }
+
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        invoke_slice(
+            self,
+            "on_historical_funding_rates",
+            funding_rates,
+            |adapter, s| unsafe {
+                validated_slot!(
+                    ActorVTable,
+                    adapter.vtable.as_ptr(),
+                    on_historical_funding_rates
                 )(adapter.handle, s)
             },
         )
@@ -446,6 +539,18 @@ fn invoke_event<T>(
     let type_name = adapter.type_name.clone();
     let ptr: *const T = payload;
     let result = guard_call(&plugin_name, &type_name, method, || f(adapter, ptr));
+    finish(result, &plugin_name, &type_name, method)
+}
+
+fn invoke_custom_data(
+    adapter: &PluginActorAdapter,
+    method: &str,
+    payload: PluginCustomDataRef,
+    f: impl FnOnce(&PluginActorAdapter, PluginCustomDataRef) -> PluginResult<()>,
+) -> anyhow::Result<()> {
+    let plugin_name = adapter.plugin_name.clone();
+    let type_name = adapter.type_name.clone();
+    let result = guard_call(&plugin_name, &type_name, method, || f(adapter, payload));
     finish(result, &plugin_name, &type_name, method)
 }
 

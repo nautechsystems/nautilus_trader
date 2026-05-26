@@ -35,4 +35,6 @@ cdef class OrderList:
     cdef readonly uint64_t ts_init
     """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
+    cpdef set instrument_ids(self)
+    cpdef bint is_uniform_instrument(self)
     cpdef bint is_bracket(self)

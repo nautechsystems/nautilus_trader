@@ -49,17 +49,23 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::CashAccount,
     enums::{
-        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
+        OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated,
+        order::spec::{
+            OrderCanceledSpec, OrderFilledSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
+        },
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
-        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+    instruments::{
+        CurrencyPair, FuturesContract, Instrument, InstrumentAny,
+        stubs::{audusd_sim, gbpusd_sim},
+    },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -69,6 +75,7 @@ use nautilus_model::{
 use rstest::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 #[fixture]
 fn test_clock() -> Rc<RefCell<dyn clock::Clock>> {
@@ -103,6 +110,36 @@ fn execution_engine_with_config() -> ExecutionEngine {
     ExecutionEngine::new(clock, cache, Some(config))
 }
 
+fn futures_contract_xcme() -> FuturesContract {
+    FuturesContract::new(
+        InstrumentId::from("ESM6.XCME"),
+        Symbol::from("ESM6"),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES"),
+        // Activation: 2026-04-06 00:00:00 UTC
+        UnixNanos::from(1_775_433_600_000_000_000),
+        // Expiration: 2026-06-17 16:00:00 UTC
+        UnixNanos::from(1_781_712_000_000_000_000),
+        Currency::USD(),
+        2,
+        Price::from("0.25"),
+        Quantity::from(50),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
 #[fixture]
 fn stub_client() -> StubExecutionClient {
     StubExecutionClient::new(
@@ -112,6 +149,108 @@ fn stub_client() -> StubExecutionClient {
         OmsType::Netting,
         None,
     )
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
+}
+
+fn build_order_canceled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+) -> OrderCanceled {
+    OrderCanceledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .build()
+}
+
+fn build_order_pending_update(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: Option<VenueOrderId>,
+) -> OrderPendingUpdate {
+    OrderPendingUpdateSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .maybe_venue_order_id(venue_order_id)
+        .build()
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_updated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    quantity: Quantity,
+    venue_order_id: Option<VenueOrderId>,
+    account_id: Option<AccountId>,
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    protection_price: Option<Price>,
+    is_quote_quantity: bool,
+) -> OrderUpdated {
+    OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .quantity(quantity)
+        .maybe_venue_order_id(venue_order_id)
+        .maybe_account_id(account_id)
+        .maybe_price(price)
+        .maybe_trigger_price(trigger_price)
+        .maybe_protection_price(protection_price)
+        .is_quote_quantity(is_quote_quantity)
+        .build()
 }
 
 #[rstest]
@@ -590,6 +729,214 @@ fn test_submit_order_list_denied_with_custom_position_id_under_netting(
 }
 
 #[rstest]
+#[case(OmsType::Netting)]
+#[case(OmsType::Hedging)]
+fn test_submit_order_list_denies_mixed_instruments_with_position_id_regardless_of_oms(
+    mut execution_engine: ExecutionEngine,
+    #[case] oms_type: OmsType,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_a = audusd_sim();
+    let instrument_b = gbpusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::from("TEST-ACCOUNT"),
+        Venue::test_default(),
+        oms_type,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument_a.clone().into()).unwrap();
+        cache.add_instrument(instrument_b.clone().into()).unwrap();
+    }
+
+    let order_a = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_a.id)
+        .client_order_id(ClientOrderId::from("O-MIXED-POS-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let order_b = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_b.id)
+        .client_order_id(ClientOrderId::from("O-MIXED-POS-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    let position_id = PositionId::new(format!("{}-LEGACY", instrument_a.id));
+
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(
+                order.clone(),
+                Some(position_id),
+                Some(ClientId::from("STUB")),
+                true,
+            )
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-MIXED-POS"),
+        instrument_a.id,
+        strategy_id,
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        UnixNanos::default(),
+    );
+
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: Some(ClientId::from("STUB")),
+        strategy_id,
+        instrument_id: instrument_a.id,
+        order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
+        exec_algorithm_id: None,
+        position_id: Some(position_id),
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let cache = execution_engine.cache().borrow();
+    for order in &orders {
+        let cached = cache
+            .order(&order.client_order_id())
+            .expect("Order should be cached");
+        assert_eq!(
+            cached.status(),
+            OrderStatus::Denied,
+            "expected {} denied under OMS {oms_type:?}",
+            order.client_order_id(),
+        );
+    }
+}
+
+#[rstest]
+fn test_submit_order_list_mixed_instruments_routes_per_order_own_book(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        debug: true,
+        manage_own_order_books: true,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_a: InstrumentAny = audusd_sim.into();
+    let instrument_b: InstrumentAny = gbpusd_sim.into();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument_a.clone()).unwrap();
+        cache.add_instrument(instrument_b.clone()).unwrap();
+    }
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    let order_a = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_a.id())
+        .client_order_id(ClientOrderId::from("O-OWN-BOOK-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("0.50000").unwrap())
+        .build();
+
+    let order_b = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_b.id())
+        .client_order_id(ClientOrderId::from("O-OWN-BOOK-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("1.20000").unwrap())
+        .build();
+
+    let orders = [order_a.clone(), order_b.clone()];
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-OWN-BOOK"),
+        instrument_a.id(),
+        strategy_id,
+        vec![order_a.client_order_id(), order_b.client_order_id()],
+        UnixNanos::default(),
+    );
+
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: Some(ClientId::from("STUB")),
+        strategy_id,
+        instrument_id: instrument_a.id(),
+        order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let cache = execution_engine.cache().borrow();
+    let book_a = cache
+        .own_order_book(&instrument_a.id())
+        .expect("own book for instrument A should exist");
+    let book_b = cache
+        .own_order_book(&instrument_b.id())
+        .expect("own book for instrument B should exist");
+
+    assert_eq!(book_a.update_count, 1, "book A should have one update");
+    assert_eq!(book_b.update_count, 1, "book B should have one update");
+    assert_eq!(book_a.bids_as_map(None, None, None).len(), 1);
+    assert_eq!(book_b.bids_as_map(None, None, None).len(), 1);
+}
+
+#[rstest]
 fn test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(
     mut execution_engine: ExecutionEngine,
 ) {
@@ -870,7 +1217,7 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
     execution_engine.process(&order_submitted_event);
 
     let different_strategy_id = StrategyId::from("RANDOM-001");
-    let order_filled_event = OrderFilled::new(
+    let order_filled_event = build_order_filled(
         trader_id,
         different_strategy_id, // Different strategy ID from the order - this will cause panic
         instrument.id,
@@ -884,10 +1231,6 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         Some(Money::from("2 USD")),
     );
@@ -926,7 +1269,7 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
     msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
     msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
 
-    let event = OrderEventAny::Filled(OrderFilled::new(
+    let event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -940,10 +1283,6 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         Some(Money::from("2 USD")),
     ));
@@ -1299,6 +1638,154 @@ fn test_submit_order_successfully_processes_and_caches_order(
 }
 
 #[rstest]
+fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = futures_contract_xcme();
+    let client_id = ClientId::from("IB");
+
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("IB-001"),
+        Venue::from("IB"),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(1))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        position_id: None,
+        params: None,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        client_id: Some(client_id),
+        instrument_id: instrument.id,
+        exec_algorithm_id: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache
+        .order(&order.client_order_id())
+        .expect("Order should be retrievable from cache");
+    assert_eq!(cached_order.status(), OrderStatus::Denied);
+    if let OrderEventAny::Denied(denied) = cached_order.last_event() {
+        assert_eq!(
+            denied.reason.as_str(),
+            "Client IB does not handle order venue XCME (client venue IB)",
+        );
+    } else {
+        panic!("Expected OrderDenied event");
+    }
+    assert!(submitted_order_ids.borrow().is_empty());
+}
+
+#[rstest]
+fn test_submit_order_allows_routing_broker_for_exchange_mic_venue(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = futures_contract_xcme();
+    let client_id = ClientId::from("IB");
+
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("IB-001"),
+        Venue::from("IB"),
+        OmsType::Netting,
+        None,
+    )
+    .with_handles_all_order_venues();
+    let submitted_order_ids = stub_client.submitted_order_ids();
+
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(1))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        position_id: None,
+        params: None,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        client_id: Some(client_id),
+        instrument_id: instrument.id,
+        exec_algorithm_id: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache
+        .order(&order.client_order_id())
+        .expect("Order should be retrievable from cache");
+    assert_eq!(cached_order.status(), OrderStatus::Initialized);
+    assert_eq!(
+        cached_order.instrument_id(),
+        InstrumentId::from("ESM6.XCME")
+    );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+}
+
+#[rstest]
 fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
@@ -1607,7 +2094,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
     );
     execution_engine.process(&order_accepted_event);
 
-    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
@@ -1621,10 +2108,6 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,                       // position_id
         Some(Money::from("2 USD")), // commission
     ));
@@ -1753,7 +2236,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         "Order should be closed before fill event"
     );
 
-    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -1767,10 +2250,6 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         Price::from_str("1.0").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
         Some(PositionId::new("1")),
         Some(Money::from("2 USD")),
     ));
@@ -1878,7 +2357,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     );
 
     let partial_fill_qty = Quantity::from(50_000); // Half of 100_000
-    let order_partially_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_partially_filled_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -1892,10 +2371,6 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         Price::from_str("1.0").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
         Some(PositionId::new("1")),
         Some(Money::from("2 USD")),
     ));
@@ -1993,17 +2468,13 @@ fn test_process_event_with_no_venue_order_id_logs_and_does_nothing(
     execution_engine.process(&order_submitted_event);
 
     let different_client_order_id = ClientOrderId::from("DIFFERENT-ORDER-ID");
-    let order_canceled_event = OrderEventAny::Canceled(OrderCanceled::new(
+    let order_canceled_event = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         different_client_order_id, // Different client order ID
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // venue_order_id - this is the key: no venue_order_id
-        None,  // account_id
+        None,                      // venue_order_id - this is the key: no venue_order_id
+        None,                      // account_id
     ));
     execution_engine.process(&order_canceled_event);
     let cache = execution_engine.cache().borrow();
@@ -2068,7 +2539,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
     );
     execution_engine.process(&order_accepted_event);
 
-    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -2082,10 +2553,6 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
         Some(PositionId::new("1")),
         Some(Money::from("2 USD")),
     ));
@@ -2193,15 +2660,11 @@ fn test_handle_order_event_with_different_client_order_id_but_matching_venue_ord
     execution_engine.process(&order_accepted_event);
 
     let different_venue_order_id = VenueOrderId::from("DIFFERENT-V-001"); // Different venue order ID
-    let order_canceled_event = OrderEventAny::Canceled(OrderCanceled::new(
+    let order_canceled_event = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
-        order.client_order_id(), // Same client order ID
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,                          // reconciliation
+        order.client_order_id(),        // Same client order ID
         Some(different_venue_order_id), // Different venue_order_id
         Some(AccountId::from("TEST-ACCOUNT")),
     ));
@@ -2269,15 +2732,11 @@ fn test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
 
     let random_client_order_id = ClientOrderId::from("web_001"); // Random ID from web UI
     let random_venue_order_id = VenueOrderId::from("RANDOM_001"); // Random venue order ID
-    let order_canceled_event = OrderEventAny::Canceled(OrderCanceled::new(
+    let order_canceled_event = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
-        random_client_order_id, // Random client order ID
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,                       // reconciliation
+        random_client_order_id,      // Random client order ID
         Some(random_venue_order_id), // Random venue order ID
         Some(AccountId::from("TEST-ACCOUNT")),
     ));
@@ -2344,16 +2803,12 @@ fn test_handle_duplicate_order_events_logs_error_and_does_not_apply(
     execution_engine.process(&order_accepted_event);
 
     let venue_order_id = VenueOrderId::from("V-001"); // Use the same venue_order_id as the accepted event
-    let order_canceled_event = OrderEventAny::Canceled(OrderCanceled::new(
+    let order_canceled_event = OrderEventAny::Canceled(build_order_canceled(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(), // Same client order ID
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,                // reconciliation
-        Some(venue_order_id), // Matching venue_order_id
+        Some(venue_order_id),    // Matching venue_order_id
         Some(AccountId::from("TEST-ACCOUNT")),
     ));
 
@@ -2546,7 +3001,7 @@ fn test_handle_hedging_fill_generates_position_id_from_runtime_strategy_tag(
     );
     execution_engine.process(&order_accepted_event);
 
-    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_event = OrderEventAny::Filled(build_order_filled(
         trader_id,
         strategy_id,
         instrument.id,
@@ -2560,10 +3015,6 @@ fn test_handle_hedging_fill_generates_position_id_from_runtime_strategy_tag(
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         Some(Money::from("2 USD")),
     ));
@@ -2634,7 +3085,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
 
     let position = Position::new(
         &instrument.clone().into(),
-        OrderFilled::new(
+        build_order_filled(
             order.trader_id(),
             order.strategy_id(),
             instrument.id(),
@@ -2648,10 +3099,6 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
             Price::from_str("1.0").unwrap(),
             instrument.quote_currency(),
             LiquiditySide::Maker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
             Some(expected_position_id),
             Some(Money::from("2 USD")),
         ),
@@ -2663,7 +3110,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
         .add_position(&position, OmsType::Netting)
         .unwrap();
 
-    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -2677,10 +3124,6 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(expected_position_id), // ← Provide the position_id here
         Some(Money::from("2 USD")),
     ));
@@ -2834,7 +3277,7 @@ fn test_handle_order_fill_event_skips_duplicate_fill(mut execution_engine: Execu
     let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
     execution_engine.process(&submitted);
 
-    let fill = OrderEventAny::Filled(OrderFilled::new(
+    let fill = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -2848,10 +3291,6 @@ fn test_handle_order_fill_event_skips_duplicate_fill(mut execution_engine: Execu
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         None,
         Some(Money::from("2 USD")),
     ));
@@ -2939,7 +3378,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
 
     let position = Position::new(
         &instrument.clone().into(),
-        OrderFilled::new(
+        build_order_filled(
             order.trader_id(),
             order.strategy_id(),
             instrument.id(),
@@ -2953,10 +3392,6 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
             Price::from_str("1.0").unwrap(),
             instrument.quote_currency(),
             LiquiditySide::Maker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
             Some(expected_position_id),
             Some(Money::from("2 USD")),
         ),
@@ -2968,7 +3403,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
         .add_position(&position, OmsType::Netting)
         .unwrap();
     // First partial fill: 20,100
-    let fill_event_1 = OrderEventAny::Filled(OrderFilled::new(
+    let fill_event_1 = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -2982,17 +3417,13 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // No position_id
+        None, // No position_id
         Some(Money::from("2 USD")),
     ));
     execution_engine.process(&fill_event_1);
 
     // Second partial fill: 19,900
-    let fill_event_2 = OrderEventAny::Filled(OrderFilled::new(
+    let fill_event_2 = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -3006,17 +3437,13 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // No position_id
+        None, // No position_id
         Some(Money::from("2 USD")),
     ));
     execution_engine.process(&fill_event_2);
 
     // Third partial fill: 60,000 (completes the order)
-    let fill_event_3 = OrderEventAny::Filled(OrderFilled::new(
+    let fill_event_3 = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
@@ -3030,11 +3457,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // No position_id
+        None, // No position_id
         Some(Money::from("2 USD")),
     ));
     execution_engine.process(&fill_event_3);
@@ -5394,7 +5817,7 @@ fn test_reduce_only_netting_fill_does_not_open_opposite_position(
         .quantity(Quantity::from(100_000))
         .build();
     let external_position_id = PositionId::new("P-EXTERNAL");
-    let external_fill = OrderFilled::new(
+    let external_fill = build_order_filled(
         external_order.trader_id(),
         external_order.strategy_id(),
         instrument.id(),
@@ -5408,10 +5831,6 @@ fn test_reduce_only_netting_fill_does_not_open_opposite_position(
         Price::from_str("1.0").unwrap(),
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(external_position_id),
         Some(Money::from("2 USD")),
     );
@@ -5733,16 +6152,12 @@ fn test_handle_updated_order_event(mut execution_engine: ExecutionEngine) {
         TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-001"));
     execution_engine.process(&order_accepted_event);
 
-    let order_pending_update_event = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+    let order_pending_update_event = OrderEventAny::PendingUpdate(build_order_pending_update(
         trader_id,
         strategy_id,
         instrument.id,
         order.client_order_id(),
         account_id,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(VenueOrderId::from("V-001")),
     ));
     execution_engine.process(&order_pending_update_event);
@@ -5761,16 +6176,12 @@ fn test_handle_updated_order_event(mut execution_engine: ExecutionEngine) {
     }
 
     let new_venue_id = VenueOrderId::from("1");
-    let order_updated_event = OrderEventAny::Updated(OrderUpdated::new(
+    let order_updated_event = OrderEventAny::Updated(build_order_updated(
         trader_id,
         strategy_id,
         instrument.id,
         order.client_order_id(),
         order.quantity(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(new_venue_id),
         Some(account_id),
         order.price(),
@@ -6742,7 +7153,7 @@ fn test_filled_order_removes_from_own_book() {
         TestOrderEventStubs::accepted(&order_ask, account_id, VenueOrderId::from("V-002"));
     execution_engine.process(&order_accepted_bid);
     execution_engine.process(&order_accepted_ask);
-    let order_filled_bid = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_bid = OrderEventAny::Filled(build_order_filled(
         order_bid.trader_id(),
         order_bid.strategy_id(),
         instrument.id(),
@@ -6756,14 +7167,10 @@ fn test_filled_order_removes_from_own_book() {
         Price::from_str("10.0").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // position_id
-        None,  // commission
+        None, // position_id
+        None, // commission
     ));
-    let order_filled_ask = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_ask = OrderEventAny::Filled(build_order_filled(
         order_ask.trader_id(),
         order_ask.strategy_id(),
         instrument.id(),
@@ -6777,12 +7184,8 @@ fn test_filled_order_removes_from_own_book() {
         Price::from_str("11.0").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // position_id
-        None,  // commission
+        None, // position_id
+        None, // commission
     ));
     execution_engine.process(&order_filled_bid);
     execution_engine.process(&order_filled_ask);
@@ -6950,16 +7353,12 @@ fn test_order_updates_in_own_book() {
     let new_bid_price = Price::from_str("9.0").unwrap();
     let new_ask_price = Price::from_str("12.0").unwrap();
 
-    let order_updated_bid = OrderEventAny::Updated(OrderUpdated::new(
+    let order_updated_bid = OrderEventAny::Updated(build_order_updated(
         order_bid.trader_id(),
         order_bid.strategy_id(),
         instrument.id(),
         order_bid.client_order_id(),
         order_bid.quantity(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,                             // reconciliation
         Some(VenueOrderId::from("V-001")), // venue_order_id
         Some(account_id),                  // account_id
         Some(new_bid_price),               // new price
@@ -6968,16 +7367,12 @@ fn test_order_updates_in_own_book() {
         false,                             // is_quote_quantity
     ));
 
-    let order_updated_ask = OrderEventAny::Updated(OrderUpdated::new(
+    let order_updated_ask = OrderEventAny::Updated(build_order_updated(
         order_ask.trader_id(),
         order_ask.strategy_id(),
         instrument.id(),
         order_ask.client_order_id(),
         order_ask.quantity(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,                             // reconciliation
         Some(VenueOrderId::from("V-002")), // venue_order_id
         Some(account_id),                  // account_id
         Some(new_ask_price),               // new price
@@ -7153,7 +7548,7 @@ fn test_position_flip_with_own_order_book() {
     execution_engine.process(&order_submitted_buy);
     execution_engine.process(&order_accepted_buy);
 
-    let order_filled_buy = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_buy = OrderEventAny::Filled(build_order_filled(
         buy_order.trader_id(),
         buy_order.strategy_id(),
         instrument.id(),
@@ -7167,12 +7562,8 @@ fn test_position_flip_with_own_order_book() {
         Price::from_str("1.0").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false, // reconciliation
-        None,  // position_id
-        None,  // commission
+        None, // position_id
+        None, // commission
     ));
     execution_engine.process(&order_filled_buy);
 
@@ -7246,7 +7637,7 @@ fn test_position_flip_with_own_order_book() {
     execution_engine.process(&order_submitted_sell);
     execution_engine.process(&order_accepted_sell);
 
-    let order_filled_sell = OrderEventAny::Filled(OrderFilled::new(
+    let order_filled_sell = OrderEventAny::Filled(build_order_filled(
         sell_order.trader_id(),
         sell_order.strategy_id(),
         instrument.id(),
@@ -7260,10 +7651,6 @@ fn test_position_flip_with_own_order_book() {
         Price::from_str("1.1").unwrap(), // last_px
         instrument.quote_currency(),
         LiquiditySide::Maker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,             // reconciliation
         Some(position_id), // position_id
         None,              // commission
     ));
@@ -11334,11 +11721,8 @@ fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Limit)
-        .trader_id(TraderId::test_default())
-        .strategy_id(StrategyId::test_default())
         .instrument_id(instrument.id)
         .client_order_id(ClientOrderId::from("O-20240101-000000-001-001-1"))
-        .side(OrderSide::Buy)
         .price(Price::from("1.00000"))
         .quantity(Quantity::from(100_000))
         .build();

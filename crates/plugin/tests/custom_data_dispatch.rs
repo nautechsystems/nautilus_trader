@@ -43,7 +43,8 @@ use std::sync::{
 use nautilus_plugin::{
     boundary::{BorrowedStr, Slice},
     surfaces::custom_data::{
-        CustomDataHandle, CustomDataVTable, MetadataEntry, PluginCustomData, custom_data_vtable,
+        CustomDataHandle, CustomDataVTable, MetadataEntry, PluginCustomData, PluginCustomDataRef,
+        custom_data_vtable,
     },
 };
 use rstest::rstest;
@@ -193,6 +194,49 @@ impl PluginCustomData for HookCountingTick {
     }
 }
 
+#[derive(Clone, PartialEq)]
+struct OtherTick {
+    value: u64,
+}
+
+impl PluginCustomData for OtherTick {
+    const TYPE_NAME: &'static str = "OtherTick";
+
+    fn ts_event(&self) -> u64 {
+        self.value
+    }
+
+    fn ts_init(&self) -> u64 {
+        self.value
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(self.value.to_string().into_bytes())
+    }
+
+    fn from_json(payload: &[u8]) -> anyhow::Result<Self> {
+        let text = std::str::from_utf8(payload)?;
+        Ok(Self {
+            value: text.parse()?,
+        })
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+}
+
 fn vtable() -> &'static CustomDataVTable {
     // SAFETY: vtable lives for the process lifetime.
     unsafe { &*custom_data_vtable::<HookCountingTick>() }
@@ -208,6 +252,49 @@ fn make_handle(value: u64) -> *mut CustomDataHandle {
     unsafe { generated_slot!(vtable(), from_json)(payload) }
         .into_result()
         .expect("from_json")
+}
+
+#[rstest]
+fn custom_data_ref_downcast_rejects_null_handle() {
+    let _g = dispatch_lock();
+    reset_counters();
+    // SAFETY: Null handles are part of the boundary guard contract;
+    // downcast_ref must return None before dereferencing.
+    let data = unsafe {
+        PluginCustomDataRef::from_raw_parts(
+            BorrowedStr::from_str(HookCountingTick::TYPE_NAME),
+            custom_data_vtable::<HookCountingTick>(),
+            std::ptr::null(),
+        )
+    };
+
+    assert_eq!(data.type_name(), HookCountingTick::TYPE_NAME);
+    assert!(data.is::<HookCountingTick>());
+    assert!(data.downcast_ref::<HookCountingTick>().is_none());
+    assert_no_hooks_fired();
+}
+
+#[rstest]
+fn custom_data_ref_downcast_rejects_mismatched_vtable() {
+    let _g = dispatch_lock();
+    let h = make_handle(42);
+    reset_counters();
+    // SAFETY: handle is live and was allocated by HookCountingTick's vtable.
+    let data = unsafe {
+        PluginCustomDataRef::from_raw_parts(
+            BorrowedStr::from_str(HookCountingTick::TYPE_NAME),
+            custom_data_vtable::<HookCountingTick>(),
+            h.cast_const(),
+        )
+    };
+
+    assert!(data.downcast_ref::<OtherTick>().is_none());
+    assert_no_hooks_fired();
+
+    // SAFETY: handle is live and is consumed by drop_handle.
+    unsafe {
+        generated_slot!(vtable(), drop_handle)(h);
+    };
 }
 
 #[rstest]

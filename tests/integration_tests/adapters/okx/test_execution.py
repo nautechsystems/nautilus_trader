@@ -277,6 +277,39 @@ async def test_generate_order_status_reports_converts_results(exec_client_builde
 
 
 @pytest.mark.asyncio
+async def test_generate_order_status_reports_load_spreads_uses_generic_request(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, _, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"load_spreads": True},
+    )
+    http_client.request_order_status_reports.return_value = []
+
+    command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await client.generate_order_status_reports(command)
+
+    # Assert
+    assert reports == []
+    calls = http_client.request_order_status_reports.await_args_list
+    assert len(calls) == 2
+    assert calls[0].kwargs["instrument_type"] == nautilus_pyo3.OKXInstrumentType.SPOT
+    assert "instrument_type" not in calls[1].kwargs
+    assert "instrument_id" not in calls[1].kwargs
+
+
+@pytest.mark.asyncio
 async def test_generate_order_status_reports_handles_failure(exec_client_builder, monkeypatch):
     # Arrange
     client, _, _, http_client, _ = exec_client_builder(monkeypatch)
@@ -326,6 +359,39 @@ async def test_generate_fill_reports_converts_results(exec_client_builder, monke
     # Assert
     http_client.request_fill_reports.assert_awaited_once()
     assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_fill_reports_load_spreads_uses_generic_request(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, _, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"load_spreads": True},
+    )
+    http_client.request_fill_reports.return_value = []
+
+    command = GenerateFillReports(
+        instrument_id=None,
+        venue_order_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await client.generate_fill_reports(command)
+
+    # Assert
+    assert reports == []
+    calls = http_client.request_fill_reports.await_args_list
+    assert len(calls) == 2
+    assert calls[0].kwargs["instrument_type"] == nautilus_pyo3.OKXInstrumentType.SPOT
+    assert "instrument_type" not in calls[1].kwargs
+    assert "instrument_id" not in calls[1].kwargs
 
 
 @pytest.mark.asyncio
@@ -1122,7 +1188,7 @@ def test_merge_attach_algo_ords_rejects_bracket_and_params_overlap():
 
 
 @pytest.mark.asyncio
-async def test_submit_regular_order_http_forwards_event_params(
+async def test_place_order_http_forwards_event_params(
     exec_client_builder,
     monkeypatch,
     instrument,
@@ -1142,7 +1208,7 @@ async def test_submit_regular_order_http_forwards_event_params(
     http_client.place_order = AsyncMock(return_value={"s_code": "0"})
 
     # Act
-    await client._submit_regular_order_http(
+    await client._place_order_http(
         order=order,
         params={"speed_bump": 0, "outcome": "yes"},
         attach_algo_ords=attach_algo_ords,

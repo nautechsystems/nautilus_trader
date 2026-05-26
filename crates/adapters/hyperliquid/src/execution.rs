@@ -51,6 +51,7 @@ use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
+    account::resolve_execution_account_address,
     common::{
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
@@ -158,11 +159,12 @@ impl HyperliquidExecutionClient {
         )
         .context("Hyperliquid execution client requires private key")?;
 
-        // Env var fallback mirrors `Secrets::resolve` for private_key and vault_address
-        let account_address = resolve_account_address(
+        let account_address = resolve_execution_account_address(
+            config.private_key.as_deref(),
+            config.vault_address.as_deref(),
             config.account_address.as_deref(),
-            std::env::var("HYPERLIQUID_ACCOUNT_ADDRESS").ok().as_deref(),
-        );
+            config.environment,
+        )?;
 
         let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
@@ -2289,16 +2291,6 @@ fn remove_cloid_mapping_for_client_order_id(
     ws_client.remove_cloid_mapping(&Ustr::from(&legacy_cloid.to_hex()));
 }
 
-fn resolve_account_address(config_value: Option<&str>, env_value: Option<&str>) -> Option<String> {
-    let trim_nonempty = |s: &str| {
-        let trimmed = s.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    };
-    config_value
-        .and_then(trim_nonempty)
-        .or_else(|| env_value.and_then(trim_nonempty))
-}
-
 use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
@@ -2328,8 +2320,7 @@ mod tests {
     use super::{
         ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
         OrderIdentity, PostRejectionRoute, WsDispatchState, determine_order_list_grouping,
-        handle_execution_report, register_order_identity_into, resolve_account_address,
-        validate_order_for_hyperliquid,
+        handle_execution_report, register_order_identity_into, validate_order_for_hyperliquid,
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
@@ -3328,25 +3319,5 @@ mod tests {
                 .contains("Unsupported instrument symbol format"),
             "unexpected error: {err}",
         );
-    }
-
-    #[rstest]
-    #[case(Some("0xABC"), None, Some("0xABC"))]
-    #[case(None, Some("0xDEF"), Some("0xDEF"))]
-    #[case(Some("0xABC"), Some("0xDEF"), Some("0xABC"))]
-    #[case(Some(""), Some("0xDEF"), Some("0xDEF"))]
-    #[case(Some("   "), Some("0xDEF"), Some("0xDEF"))]
-    #[case(None, Some(""), None)]
-    #[case(None, Some("   "), None)]
-    #[case(None, None, None)]
-    #[case(Some(" 0xABC "), None, Some("0xABC"))]
-    #[case(None, Some(" 0xDEF "), Some("0xDEF"))]
-    fn test_resolve_account_address(
-        #[case] config_value: Option<&str>,
-        #[case] env_value: Option<&str>,
-        #[case] expected: Option<&str>,
-    ) {
-        let result = resolve_account_address(config_value, env_value);
-        assert_eq!(result.as_deref(), expected);
     }
 }

@@ -15,12 +15,12 @@ import os
 
 from _common import add_strategy_from_config
 from _common import build_ib_live_node
+from _common import default_es_future_instrument_id
+from _common import default_es_put_option_instrument_id
 from _common import env_bool
 from _common import env_int
-from _common import futures_contract
 from _common import instrument_provider_config
 from _common import is_ib_endpoint_reachable
-from _common import option_contract
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
@@ -34,15 +34,11 @@ async def main() -> None:
         print(f"IB Gateway/TWS is not reachable at {host}:{port}", flush=True)
         return
 
-    option_contracts = [
-        option_contract(
-            local_symbol=os.getenv("IB_V2_OPTION_LOCAL_SYMBOL", "ESM6 P6800"),
-            right=ib.IbOptionRight.PUT,
-            strike=float(os.getenv("IB_V2_OPTION_STRIKE", "6800")),
-        ),
-    ]
     provider_config = instrument_provider_config(
-        load_contracts=[futures_contract(), *option_contracts],
+        load_ids=[
+            os.getenv("IB_V2_OPTION_UNDERLYING_INSTRUMENT_ID", default_es_future_instrument_id()),
+            os.getenv("IB_V2_OPTION_INSTRUMENT_ID", default_es_put_option_instrument_id()),
+        ],
     )
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
     client_config = ib.InteractiveBrokersDataClientConfig(
@@ -60,8 +56,14 @@ async def main() -> None:
         print(f"Failed to connect to IB Gateway/TWS at {host}:{port}: {exc}", flush=True)
         return
 
-    print("Requesting bounded option contracts...", flush=True)
-    instruments = await client.request_instruments(contracts=option_contracts)
+    print("Requesting option instruments...", flush=True)
+    instruments = await client.request_instruments(
+        instrument_ids=[
+            pyo3.InstrumentId.from_str(
+                os.getenv("IB_V2_OPTION_INSTRUMENT_ID", default_es_put_option_instrument_id()),
+            ),
+        ],
+    )
     print(f"Loaded {len(instruments)} option instrument(s)", flush=True)
     for instrument in instruments:
         print(instrument.id, flush=True)

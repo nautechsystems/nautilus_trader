@@ -1185,8 +1185,8 @@ impl DeribitHttpClient {
     fn attach_combo_leg_info(instrument: &mut InstrumentAny, combo: &DeribitCombo) {
         if let Some(info) = Self::combo_leg_info(instrument, combo) {
             match instrument {
-                InstrumentAny::OptionSpread(spread) => spread.info = Some(info),
-                InstrumentAny::FuturesSpread(spread) => spread.info = Some(info),
+                InstrumentAny::CryptoOptionSpread(spread) => spread.info = Some(info),
+                InstrumentAny::CryptoFuturesSpread(spread) => spread.info = Some(info),
                 _ => {}
             }
         }
@@ -1194,8 +1194,8 @@ impl DeribitHttpClient {
 
     fn combo_leg_info(instrument: &InstrumentAny, combo: &DeribitCombo) -> Option<Params> {
         let existing_info = match instrument {
-            InstrumentAny::OptionSpread(spread) => spread.info.clone(),
-            InstrumentAny::FuturesSpread(spread) => spread.info.clone(),
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info.clone(),
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.clone(),
             _ => return None,
         };
 

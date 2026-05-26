@@ -51,6 +51,9 @@ pub struct OKXDataClientConfig {
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to loaded instruments.
     pub contract_types: Option<Vec<OKXContractType>>,
+    /// Whether to load spread trading instruments from the separate spread endpoint.
+    #[builder(default)]
+    pub load_spreads: bool,
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
     /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
@@ -193,6 +196,9 @@ pub struct OKXExecClientConfig {
     /// Enables consumption of the fills WebSocket channel when true.
     #[builder(default)]
     pub use_fills_channel: bool,
+    /// Whether to subscribe to spread order updates from the separate spread channel.
+    #[builder(default)]
+    pub load_spreads: bool,
     /// Enables mass-cancel support when true.
     #[builder(default)]
     pub use_mm_mass_cancel: bool,
@@ -286,6 +292,19 @@ http_timeout_secs = 90
             vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap]
         );
         assert_eq!(config.http_timeout_secs, 90);
+        assert!(!config.load_spreads);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_load_spreads() {
+        let config: OKXDataClientConfig = toml::from_str(
+            "
+load_spreads = true
+",
+        )
+        .unwrap();
+
+        assert!(config.load_spreads);
     }
 
     #[rstest]
@@ -299,7 +318,20 @@ http_timeout_secs = 90
         assert_eq!(config.instrument_types, expected.instrument_types);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
         assert_eq!(config.use_fills_channel, expected.use_fills_channel);
+        assert_eq!(config.load_spreads, expected.load_spreads);
         assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_load_spreads() {
+        let config: OKXExecClientConfig = toml::from_str(
+            "
+load_spreads = true
+",
+        )
+        .unwrap();
+
+        assert!(config.load_spreads);
     }
 }

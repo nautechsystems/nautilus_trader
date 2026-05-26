@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -75,8 +75,7 @@ pub struct OrderUpdated {
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
     /// If the event was generated during reconciliation.
-    #[serde(deserialize_with = "from_bool_as_u8")]
-    pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    pub reconciliation: bool,
     /// The causation ID associated with the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<UUID4>,
@@ -112,7 +111,7 @@ impl OrderUpdated {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: u8::from(reconciliation),
+            reconciliation,
             venue_order_id,
             account_id,
             price,
@@ -255,7 +254,7 @@ impl OrderEvent for OrderUpdated {
     }
 
     fn reconciliation(&self) -> bool {
-        self.reconciliation != 0
+        self.reconciliation
     }
 
     fn price(&self) -> Option<Price> {

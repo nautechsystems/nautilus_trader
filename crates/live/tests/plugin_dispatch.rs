@@ -13,13 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! In-process integration tests for the live-side plug-in adapters.
+//! Dispatch tests for the live-side plug-in adapters.
 //!
-//! These tests bypass the cdylib build path by registering vtables for
-//! `PluginActor` / `PluginStrategy` types defined in this test crate, then
-//! exercise every adapter callback to verify the event reaches the matching
-//! vtable entry. Counters live in atomics so the host can assert dispatch
-//! without smuggling references across the boundary.
+//! These tests register vtables for `PluginActor` / `PluginStrategy` types
+//! defined in this test crate (bypassing the cdylib build path) and
+//! exercise every adapter callback to verify the event reaches the
+//! matching vtable entry. They also drive the [`HostVTable`] order and
+//! msgbus surfaces to confirm host commands route through the
+//! registered adapter and back into the host cache / risk pipeline.
+//! Counters live in atomics so the host can assert dispatch without
+//! smuggling references across the boundary.
 //!
 //! The slow cdylib-loading tests live in `tests/plugin.rs`.
 
@@ -61,23 +64,28 @@ use nautilus_common::{
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::plugin::{
-    CancelAllOrdersCommand, CancelOrdersCommand, CloseAllPositionsCommand, ClosePositionCommand,
-    HostContextInner, PluginActorAdapter, PluginStrategyAdapter, QueryAccountCommand,
-    QueryOrderCommand, SubmitOrderCommand, SubmitOrderListCommand, host_vtable,
+    CancelAllOrdersCommand, CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle,
+    CancelOrdersCommand, CancelOrdersHandle, CloseAllPositionsCommand, CloseAllPositionsHandle,
+    ClosePositionCommand, ClosePositionHandle, HostContextInner, ModifyOrderCommand,
+    ModifyOrderHandle, PluginActorAdapter, PluginStrategyAdapter, QueryAccountCommand,
+    QueryAccountHandle, QueryOrderCommand, QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle,
+    SubmitOrderListCommand, SubmitOrderListHandle, host_vtable, register_custom_data_from_manifest,
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{
-        Bar, BarSpecification, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDeltas, QuoteTick, TradeTick,
-        stubs::stub_deltas,
+        Bar, BarSpecification, BarType, CustomData, Data, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OptionChainSlice, OptionGreeks,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        registry::deserialize_custom_from_json,
+        stubs::{stub_custom_data, stub_deltas},
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, GreeksConvention,
         InstrumentCloseType, LiquiditySide, MarketStatusAction, OmsType, OrderSide, OrderType,
-        PositionSide, PriceType,
+        PositionSide, PriceType, TimeInForce,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -86,20 +94,26 @@ use nautilus_model::{
         OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
-        AccountId, ActorId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::currency_pair_ethusdt},
+    orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_plugin::{
+    NAUTILUS_PLUGIN_ABI_VERSION,
     boundary::{BorrowedStr, Slice},
     host::{HostContext, HostVTable},
-    manifest::{ValidatedActorVTable, ValidatedStrategyVTable},
+    manifest::{
+        CustomDataRegistration, PluginBuildId, PluginManifest, ValidatedActorVTable,
+        ValidatedPluginManifest, ValidatedStrategyVTable,
+    },
     surfaces::{
         actor::{PluginActor, actor_vtable},
+        custom_data::{PluginCustomData, PluginCustomDataRef, custom_data_vtable},
         strategy::{PluginStrategy, strategy_vtable},
     },
 };
@@ -117,14 +131,26 @@ static A_DISPOSE: AtomicU64 = AtomicU64::new(0);
 static A_DEGRADE: AtomicU64 = AtomicU64::new(0);
 static A_FAULT: AtomicU64 = AtomicU64::new(0);
 static A_TIME: AtomicU64 = AtomicU64::new(0);
+static A_DATA: AtomicU64 = AtomicU64::new(0);
+static A_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
+static A_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_BOOK: AtomicU64 = AtomicU64::new(0);
+static A_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_QUOTES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_TRADES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_BARS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_MARKS: AtomicU64 = AtomicU64::new(0);
+static A_HIST_INDEXES: AtomicU64 = AtomicU64::new(0);
+static A_HIST_FUNDING: AtomicU64 = AtomicU64::new(0);
 static A_QUOTE: AtomicU64 = AtomicU64::new(0);
 static A_TRADE: AtomicU64 = AtomicU64::new(0);
 static A_BAR: AtomicU64 = AtomicU64::new(0);
-static A_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
 static A_MARK: AtomicU64 = AtomicU64::new(0);
 static A_INDEX: AtomicU64 = AtomicU64::new(0);
 static A_FUNDING: AtomicU64 = AtomicU64::new(0);
 static A_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
+static A_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
 static A_INSTR_STATUS: AtomicU64 = AtomicU64::new(0);
 static A_INSTR_CLOSE: AtomicU64 = AtomicU64::new(0);
 static A_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
@@ -141,14 +167,26 @@ fn a_reset() {
         &A_DEGRADE,
         &A_FAULT,
         &A_TIME,
+        &A_DATA,
+        &A_DATA_VALUE,
+        &A_INSTRUMENT,
+        &A_BOOK_DELTAS,
+        &A_BOOK,
+        &A_HIST_BOOK_DELTAS,
+        &A_HIST_QUOTES,
+        &A_HIST_TRADES,
+        &A_HIST_BARS,
+        &A_HIST_MARKS,
+        &A_HIST_INDEXES,
+        &A_HIST_FUNDING,
         &A_QUOTE,
         &A_TRADE,
         &A_BAR,
-        &A_BOOK_DELTAS,
         &A_MARK,
         &A_INDEX,
         &A_FUNDING,
         &A_OPTION_GREEKS,
+        &A_OPTION_CHAIN,
         &A_INSTR_STATUS,
         &A_INSTR_CLOSE,
         &A_ORDER_FILLED,
@@ -160,6 +198,68 @@ fn a_reset() {
 }
 
 struct CountingActor;
+
+#[derive(Clone, PartialEq)]
+struct DispatchCustomData {
+    value: u64,
+    ts_event: u64,
+    ts_init: u64,
+}
+
+impl PluginCustomData for DispatchCustomData {
+    const TYPE_NAME: &'static str = "DispatchCustomData";
+
+    fn ts_event(&self) -> u64 {
+        self.ts_event
+    }
+
+    fn ts_init(&self) -> u64 {
+        self.ts_init
+    }
+
+    fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(serde_json::json!({
+            "value": self.value,
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
+        })
+        .to_string()
+        .into_bytes())
+    }
+
+    fn from_json(payload: &[u8]) -> anyhow::Result<Self> {
+        let value: serde_json::Value = serde_json::from_slice(payload)?;
+        Ok(Self {
+            value: value
+                .get("value")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            ts_event: value
+                .get("ts_event")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            ts_init: value
+                .get("ts_init")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+        })
+    }
+
+    fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn decode_batch(
+        _ipc_bytes: &[u8],
+        _metadata: &[(String, String)],
+    ) -> anyhow::Result<Vec<Self>> {
+        Ok(Vec::new())
+    }
+}
 
 impl PluginActor for CountingActor {
     const TYPE_NAME: &'static str = "CountingActor";
@@ -200,6 +300,54 @@ impl PluginActor for CountingActor {
         A_TIME.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let Some(value) = data.downcast_ref::<DispatchCustomData>() else {
+            anyhow::bail!("expected DispatchCustomData, was {}", data.type_name());
+        };
+        A_DATA_VALUE.store(value.value, Ordering::SeqCst);
+        A_DATA.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        A_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book(&mut self, _: &OrderBook) -> anyhow::Result<()> {
+        A_BOOK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
+        A_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_quotes(&mut self, _: &[QuoteTick]) -> anyhow::Result<()> {
+        A_HIST_QUOTES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_trades(&mut self, _: &[TradeTick]) -> anyhow::Result<()> {
+        A_HIST_TRADES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_bars(&mut self, _: &[Bar]) -> anyhow::Result<()> {
+        A_HIST_BARS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_mark_prices(&mut self, _: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        A_HIST_MARKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_index_prices(&mut self, _: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        A_HIST_INDEXES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_funding_rates(&mut self, _: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        A_HIST_FUNDING.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         A_QUOTE.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -210,10 +358,6 @@ impl PluginActor for CountingActor {
     }
     fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
         A_BAR.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
-        A_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
@@ -231,6 +375,11 @@ impl PluginActor for CountingActor {
 
     fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
         A_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
+        A_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
@@ -259,12 +408,38 @@ impl PluginActor for CountingActor {
 // Counters for the strategy surface. Strategy-only callbacks live below
 // the actor counters and exercise the macro override block.
 static S_START: AtomicU64 = AtomicU64::new(0);
+static S_STOP: AtomicU64 = AtomicU64::new(0);
+static S_RESUME: AtomicU64 = AtomicU64::new(0);
+static S_RESET: AtomicU64 = AtomicU64::new(0);
+static S_DISPOSE: AtomicU64 = AtomicU64::new(0);
+static S_DEGRADE: AtomicU64 = AtomicU64::new(0);
+static S_FAULT: AtomicU64 = AtomicU64::new(0);
+static S_TIME: AtomicU64 = AtomicU64::new(0);
+static S_DATA: AtomicU64 = AtomicU64::new(0);
+static S_DATA_VALUE: AtomicU64 = AtomicU64::new(0);
+static S_INSTRUMENT: AtomicU64 = AtomicU64::new(0);
+static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_BOOK: AtomicU64 = AtomicU64::new(0);
+static S_HIST_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_QUOTES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_TRADES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_BARS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_MARKS: AtomicU64 = AtomicU64::new(0);
+static S_HIST_INDEXES: AtomicU64 = AtomicU64::new(0);
+static S_HIST_FUNDING: AtomicU64 = AtomicU64::new(0);
 static S_QUOTE: AtomicU64 = AtomicU64::new(0);
 static S_TRADE: AtomicU64 = AtomicU64::new(0);
 static S_BAR: AtomicU64 = AtomicU64::new(0);
-static S_BOOK_DELTAS: AtomicU64 = AtomicU64::new(0);
+static S_MARK: AtomicU64 = AtomicU64::new(0);
+static S_INDEX: AtomicU64 = AtomicU64::new(0);
+static S_FUNDING: AtomicU64 = AtomicU64::new(0);
+static S_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
+static S_OPTION_CHAIN: AtomicU64 = AtomicU64::new(0);
+static S_INSTR_STATUS: AtomicU64 = AtomicU64::new(0);
+static S_INSTR_CLOSE: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_FILLED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_CANCELED: AtomicU64 = AtomicU64::new(0);
+static S_SIGNAL: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_INITIALIZED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_SUBMITTED: AtomicU64 = AtomicU64::new(0);
 static S_ORDER_ACCEPTED: AtomicU64 = AtomicU64::new(0);
@@ -282,17 +457,42 @@ static S_ORDER_UPDATED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_OPENED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_CHANGED: AtomicU64 = AtomicU64::new(0);
 static S_POSITION_CLOSED: AtomicU64 = AtomicU64::new(0);
-static S_OPTION_GREEKS: AtomicU64 = AtomicU64::new(0);
 
 fn s_reset() {
     for c in [
         &S_START,
+        &S_STOP,
+        &S_RESUME,
+        &S_RESET,
+        &S_DISPOSE,
+        &S_DEGRADE,
+        &S_FAULT,
+        &S_TIME,
+        &S_DATA,
+        &S_DATA_VALUE,
+        &S_INSTRUMENT,
+        &S_BOOK_DELTAS,
+        &S_BOOK,
+        &S_HIST_BOOK_DELTAS,
+        &S_HIST_QUOTES,
+        &S_HIST_TRADES,
+        &S_HIST_BARS,
+        &S_HIST_MARKS,
+        &S_HIST_INDEXES,
+        &S_HIST_FUNDING,
         &S_QUOTE,
         &S_TRADE,
         &S_BAR,
-        &S_BOOK_DELTAS,
+        &S_MARK,
+        &S_INDEX,
+        &S_FUNDING,
+        &S_OPTION_GREEKS,
+        &S_OPTION_CHAIN,
+        &S_INSTR_STATUS,
+        &S_INSTR_CLOSE,
         &S_ORDER_FILLED,
         &S_ORDER_CANCELED,
+        &S_SIGNAL,
         &S_ORDER_INITIALIZED,
         &S_ORDER_SUBMITTED,
         &S_ORDER_ACCEPTED,
@@ -310,7 +510,6 @@ fn s_reset() {
         &S_POSITION_OPENED,
         &S_POSITION_CHANGED,
         &S_POSITION_CLOSED,
-        &S_OPTION_GREEKS,
     ] {
         c.store(0, Ordering::SeqCst);
     }
@@ -332,6 +531,82 @@ impl PluginStrategy for CountingStrategy {
         S_START.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        S_STOP.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        S_RESUME.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        S_RESET.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        S_DISPOSE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        S_DEGRADE.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        S_FAULT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_time_event(&mut self, _: &TimeEvent) -> anyhow::Result<()> {
+        S_TIME.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_data(&mut self, data: PluginCustomDataRef) -> anyhow::Result<()> {
+        let Some(value) = data.downcast_ref::<DispatchCustomData>() else {
+            anyhow::bail!("expected DispatchCustomData, was {}", data.type_name());
+        };
+        S_DATA_VALUE.store(value.value, Ordering::SeqCst);
+        S_DATA.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument(&mut self, _: &InstrumentAny) -> anyhow::Result<()> {
+        S_INSTRUMENT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
+        S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_book(&mut self, _: &OrderBook) -> anyhow::Result<()> {
+        S_BOOK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_book_deltas(&mut self, _: &[OrderBookDelta]) -> anyhow::Result<()> {
+        S_HIST_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_quotes(&mut self, _: &[QuoteTick]) -> anyhow::Result<()> {
+        S_HIST_QUOTES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_trades(&mut self, _: &[TradeTick]) -> anyhow::Result<()> {
+        S_HIST_TRADES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_bars(&mut self, _: &[Bar]) -> anyhow::Result<()> {
+        S_HIST_BARS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_mark_prices(&mut self, _: &[MarkPriceUpdate]) -> anyhow::Result<()> {
+        S_HIST_MARKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_index_prices(&mut self, _: &[IndexPriceUpdate]) -> anyhow::Result<()> {
+        S_HIST_INDEXES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_historical_funding_rates(&mut self, _: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        S_HIST_FUNDING.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
     fn on_quote(&mut self, _: &QuoteTick) -> anyhow::Result<()> {
         S_QUOTE.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -344,8 +619,32 @@ impl PluginStrategy for CountingStrategy {
         S_BAR.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
-    fn on_book_deltas(&mut self, _: &OrderBookDeltas) -> anyhow::Result<()> {
-        S_BOOK_DELTAS.fetch_add(1, Ordering::SeqCst);
+    fn on_mark_price(&mut self, _: &MarkPriceUpdate) -> anyhow::Result<()> {
+        S_MARK.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_index_price(&mut self, _: &IndexPriceUpdate) -> anyhow::Result<()> {
+        S_INDEX.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_funding_rate(&mut self, _: &FundingRateUpdate) -> anyhow::Result<()> {
+        S_FUNDING.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
+        S_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_option_chain(&mut self, _: &OptionChainSlice) -> anyhow::Result<()> {
+        S_OPTION_CHAIN.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument_status(&mut self, _: &InstrumentStatus) -> anyhow::Result<()> {
+        S_INSTR_STATUS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_instrument_close(&mut self, _: &InstrumentClose) -> anyhow::Result<()> {
+        S_INSTR_CLOSE.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_filled(&mut self, _: &OrderFilled) -> anyhow::Result<()> {
@@ -354,6 +653,10 @@ impl PluginStrategy for CountingStrategy {
     }
     fn on_order_canceled(&mut self, _: &OrderCanceled) -> anyhow::Result<()> {
         S_ORDER_CANCELED.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn on_signal(&mut self, _: &Signal) -> anyhow::Result<()> {
+        S_SIGNAL.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
     fn on_order_initialized(&mut self, _: &OrderInitialized) -> anyhow::Result<()> {
@@ -424,11 +727,6 @@ impl PluginStrategy for CountingStrategy {
         S_POSITION_CLOSED.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
-
-    fn on_option_greeks(&mut self, _: &OptionGreeks) -> anyhow::Result<()> {
-        S_OPTION_GREEKS.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
 }
 
 fn instrument_id() -> InstrumentId {
@@ -445,6 +743,10 @@ fn make_quote() -> QuoteTick {
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
     )
+}
+
+fn make_order_book() -> OrderBook {
+    OrderBook::new(instrument_id(), BookType::L2_MBP)
 }
 
 fn make_trade() -> TradeTick {
@@ -546,6 +848,19 @@ fn make_instrument_close() -> InstrumentClose {
     )
 }
 
+fn make_instrument() -> InstrumentAny {
+    InstrumentAny::CurrencyPair(currency_pair_ethusdt())
+}
+
+fn make_option_chain() -> OptionChainSlice {
+    OptionChainSlice::new(OptionSeriesId::new(
+        Venue::new("DERIBIT"),
+        ustr::Ustr::from("BTC"),
+        ustr::Ustr::from("BTC"),
+        UnixNanos::from(1_700_000_000_000_000_000u64),
+    ))
+}
+
 fn make_time_event() -> TimeEvent {
     TimeEvent::new(
         ustr::Ustr::from("test-time"),
@@ -600,7 +915,7 @@ fn make_order_canceled() -> OrderCanceled {
         event_id: UUID4::new(),
         ts_event: UnixNanos::from(1u64),
         ts_init: UnixNanos::from(1u64),
-        reconciliation: 0,
+        reconciliation: false,
         causation_id: None,
     }
 }
@@ -762,31 +1077,132 @@ fn actor_adapter_market_data_hooks_dispatch_to_plugin() {
     a_reset();
     let mut a = build_actor_adapter("CountingActor-Data");
 
+    DataActor::on_instrument(&mut a, &make_instrument()).unwrap();
+    DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
+    DataActor::on_book(&mut a, &make_order_book()).unwrap();
     DataActor::on_quote(&mut a, &make_quote()).unwrap();
     DataActor::on_trade(&mut a, &make_trade()).unwrap();
     DataActor::on_bar(&mut a, &make_bar()).unwrap();
-    DataActor::on_book_deltas(&mut a, &stub_deltas()).unwrap();
     DataActor::on_mark_price(&mut a, &make_mark_price()).unwrap();
     DataActor::on_index_price(&mut a, &make_index_price()).unwrap();
     DataActor::on_funding_rate(&mut a, &make_funding_rate()).unwrap();
     DataActor::on_option_greeks(&mut a, &make_option_greeks()).unwrap();
+    DataActor::on_option_chain(&mut a, &make_option_chain()).unwrap();
     DataActor::on_instrument_status(&mut a, &make_instrument_status()).unwrap();
     DataActor::on_instrument_close(&mut a, &make_instrument_close()).unwrap();
     DataActor::on_time_event(&mut a, &make_time_event()).unwrap();
     DataActor::on_signal(&mut a, &make_signal()).unwrap();
 
+    assert_eq!(A_INSTRUMENT.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_BOOK.load(Ordering::SeqCst), 1);
     assert_eq!(A_QUOTE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TRADE.load(Ordering::SeqCst), 1);
     assert_eq!(A_BAR.load(Ordering::SeqCst), 1);
-    assert_eq!(A_BOOK_DELTAS.load(Ordering::SeqCst), 1);
     assert_eq!(A_MARK.load(Ordering::SeqCst), 1);
     assert_eq!(A_INDEX.load(Ordering::SeqCst), 1);
     assert_eq!(A_FUNDING.load(Ordering::SeqCst), 1);
     assert_eq!(A_OPTION_GREEKS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_OPTION_CHAIN.load(Ordering::SeqCst), 1);
     assert_eq!(A_INSTR_STATUS.load(Ordering::SeqCst), 1);
     assert_eq!(A_INSTR_CLOSE.load(Ordering::SeqCst), 1);
     assert_eq!(A_TIME.load(Ordering::SeqCst), 1);
     assert_eq!(A_SIGNAL.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn actor_adapter_historical_slice_hooks_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistSlices");
+    let deltas = stub_deltas();
+    let quotes = [make_quote()];
+    let trades = [make_trade()];
+    let bars = [make_bar()];
+    let mark_prices = [make_mark_price()];
+    let index_prices = [make_index_price()];
+    let funding_rates = [make_funding_rate()];
+
+    DataActor::on_historical_book_deltas(&mut a, &deltas.deltas).unwrap();
+    DataActor::on_historical_quotes(&mut a, &quotes).unwrap();
+    DataActor::on_historical_trades(&mut a, &trades).unwrap();
+    DataActor::on_historical_bars(&mut a, &bars).unwrap();
+    DataActor::on_historical_mark_prices(&mut a, &mark_prices).unwrap();
+    DataActor::on_historical_index_prices(&mut a, &index_prices).unwrap();
+    DataActor::on_historical_funding_rates(&mut a, &funding_rates).unwrap();
+
+    assert_eq!(A_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_QUOTES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_TRADES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_BARS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_MARKS.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_INDEXES.load(Ordering::SeqCst), 1);
+    assert_eq!(A_HIST_FUNDING.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn actor_adapter_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-CustomData");
+    let custom = plugin_dispatch_custom_data(42);
+
+    DataActor::on_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 42);
+}
+
+#[rstest]
+fn actor_adapter_historical_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalCustomData");
+    let custom = plugin_dispatch_custom_data(44);
+
+    DataActor::on_historical_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 44);
+}
+
+#[rstest]
+fn actor_adapter_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-ForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn actor_adapter_historical_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_historical_data(&mut a, &custom).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn actor_adapter_historical_non_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    a_reset();
+    let mut a = build_actor_adapter("CountingActor-HistoricalNonCustomData");
+    let payload = 42_u64;
+
+    DataActor::on_historical_data(&mut a, &payload).unwrap();
+
+    assert_eq!(A_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(A_DATA_VALUE.load(Ordering::SeqCst), 0);
 }
 
 #[rstest]
@@ -805,22 +1221,203 @@ fn actor_adapter_order_event_hooks_dispatch_to_plugin() {
 // ---- Strategy adapter event coverage ----
 
 #[rstest]
+fn strategy_adapter_lifecycle_hooks_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-Life");
+    register_strategy_adapter(&mut s);
+
+    DataActor::on_start(&mut s).unwrap();
+    DataActor::on_stop(&mut s).unwrap();
+    DataActor::on_resume(&mut s).unwrap();
+    DataActor::on_reset(&mut s).unwrap();
+    DataActor::on_dispose(&mut s).unwrap();
+    DataActor::on_degrade(&mut s).unwrap();
+    DataActor::on_fault(&mut s).unwrap();
+
+    assert_eq!(S_START.load(Ordering::SeqCst), 1);
+    assert_eq!(S_STOP.load(Ordering::SeqCst), 1);
+    assert_eq!(S_RESUME.load(Ordering::SeqCst), 1);
+    assert_eq!(S_RESET.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DISPOSE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DEGRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_FAULT.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
 fn strategy_adapter_actor_callbacks_dispatch_to_plugin() {
     let _lock = lock_counters();
     s_reset();
     let mut s = build_strategy_adapter("CountingStrategy-Data");
 
-    DataActor::on_quote(&mut s, &make_quote()).unwrap();
+    DataActor::on_instrument(&mut s, &make_instrument()).unwrap();
     DataActor::on_book_deltas(&mut s, &stub_deltas()).unwrap();
+    DataActor::on_book(&mut s, &make_order_book()).unwrap();
+    DataActor::on_quote(&mut s, &make_quote()).unwrap();
+    DataActor::on_trade(&mut s, &make_trade()).unwrap();
+    DataActor::on_bar(&mut s, &make_bar()).unwrap();
+    DataActor::on_mark_price(&mut s, &make_mark_price()).unwrap();
+    DataActor::on_index_price(&mut s, &make_index_price()).unwrap();
+    DataActor::on_funding_rate(&mut s, &make_funding_rate()).unwrap();
     DataActor::on_option_greeks(&mut s, &make_option_greeks()).unwrap();
+    DataActor::on_option_chain(&mut s, &make_option_chain()).unwrap();
+    DataActor::on_instrument_status(&mut s, &make_instrument_status()).unwrap();
+    DataActor::on_instrument_close(&mut s, &make_instrument_close()).unwrap();
     DataActor::on_order_filled(&mut s, &make_order_filled()).unwrap();
     DataActor::on_order_canceled(&mut s, &make_order_canceled()).unwrap();
+    DataActor::on_time_event(&mut s, &make_time_event()).unwrap();
+    DataActor::on_signal(&mut s, &make_signal()).unwrap();
 
-    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTRUMENT.load(Ordering::SeqCst), 1);
     assert_eq!(S_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BOOK.load(Ordering::SeqCst), 1);
+    assert_eq!(S_QUOTE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_TRADE.load(Ordering::SeqCst), 1);
+    assert_eq!(S_BAR.load(Ordering::SeqCst), 1);
+    assert_eq!(S_MARK.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INDEX.load(Ordering::SeqCst), 1);
+    assert_eq!(S_FUNDING.load(Ordering::SeqCst), 1);
     assert_eq!(S_OPTION_GREEKS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_OPTION_CHAIN.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTR_STATUS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_INSTR_CLOSE.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_FILLED.load(Ordering::SeqCst), 1);
     assert_eq!(S_ORDER_CANCELED.load(Ordering::SeqCst), 1);
+    assert_eq!(S_TIME.load(Ordering::SeqCst), 1);
+    assert_eq!(S_SIGNAL.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn strategy_adapter_historical_slice_hooks_dispatch_to_plugin() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistSlices");
+    let deltas = stub_deltas();
+    let quotes = [make_quote()];
+    let trades = [make_trade()];
+    let bars = [make_bar()];
+    let mark_prices = [make_mark_price()];
+    let index_prices = [make_index_price()];
+    let funding_rates = [make_funding_rate()];
+
+    DataActor::on_historical_book_deltas(&mut s, &deltas.deltas).unwrap();
+    DataActor::on_historical_quotes(&mut s, &quotes).unwrap();
+    DataActor::on_historical_trades(&mut s, &trades).unwrap();
+    DataActor::on_historical_bars(&mut s, &bars).unwrap();
+    DataActor::on_historical_mark_prices(&mut s, &mark_prices).unwrap();
+    DataActor::on_historical_index_prices(&mut s, &index_prices).unwrap();
+    DataActor::on_historical_funding_rates(&mut s, &funding_rates).unwrap();
+
+    assert_eq!(S_HIST_BOOK_DELTAS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_QUOTES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_TRADES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_BARS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_MARKS.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_INDEXES.load(Ordering::SeqCst), 1);
+    assert_eq!(S_HIST_FUNDING.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+fn strategy_adapter_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-CustomData");
+    let custom = plugin_dispatch_custom_data(43);
+
+    DataActor::on_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 43);
+}
+
+#[rstest]
+fn strategy_adapter_historical_custom_data_dispatches_to_plugin_on_data() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalCustomData");
+    let custom = plugin_dispatch_custom_data(45);
+
+    DataActor::on_historical_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 1);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 45);
+}
+
+#[rstest]
+fn strategy_adapter_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-ForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn strategy_adapter_historical_non_plugin_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalForeignCustomData");
+    let custom = stub_custom_data(1, 42, None, None);
+
+    DataActor::on_historical_data(&mut s, &custom).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+fn strategy_adapter_historical_non_custom_data_is_ignored() {
+    let _lock = lock_counters();
+    s_reset();
+    let mut s = build_strategy_adapter("CountingStrategy-HistoricalNonCustomData");
+    let payload = 43_u64;
+
+    DataActor::on_historical_data(&mut s, &payload).unwrap();
+
+    assert_eq!(S_DATA.load(Ordering::SeqCst), 0);
+    assert_eq!(S_DATA_VALUE.load(Ordering::SeqCst), 0);
+}
+
+fn plugin_dispatch_custom_data(value: u64) -> CustomData {
+    let custom_data = Box::leak(Box::new([CustomDataRegistration {
+        type_name: BorrowedStr::from_str(DispatchCustomData::TYPE_NAME),
+        vtable: custom_data_vtable::<DispatchCustomData>(),
+    }]));
+    let manifest = PluginManifest {
+        abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+        plugin_name: BorrowedStr::from_str("plugin-dispatch-test"),
+        plugin_vendor: BorrowedStr::from_str("nautech"),
+        plugin_version: BorrowedStr::from_str("0.0.0"),
+        build_id: PluginBuildId::current(),
+        custom_data: Slice::from_slice(custom_data),
+        actors: Slice::empty(),
+        strategies: Slice::empty(),
+    };
+    let manifest =
+        ValidatedPluginManifest::new(&manifest).expect("test manifest passes validation");
+    register_custom_data_from_manifest(manifest).expect("custom data registration succeeds");
+    let envelope = serde_json::json!({
+        "type": "Custom",
+        "data_type": {
+            "type_name": DispatchCustomData::TYPE_NAME,
+        },
+        "payload": {
+            "value": value,
+            "ts_event": 10,
+            "ts_init": 11,
+        },
+    });
+    let data = deserialize_custom_from_json(DispatchCustomData::TYPE_NAME, &envelope)
+        .expect("deserializer succeeds")
+        .expect("custom data type is registered");
+    let Data::Custom(custom) = data else {
+        panic!("expected Custom variant");
+    };
+    custom
 }
 
 #[rstest]
@@ -961,13 +1558,13 @@ static RISK_COMMAND_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[rstest]
 fn host_submit_order_routes_through_registered_strategy_adapter() {
-    // End-to-end: a registered PluginStrategyAdapter receives a JSON
-    // SubmitOrderCommand through the host vtable, which deserializes,
-    // looks the adapter up by actor_id, and calls Strategy::submit_order.
-    // Strategy::submit_order publishes OrderInitialized and sends the
-    // SubmitOrder TradingCommand to the risk-engine endpoint. We
-    // subscribe a counting handler at that endpoint to assert the
-    // command reached the production pipeline.
+    // End-to-end: a registered PluginStrategyAdapter receives a
+    // SubmitOrderHandle through the host vtable, which derefs the
+    // borrowed command, looks the adapter up by actor_id, and calls
+    // Strategy::submit_order. Strategy::submit_order publishes
+    // OrderInitialized and sends the SubmitOrder TradingCommand to the
+    // risk-engine endpoint. We subscribe a counting handler at that
+    // endpoint to assert the command reached the production pipeline.
     let _lock = lock_counters();
     let strategy_id = "PluginEnd2End-001";
     let mut adapter = build_strategy_adapter(strategy_id);
@@ -980,26 +1577,32 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
 
-    let risk_handler =
-        TypedIntoHandler::from_with_id("PluginRiskProbe.execute", |command: TradingCommand| {
+    let risk_handler = TypedIntoHandler::from_with_id(
+        "PluginRiskProbe.execute",
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
-        });
+        },
+    );
     msgbus::register_trading_command_endpoint(
         MessagingSwitchboard::risk_engine_queue_execute(),
         risk_handler,
     );
 
     let order = make_initialized_market_order("O-PLUGIN-E2E-1", strategy_id);
-    let cmd = SubmitOrderCommand {
+    let order_client_order_id = order.client_order_id();
+    let expected_position_id = PositionId::from("P-PLUGIN-E2E-POS");
+    let handle = SubmitOrderHandle::new(SubmitOrderCommand::new(
         order,
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        Some(expected_position_id),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -1009,11 +1612,175 @@ fn host_submit_order_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.submit_order)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.submit_order)(ctx, &raw const handle) };
     r.into_result().expect("host submit_order should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.client_order_id, order_client_order_id);
+            assert_eq!(cmd.position_id, Some(expected_position_id));
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_cancel_order_rejects_missing_order() {
+    // The plug-in builds a CancelOrderCommand for a non-existent
+    // client_order_id, wraps it in CancelOrderHandle, and hands the host
+    // a `*const CancelOrderHandle`. The host derefs the handle and calls
+    // Strategy::cancel_order, which bails on the cache miss. The
+    // surfaced Generic error is the proof that the handle deref, ctx
+    // lookup, and dispatch all reached Strategy.
+    let _lock = lock_counters();
+    let strategy_id = "PluginCancelOrder-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let handle = CancelOrderHandle::new(CancelOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-CANCEL-MISSING"),
+        None,
+        None,
+    ));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.cancel_order)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("missing order should bail in Strategy::cancel_order");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
+    assert!(
+        err.message_string().contains("not found in cache"),
+        "expected Strategy-level cache miss, was: {}",
+        err.message_string()
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+fn host_modify_order_rejects_missing_order() {
+    // Mirror of the cancel_order test using ModifyOrderHandle. With no
+    // matching order in the cache, Strategy::modify_order bails - the
+    // surfaced Generic error is the proof that the handle deref and
+    // dispatch reached Strategy.
+    let _lock = lock_counters();
+    let strategy_id = "PluginModifyOrder-001";
+    let mut adapter = build_strategy_adapter(strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-MODIFY-MISSING"),
+        Some(Quantity::from("2.0")),
+        None,
+        None,
+        None,
+        None,
+    ));
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.modify_order)(ctx, &raw const handle) }
+        .into_result()
+        .expect_err("missing order should bail in Strategy::modify_order");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::Generic);
+    assert!(
+        err.message_string().contains("not found in cache"),
+        "expected Strategy-level cache miss, was: {}",
+        err.message_string()
+    );
+
+    // SAFETY: ctx originated from leak_host_context above.
+    unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
+}
+
+#[rstest]
+#[case::submit_order("submit_order", |v: &HostVTable, ctx| unsafe {
+    (v.submit_order)(ctx, std::ptr::null())
+})]
+#[case::cancel_order("cancel_order", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_order)(ctx, std::ptr::null())
+})]
+#[case::modify_order("modify_order", |v: &HostVTable, ctx| unsafe {
+    (v.modify_order)(ctx, std::ptr::null())
+})]
+#[case::submit_order_list("submit_order_list", |v: &HostVTable, ctx| unsafe {
+    (v.submit_order_list)(ctx, std::ptr::null())
+})]
+#[case::cancel_orders("cancel_orders", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_orders)(ctx, std::ptr::null())
+})]
+#[case::cancel_all_orders("cancel_all_orders", |v: &HostVTable, ctx| unsafe {
+    (v.cancel_all_orders)(ctx, std::ptr::null())
+})]
+#[case::close_position("close_position", |v: &HostVTable, ctx| unsafe {
+    (v.close_position)(ctx, std::ptr::null())
+})]
+#[case::close_all_positions("close_all_positions", |v: &HostVTable, ctx| unsafe {
+    (v.close_all_positions)(ctx, std::ptr::null())
+})]
+#[case::query_account("query_account", |v: &HostVTable, ctx| unsafe {
+    (v.query_account)(ctx, std::ptr::null())
+})]
+#[case::query_order("query_order", |v: &HostVTable, ctx| unsafe {
+    (v.query_order)(ctx, std::ptr::null())
+})]
+fn host_execution_slot_rejects_null_handle(
+    #[case] slot: &'static str,
+    #[case] invoke: fn(&HostVTable, *const HostContext) -> nautilus_plugin::PluginResult<()>,
+) {
+    // Every execution slot shares the dispatch_handle null-check; this
+    // parametrised case locks parity across all 10 slots so a future
+    // refactor that bypasses the guard for any one slot fails.
+    let _lock = lock_counters();
+    let strategy_id = format!("PluginNullHandle-{slot}");
+    let mut adapter = build_strategy_adapter(&strategy_id);
+    register_strategy_adapter(&mut adapter);
+    let actor_id_ustr = adapter.actor_id().inner();
+    let _registered = register_actor(adapter);
+
+    let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
+        actor_id: ActorId::from(actor_id_ustr.as_str()),
+        is_strategy: true,
+    });
+
+    let p = host_vtable();
+    // SAFETY: pointer is to a static OnceLock-backed HostVTable.
+    let v = unsafe { &*p };
+    let err = invoke(v, ctx)
+        .into_result()
+        .expect_err("null command handle should be rejected");
+    assert_eq!(err.code, nautilus_plugin::PluginErrorCode::InvalidArgument);
+    assert!(
+        err.message_string().contains("null command handle"),
+        "{slot}: unexpected message: {}",
+        err.message_string()
+    );
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -1943,27 +2710,35 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
-    let risk_handler =
-        TypedIntoHandler::from_with_id("PluginRiskProbeList.execute", |command: TradingCommand| {
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let risk_handler = TypedIntoHandler::from_with_id(
+        "PluginRiskProbeList.execute",
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrderList(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
-        });
+        },
+    );
     msgbus::register_trading_command_endpoint(
         MessagingSwitchboard::risk_engine_queue_execute(),
         risk_handler,
     );
 
-    let cmd = SubmitOrderListCommand {
-        orders: vec![
+    let expected_ids = [
+        ClientOrderId::from("O-PLUGIN-LIST-1"),
+        ClientOrderId::from("O-PLUGIN-LIST-2"),
+    ];
+    let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
+        vec![
             make_initialized_market_order("O-PLUGIN-LIST-1", strategy_id),
             make_initialized_market_order("O-PLUGIN-LIST-2", strategy_id),
         ],
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        None,
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -1973,12 +2748,22 @@ fn host_submit_order_list_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.submit_order_list)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.submit_order_list)(ctx, &raw const handle) };
     r.into_result()
         .expect("host submit_order_list should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrderList(cmd) => {
+            assert_eq!(cmd.order_list.client_order_ids.len(), 2);
+            assert_eq!(cmd.order_list.client_order_ids[0], expected_ids[0]);
+            assert_eq!(cmd.order_list.client_order_ids[1], expected_ids[1]);
+            assert_eq!(cmd.order_inits.len(), 2);
+        }
+        other => panic!("expected SubmitOrderList, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -1996,14 +2781,8 @@ fn host_submit_order_list_rejects_empty_orders() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = SubmitOrderListCommand {
-        orders: Vec::new(),
-        position_id: None,
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle =
+        SubmitOrderListHandle::new(SubmitOrderListCommand::new(Vec::new(), None, None, None));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2013,8 +2792,8 @@ fn host_submit_order_list_rejects_empty_orders() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.submit_order_list)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.submit_order_list)(ctx, &raw const handle) }
         .into_result()
         .expect_err("empty order list should be rejected");
     assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
@@ -2034,8 +2813,8 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     // id up in the cache and rejects local/emulated orders. Orders added
     // via `cache.add_order` retain `OrderStatus::Initialized`, which the
     // Strategy treats as "active local"; the explicit error from Strategy
-    // is the proof that typed deserialisation, ctx lookup, and dispatch
-    // all succeeded.
+    // is the proof that the handle deref, ctx lookup, and dispatch all
+    // succeeded.
     let _lock = lock_counters();
     let strategy_id = "PluginCancelBatch-001";
     let mut adapter = build_strategy_adapter(strategy_id);
@@ -2051,16 +2830,14 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     }
     let _registered = register_actor(adapter);
 
-    let cmd = CancelOrdersCommand {
-        client_order_ids: vec![
+    let handle = CancelOrdersHandle::new(CancelOrdersCommand::new(
+        vec![
             ClientOrderId::from("O-PLUGIN-BATCH-1"),
             ClientOrderId::from("O-PLUGIN-BATCH-2"),
         ],
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2070,8 +2847,8 @@ fn host_cancel_orders_dispatches_to_strategy_through_cache_lookup() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.cancel_orders)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.cancel_orders)(ctx, &raw const handle) }
         .into_result()
         .expect_err("Initialized orders should be rejected as local by Strategy");
     assert_ne!(err.code, nautilus_plugin::PluginErrorCode::NotImplemented);
@@ -2090,7 +2867,7 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     // With no open/emulated/inflight orders matching the filter,
     // Strategy::cancel_all_orders returns Ok without sending a command.
     // The successful Ok return (rather than NotImplemented or an
-    // InvalidArgument error) is the proof that typed deserialisation and
+    // InvalidArgument error) is the proof that the handle deref and
     // dispatch reached Strategy.
     let _lock = lock_counters();
     let strategy_id = "PluginCancelAll-001";
@@ -2099,14 +2876,12 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = CancelAllOrdersCommand {
-        instrument_id: instrument_id(),
-        order_side: Some(OrderSide::Buy),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
+        instrument_id(),
+        Some(OrderSide::Buy),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2116,8 +2891,8 @@ fn host_cancel_all_orders_dispatches_to_strategy_with_empty_cache_path() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.cancel_all_orders)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.cancel_all_orders)(ctx, &raw const handle) };
     r.into_result()
         .expect("host cancel_all_orders should succeed");
 
@@ -2149,10 +2924,14 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let risk_handler = TypedIntoHandler::from_with_id(
         "PluginRiskProbeClosePos.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2161,16 +2940,15 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
         risk_handler,
     );
 
-    let cmd = ClosePositionCommand {
-        position_id: PositionId::from("P-PLUGIN-CLOSE-1"),
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let expected_tag = ustr::Ustr::from("plugin-exit");
+    let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+        PositionId::from("P-PLUGIN-CLOSE-1"),
+        None,
+        Some(vec![expected_tag]),
+        Some(TimeInForce::Ioc),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2180,11 +2958,24 @@ fn host_close_position_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.close_position)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.close_position)(ctx, &raw const handle) };
     r.into_result().expect("host close_position should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.position_id, Some(PositionId::from("P-PLUGIN-CLOSE-1")));
+            let order_tags = cmd.order_init.tags.expect("closing order carries tags");
+            assert!(
+                order_tags.contains(&expected_tag),
+                "expected tag {expected_tag} to flow into closing order, was: {order_tags:?}",
+            );
+            assert_eq!(cmd.order_init.time_in_force, TimeInForce::Ioc);
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2199,16 +2990,14 @@ fn host_close_position_rejects_missing_position() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = ClosePositionCommand {
-        position_id: PositionId::from("P-PLUGIN-MISSING"),
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+        PositionId::from("P-PLUGIN-MISSING"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2218,8 +3007,8 @@ fn host_close_position_rejects_missing_position() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.close_position)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.close_position)(ctx, &raw const handle) }
         .into_result()
         .expect_err("missing position should surface as an error");
     assert!(
@@ -2255,10 +3044,14 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let risk_handler = TypedIntoHandler::from_with_id(
         "PluginRiskProbeCloseAll.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2267,17 +3060,16 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
         risk_handler,
     );
 
-    let cmd = CloseAllPositionsCommand {
-        instrument_id: target_instrument_id,
-        position_side: None,
-        client_id: None,
-        tags: None,
-        time_in_force: None,
-        reduce_only: None,
-        quote_quantity: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let expected_tag = ustr::Ustr::from("plugin-flatten");
+    let handle = CloseAllPositionsHandle::new(CloseAllPositionsCommand::new(
+        target_instrument_id,
+        Some(position.side),
+        None,
+        Some(vec![expected_tag]),
+        Some(TimeInForce::Ioc),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2287,12 +3079,25 @@ fn host_close_all_positions_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.close_all_positions)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.close_all_positions)(ctx, &raw const handle) };
     r.into_result()
         .expect("host close_all_positions should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(cmd) => {
+            assert_eq!(cmd.instrument_id, target_instrument_id);
+            let order_tags = cmd.order_init.tags.expect("closing order carries tags");
+            assert!(
+                order_tags.contains(&expected_tag),
+                "expected tag {expected_tag} to flow into closing order, was: {order_tags:?}",
+            );
+            assert_eq!(cmd.order_init.time_in_force, TimeInForce::Ioc);
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2308,10 +3113,14 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let exec_handler = TypedIntoHandler::from_with_id(
         "PluginExecProbeQueryAccount.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::QueryAccount(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2320,13 +3129,18 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
         exec_handler,
     );
 
-    let cmd = QueryAccountCommand {
-        account_id: AccountId::from("BINANCE-001"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let mut params = Params::new();
+    params.insert(
+        "marker".to_string(),
+        serde_json::Value::String("plugin-query-account".to_string()),
+    );
+    let expected_client_id = ClientId::from("BINANCE");
+    let expected_params = params.clone();
+    let handle = QueryAccountHandle::new(QueryAccountCommand::new(
+        AccountId::from("BINANCE-001"),
+        Some(expected_client_id),
+        Some(params),
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2336,11 +3150,20 @@ fn host_query_account_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.query_account)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.query_account)(ctx, &raw const handle) };
     r.into_result().expect("host query_account should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryAccount(cmd) => {
+            assert_eq!(cmd.account_id, AccountId::from("BINANCE-001"));
+            assert_eq!(cmd.client_id, Some(expected_client_id));
+            assert_eq!(cmd.params, Some(expected_params));
+        }
+        other => panic!("expected QueryAccount, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2362,10 +3185,14 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
     let _registered = register_actor(adapter);
 
     RISK_COMMAND_COUNT.store(0, Ordering::SeqCst);
+    let captured: std::sync::Arc<std::sync::Mutex<Option<TradingCommand>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
     let exec_handler = TypedIntoHandler::from_with_id(
         "PluginExecProbeQueryOrder.execute",
-        |command: TradingCommand| {
+        move |command: TradingCommand| {
             assert!(matches!(command, TradingCommand::QueryOrder(_)));
+            *captured_clone.lock().unwrap() = Some(command);
             RISK_COMMAND_COUNT.fetch_add(1, Ordering::SeqCst);
         },
     );
@@ -2374,13 +3201,17 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
         exec_handler,
     );
 
-    let cmd = QueryOrderCommand {
-        client_order_id: ClientOrderId::from("O-PLUGIN-QUERY-1"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let mut params = Params::new();
+    params.insert(
+        "marker".to_string(),
+        serde_json::Value::String("plugin-query-order".to_string()),
+    );
+    let expected_params = params.clone();
+    let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-QUERY-1"),
+        None,
+        Some(params),
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2390,11 +3221,19 @@ fn host_query_order_routes_through_registered_strategy_adapter() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let r = unsafe { (v.query_order)(ctx, payload) };
+    // SAFETY: ctx + handle are live for the call.
+    let r = unsafe { (v.query_order)(ctx, &raw const handle) };
     r.into_result().expect("host query_order should succeed");
 
     assert_eq!(RISK_COMMAND_COUNT.load(Ordering::SeqCst), 1);
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryOrder(cmd) => {
+            assert_eq!(cmd.client_order_id, ClientOrderId::from("O-PLUGIN-QUERY-1"));
+            assert_eq!(cmd.params, Some(expected_params));
+        }
+        other => panic!("expected QueryOrder, was {other:?}"),
+    }
 
     // SAFETY: ctx originated from leak_host_context above.
     unsafe { nautilus_live::plugin::registry::drop_host_context(ctx) };
@@ -2409,13 +3248,11 @@ fn host_query_order_rejects_missing_order() {
     let actor_id_ustr = adapter.actor_id().inner();
     let _registered = register_actor(adapter);
 
-    let cmd = QueryOrderCommand {
-        client_order_id: ClientOrderId::from("O-PLUGIN-MISSING"),
-        client_id: None,
-        params: None,
-    };
-    let json = serde_json::to_string(&cmd).unwrap();
-    let payload = BorrowedStr::from_str(&json);
+    let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+        ClientOrderId::from("O-PLUGIN-MISSING"),
+        None,
+        None,
+    ));
 
     let ctx = nautilus_live::plugin::registry::leak_host_context(HostContextInner {
         actor_id: ActorId::from(actor_id_ustr.as_str()),
@@ -2425,8 +3262,8 @@ fn host_query_order_rejects_missing_order() {
     let p = host_vtable();
     // SAFETY: pointer is to a static OnceLock-backed HostVTable.
     let v = unsafe { &*p };
-    // SAFETY: ctx + payload are live for the call.
-    let err = unsafe { (v.query_order)(ctx, payload) }
+    // SAFETY: ctx + handle are live for the call.
+    let err = unsafe { (v.query_order)(ctx, &raw const handle) }
         .into_result()
         .expect_err("missing order should surface as an error");
     assert!(

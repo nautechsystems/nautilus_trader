@@ -1223,6 +1223,25 @@ class TestArrowSerializer:
         df = self.catalog.instruments()
         assert len(df) == 1
 
+    @pytest.mark.parametrize(
+        "instrument",
+        [
+            TestInstrumentProvider.btcusdt_future_binance(),
+            TestInstrumentProvider.crypto_option(),
+            TestInstrumentProvider.btcusdt_perp_binance(),
+        ],
+    )
+    def test_serialize_and_deserialize_crypto_instrument_with_none_lot_size(self, instrument):
+        values = type(instrument).to_dict(instrument)
+        values["lot_size"] = None
+        instrument = type(instrument).from_dict(values)
+
+        serialized = ArrowSerializer.serialize(instrument)
+        deserialized = ArrowSerializer.deserialize(data_cls=type(instrument), batch=serialized)
+
+        assert deserialized == [instrument]
+        assert deserialized[0].lot_size is None
+
     def test_serialize_and_deserialize_pyo3_instrument_status(self):
         from nautilus_trader.core import nautilus_pyo3
 

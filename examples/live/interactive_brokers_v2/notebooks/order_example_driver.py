@@ -20,12 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common import add_strategy_from_config
 from _common import build_ib_live_node
+from _common import default_es_future_instrument_id
+from _common import default_es_put_spread_instrument_id
+from _common import default_ym_future_instrument_id
 from _common import env_bool
 from _common import env_int
-from _common import futures_contract
 from _common import ib_order_tags
 from _common import instrument_provider_config
-from _common import option_contract
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
@@ -62,27 +63,24 @@ class OrderExample:
 
 def futures_provider_config() -> object:
     return instrument_provider_config(
-        load_contracts=[futures_contract()],
-        symbol_to_mic_venue={"ES": "IB"},
+        load_ids=[
+            os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id()),
+        ],
     )
 
 
 def spread_provider_config() -> object:
-    ib = pyo3.interactive_brokers
-    leg_contracts = [
-        option_contract(local_symbol="ESM6 P6800", right=ib.IbOptionRight.PUT, strike=6800.0),
-        option_contract(local_symbol="ESM6 P6775", right=ib.IbOptionRight.PUT, strike=6775.0),
-    ]
     return instrument_provider_config(
-        load_contracts=leg_contracts,
-        symbol_to_mic_venue={"ES": "IB"},
+        load_ids=[
+            os.getenv("IB_V2_SPREAD_INSTRUMENT_ID", default_es_put_spread_instrument_id()),
+        ],
     )
 
 
 def databento_provider_config() -> object:
     return instrument_provider_config(
         load_ids=[
-            os.getenv("IB_V2_DATABENTO_INSTRUMENT_ID", "YMM6.XCBT"),
+            os.getenv("IB_V2_DATABENTO_INSTRUMENT_ID", default_ym_future_instrument_id()),
         ],
     )
 
@@ -109,8 +107,9 @@ def set_databento_request_contracts_default() -> None:
 
 
 def print_bracket_details(_node: object) -> None:
+    instrument_id = os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id())
     print(
-        "Built v2 bracket-order node and registered BracketOrderStrategy for ESM6.IB.",
+        f"Built v2 bracket-order node and registered BracketOrderStrategy for {instrument_id}.",
         flush=True,
     )
     print(
@@ -120,8 +119,9 @@ def print_bracket_details(_node: object) -> None:
 
 
 def print_market_details(_node: object) -> None:
+    instrument_id = os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id())
     print(
-        "Built v2 market-order node and registered MarketOrderStrategy for ESM6.IB.",
+        f"Built v2 market-order node and registered MarketOrderStrategy for {instrument_id}.",
         flush=True,
     )
     print(

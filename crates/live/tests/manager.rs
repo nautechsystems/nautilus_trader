@@ -54,8 +54,9 @@ use nautilus_model::{
         PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
-        OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
+        OrderEventAny, OrderFilled,
         account::state::AccountState,
+        order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -1679,7 +1680,7 @@ async fn test_reconcile_mass_status_accepted_order_canceled_at_venue() {
 
     if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
-        assert!(canceled.reconciliation != 0); // Verify reconciliation flag is set
+        assert!(canceled.reconciliation); // Verify reconciliation flag is set
     }
 }
 
@@ -2292,18 +2293,16 @@ fn create_pending_update_order(
         price,
         venue_order_id,
     );
-    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        test_account_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-    ));
+    let pending = OrderEventAny::PendingUpdate(
+        OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(test_account_id())
+            .venue_order_id(venue_order_id)
+            .build(),
+    );
     order.apply(pending).unwrap();
     order
 }
@@ -2324,18 +2323,16 @@ fn create_pending_cancel_order(
         price,
         venue_order_id,
     );
-    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        test_account_id(),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(venue_order_id),
-    ));
+    let pending = OrderEventAny::PendingCancel(
+        OrderPendingCancelSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(test_account_id())
+            .venue_order_id(venue_order_id)
+            .build(),
+    );
     order.apply(pending).unwrap();
     order
 }

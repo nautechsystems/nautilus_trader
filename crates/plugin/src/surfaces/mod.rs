@@ -28,5 +28,8 @@
 
 pub mod actor;
 pub mod book;
+pub mod commands;
 pub mod custom_data;
+pub mod instrument;
+pub mod option_chain;
 pub mod strategy;

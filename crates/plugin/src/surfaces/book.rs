@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Boundary-owned handle for [`OrderBookDeltas`].
+//! Boundary-owned handles for order book payloads.
 //!
-//! [`OrderBookDeltas`] owns a `Vec<OrderBookDelta>` and cannot be
-//! `#[repr(C)]`, so the host wraps it in a `#[repr(C)]` handle that owns
-//! the boxed value and passes a borrowed pointer to the plug-in. The
-//! plug-in's thunk dereferences the handle once and hands an
-//! `&OrderBookDeltas` to the trait method. Mirrors the ownership
-//! contract that
+//! [`OrderBook`] and [`OrderBookDeltas`] own Rust collection state and
+//! cannot be `#[repr(C)]`, so the host wraps each value in a `#[repr(C)]`
+//! handle that owns the boxed value and passes a borrowed pointer to the
+//! plug-in. The plug-in's thunk dereferences the handle once and hands an
+//! `&OrderBook` or `&OrderBookDeltas` to the trait method. The deltas
+//! handle mirrors the ownership contract that
 //! [`OrderBookDeltas_API`](nautilus_model::data::OrderBookDeltas_API)
 //! uses for the Cython FFI surface.
 
@@ -28,7 +28,46 @@
 
 use std::ops::Deref;
 
-use nautilus_model::data::OrderBookDeltas;
+use nautilus_model::{data::OrderBookDeltas, orderbook::OrderBook};
+
+/// Boundary-owned wrapper that lets [`OrderBook`] cross the cdylib FFI
+/// boundary by reference.
+///
+/// The host constructs an instance from a cloned book, hands a
+/// `*const OrderBookHandle` to the plug-in for the duration of the
+/// callback, and drops the handle when the call returns. The plug-in
+/// only borrows the handle and never owns it.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct OrderBookHandle(Box<OrderBook>);
+
+impl OrderBookHandle {
+    /// Wraps `book` in a boundary-owned handle.
+    #[must_use]
+    pub fn new(book: OrderBook) -> Self {
+        Self(Box::new(book))
+    }
+
+    /// Returns a reference to the wrapped book.
+    #[must_use]
+    pub fn book(&self) -> &OrderBook {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the inner book.
+    #[must_use]
+    pub fn into_inner(self) -> OrderBook {
+        *self.0
+    }
+}
+
+impl Deref for OrderBookHandle {
+    type Target = OrderBook;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// Boundary-owned wrapper that lets [`OrderBookDeltas`] cross the cdylib
 /// FFI boundary by reference.

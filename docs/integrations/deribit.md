@@ -123,7 +123,9 @@ Examples:
 InstrumentId.from_str("BTC-FS-25DEC26_PERP.DERIBIT")
 ```
 
-The adapter models future combos as `FuturesSpread`, priced in USD as the spread between legs.
+The adapter models future combos as `CryptoFuturesSpread`, priced in USD as the spread
+between legs, with crypto settlement currency and `is_inverse` set per the upstream
+`instrument_type`.
 
 ### Option combos
 
@@ -143,8 +145,9 @@ Examples:
 InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
 ```
 
-The adapter models option combos as `OptionSpread`, priced in the base currency under Deribit's
-inverse-option convention.
+The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under
+Deribit's inverse-option convention; fractional `size_increment` (e.g. `0.1`) is preserved
+end-to-end.
 
 ## Traded expirations
 
@@ -732,6 +735,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay (milliseconds) between retries. |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. |
 | `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe; see [Lazy‑load on subscribe](#lazy-load-on-subscribe). |
+| `transport_backend`                | `Sockudo`  | WebSocket transport backend. |
 
 #### Lazy-load on subscribe
 
@@ -760,6 +764,7 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |
 | `retry_delay_initial_ms` | `1,000`    | Initial delay (milliseconds) before retrying. |
 | `retry_delay_max_ms`     | `10,000`   | Maximum delay (milliseconds) between retries. |
+| `transport_backend`      | `Sockudo`  | WebSocket transport backend. |
 
 ### Production configuration
 

@@ -29,12 +29,15 @@
 //! - [`actor`]: [`PluginActorAdapter`] for plug-in actors.
 //! - [`strategy`]: [`PluginStrategyAdapter`] for plug-in strategies.
 //! - [`host`]: host-side `HostVTable` construction with engine callback routing.
-//! - [`commands`]: JSON command envelopes the plug-in posts to the host.
 //! - [`registry`]: the per-instance opaque context the host attaches to each
 //!   plug-in instance so host callbacks can be attributed to the calling
 //!   adapter.
 //! - [`configured`]: config-resolved adapter construction from a loaded
 //!   plug-in manifest, used by engine startup code.
+//!
+//! Execution command structs and their boundary-owned handles live at
+//! [`crate::surfaces::commands`] and are re-exported below for the
+//! historical `nautilus_plugin::bridge::*` import path.
 
 #![allow(unsafe_code)]
 
@@ -50,7 +53,6 @@ macro_rules! validated_slot {
 }
 
 pub mod actor;
-pub mod commands;
 pub mod custom_data;
 pub mod host;
 pub mod registry;
@@ -59,13 +61,19 @@ pub mod strategy;
 pub mod configured;
 
 pub use actor::PluginActorAdapter;
-pub use commands::{
-    CancelAllOrdersCommand, CancelOrderCommand, CancelOrdersCommand, CloseAllPositionsCommand,
-    ClosePositionCommand, ModifyOrderCommand, QueryAccountCommand, QueryOrderCommand,
-    SubmitOrderCommand, SubmitOrderListCommand,
-};
 pub use configured::{ConfiguredPluginEntry, configured_entry, register_manifest_custom_data};
 pub use custom_data::{PluginCustomDataValue, register_custom_data_from_manifest};
 pub use host::{host_vtable, plugin_loader};
 pub use registry::HostContextInner;
 pub use strategy::PluginStrategyAdapter;
+
+// Re-exported for backwards compatibility with the historical
+// `nautilus_plugin::bridge::*` import path. The command structs and their
+// handles live under `crate::surfaces::commands`.
+pub use crate::surfaces::commands::{
+    CancelAllOrdersCommand, CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle,
+    CancelOrdersCommand, CancelOrdersHandle, CloseAllPositionsCommand, CloseAllPositionsHandle,
+    ClosePositionCommand, ClosePositionHandle, ModifyOrderCommand, ModifyOrderHandle,
+    QueryAccountCommand, QueryAccountHandle, QueryOrderCommand, QueryOrderHandle,
+    SubmitOrderCommand, SubmitOrderHandle, SubmitOrderListCommand, SubmitOrderListHandle,
+};

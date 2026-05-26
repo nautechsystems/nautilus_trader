@@ -16,7 +16,7 @@
 //! Static manifest a plug-in returns from `nautilus_plugin_init`.
 //!
 //! The manifest enumerates every plug-point contribution the cdylib provides
-//! and points at the per-type vtables. The current unreleased v1 surface ships
+//! and points at the per-type vtables. The current unreleased surface ships
 //! custom-data, actor, and strategy plug-point families. Future released
 //! revisions should add new `Slice` fields to [`PluginManifest`] without
 //! removing existing ones.
@@ -39,8 +39,8 @@ use crate::{
 ///
 /// The host calls this once at load time with a pointer to its `HostVTable`.
 /// The plug-in returns a pointer to its `'static` [`PluginManifest`], or null
-/// to signal load failure. v1 reports null as `LoadError::NullManifest` with
-/// the plug-in path.
+/// to signal load failure. The host reports null as `LoadError::NullManifest`
+/// with the plug-in path.
 pub type PluginInitFn = unsafe extern "C" fn(host: *const HostVTable) -> *const PluginManifest;
 
 /// Versioned build identifier carried by [`PluginManifest`].
@@ -322,25 +322,31 @@ fn validate_actor_vtable(
             on_degrade,
             on_fault,
             on_time_event,
+            on_data,
+            on_instrument,
+            on_book_deltas,
+            on_book,
             on_quote,
             on_trade,
             on_bar,
-            on_book_deltas,
             on_mark_price,
             on_index_price,
             on_funding_rate,
             on_option_greeks,
+            on_option_chain,
             on_instrument_status,
             on_instrument_close,
             on_order_filled,
             on_order_canceled,
             on_signal,
+            on_historical_book_deltas,
+            on_historical_book_depth,
             on_historical_quotes,
             on_historical_trades,
             on_historical_bars,
-            on_historical_funding_rates,
             on_historical_mark_prices,
             on_historical_index_prices,
+            on_historical_funding_rates,
         ]
     );
 }
@@ -371,14 +377,18 @@ fn validate_strategy_vtable(
             on_degrade,
             on_fault,
             on_time_event,
+            on_data,
+            on_instrument,
+            on_book_deltas,
+            on_book,
             on_quote,
             on_trade,
             on_bar,
-            on_book_deltas,
             on_mark_price,
             on_index_price,
             on_funding_rate,
             on_option_greeks,
+            on_option_chain,
             on_instrument_status,
             on_instrument_close,
             on_signal,
@@ -402,12 +412,14 @@ fn validate_strategy_vtable(
             on_position_changed,
             on_position_closed,
             on_market_exit,
+            on_historical_book_deltas,
+            on_historical_book_depth,
             on_historical_quotes,
             on_historical_trades,
             on_historical_bars,
-            on_historical_funding_rates,
             on_historical_mark_prices,
             on_historical_index_prices,
+            on_historical_funding_rates,
         ]
     );
 }
@@ -1061,7 +1073,7 @@ mod tests {
         std::ptr::from_ref(&*vtable)
     }
 
-    fn actor_vtable_missing_on_quote() -> *const ActorVTable {
+    fn actor_vtable_missing_on_quote_and_on_book() -> *const ActorVTable {
         let valid = crate::surfaces::actor::actor_vtable::<ManifestTestActor>();
         // SAFETY: generated test vtable lives for the process lifetime.
         let valid = unsafe { &*valid };
@@ -1077,25 +1089,31 @@ mod tests {
             on_degrade: valid.on_degrade,
             on_fault: valid.on_fault,
             on_time_event: valid.on_time_event,
+            on_data: valid.on_data,
+            on_instrument: valid.on_instrument,
+            on_book_deltas: valid.on_book_deltas,
+            on_book: None,
             on_quote: None,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
-            on_book_deltas: valid.on_book_deltas,
             on_mark_price: valid.on_mark_price,
             on_index_price: valid.on_index_price,
             on_funding_rate: valid.on_funding_rate,
             on_option_greeks: valid.on_option_greeks,
+            on_option_chain: valid.on_option_chain,
             on_instrument_status: valid.on_instrument_status,
             on_instrument_close: valid.on_instrument_close,
             on_order_filled: valid.on_order_filled,
             on_order_canceled: valid.on_order_canceled,
             on_signal: valid.on_signal,
+            on_historical_book_deltas: valid.on_historical_book_deltas,
+            on_historical_book_depth: valid.on_historical_book_depth,
             on_historical_quotes: valid.on_historical_quotes,
             on_historical_trades: valid.on_historical_trades,
             on_historical_bars: valid.on_historical_bars,
-            on_historical_funding_rates: valid.on_historical_funding_rates,
             on_historical_mark_prices: valid.on_historical_mark_prices,
             on_historical_index_prices: valid.on_historical_index_prices,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1116,30 +1134,36 @@ mod tests {
             on_degrade: valid.on_degrade,
             on_fault: valid.on_fault,
             on_time_event: valid.on_time_event,
+            on_data: valid.on_data,
+            on_instrument: valid.on_instrument,
+            on_book_deltas: valid.on_book_deltas,
+            on_book: valid.on_book,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
-            on_book_deltas: valid.on_book_deltas,
             on_mark_price: valid.on_mark_price,
             on_index_price: valid.on_index_price,
             on_funding_rate: valid.on_funding_rate,
             on_option_greeks: valid.on_option_greeks,
+            on_option_chain: valid.on_option_chain,
             on_instrument_status: valid.on_instrument_status,
             on_instrument_close: valid.on_instrument_close,
             on_order_filled: valid.on_order_filled,
             on_order_canceled: valid.on_order_canceled,
             on_signal: valid.on_signal,
+            on_historical_book_deltas: valid.on_historical_book_deltas,
+            on_historical_book_depth: valid.on_historical_book_depth,
             on_historical_quotes: valid.on_historical_quotes,
             on_historical_trades: valid.on_historical_trades,
             on_historical_bars: valid.on_historical_bars,
-            on_historical_funding_rates: valid.on_historical_funding_rates,
             on_historical_mark_prices: valid.on_historical_mark_prices,
             on_historical_index_prices: valid.on_historical_index_prices,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
         }));
         std::ptr::from_ref(&*vtable)
     }
 
-    fn strategy_vtable_missing_on_position_closed() -> *const StrategyVTable {
+    fn strategy_vtable_missing_on_book_and_on_position_closed() -> *const StrategyVTable {
         let valid = crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>();
         // SAFETY: generated test vtable lives for the process lifetime.
         let valid = unsafe { &*valid };
@@ -1155,14 +1179,18 @@ mod tests {
             on_degrade: valid.on_degrade,
             on_fault: valid.on_fault,
             on_time_event: valid.on_time_event,
+            on_data: valid.on_data,
+            on_instrument: valid.on_instrument,
+            on_book_deltas: valid.on_book_deltas,
+            on_book: None,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
-            on_book_deltas: valid.on_book_deltas,
             on_mark_price: valid.on_mark_price,
             on_index_price: valid.on_index_price,
             on_funding_rate: valid.on_funding_rate,
             on_option_greeks: valid.on_option_greeks,
+            on_option_chain: valid.on_option_chain,
             on_instrument_status: valid.on_instrument_status,
             on_instrument_close: valid.on_instrument_close,
             on_signal: valid.on_signal,
@@ -1186,12 +1214,14 @@ mod tests {
             on_position_changed: valid.on_position_changed,
             on_position_closed: None,
             on_market_exit: valid.on_market_exit,
+            on_historical_book_deltas: valid.on_historical_book_deltas,
+            on_historical_book_depth: valid.on_historical_book_depth,
             on_historical_quotes: valid.on_historical_quotes,
             on_historical_trades: valid.on_historical_trades,
             on_historical_bars: valid.on_historical_bars,
-            on_historical_funding_rates: valid.on_historical_funding_rates,
             on_historical_mark_prices: valid.on_historical_mark_prices,
             on_historical_index_prices: valid.on_historical_index_prices,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1212,14 +1242,18 @@ mod tests {
             on_degrade: valid.on_degrade,
             on_fault: valid.on_fault,
             on_time_event: valid.on_time_event,
+            on_data: valid.on_data,
+            on_instrument: valid.on_instrument,
+            on_book_deltas: valid.on_book_deltas,
+            on_book: valid.on_book,
             on_quote: valid.on_quote,
             on_trade: valid.on_trade,
             on_bar: valid.on_bar,
-            on_book_deltas: valid.on_book_deltas,
             on_mark_price: valid.on_mark_price,
             on_index_price: valid.on_index_price,
             on_funding_rate: valid.on_funding_rate,
             on_option_greeks: valid.on_option_greeks,
+            on_option_chain: valid.on_option_chain,
             on_instrument_status: valid.on_instrument_status,
             on_instrument_close: valid.on_instrument_close,
             on_signal: valid.on_signal,
@@ -1243,12 +1277,14 @@ mod tests {
             on_position_changed: valid.on_position_changed,
             on_position_closed: valid.on_position_closed,
             on_market_exit: valid.on_market_exit,
+            on_historical_book_deltas: valid.on_historical_book_deltas,
+            on_historical_book_depth: valid.on_historical_book_depth,
             on_historical_quotes: valid.on_historical_quotes,
             on_historical_trades: valid.on_historical_trades,
             on_historical_bars: valid.on_historical_bars,
-            on_historical_funding_rates: valid.on_historical_funding_rates,
             on_historical_mark_prices: valid.on_historical_mark_prices,
             on_historical_index_prices: valid.on_historical_index_prices,
+            on_historical_funding_rates: valid.on_historical_funding_rates,
         }));
         std::ptr::from_ref(&*vtable)
     }
@@ -1291,6 +1327,7 @@ mod tests {
 
     #[rstest]
     #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
+    #[case::previous_v1(1)]
     #[case::zero(0)]
     #[case::max(u32::MAX)]
     fn mismatched_manifest_rejects(#[case] abi: u32) {
@@ -1433,10 +1470,10 @@ mod tests {
                 "BadTick",
                 custom_data_vtable_missing_schema_ipc(),
             ),
-            actors: actor_registration("BadActor", actor_vtable_missing_on_quote()),
+            actors: actor_registration("BadActor", actor_vtable_missing_on_quote_and_on_book()),
             strategies: strategy_registration(
                 "BadStrategy",
-                strategy_vtable_missing_on_position_closed(),
+                strategy_vtable_missing_on_book_and_on_position_closed(),
             ),
             ..valid_manifest()
         };
@@ -1449,7 +1486,11 @@ mod tests {
         assert!(
             rendered.contains("custom_data[0] type 'BadTick' vtable.schema_ipc must not be null")
         );
+        assert!(rendered.contains("actors[0] type 'BadActor' vtable.on_book must not be null"));
         assert!(rendered.contains("actors[0] type 'BadActor' vtable.on_quote must not be null"));
+        assert!(
+            rendered.contains("strategies[0] type 'BadStrategy' vtable.on_book must not be null")
+        );
         assert!(rendered.contains(
             "strategies[0] type 'BadStrategy' vtable.on_position_closed must not be null"
         ));

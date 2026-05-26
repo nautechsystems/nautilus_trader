@@ -1369,6 +1369,41 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_quote_ticks() == [ETHUSDT_BINANCE.id]
 
+    def test_execute_subscribe_crypto_spread_quote_ticks_with_aggregation_flag_uses_normal_subscription(
+        self,
+    ):
+        # Arrange
+        deribit_client = BacktestMarketDataClient(
+            client_id=ClientId("DERIBIT"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(deribit_client)
+        deribit_client.start()
+
+        instrument = TestInstrumentProvider.crypto_futures_spread_inverse()
+        self.data_engine.process(instrument)
+
+        subscribe = SubscribeQuoteTicks(
+            client_id=None,
+            venue=instrument.id.venue,
+            instrument_id=instrument.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"aggregate_spread_quotes": True},
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert instrument.is_spread() is True
+        assert len(instrument.legs()) == 1
+        assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_quote_ticks() == [instrument.id]
+        assert deribit_client.subscribed_quote_ticks() == [instrument.id]
+
     def test_execute_unsubscribe_quote_ticks(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

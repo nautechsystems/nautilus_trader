@@ -786,47 +786,49 @@ The adapter automatically routes requests to the correct endpoints when
 
 The BitMEX data client provides the following configuration options:
 
-| Option                            | Default  | Description |
-|-----------------------------------|----------|-------------|
-| `api_key`                         | `None`   | Optional API key; if `None`, loaded from the environment selected by `environment`. |
-| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
-| `environment`                     | `None`   | Environment enum (`MAINNET` or `TESTNET`). |
-| `base_url_http`                   | `None`   | Override for the REST base URL (defaults to production). |
-| `base_url_ws`                     | `None`   | Override for the WebSocket base URL (defaults to production). |
-| `http_timeout_secs`               | `60`     | Request timeout applied to HTTP calls. |
-| `max_retries`                     | `3`      | Maximum retry attempts for HTTP calls. |
-| `retry_delay_initial_ms`          | `1,000`  | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`              | `10,000` | Maximum backoff delay (milliseconds) between retries. |
-| `recv_window_ms`                  | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
-| `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
-| `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
-| `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `proxy_url`                       | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
+| Option                             | Default   | Description |
+|------------------------------------|-----------|-------------|
+| `api_key`                          | `None`    | Optional API key; if `None`, loaded from the environment selected by `environment`. |
+| `api_secret`                       | `None`    | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
+| `environment`                      | `None`    | Environment enum (`MAINNET` or `TESTNET`). |
+| `base_url_http`                    | `None`    | Override for the REST base URL (defaults to production). |
+| `base_url_ws`                      | `None`    | Override for the WebSocket base URL (defaults to production). |
+| `http_timeout_secs`                | `60`      | Request timeout applied to HTTP calls. |
+| `max_retries`                      | `3`       | Maximum retry attempts for HTTP calls. |
+| `retry_delay_initial_ms`           | `1,000`   | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`               | `10,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `recv_window_ms`                   | `10,000`  | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes. |
+| `max_requests_per_second`          | `10`      | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`          | `120`     | Rolling minute rate limit enforced by the adapter for REST calls. |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend. |
 
 ### Execution client configuration options
 
 The BitMEX execution client provides the following configuration options:
 
-| Option                   | Default  | Description |
-|--------------------------|----------|-------------|
-| `api_key`                | `None`   | Optional API key; if `None`, loaded from the environment selected by `environment`. |
-| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
-| `environment`            | `None`   | Environment enum (`MAINNET` or `TESTNET`). |
-| `base_url_http`          | `None`   | Override for the REST base URL (defaults to production). |
-| `base_url_ws`            | `None`   | Override for the WebSocket base URL (defaults to production). |
-| `http_timeout_secs`      | `60`     | Request timeout applied to HTTP calls. |
-| `max_retries`            | `3`      | Maximum retry attempts for HTTP calls. |
-| `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`     | `10,000` | Maximum backoff delay (milliseconds) between retries. |
-| `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
-| `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
-| `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `deadmans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
-| `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
-| `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
-| `proxy_url`              | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
-| `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
-| `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
+| Option                         | Default   | Description |
+|--------------------------------|-----------|-------------|
+| `api_key`                      | `None`    | Optional API key; if `None`, loaded from the environment selected by `environment`. |
+| `api_secret`                   | `None`    | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
+| `environment`                  | `None`    | Environment enum (`MAINNET` or `TESTNET`). |
+| `base_url_http`                | `None`    | Override for the REST base URL (defaults to production). |
+| `base_url_ws`                  | `None`    | Override for the WebSocket base URL (defaults to production). |
+| `http_timeout_secs`            | `60`      | Request timeout applied to HTTP calls. |
+| `max_retries`                  | `3`       | Maximum retry attempts for HTTP calls. |
+| `retry_delay_initial_ms`       | `1,000`   | Initial backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`           | `10,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `recv_window_ms`               | `10,000`  | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
+| `max_requests_per_second`      | `10`      | Burst rate limit enforced by the adapter for REST calls. |
+| `max_requests_per_minute`      | `120`     | Rolling minute rate limit enforced by the adapter for REST calls. |
+| `deadmans_switch_timeout_secs` | `None`    | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
+| `canceller_pool_size`          | `None`    | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
+| `submitter_pool_size`          | `None`    | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
+| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `submitter_proxy_urls`         | `None`    | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
+| `canceller_proxy_urls`         | `None`    | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
+| `transport_backend`            | `Sockudo` | WebSocket transport backend. |
 
 ### Configuration examples
 

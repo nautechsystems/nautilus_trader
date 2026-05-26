@@ -595,21 +595,6 @@ impl RiskEngine {
             return;
         }
 
-        let instrument_exists = {
-            let cache = self.cache.borrow();
-            cache.instrument(&command.instrument_id).cloned()
-        };
-
-        let instrument = if let Some(instrument) = instrument_exists {
-            instrument
-        } else {
-            self.deny_command(
-                TradingCommand::SubmitOrderList(command.clone()),
-                &format!("no instrument found for {}", command.instrument_id),
-            );
-            return; // Denied
-        };
-
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
@@ -623,13 +608,46 @@ impl RiskEngine {
             return; // Denied
         }
 
+        // Per-order checks use each order's own instrument; the cumulative
+        // risk check uses the representative. See docs/concepts/orders.md
+        // (Order lists -> Caveats for mixed-instrument lists).
+        let mut instruments: AHashMap<InstrumentId, InstrumentAny> = AHashMap::new();
+
         for order in &orders {
-            if !self.check_order(&instrument, order) {
+            let instrument_id = order.instrument_id();
+            if instruments.contains_key(&instrument_id) {
+                continue;
+            }
+            let resolved = self.cache.borrow().instrument(&instrument_id).cloned();
+            match resolved {
+                Some(instrument) => {
+                    instruments.insert(instrument_id, instrument);
+                }
+                None => {
+                    self.deny_command(
+                        TradingCommand::SubmitOrderList(command),
+                        &format!("no instrument found for {instrument_id}"),
+                    );
+                    return; // Denied
+                }
+            }
+        }
+
+        for order in &orders {
+            let instrument = instruments
+                .get(&order.instrument_id())
+                .expect("instrument resolved above");
+            if !self.check_order(instrument, order) {
                 return; // Denied
             }
         }
 
-        if !self.check_orders_risk(&instrument, &orders) {
+        let representative = instruments
+            .get(&command.instrument_id)
+            .expect("representative instrument resolved above")
+            .clone();
+
+        if !self.check_orders_risk(&representative, &orders) {
             self.deny_order_list(
                 &orders,
                 &format!("OrderList {} DENIED", command.order_list.id),
@@ -637,7 +655,7 @@ impl RiskEngine {
             return; // Denied
         }
 
-        self.execution_gateway(&instrument, TradingCommand::SubmitOrderList(command));
+        self.execution_gateway(&representative, TradingCommand::SubmitOrderList(command));
     }
 
     fn handle_modify_order(&mut self, command: ModifyOrder) {
@@ -1750,23 +1768,22 @@ impl RiskEngine {
                         );
 
                         for order in &orders {
-                            if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
+                            let order_instrument_id = order.instrument_id();
+                            if order.is_buy() && self.portfolio.is_net_long(&order_instrument_id) {
                                 self.deny_order_list(
                                     &orders,
                                     &format!(
-                                        "BUY when TradingState::REDUCING and LONG {}",
-                                        instrument.id()
+                                        "BUY when TradingState::REDUCING and LONG {order_instrument_id}",
                                     ),
                                 );
                                 return;
                             } else if order.is_sell()
-                                && self.portfolio.is_net_short(&instrument.id())
+                                && self.portfolio.is_net_short(&order_instrument_id)
                             {
                                 self.deny_order_list(
                                     &orders,
                                     &format!(
-                                        "SELL when TradingState::REDUCING and SHORT {}",
-                                        instrument.id()
+                                        "SELL when TradingState::REDUCING and SHORT {order_instrument_id}",
                                     ),
                                 );
                                 return;

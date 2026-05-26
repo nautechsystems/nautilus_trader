@@ -16,6 +16,7 @@
 import pytest
 
 from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.adapters.databento import loaders as loaders_module
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import USD
@@ -295,6 +296,29 @@ def test_loader_mbp_1() -> None:
     assert quote.ask_size == Quantity.from_int(11)
     assert quote.ts_event == 1609160400006136329
     assert quote.ts_init == 1609160400006136329
+
+
+def test_loader_legacy_cython_drops_capsule(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    loader = _make_loader()
+    path = DATABENTO_RUST_TEST_DATA_DIR / "test_data.mbp-1.dbn.zst"
+    drop_call_count = 0
+    original_drop = loaders_module.drop_cvec_pycapsule
+
+    def counting_drop(capsule) -> None:
+        nonlocal drop_call_count
+        drop_call_count += 1
+        original_drop(capsule)
+
+    monkeypatch.setattr(loaders_module, "drop_cvec_pycapsule", counting_drop)
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], QuoteTick)
+    assert drop_call_count == 1
 
 
 def test_loader_mbp_1_pyo3() -> None:

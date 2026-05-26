@@ -694,6 +694,7 @@ The product types for each client must be specified in the configurations.
 | `ws_heartbeat_secs`                | `30`      | WebSocket heartbeat interval in seconds.                           |
 | `max_requests_per_second`          | `None`    | Override rate limit; default is 5 req/s.                           |
 | `validate_l3_checksum`             | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.          |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                       |
 
 ### Execution client configuration options
 
@@ -719,6 +720,7 @@ The product types for each client must be specified in the configurations.
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports.  |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                 |
 | `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.           |
+| `transport_backend`             | `Sockudo` | WebSocket transport backend.                                           |
 
 For spot margin, `default_leverage` applies when an order has no per-order leverage
 param. `margin_balance_asset` only changes the `TradeBalance` summary denomination;

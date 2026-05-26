@@ -992,9 +992,25 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
                         .await
                 }
+                InstrumentAny::CryptoFuturesSpread(instrument) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "CRYPTO_FUTURES_SPREAD",
+                        Box::new(instrument),
+                    )
+                    .await
+                }
                 InstrumentAny::CryptoOption(instrument) => {
                     DatabaseQueries::add_instrument(pool, "CRYPTO_OPTION", Box::new(instrument))
                         .await
+                }
+                InstrumentAny::CryptoOptionSpread(instrument) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "CRYPTO_OPTION_SPREAD",
+                        Box::new(instrument),
+                    )
+                    .await
                 }
                 InstrumentAny::CryptoPerpetual(instrument) => {
                     DatabaseQueries::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument))

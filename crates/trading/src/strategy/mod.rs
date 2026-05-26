@@ -205,6 +205,18 @@ pub trait Strategy: DataActor {
             }
         }
 
+        let first_venue = orders[0].instrument_id().venue;
+        for order in &orders {
+            if order.instrument_id().venue != first_venue {
+                anyhow::bail!(
+                    "OrderList denied: orders must share the same venue; \
+                     expected {first_venue}, found {} on {}",
+                    order.instrument_id().venue,
+                    order.client_order_id(),
+                );
+            }
+        }
+
         let should_deny = {
             let core = self.core_mut();
             let tag = core.market_exit_tag;
@@ -2031,7 +2043,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2047,8 +2059,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
             causation_id: None,
         })
     }
@@ -2064,7 +2076,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2080,7 +2092,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
+            reconciliation: false,
             causation_id: None,
         })
     }
@@ -2323,8 +2335,8 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
-            reconciliation: 0,
-            due_post_only: 0,
+            reconciliation: false,
+            due_post_only: false,
             causation_id: None,
         });
 
@@ -3963,6 +3975,47 @@ mod tests {
                 .contains("expected INITIALIZED")
         );
         assert!(event_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_submit_order_list_rejects_mixed_venues_with_friendly_error() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+
+        let binance_order = make_initialized_market_order("O-MIXED-VENUE-001");
+        let bybit_order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("TEST-001"),
+            InstrumentId::from("BTCUSDT.BYBIT"),
+            ClientOrderId::from("O-MIXED-VENUE-002"),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let result = strategy.submit_order_list(vec![binance_order, bybit_order], None, None, None);
+
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("OrderList denied: orders must share the same venue"),
+            "unexpected error: {msg}",
+        );
+        assert!(msg.contains("BINANCE"), "expected BINANCE in error: {msg}");
+        assert!(msg.contains("BYBIT"), "expected BYBIT in error: {msg}");
     }
 
     #[rstest]

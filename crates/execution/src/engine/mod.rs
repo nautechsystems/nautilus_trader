@@ -1847,10 +1847,13 @@ impl ExecutionEngine {
 
         let order_venue = order.instrument_id().venue;
         let client_venue = client.venue();
-        if order_venue != client_venue {
+        if !client.handles_order_venue(order_venue) {
+            let client_id = client.client_id();
             self.deny_order(
                 &order,
-                &format!("Order venue {order_venue} does not match client venue {client_venue}"),
+                &format!(
+                    "Client {client_id} does not handle order venue {order_venue} (client venue {client_venue})"
+                ),
             );
             return;
         }
@@ -1909,12 +1912,34 @@ impl ExecutionEngine {
 
         let order_list_venue = cmd.instrument_id.venue;
         let client_venue = client.venue();
-        if order_list_venue != client_venue {
+        if !client.handles_order_venue(order_list_venue) {
+            let client_id = client.client_id();
+
             for order in &orders {
                 self.deny_order(
                     order,
-                    &format!("Order list venue {order_list_venue} does not match client venue {client_venue}"),
+                    &format!(
+                        "Client {client_id} does not handle order list venue {order_list_venue} (client venue {client_venue})"
+                    ),
                 );
+            }
+            return;
+        }
+
+        let is_uniform_instrument = orders
+            .iter()
+            .all(|o| o.instrument_id() == cmd.instrument_id);
+
+        if let Some(position_id) = cmd.position_id
+            && !is_uniform_instrument
+        {
+            let reason = format!(
+                "`position_id` {position_id} is not valid for a mixed-instrument order list; \
+                 a position belongs to a single instrument",
+            );
+
+            for order in &orders {
+                self.deny_order(order, &reason);
             }
             return;
         }
@@ -1949,10 +1974,9 @@ impl ExecutionEngine {
         }
 
         if self.config.manage_own_order_books {
-            let mut own_book = self.get_or_init_own_order_book(&cmd.instrument_id);
-
             for order in &orders {
                 if should_handle_own_book_order(order) {
+                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
                     own_book.add(order.to_own_book_order());
                 }
             }
@@ -3007,11 +3031,10 @@ impl ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
-        identifiers::{AccountId, ClientOrderId, TradeId, TraderId, VenueOrderId},
+        enums::{LiquiditySide, OrderSide, PositionSideSpecified},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
         types::Price,
     };
@@ -3139,27 +3162,21 @@ mod tests {
         quantity: Quantity,
     ) -> Position {
         let client_order_id = ClientOrderId::from(format!("O-{position_id}"));
-        let fill = OrderFilled::new(
-            TraderId::default(),
-            strategy_id,
-            instrument.id(),
-            client_order_id,
-            VenueOrderId::from(format!("V-{position_id}")),
-            account_id,
-            TradeId::new(format!("T-{position_id}")),
-            order_side,
-            OrderType::Market,
-            quantity,
-            Price::from_str("1.0").unwrap(),
-            instrument.quote_currency(),
-            LiquiditySide::Maker,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            false,
-            Some(position_id),
-            Some(Money::from("2 USD")),
-        );
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from(format!("V-{position_id}")))
+            .account_id(account_id)
+            .trade_id(TradeId::new(format!("T-{position_id}")))
+            .order_side(order_side)
+            .last_qty(quantity)
+            .last_px(Price::from("1.0"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .position_id(position_id)
+            .commission(Money::from("2 USD"))
+            .build();
 
         Position::new(instrument, fill)
     }

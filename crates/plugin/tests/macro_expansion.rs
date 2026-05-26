@@ -24,7 +24,15 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nautilus_model::{data::QuoteTick, events::PositionOpened};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{
+    data::QuoteTick,
+    enums::{OrderSide, TimeInForce},
+    events::PositionOpened,
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+    orders::{MarketOrder, OrderAny},
+    types::Quantity,
+};
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
@@ -32,6 +40,12 @@ use nautilus_plugin::{
     manifest::PluginManifest,
     surfaces::{
         actor::PluginActor,
+        commands::{
+            CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle, CancelOrdersHandle,
+            CloseAllPositionsHandle, ClosePositionHandle, ModifyOrderCommand, ModifyOrderHandle,
+            QueryAccountHandle, QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle,
+            SubmitOrderListHandle,
+        },
         custom_data::{CustomDataHandle, MetadataEntry, PluginCustomData, custom_data_vtable},
         strategy::PluginStrategy,
     },
@@ -203,12 +217,38 @@ impl PluginStrategy for TestStrategy {
         // SAFETY: the host vtable lives for the strategy's lifetime per
         // the plug-in contract.
         let host = unsafe { &*self.host };
-        let cmd = BorrowedStr::from_str(r#"{"kind":"noop"}"#);
-        // SAFETY: ctx is the value the host supplied at create time.
-        let r = unsafe { (host.submit_order)(self.ctx, cmd) };
+        let handle = SubmitOrderHandle::new(test_market_submit_order_command());
+        // SAFETY: ctx is the value the host supplied at create time;
+        // handle outlives the call.
+        let r = unsafe { (host.submit_order)(self.ctx, &raw const handle) };
         r.into_result()
             .map_err(|e| anyhow::anyhow!(e.message_string()))
     }
+}
+
+fn test_market_submit_order_command() -> SubmitOrderCommand {
+    let order = OrderAny::Market(MarketOrder::new(
+        TraderId::from("TRADER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("ETH-USDT.BINANCE"),
+        ClientOrderId::from("O-1"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    SubmitOrderCommand::new(order, None, None, None)
 }
 
 // Emit the plug-in entry symbol and manifest using the macro.
@@ -405,7 +445,7 @@ const TEST_HOST_SENTINEL_VALUE: u64 = 0xC0DE_BABE_F00D_BEEFu64;
 
 unsafe extern "C" fn test_submit_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderHandle,
 ) -> PluginResult<()> {
     TEST_HOST_SUBMIT_COUNT.fetch_add(1, Ordering::SeqCst);
     TEST_HOST_LAST_SUBMIT_CTX.store(ctx.cast_mut(), Ordering::SeqCst);
@@ -415,7 +455,7 @@ unsafe extern "C" fn test_submit_order(
 
 unsafe extern "C" fn test_cancel_order(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrderHandle,
 ) -> PluginResult<()> {
     TEST_HOST_CANCEL_COUNT.fetch_add(1, Ordering::SeqCst);
     PluginResult::Ok(())
@@ -423,9 +463,58 @@ unsafe extern "C" fn test_cancel_order(
 
 unsafe extern "C" fn test_modify_order(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ModifyOrderHandle,
 ) -> PluginResult<()> {
     TEST_HOST_MODIFY_COUNT.fetch_add(1, Ordering::SeqCst);
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_submit_order_list_stub(
+    _ctx: *const HostContext,
+    _command: *const SubmitOrderListHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_cancel_orders_stub(
+    _ctx: *const HostContext,
+    _command: *const CancelOrdersHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_cancel_all_orders_stub(
+    _ctx: *const HostContext,
+    _command: *const CancelAllOrdersHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_close_position_stub(
+    _ctx: *const HostContext,
+    _command: *const ClosePositionHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_close_all_positions_stub(
+    _ctx: *const HostContext,
+    _command: *const CloseAllPositionsHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_query_account_stub(
+    _ctx: *const HostContext,
+    _command: *const QueryAccountHandle,
+) -> PluginResult<()> {
+    PluginResult::Ok(())
+}
+
+unsafe extern "C" fn test_query_order_stub(
+    _ctx: *const HostContext,
+    _command: *const QueryOrderHandle,
+) -> PluginResult<()> {
     PluginResult::Ok(())
 }
 
@@ -456,13 +545,13 @@ static TEST_HOST: HostVTable = HostVTable {
     submit_order: test_submit_order,
     cancel_order: test_cancel_order,
     modify_order: test_modify_order,
-    submit_order_list: test_submit_order,
-    cancel_orders: test_submit_order,
-    cancel_all_orders: test_submit_order,
-    close_position: test_submit_order,
-    close_all_positions: test_submit_order,
-    query_account: test_submit_order,
-    query_order: test_submit_order,
+    submit_order_list: test_submit_order_list_stub,
+    cancel_orders: test_cancel_orders_stub,
+    cancel_all_orders: test_cancel_all_orders_stub,
+    close_position: test_close_position_stub,
+    close_all_positions: test_close_all_positions_stub,
+    query_account: test_query_account_stub,
+    query_order: test_query_order_stub,
 };
 
 unsafe extern "C" {
@@ -605,13 +694,13 @@ fn nautilus_plugin_init_rejects_abi_mismatch(#[case] abi: u32) {
         submit_order: test_submit_order,
         cancel_order: test_cancel_order,
         modify_order: test_modify_order,
-        submit_order_list: test_submit_order,
-        cancel_orders: test_submit_order,
-        cancel_all_orders: test_submit_order,
-        close_position: test_submit_order,
-        close_all_positions: test_submit_order,
-        query_account: test_submit_order,
-        query_order: test_submit_order,
+        submit_order_list: test_submit_order_list_stub,
+        cancel_orders: test_cancel_orders_stub,
+        cancel_all_orders: test_cancel_all_orders_stub,
+        close_position: test_close_position_stub,
+        close_all_positions: test_close_all_positions_stub,
+        query_account: test_query_account_stub,
+        query_order: test_query_order_stub,
     };
     let m = unsafe { nautilus_plugin_init(&raw const bad_host) };
     assert!(m.is_null(), "init should reject ABI {abi}");
@@ -1124,24 +1213,39 @@ fn custom_data_vtable_schema_ipc_returns_registered_schema() {
 
 #[rstest]
 fn host_vtable_cancel_order_routes_to_bound_handler() {
+    use nautilus_model::identifiers::ClientOrderId;
+
     TEST_HOST_CANCEL_COUNT.store(0, Ordering::SeqCst);
     let host = &TEST_HOST;
     let ctx: *const HostContext = std::ptr::null();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"cancel"}"#);
+    let cmd = CancelOrderHandle::new(CancelOrderCommand::new(
+        ClientOrderId::from("O-1"),
+        None,
+        None,
+    ));
     // SAFETY: cmd outlives the call; ctx is not dereferenced by the test stub.
-    let r = unsafe { (host.cancel_order)(ctx, cmd) };
+    let r = unsafe { (host.cancel_order)(ctx, &raw const cmd) };
     r.into_result().expect("cancel_order");
     assert_eq!(TEST_HOST_CANCEL_COUNT.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]
 fn host_vtable_modify_order_routes_to_bound_handler() {
+    use nautilus_model::identifiers::ClientOrderId;
+
     TEST_HOST_MODIFY_COUNT.store(0, Ordering::SeqCst);
     let host = &TEST_HOST;
     let ctx: *const HostContext = std::ptr::null();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"modify"}"#);
+    let cmd = ModifyOrderHandle::new(ModifyOrderCommand::new(
+        ClientOrderId::from("O-1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
     // SAFETY: cmd outlives the call; ctx is not dereferenced by the test stub.
-    let r = unsafe { (host.modify_order)(ctx, cmd) };
+    let r = unsafe { (host.modify_order)(ctx, &raw const cmd) };
     r.into_result().expect("modify_order");
     assert_eq!(TEST_HOST_MODIFY_COUNT.load(Ordering::SeqCst), 1);
 }

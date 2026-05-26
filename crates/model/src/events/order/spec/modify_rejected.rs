@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(event.reason, Ustr::from("TEST"));
         assert_eq!(event.ts_event, UnixNanos::default());
         assert_eq!(event.ts_init, UnixNanos::default());
-        assert_eq!(event.reconciliation, 0);
+        assert!(!event.reconciliation);
         assert_eq!(event.venue_order_id, None);
         assert_eq!(event.account_id, None);
     }
@@ -109,8 +109,7 @@ mod tests {
         assert_eq!(event.reason, Ustr::from("ORDER_DOES_NOT_EXIST"));
         assert_eq!(event.venue_order_id, Some(VenueOrderId::from("V-1")));
         assert_eq!(event.account_id, Some(AccountId::from("SIM-002")));
-        // Production constructor stores the bool as a u8; assert against the encoded value.
-        assert_eq!(event.reconciliation, 1);
+        assert!(event.reconciliation);
         assert_eq!(event.trader_id, TraderId::test_default());
     }
 

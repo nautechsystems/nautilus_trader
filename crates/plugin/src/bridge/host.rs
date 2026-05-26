@@ -49,16 +49,17 @@ use crate::{
     boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice},
     bridge::{
         actor::PluginActorAdapter,
-        commands::{
-            CancelAllOrdersCommand, CancelOrderCommand, CancelOrdersCommand,
-            CloseAllPositionsCommand, ClosePositionCommand, ModifyOrderCommand,
-            QueryAccountCommand, QueryOrderCommand, SubmitOrderCommand, SubmitOrderListCommand,
-        },
         registry::{HostContextInner, host_context_inner},
         strategy::PluginStrategyAdapter,
     },
     host::{HostContext, HostLogLevel, HostVTable},
     loader::PluginLoader,
+    normalize::BoundaryCommandHandle,
+    surfaces::commands::{
+        CancelAllOrdersHandle, CancelOrderHandle, CancelOrdersHandle, CloseAllPositionsHandle,
+        ClosePositionHandle, ModifyOrderHandle, QueryAccountHandle, QueryOrderHandle,
+        SubmitOrderHandle, SubmitOrderListHandle,
+    },
 };
 
 /// Returns the process-wide `HostVTable` configured for the live node.
@@ -764,167 +765,210 @@ unsafe extern "C" fn host_cancel_timer(
 
 unsafe extern "C" fn host_submit_order(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const SubmitOrderHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "submit_order", |adapter, json| {
-        let cmd: SubmitOrderCommand = serde_json::from_str(json)?;
-        Strategy::submit_order(
-            adapter,
-            cmd.order,
-            cmd.position_id,
-            cmd.client_id,
-            cmd.params,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "submit_order", |adapter, cmd| {
+            Strategy::submit_order(
+                adapter,
+                cmd.order,
+                cmd.position_id,
+                cmd.client_id,
+                cmd.params,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_cancel_order(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const CancelOrderHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "cancel_order", |adapter, json| {
-        let cmd: CancelOrderCommand = serde_json::from_str(json)?;
-        Strategy::cancel_order(adapter, cmd.client_order_id, cmd.client_id, cmd.params)
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "cancel_order", |adapter, cmd| {
+            Strategy::cancel_order(adapter, cmd.client_order_id, cmd.client_id, cmd.params)
+        })
+    }
 }
 
 unsafe extern "C" fn host_modify_order(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const ModifyOrderHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "modify_order", |adapter, json| {
-        let cmd: ModifyOrderCommand = serde_json::from_str(json)?;
-        Strategy::modify_order(
-            adapter,
-            cmd.client_order_id,
-            cmd.quantity,
-            cmd.price,
-            cmd.trigger_price,
-            cmd.client_id,
-            cmd.params,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "modify_order", |adapter, cmd| {
+            Strategy::modify_order(
+                adapter,
+                cmd.client_order_id,
+                cmd.quantity,
+                cmd.price,
+                cmd.trigger_price,
+                cmd.client_id,
+                cmd.params,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_submit_order_list(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const SubmitOrderListHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "submit_order_list", |adapter, json| {
-        let cmd: SubmitOrderListCommand = serde_json::from_str(json)?;
-        Strategy::submit_order_list(
-            adapter,
-            cmd.orders,
-            cmd.position_id,
-            cmd.client_id,
-            cmd.params,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "submit_order_list", |adapter, cmd| {
+            Strategy::submit_order_list(
+                adapter,
+                cmd.orders,
+                cmd.position_id,
+                cmd.client_id,
+                cmd.params,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_cancel_orders(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const CancelOrdersHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "cancel_orders", |adapter, json| {
-        let cmd: CancelOrdersCommand = serde_json::from_str(json)?;
-        Strategy::cancel_orders(adapter, cmd.client_order_ids, cmd.client_id, cmd.params)
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "cancel_orders", |adapter, cmd| {
+            Strategy::cancel_orders(adapter, cmd.client_order_ids, cmd.client_id, cmd.params)
+        })
+    }
 }
 
 unsafe extern "C" fn host_cancel_all_orders(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const CancelAllOrdersHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "cancel_all_orders", |adapter, json| {
-        let cmd: CancelAllOrdersCommand = serde_json::from_str(json)?;
-        Strategy::cancel_all_orders(
-            adapter,
-            cmd.instrument_id,
-            cmd.order_side,
-            cmd.client_id,
-            cmd.params,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "cancel_all_orders", |adapter, cmd| {
+            Strategy::cancel_all_orders(
+                adapter,
+                cmd.instrument_id,
+                cmd.order_side,
+                cmd.client_id,
+                cmd.params,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_close_position(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const ClosePositionHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "close_position", |adapter, json| {
-        let cmd: ClosePositionCommand = serde_json::from_str(json)?;
-        let position = {
-            let cache = adapter.cache();
-            cache.position(&cmd.position_id).map(|p| p.cloned())
-        };
-        let position = position
-            .ok_or_else(|| anyhow::anyhow!("position '{}' not found in cache", cmd.position_id))?;
-        Strategy::close_position(
-            adapter,
-            &position,
-            cmd.client_id,
-            cmd.tags,
-            cmd.time_in_force,
-            cmd.reduce_only,
-            cmd.quote_quantity,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "close_position", |adapter, cmd| {
+            let position = {
+                let cache = adapter.cache();
+                cache.position(&cmd.position_id).map(|p| p.cloned())
+            };
+            let position = position.ok_or_else(|| {
+                anyhow::anyhow!("position '{}' not found in cache", cmd.position_id)
+            })?;
+            Strategy::close_position(
+                adapter,
+                &position,
+                cmd.client_id,
+                cmd.tags,
+                cmd.time_in_force,
+                cmd.reduce_only,
+                cmd.quote_quantity,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_close_all_positions(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const CloseAllPositionsHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "close_all_positions", |adapter, json| {
-        let cmd: CloseAllPositionsCommand = serde_json::from_str(json)?;
-        Strategy::close_all_positions(
-            adapter,
-            cmd.instrument_id,
-            cmd.position_side,
-            cmd.client_id,
-            cmd.tags,
-            cmd.time_in_force,
-            cmd.reduce_only,
-            cmd.quote_quantity,
-        )
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "close_all_positions", |adapter, cmd| {
+            Strategy::close_all_positions(
+                adapter,
+                cmd.instrument_id,
+                cmd.position_side,
+                cmd.client_id,
+                cmd.tags,
+                cmd.time_in_force,
+                cmd.reduce_only,
+                cmd.quote_quantity,
+            )
+        })
+    }
 }
 
 unsafe extern "C" fn host_query_account(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const QueryAccountHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "query_account", |adapter, json| {
-        let cmd: QueryAccountCommand = serde_json::from_str(json)?;
-        Strategy::query_account(adapter, cmd.account_id, cmd.client_id, cmd.params)
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "query_account", |adapter, cmd| {
+            Strategy::query_account(adapter, cmd.account_id, cmd.client_id, cmd.params)
+        })
+    }
 }
 
 unsafe extern "C" fn host_query_order(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const QueryOrderHandle,
 ) -> PluginResult<()> {
-    dispatch_command(ctx, command_json, "query_order", |adapter, json| {
-        let cmd: QueryOrderCommand = serde_json::from_str(json)?;
-        let order = {
-            let cache = adapter.cache();
-            cache.order(&cmd.client_order_id).map(|o| o.cloned())
-        };
-        let order = order
-            .ok_or_else(|| anyhow::anyhow!("order '{}' not found in cache", cmd.client_order_id))?;
-        Strategy::query_order(adapter, &order, cmd.client_id, cmd.params)
-    })
+    // SAFETY: plug-in keeps the handle alive for the duration of the call.
+    unsafe {
+        dispatch_handle(ctx, command, "query_order", |adapter, cmd| {
+            let order = {
+                let cache = adapter.cache();
+                cache.order(&cmd.client_order_id).map(|o| o.cloned())
+            };
+            let order = order.ok_or_else(|| {
+                anyhow::anyhow!("order '{}' not found in cache", cmd.client_order_id)
+            })?;
+            Strategy::query_order(adapter, &order, cmd.client_id, cmd.params)
+        })
+    }
 }
 
-fn dispatch_command(
+// Resolves the calling strategy adapter from `ctx` and invokes `f` with a
+// borrowed reference to the plug-in-owned handle. Used by the boundary-owned
+// command slots (`cancel_order`, `modify_order`, etc.) that take
+// `*const XHandle` rather than JSON. The handle stays owned by the plug-in
+// for the duration of the call; the host only borrows it.
+//
+// SAFETY contract for callers: `command` must be a non-null pointer to a
+// live handle whose layout matches the host's view of `H`. v1 relies on
+// operator-side pinning (plug-in cdylibs rebuilt to match each Nautilus
+// version) to enforce this; `PluginBuildId` is recorded as a diagnostic
+// in load errors but is not enforced by the loader. A plug-in built
+// against a mismatched toolchain that still advertises the right ABI
+// version will deref through this path with whatever layout it
+// happened to compile against.
+unsafe fn dispatch_handle<H>(
     ctx: *const HostContext,
-    command_json: BorrowedStr<'_>,
+    command: *const H,
     method: &'static str,
-    f: impl FnOnce(&mut PluginStrategyAdapter, &str) -> anyhow::Result<()>,
-) -> PluginResult<()> {
-    // SAFETY: command_json borrows storage that is live across the call.
-    let json = unsafe { command_json.as_str() };
+    f: impl FnOnce(&mut PluginStrategyAdapter, H::Command) -> anyhow::Result<()>,
+) -> PluginResult<()>
+where
+    H: BoundaryCommandHandle,
+{
+    if command.is_null() {
+        return PluginResult::Err(PluginError::new(
+            PluginErrorCode::InvalidArgument,
+            format!("{method} called with null command handle"),
+        ));
+    }
 
     // SAFETY: caller (the plug-in) round-trips the same ctx the host handed
     // back from `PluginStrategyAdapter::new`.
@@ -959,7 +1003,11 @@ fn dispatch_command(
         ));
     };
 
-    match f(&mut adapter_ref, json) {
+    // SAFETY: command is non-null (checked above) and the plug-in commits
+    // to keeping the handle live for the duration of this call.
+    let handle = unsafe { &*command };
+    let command = handle.boundary_normalized_command();
+    match f(&mut adapter_ref, command) {
         Ok(()) => PluginResult::Ok(()),
         Err(e) => PluginResult::Err(PluginError::new(PluginErrorCode::Generic, e.to_string())),
     }
@@ -1279,9 +1327,45 @@ fn nonzero_unix_nanos(value: u64) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::{OrderSide, TimeInForce},
+        identifiers::{
+            ClientOrderId as TestClientOrderId, InstrumentId as TestInstrumentId, StrategyId,
+            TraderId,
+        },
+        orders::{MarketOrder, OrderAny},
+        types::Quantity,
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::surfaces::commands::{CancelOrderCommand, ModifyOrderCommand, SubmitOrderCommand};
+
+    fn make_market_submit_command() -> SubmitOrderCommand {
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            TestInstrumentId::from("ETH-USDT.BINANCE"),
+            TestClientOrderId::from("O-1"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        SubmitOrderCommand::new(order, None, None, None)
+    }
 
     #[rstest]
     fn host_vtable_carries_compiled_abi() {
@@ -1350,9 +1434,9 @@ mod tests {
         let p = host_vtable();
         // SAFETY: pointer is to a static OnceLock-backed HostVTable.
         let v = unsafe { &*p };
-        let payload = BorrowedStr::from_str("{}");
-        // SAFETY: passes null ctx; the thunk handles it.
-        let r = unsafe { (v.submit_order)(std::ptr::null(), payload) };
+        let handle = SubmitOrderHandle::new(make_market_submit_command());
+        // SAFETY: passes null ctx; handle is live.
+        let r = unsafe { (v.submit_order)(std::ptr::null(), &raw const handle) };
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::InvalidArgument);
         assert!(err.message_string().contains("null HostContext"));
@@ -1360,26 +1444,65 @@ mod tests {
 
     #[rstest]
     fn host_cancel_order_rejects_null_ctx() {
+        use nautilus_model::identifiers::ClientOrderId;
+
         let p = host_vtable();
         // SAFETY: see above.
         let v = unsafe { &*p };
-        let payload = BorrowedStr::from_str("{}");
-        // SAFETY: passes null ctx.
-        let r = unsafe { (v.cancel_order)(std::ptr::null(), payload) };
+        let handle = CancelOrderHandle::new(CancelOrderCommand::new(
+            ClientOrderId::from("O-1"),
+            None,
+            None,
+        ));
+        // SAFETY: passes null ctx; handle is live.
+        let r = unsafe { (v.cancel_order)(std::ptr::null(), &raw const handle) };
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::InvalidArgument);
     }
 
     #[rstest]
     fn host_modify_order_rejects_null_ctx() {
+        use nautilus_model::identifiers::ClientOrderId;
+
         let p = host_vtable();
         // SAFETY: see above.
         let v = unsafe { &*p };
-        let payload = BorrowedStr::from_str("{}");
-        // SAFETY: passes null ctx.
-        let r = unsafe { (v.modify_order)(std::ptr::null(), payload) };
+        let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+            ClientOrderId::from("O-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        // SAFETY: passes null ctx; handle is live.
+        let r = unsafe { (v.modify_order)(std::ptr::null(), &raw const handle) };
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::InvalidArgument);
+    }
+
+    #[rstest]
+    fn host_cancel_order_rejects_null_command() {
+        let p = host_vtable();
+        // SAFETY: see above.
+        let v = unsafe { &*p };
+        // SAFETY: passes null command handle; ctx irrelevant.
+        let r = unsafe { (v.cancel_order)(std::ptr::null(), std::ptr::null()) };
+        let err = r.into_result().unwrap_err();
+        assert_eq!(err.code, PluginErrorCode::InvalidArgument);
+        assert!(err.message_string().contains("null command handle"));
+    }
+
+    #[rstest]
+    fn host_modify_order_rejects_null_command() {
+        let p = host_vtable();
+        // SAFETY: see above.
+        let v = unsafe { &*p };
+        // SAFETY: passes null command handle; ctx irrelevant.
+        let r = unsafe { (v.modify_order)(std::ptr::null(), std::ptr::null()) };
+        let err = r.into_result().unwrap_err();
+        assert_eq!(err.code, PluginErrorCode::InvalidArgument);
+        assert!(err.message_string().contains("null command handle"));
     }
 
     #[rstest]
@@ -1401,9 +1524,9 @@ mod tests {
         let p = host_vtable();
         // SAFETY: pointer is to a static OnceLock-backed HostVTable.
         let v = unsafe { &*p };
-        let payload = BorrowedStr::from_str("{}");
-        // SAFETY: ctx was leaked above and is live.
-        let r = unsafe { (v.submit_order)(ctx, payload) };
+        let handle = SubmitOrderHandle::new(make_market_submit_command());
+        // SAFETY: ctx was leaked above and is live; handle outlives the call.
+        let r = unsafe { (v.submit_order)(ctx, &raw const handle) };
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::InvalidArgument);
         assert!(
@@ -1434,9 +1557,9 @@ mod tests {
         let p = host_vtable();
         // SAFETY: pointer is to a static OnceLock-backed HostVTable.
         let v = unsafe { &*p };
-        let payload = BorrowedStr::from_str("{}");
-        // SAFETY: ctx was leaked above and is live.
-        let r = unsafe { (v.submit_order)(ctx, payload) };
+        let handle = SubmitOrderHandle::new(make_market_submit_command());
+        // SAFETY: ctx was leaked above and is live; handle outlives the call.
+        let r = unsafe { (v.submit_order)(ctx, &raw const handle) };
         let err = r.into_result().unwrap_err();
         assert_eq!(err.code, PluginErrorCode::Generic);
         assert!(

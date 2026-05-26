@@ -6408,6 +6408,8 @@ name = "nautilus-plugin"
 version = "0.58.0"
 dependencies = [
  "anyhow",
+ "criterion",
+ "indexmap 2.14.0",
  "libloading",
  "log",
  "nautilus-common",
@@ -6635,6 +6637,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "serde_json",
  "sysinfo",
  "toml 1.1.2+spec-1.1.0",
  "ustr",

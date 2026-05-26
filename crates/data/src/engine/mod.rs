@@ -34,6 +34,7 @@ mod commands;
 pub mod config;
 mod handlers;
 mod requests;
+mod time_range;
 
 #[cfg(feature = "defi")]
 pub mod pool;
@@ -71,10 +72,11 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        BarsResponse, DataCommand, DataResponse, ForwardPricesResponse, RequestBars,
-        RequestCommand, RequestForwardPrices, RequestQuotes, RequestTrades, SubscribeBars,
+        BarsResponse, BookDeltasResponse, BookDepthResponse, DataCommand, DataResponse,
+        ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars, RequestCommand,
+        RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
         UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
         UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
@@ -91,7 +93,7 @@ use nautilus_core::{
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
-    datetime::millis_to_nanos_unchecked,
+    datetime::{NANOSECONDS_IN_DAY, millis_to_nanos_unchecked},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -120,6 +122,9 @@ use requests::{
 };
 #[cfg(feature = "streaming")]
 use streaming::CatalogMap;
+use time_range::{
+    TimeRangePipelineState, has_time_range_pipeline_params, is_time_range_pipeline_variant,
+};
 use ustr::Ustr;
 
 #[cfg(feature = "defi")]
@@ -158,6 +163,14 @@ pub struct DataEngine {
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    request_pipeline_parent_request: AHashMap<UUID4, RequestCommand>,
+    request_pipeline_n_components: AHashMap<UUID4, usize>,
+    request_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
+    request_pipeline_responses: AHashMap<UUID4, Vec<DataResponse>>,
+    time_range_pipeline_requests: AHashMap<UUID4, TimeRangePipelineState>,
+    time_range_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
+    parent_join_request_id: AHashMap<UUID4, UUID4>,
+    pending_join_requests: AHashMap<UUID4, RequestJoin>,
     continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
     continuous_future_subscriptions: AHashMap<BarType, ContinuousFutureSubscriptionState>,
     continuous_future_roller: Option<Rc<ContinuousFutureRoller>>,
@@ -225,6 +238,14 @@ impl DataEngine {
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
+            request_pipeline_parent_request: AHashMap::new(),
+            request_pipeline_n_components: AHashMap::new(),
+            request_pipeline_parent_request_id: AHashMap::new(),
+            request_pipeline_responses: AHashMap::new(),
+            time_range_pipeline_requests: AHashMap::new(),
+            time_range_pipeline_parent_request_id: AHashMap::new(),
+            parent_join_request_id: AHashMap::new(),
+            pending_join_requests: AHashMap::new(),
             continuous_future_requests: AHashMap::new(),
             continuous_future_subscriptions: AHashMap::new(),
             continuous_future_roller: None,
@@ -367,6 +388,24 @@ impl DataEngine {
     #[must_use]
     pub fn pending_option_chain_request_count(&self) -> usize {
         self.pending_option_chain_requests.len()
+    }
+
+    /// Returns the number of request pipelines awaiting leg responses.
+    #[must_use]
+    pub fn request_pipeline_count(&self) -> usize {
+        self.request_pipeline_parent_request.len()
+    }
+
+    /// Returns the number of time-range pipelines awaiting child responses.
+    #[must_use]
+    pub fn time_range_pipeline_count(&self) -> usize {
+        self.time_range_pipeline_requests.len()
+    }
+
+    /// Returns the number of `RequestJoin` originals awaiting finalization.
+    #[must_use]
+    pub fn pending_join_request_count(&self) -> usize {
+        self.pending_join_requests.len()
     }
 
     /// Returns a read-only reference to the engines clock.
@@ -512,6 +551,14 @@ impl DataEngine {
         }
 
         self.request_bar_aggregations.clear();
+        self.request_pipeline_parent_request.clear();
+        self.request_pipeline_n_components.clear();
+        self.request_pipeline_parent_request_id.clear();
+        self.request_pipeline_responses.clear();
+        self.time_range_pipeline_requests.clear();
+        self.time_range_pipeline_parent_request_id.clear();
+        self.parent_join_request_id.clear();
+        self.pending_join_requests.clear();
         self.continuous_future_requests.clear();
 
         for state in self.continuous_future_subscriptions.values_mut() {
@@ -1109,12 +1156,35 @@ impl DataEngine {
             return Ok(());
         }
 
+        if let RequestCommand::Join(join) = req {
+            return self.handle_request_join(join);
+        }
+
         if has_continuous_future_params(request_params(&req)) {
             return self.execute_continuous_future_request(req);
         }
 
         let request_id = *req.request_id();
         self.prepare_request_bar_aggregators(&req)?;
+
+        if has_time_range_pipeline_params(request_params(&req))
+            && is_time_range_pipeline_variant(&req)
+        {
+            let result = self.execute_time_range_pipeline_request(req);
+            if result.is_err() {
+                self.cleanup_request_bar_aggregators(&request_id);
+            }
+            return result;
+        }
+
+        #[cfg(feature = "streaming")]
+        if self.catalogs_registered() && streaming::is_date_range_variant(&req) {
+            let result = self.dispatch_date_range_request(req);
+            if result.is_err() {
+                self.cleanup_request_bar_aggregators(&request_id);
+            }
+            return result;
+        }
 
         let result = self.dispatch_request_to_client(req);
 
@@ -1125,7 +1195,10 @@ impl DataEngine {
         result.map(|_| ())
     }
 
-    fn dispatch_request_to_client(&mut self, req: RequestCommand) -> anyhow::Result<ClientId> {
+    pub(super) fn dispatch_request_to_client(
+        &mut self,
+        req: RequestCommand,
+    ) -> anyhow::Result<ClientId> {
         let client_id = req.client_id().copied();
         let venue = req.venue().copied();
         let Some(client) = self.get_client(client_id.as_ref(), venue.as_ref()) else {
@@ -1138,12 +1211,16 @@ impl DataEngine {
             RequestCommand::Instrument(req) => client.request_instrument(req),
             RequestCommand::Instruments(req) => client.request_instruments(req),
             RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+            RequestCommand::BookDeltas(req) => client.request_book_deltas(req),
             RequestCommand::BookDepth(req) => client.request_book_depth(req),
             RequestCommand::Quotes(req) => client.request_quotes(req),
             RequestCommand::Trades(req) => client.request_trades(req),
             RequestCommand::FundingRates(req) => client.request_funding_rates(req),
             RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
             RequestCommand::Bars(req) => client.request_bars(req),
+            RequestCommand::Join(_) => {
+                anyhow::bail!("RequestJoin must be handled by handle_request_join")
+            }
         }?;
 
         Ok(resolved_client_id)
@@ -1615,8 +1692,7 @@ impl DataEngine {
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
-    #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
-    pub fn response(&mut self, resp: DataResponse) {
+    pub fn response(&mut self, mut resp: DataResponse) {
         if log::log_enabled!(log::Level::Debug) {
             let correlation_id = resp.correlation_id();
             match resp.record_count() {
@@ -1633,12 +1709,35 @@ impl DataEngine {
         log::trace!("{RECV}{RES} {resp:?}");
 
         self.response_count += 1;
-        let correlation_id = *resp.correlation_id();
+
+        resp.trim_to_bounds();
 
         if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
             self.handle_continuous_future_child_response(parent_id, &resp);
             return;
         }
+
+        let Some(resp) = self.handle_request_pipeline_response(resp) else {
+            return;
+        };
+
+        if let Some(parent_id) = self
+            .time_range_pipeline_parent_request_id
+            .remove(resp.correlation_id())
+        {
+            self.handle_time_range_pipeline_child_response(parent_id, &resp);
+            return;
+        }
+
+        if self
+            .parent_join_request_id
+            .contains_key(resp.correlation_id())
+        {
+            self.finalize_request_join(resp);
+            return;
+        }
+
+        let correlation_id = *resp.correlation_id();
 
         match &resp {
             DataResponse::Instrument(r) => {
@@ -1668,6 +1767,16 @@ impl DataEngine {
                 }
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
+            DataResponse::BookDeltas(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_book_deltas_response(r);
+                }
+            }
+            DataResponse::BookDepth(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_book_depth_response(r);
+                }
+            }
             DataResponse::ForwardPrices(r) => {
                 self.process_request_bar_aggregation_response(&resp);
                 return self.handle_forward_prices_response(&correlation_id, r);
@@ -1678,6 +1787,244 @@ impl DataEngine {
         self.process_request_bar_aggregation_response(&resp);
 
         msgbus::send_response(&correlation_id, &resp);
+    }
+
+    /// Registers a parent request whose response will be rebuilt from `n_components` leg responses.
+    pub fn new_request_pipeline(&mut self, parent: RequestCommand, n_components: usize) {
+        let parent_id = *parent.request_id();
+        self.request_pipeline_n_components
+            .insert(parent_id, n_components);
+        self.request_pipeline_parent_request
+            .insert(parent_id, parent);
+        self.request_pipeline_responses
+            .insert(parent_id, Vec::with_capacity(n_components));
+    }
+
+    /// Registers a leg `request_id` as a child of the pipeline keyed by `parent_id`.
+    pub fn register_request_pipeline_leg(&mut self, leg_id: UUID4, parent_id: UUID4) {
+        self.request_pipeline_parent_request_id
+            .insert(leg_id, parent_id);
+    }
+
+    /// Fans a leg response into its parent pipeline and emits the rebuilt response when all legs arrive.
+    ///
+    /// Responses whose `correlation_id` is not part of any pipeline pass through unchanged.
+    /// While accumulating legs, returns `None` so the caller skips further response handling.
+    fn handle_request_pipeline_response(&mut self, resp: DataResponse) -> Option<DataResponse> {
+        let leg_id = *resp.correlation_id();
+        let Some(parent_id) = self.request_pipeline_parent_request_id.remove(&leg_id) else {
+            return Some(resp);
+        };
+
+        let Some(buf) = self.request_pipeline_responses.get_mut(&parent_id) else {
+            log::error!("Pipeline response buffer missing for parent {parent_id} (leg {leg_id})");
+            return Some(resp);
+        };
+        buf.push(resp);
+
+        let expected = self.request_pipeline_n_components.get(&parent_id).copied();
+        let received = buf.len();
+        match expected {
+            Some(n) if received < n => return None,
+            Some(_) => {}
+            None => {
+                log::error!("Pipeline n_components missing for parent {parent_id}");
+                return None;
+            }
+        }
+
+        let mut legs = self.request_pipeline_responses.remove(&parent_id)?;
+        self.request_pipeline_n_components.remove(&parent_id);
+        let parent = self.request_pipeline_parent_request.remove(&parent_id);
+
+        for leg in &mut legs {
+            leg.trim_to_bounds();
+        }
+
+        let (parent_start, parent_end) = parent_request_window(parent.as_ref());
+        let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
+
+        // If the rebuild failed (mixed-variant or unsupported-variant legs), drop the
+        // associated `RequestJoin` so its staging maps do not leak. Without this the
+        // original join request stays in `pending_join_requests` and its
+        // `parent_join_request_id` mapping stays live, neither of which will ever
+        // resolve through normal flow.
+        if rebuilt.is_none()
+            && let Some(original_id) = self.parent_join_request_id.remove(&parent_id)
+        {
+            self.pending_join_requests.remove(&original_id);
+            log::error!(
+                "Dropped RequestJoin {original_id} because pipeline rebuild failed for dated parent {parent_id}"
+            );
+        }
+
+        let mut rebuilt = rebuilt?;
+
+        // Replay must run before `trim_to_bounds`, which would otherwise discard the pre-start
+        // deltas the replay folds into the snapshot.
+        if let DataResponse::BookDeltas(r) = &mut rebuilt {
+            self.book_deltas_snapshot_replay(r);
+        }
+
+        // Trim against the parent window only when the parent supplied one. With no
+        // parent window the rebuilt response inherits the first leg's bounds; legs are
+        // already trimmed against their own bounds at the top of `response()`, so a
+        // second pass would discard data from later legs whose bounds the parent never
+        // constrained.
+        if parent_start.is_some() || parent_end.is_some() {
+            rebuilt.trim_to_bounds();
+        }
+
+        Some(rebuilt)
+    }
+
+    // Replays a day-start snapshot forward to the request's original start: when the first delta
+    // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the pre-start deltas and
+    // replaces them with one snapshot keyed at the original start, then forwards the rest.
+    // Mirrors the Cython `_handle_order_book_deltas_snapshot_replay`.
+    fn book_deltas_snapshot_replay(&self, resp: &mut BookDeltasResponse) {
+        let Some(original_start_ns) = resp.start else {
+            return;
+        };
+
+        let Some(first) = resp.data.first().copied() else {
+            return;
+        };
+
+        if !RecordFlag::F_SNAPSHOT.matches(first.flags) {
+            return;
+        }
+
+        if first.ts_init.as_u64() % NANOSECONDS_IN_DAY != 0 {
+            return;
+        }
+
+        // Nothing to fast-forward when the request starts at or before the day-start snapshot
+        if original_start_ns <= first.ts_init {
+            return;
+        }
+
+        if self
+            .cache
+            .borrow()
+            .instrument(&resp.instrument_id)
+            .is_none()
+        {
+            log::warn!(
+                "Instrument {} not found in cache, skipping snapshot replay",
+                resp.instrument_id,
+            );
+            return;
+        }
+
+        let book_type = resp
+            .params
+            .as_ref()
+            .and_then(|p| p.get_str("book_type"))
+            .and_then(|s| BookType::from_str(s).ok())
+            .unwrap_or(BookType::L2_MBP);
+
+        let mut book = OrderBook::new(resp.instrument_id, book_type);
+        let mut before: Vec<OrderBookDelta> = Vec::new();
+        let mut after: Vec<OrderBookDelta> = Vec::new();
+        let mut last_applied_ts: Option<UnixNanos> = None;
+        let mut crossed = false;
+
+        for delta in &resp.data {
+            if crossed {
+                after.push(*delta);
+            } else {
+                before.push(*delta);
+                if delta.ts_init >= original_start_ns {
+                    crossed = true;
+                    last_applied_ts = Some(delta.ts_init);
+                }
+            }
+        }
+
+        if !before.is_empty() {
+            if last_applied_ts.is_none() {
+                last_applied_ts = before.last().map(|d| d.ts_init);
+            }
+
+            let batch = OrderBookDeltas::new(resp.instrument_id, before);
+            if let Err(e) = book.apply_deltas(&batch) {
+                log::error!(
+                    "Failed to rebuild book for snapshot replay on {}: {e}",
+                    resp.instrument_id,
+                );
+                return;
+            }
+        }
+
+        let Some(last_ts) = last_applied_ts else {
+            return;
+        };
+
+        let snapshot_ts = last_ts.max(original_start_ns);
+        let mut new_data = book.to_deltas(snapshot_ts, snapshot_ts).deltas;
+        new_data.extend(after);
+        resp.data = new_data;
+    }
+
+    fn handle_request_join(&mut self, req: RequestJoin) -> anyhow::Result<()> {
+        if has_time_range_pipeline_params(req.params.as_ref()) {
+            return self.execute_time_range_pipeline_request(RequestCommand::Join(req));
+        }
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let now_dt = now_ns.to_datetime_utc();
+        let zero = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(0);
+        let start = req.start.unwrap_or(zero).min(now_dt);
+        let end = req.end.unwrap_or(now_dt).min(now_dt);
+        let dated = req.with_dates(Some(start), Some(end), now_ns);
+
+        let original_id = req.request_id;
+        let dated_id = dated.request_id;
+
+        self.pending_join_requests.insert(original_id, req);
+        self.parent_join_request_id.insert(dated_id, original_id);
+
+        let leg_ids: Vec<UUID4> = dated.request_ids.clone();
+        self.new_request_pipeline(RequestCommand::Join(dated), leg_ids.len());
+        for leg_id in leg_ids {
+            self.register_request_pipeline_leg(leg_id, dated_id);
+        }
+
+        Ok(())
+    }
+
+    fn finalize_request_join(&mut self, resp: DataResponse) {
+        let dated_id = *resp.correlation_id();
+        let Some(original_id) = self.parent_join_request_id.remove(&dated_id) else {
+            log::error!("parent_join_request_id missing for dated correlation {dated_id}");
+            return;
+        };
+
+        let Some(original) = self.pending_join_requests.remove(&original_id) else {
+            log::error!("pending_join_requests missing for original {original_id}");
+            return;
+        };
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+
+        // Empty leg responses fire each leg's callback so caller-side request
+        // workflows clean up. Per-leg metadata is reconstructed from the
+        // rebuilt parent response and may not match a leg's original
+        // instrument_id/bar_type when the join spans heterogeneous legs;
+        // tracked as a follow-up in #5 (needs an in-flight leg-request cache).
+        for leg_request_id in &original.request_ids {
+            let empty = empty_response_like(&resp, *leg_request_id, now_ns);
+            msgbus::send_response(leg_request_id, &empty);
+        }
+
+        // Route the final join response through the normal response path so
+        // bounds-trim against the parent window runs and the per-variant
+        // handlers (cache writes, request bar aggregators) fire. The pipeline
+        // and join staging maps for this request have already been popped, so
+        // the recursive call cannot re-enter either gate.
+        let final_resp = rebind_response_correlation(resp, original_id);
+        self.response(final_resp);
     }
 
     fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
@@ -2697,7 +3044,10 @@ impl DataEngine {
         let aggregator = Rc::new(RefCell::new(SpreadQuoteAggregator::new(
             cmd.instrument_id,
             &legs,
-            matches!(instrument, InstrumentAny::FuturesSpread(_)),
+            matches!(
+                instrument,
+                InstrumentAny::FuturesSpread(_) | InstrumentAny::CryptoFuturesSpread(_)
+            ),
             instrument.price_precision(),
             instrument.size_precision(),
             handler,
@@ -3351,7 +3701,21 @@ impl DataEngine {
         }
     }
 
+    // Skip cache writes that would regress a book a `BookUpdater` is maintaining.
+    // Unmanaged subscriptions don't install a `BookUpdater`, so they don't gate writes.
+    fn cache_is_owned_by_live_subscription(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_updaters.contains_key(instrument_id)
+    }
+
     fn handle_book_response(&self, book: &OrderBook) {
+        if self.cache_is_owned_by_live_subscription(&book.instrument_id) {
+            log::debug!(
+                "Skipping cache write for order book {}: live subscription owns the book",
+                book.instrument_id,
+            );
+            return;
+        }
+
         log::debug!("Adding order book {} to cache", book.instrument_id);
 
         if let Err(e) = self
@@ -3361,6 +3725,57 @@ impl DataEngine {
             .add_order_book(book.clone())
         {
             log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_book_deltas_response(&self, resp: &BookDeltasResponse) {
+        if !self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
+            let mut cache = self.cache.as_ref().borrow_mut();
+            if let Some(book) = cache.order_book_mut(&resp.instrument_id) {
+                for delta in &resp.data {
+                    if let Err(e) = book.apply_delta(delta) {
+                        log::error!("Failed to apply historical delta to cache: {e}");
+                    }
+                }
+            } else {
+                log::debug!(
+                    "Skipping cache write for {} historical deltas on {}: no cache book yet",
+                    resp.data.len(),
+                    resp.instrument_id,
+                );
+            }
+        }
+
+        // Group deltas by `F_LAST` so each published batch preserves the original event
+        // boundary and metadata (timestamps and sequence from the closing delta), matching
+        // the live `handle_delta` buffering semantic. Collapsing the whole response into
+        // one batch would surface a synthetic event with the trailing delta's flags only.
+        if resp.data.is_empty() {
+            return;
+        }
+
+        let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
+        let mut frame: Vec<OrderBookDelta> = Vec::new();
+
+        for delta in &resp.data {
+            frame.push(*delta);
+            if RecordFlag::F_LAST.matches(delta.flags) {
+                let batch = OrderBookDeltas::new(resp.instrument_id, std::mem::take(&mut frame));
+                msgbus::publish_deltas(topic, &batch);
+            }
+        }
+
+        if !frame.is_empty() {
+            let batch = OrderBookDeltas::new(resp.instrument_id, frame);
+            msgbus::publish_deltas(topic, &batch);
+        }
+    }
+
+    fn handle_book_depth_response(&self, resp: &BookDepthResponse) {
+        let topic = switchboard::get_pipeline_book_depth10_topic(resp.instrument_id);
+
+        for depth in &resp.data {
+            msgbus::publish_depth10(topic, depth);
         }
     }
 
@@ -4612,4 +5027,287 @@ fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUI
         return true;
     }
     false
+}
+
+/// Concatenates same-variant leg payloads into a single rebuilt response keyed by `parent_id`.
+///
+/// Returns `None` when legs are mixed-variant or empty; pipelines only group legs of the same
+/// variant. The rebuilt response inherits `start` and `end` from the parent request when the
+/// parent is a `RequestJoin`; otherwise leg bounds are preserved on the first leg.
+fn rebuild_pipeline_response(
+    parent_id: UUID4,
+    parent: Option<&RequestCommand>,
+    legs: Vec<DataResponse>,
+) -> Option<DataResponse> {
+    if legs.is_empty() {
+        return None;
+    }
+
+    let (parent_start, parent_end) = parent_request_window(parent);
+
+    let mut iter = legs.into_iter();
+    let first = iter.next()?;
+
+    match first {
+        DataResponse::Quotes(mut acc) => {
+            for leg in iter {
+                let DataResponse::Quotes(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|q| q.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Quotes(acc))
+        }
+        DataResponse::Trades(mut acc) => {
+            for leg in iter {
+                let DataResponse::Trades(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|t| t.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Trades(acc))
+        }
+        DataResponse::FundingRates(mut acc) => {
+            for leg in iter {
+                let DataResponse::FundingRates(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|r| r.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::FundingRates(acc))
+        }
+        DataResponse::Bars(mut acc) => {
+            for leg in iter {
+                let DataResponse::Bars(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|b| b.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Bars(acc))
+        }
+        DataResponse::Instruments(mut acc) => {
+            for leg in iter {
+                let DataResponse::Instruments(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.correlation_id = parent_id;
+            Some(DataResponse::Instruments(acc))
+        }
+        DataResponse::BookDeltas(mut acc) => {
+            for leg in iter {
+                let DataResponse::BookDeltas(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|d| d.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::BookDeltas(acc))
+        }
+        DataResponse::BookDepth(mut acc) => {
+            for leg in iter {
+                let DataResponse::BookDepth(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|d| d.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::BookDepth(acc))
+        }
+        other => {
+            // Pipelines today rebuild same-variant time-series legs. Variants
+            // without a per-item ts_init payload (singular Book/Instrument,
+            // ForwardPrices, custom Data) cannot be concatenated and would
+            // otherwise leak a leg-keyed response. Drop rather than forward.
+            log::error!(
+                "Pipeline rebuild not supported for variant {} (parent {parent_id})",
+                other.kind(),
+            );
+            None
+        }
+    }
+}
+
+fn parent_request_window(
+    parent: Option<&RequestCommand>,
+) -> (Option<UnixNanos>, Option<UnixNanos>) {
+    let Some(parent) = parent else {
+        return (None, None);
+    };
+
+    let (start, end) = match parent {
+        RequestCommand::Data(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Instrument(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Instruments(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookDeltas(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookDepth(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Quotes(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Trades(cmd) => (cmd.start, cmd.end),
+        RequestCommand::FundingRates(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Bars(cmd) => (cmd.start, cmd.end),
+        RequestCommand::Join(cmd) => (cmd.start, cmd.end),
+        RequestCommand::BookSnapshot(_) | RequestCommand::ForwardPrices(_) => return (None, None),
+    };
+
+    (
+        start.map(datetime_to_unix_nanos_or_zero),
+        end.map(datetime_to_unix_nanos_or_zero),
+    )
+}
+
+fn datetime_to_unix_nanos_or_zero(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn empty_response_like(
+    template: &DataResponse,
+    correlation_id: UUID4,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    match template {
+        DataResponse::Quotes(r) => DataResponse::Quotes(QuotesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::Trades(r) => DataResponse::Trades(TradesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::FundingRates(r) => DataResponse::FundingRates(FundingRatesResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::Bars(r) => DataResponse::Bars(BarsResponse::new(
+            correlation_id,
+            r.client_id,
+            r.bar_type,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::BookDeltas(r) => DataResponse::BookDeltas(BookDeltasResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        DataResponse::BookDepth(r) => DataResponse::BookDepth(BookDepthResponse::new(
+            correlation_id,
+            r.client_id,
+            r.instrument_id,
+            Vec::new(),
+            r.start,
+            r.end,
+            ts_init,
+            r.params.clone(),
+        )),
+        other => {
+            log::error!(
+                "Cannot fabricate empty leg response for variant {}",
+                other.kind(),
+            );
+            other.clone()
+        }
+    }
+}
+
+fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataResponse {
+    match &mut resp {
+        DataResponse::Data(r) => r.correlation_id = new_id,
+        DataResponse::Instrument(r) => r.correlation_id = new_id,
+        DataResponse::Instruments(r) => r.correlation_id = new_id,
+        DataResponse::Book(r) => r.correlation_id = new_id,
+        DataResponse::BookDeltas(r) => r.correlation_id = new_id,
+        DataResponse::BookDepth(r) => r.correlation_id = new_id,
+        DataResponse::Quotes(r) => r.correlation_id = new_id,
+        DataResponse::Trades(r) => r.correlation_id = new_id,
+        DataResponse::FundingRates(r) => r.correlation_id = new_id,
+        DataResponse::ForwardPrices(r) => r.correlation_id = new_id,
+        DataResponse::Bars(r) => r.correlation_id = new_id,
+    }
+    resp
 }

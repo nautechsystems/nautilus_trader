@@ -715,6 +715,7 @@ wallet credentials.
 | `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                       |
 | `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                               |
 | `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                               |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                                |
 
 ### Execution client configuration options
 
@@ -733,6 +734,7 @@ wallet credentials.
 | `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
 | `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
 | `grpc_rate_limit_per_second`   | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                        |
+| `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                       |
 
 ### Basic setup
 

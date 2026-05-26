@@ -234,12 +234,14 @@ pub(super) fn request_params(req: &RequestCommand) -> Option<&Params> {
         RequestCommand::Instrument(cmd) => cmd.params.as_ref(),
         RequestCommand::Instruments(cmd) => cmd.params.as_ref(),
         RequestCommand::BookSnapshot(cmd) => cmd.params.as_ref(),
+        RequestCommand::BookDeltas(cmd) => cmd.params.as_ref(),
         RequestCommand::BookDepth(cmd) => cmd.params.as_ref(),
         RequestCommand::Quotes(cmd) => cmd.params.as_ref(),
         RequestCommand::Trades(cmd) => cmd.params.as_ref(),
         RequestCommand::FundingRates(cmd) => cmd.params.as_ref(),
         RequestCommand::ForwardPrices(cmd) => cmd.params.as_ref(),
         RequestCommand::Bars(cmd) => cmd.params.as_ref(),
+        RequestCommand::Join(cmd) => cmd.params.as_ref(),
     }
 }
 
@@ -249,6 +251,8 @@ pub(super) fn response_params(resp: &DataResponse) -> Option<&Params> {
         DataResponse::Instrument(resp) => resp.params.as_ref(),
         DataResponse::Instruments(resp) => resp.params.as_ref(),
         DataResponse::Book(resp) => resp.params.as_ref(),
+        DataResponse::BookDeltas(resp) => resp.params.as_ref(),
+        DataResponse::BookDepth(resp) => resp.params.as_ref(),
         DataResponse::Quotes(resp) => resp.params.as_ref(),
         DataResponse::Trades(resp) => resp.params.as_ref(),
         DataResponse::FundingRates(resp) => resp.params.as_ref(),
@@ -303,6 +307,10 @@ pub(super) fn request_bar_aggregation_from_params(
         bar_types: unique_bar_types,
         update_subscriptions,
     }))
+}
+
+pub(super) fn remove_request_bar_aggregation_params(params: &mut Params) {
+    params.shift_remove(BAR_TYPES);
 }
 
 pub(super) fn has_continuous_future_params(params: Option<&Params>) -> bool {

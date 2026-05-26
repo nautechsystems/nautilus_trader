@@ -101,6 +101,104 @@ pub struct GetInstrumentsParams {
     pub series_id: Option<String>,
 }
 
+/// Parameters for the GET /api/v5/sprd/spreads endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpreadsParams {
+    /// Currency the spread is based in, e.g. BTC or ETH.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ccy: Option<String>,
+    /// Instrument ID to include in the spread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Spread ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprd_id: Option<String>,
+    /// Spread state: live, suspend, or expired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
+/// Parameters for the GET /api/v5/sprd/order endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpreadOrderParams {
+    /// Exchange-assigned order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// User-assigned client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+}
+
+/// Parameters for the GET /api/v5/sprd/orders-pending and orders-history endpoints.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpreadOrdersParams {
+    /// Spread ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprd_id: Option<String>,
+    /// Order type filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_type: Option<OKXOrderType>,
+    /// Order state filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<OKXOrderStatus>,
+    /// Start order ID cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub begin_id: Option<String>,
+    /// End order ID cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_id: Option<String>,
+    /// Start timestamp in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub begin: Option<String>,
+    /// End timestamp in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    /// Maximum number of records to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// Parameters for the GET /api/v5/sprd/trades endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetSpreadTradesParams {
+    /// Spread ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprd_id: Option<String>,
+    /// Trade ID filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_id: Option<String>,
+    /// Order ID filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Start ID cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub begin_id: Option<String>,
+    /// End ID cursor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_id: Option<String>,
+    /// Start timestamp in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub begin: Option<String>,
+    /// End timestamp in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    /// Maximum number of records to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 /// Parameters for the GET /api/v5/public/event-contract/series endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

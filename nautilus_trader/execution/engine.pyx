@@ -1157,12 +1157,19 @@ cdef class ExecutionEngine(Component):
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
-        cdef str deny_reason = self._check_position_id_against_oms(
-            command.instrument_id,
-            command.strategy_id,
-            command.position_id,
-            client,
-        )
+        cdef str deny_reason = None
+        if command.position_id is not None and not command.order_list.is_uniform_instrument():
+            deny_reason = (
+                f"`position_id` {command.position_id!r} is not valid for a mixed-instrument "
+                "order list; a position belongs to a single instrument"
+            )
+        else:
+            deny_reason = self._check_position_id_against_oms(
+                command.instrument_id,
+                command.strategy_id,
+                command.position_id,
+                client,
+            )
         if deny_reason is not None:
             for order in command.order_list.orders:
                 self._deny_order(order, deny_reason)

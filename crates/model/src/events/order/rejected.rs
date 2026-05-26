@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -65,11 +65,10 @@ pub struct OrderRejected {
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
     /// If the event was generated during reconciliation.
-    #[serde(deserialize_with = "from_bool_as_u8")]
-    pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    pub reconciliation: bool,
     /// If the order was rejected because it was post-only and would execute immediately as a taker.
-    #[serde(default, deserialize_with = "from_bool_as_u8")]
-    pub due_post_only: u8, // TODO: Change to bool once Cython removed
+    #[serde(default)]
+    pub due_post_only: bool,
     /// The causation ID associated with the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<UUID4>,
@@ -102,8 +101,8 @@ impl OrderRejected {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: u8::from(reconciliation),
-            due_post_only: u8::from(due_post_only),
+            reconciliation,
+            due_post_only,
             causation_id: None,
         }
     }
@@ -138,7 +137,7 @@ impl Display for OrderRejected {
             self.client_order_id,
             self.account_id,
             self.reason,
-            self.due_post_only != 0,
+            self.due_post_only,
             self.ts_event
         )
     }
@@ -370,25 +369,6 @@ mod tests {
         assert_eq!(market_closed.reason, Ustr::from("MARKET_CLOSED"));
     }
 
-    // TODO: Remove once reconciliation field is converted back to bool (post-Cython)
-    #[rstest]
-    fn test_reconciliation_bool_to_u8() {
-        let event = OrderRejected::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("EMA-CROSS"),
-            InstrumentId::from("EURUSD.SIM"),
-            ClientOrderId::from("O-19700101-000000-001-001-1"),
-            AccountId::from("SIM-001"),
-            Ustr::from("INSUFFICIENT_MARGIN"),
-            UUID4::default(),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(2_000_000_000),
-            true,
-            false,
-        );
-        assert_eq!(event.reconciliation, 1);
-    }
-
     #[rstest]
     fn test_order_rejected_serialization() {
         let original = create_test_order_rejected();
@@ -415,7 +395,7 @@ mod tests {
             true,
         );
 
-        assert_eq!(order_rejected.due_post_only, 1);
+        assert!(order_rejected.due_post_only);
         assert_eq!(order_rejected.reason, Ustr::from("POST_ONLY_WOULD_EXECUTE"));
     }
 }

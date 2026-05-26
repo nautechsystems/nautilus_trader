@@ -50,6 +50,15 @@ pub trait ExecutionClient {
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
 
+    /// Returns whether this client can execute orders for the given instrument venue.
+    ///
+    /// Single-venue clients should use the default behavior. Routing brokers can
+    /// override this when their client venue identifies the broker rather than
+    /// the instrument's exchange venue.
+    fn handles_order_venue(&self, venue: Venue) -> bool {
+        self.venue() == venue
+    }
+
     /// Generates and publishes the account state event.
     ///
     /// # Errors

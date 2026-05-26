@@ -39,11 +39,15 @@ use rust_decimal::Decimal;
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::{
-    enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
-    parse::{
-        is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+use crate::{
+    common::{
+        enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
+        parse::{
+            is_conditional_order_data, make_fill_trade_id, millis_to_nanos,
+            parse_trigger_order_type,
+        },
     },
+    data_types::HyperliquidOpenInterest,
 };
 
 fn parse_price(
@@ -498,6 +502,26 @@ pub fn parse_ws_asset_context(
             Ok((mark_price_update, None, None))
         }
     }
+}
+
+/// Parses an `activeAssetCtx` open interest string into an open interest custom data update.
+///
+/// The caller is responsible for restricting this to the perpetual branch; spot
+/// `activeAssetCtx` payloads carry no open interest field.
+pub fn parse_ws_open_interest(
+    open_interest: &str,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<HyperliquidOpenInterest> {
+    let open_interest_decimal = Decimal::from_str(open_interest)
+        .with_context(|| format!("failed to parse open interest from '{open_interest}'"))?;
+
+    Ok(HyperliquidOpenInterest::new(
+        instrument.id(),
+        open_interest_decimal,
+        ts_init,
+        ts_init,
+    ))
 }
 
 #[cfg(test)]
@@ -997,5 +1021,33 @@ mod tests {
 
         let funding = funding_rate.expect("perp ctx must yield funding rate");
         assert_eq!(funding.rate, expected);
+    }
+
+    #[rstest]
+    fn test_parse_ws_open_interest_perp() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let open_interest = parse_ws_open_interest("100000.0", &instrument, ts_init).unwrap();
+
+        assert_eq!(open_interest.instrument_id, instrument.id());
+        assert_eq!(open_interest.open_interest.to_string(), "100000.0");
+        assert_eq!(open_interest.ts_event, ts_init);
+        assert_eq!(open_interest.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case::round("100000.0")]
+    #[case::precise("100000.123456789")]
+    fn test_parse_ws_open_interest_preserves_precision(#[case] open_interest_str: &str) {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let expected = Decimal::from_str(open_interest_str).unwrap();
+
+        let open_interest =
+            parse_ws_open_interest(open_interest_str, &instrument, ts_init).unwrap();
+
+        assert_eq!(open_interest.open_interest, expected);
     }
 }

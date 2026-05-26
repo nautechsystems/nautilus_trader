@@ -13,7 +13,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-publish = false # Do not publish to crates.io yet
 
 [lints]
 workspace = true
@@ -26,13 +25,7 @@ crate-type = ["rlib"]
 default = []
 # Enables host-side loading + the engine-side bridge adapters. Plug-in
 # cdylibs should NOT enable this; backtest and live host crates do.
-host = [
-  "dep:libloading",
-  "dep:nautilus-trading",
-  "dep:serde",
-  "dep:serde_json",
-  "dep:ustr",
-]
+host = ["dep:libloading", "dep:nautilus-trading", "dep:serde", "dep:serde_json"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -46,17 +39,24 @@ nautilus-model = { workspace = true }
 nautilus-trading = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 libloading = { workspace = true, optional = true }
 log = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-ustr = { workspace = true, optional = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["host"]
 
 [[example]]
 name = "custom_data_plugin"
@@ -67,6 +67,20 @@ test = false
 
 [[example]]
 name = "runtime_smoke_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "exec_test_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "actor_event_plugin"
 crate-type = ["cdylib"]
 required-features = []
 doc = false

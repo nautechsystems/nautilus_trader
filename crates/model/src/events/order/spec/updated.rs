@@ -101,7 +101,7 @@ mod tests {
         assert_eq!(event.quantity, Quantity::new(100_000.0, 0));
         assert_eq!(event.ts_event, UnixNanos::default());
         assert_eq!(event.ts_init, UnixNanos::default());
-        assert_eq!(event.reconciliation, 0);
+        assert!(!event.reconciliation);
         assert_eq!(event.venue_order_id, None);
         assert_eq!(event.account_id, None);
         assert_eq!(event.price, None);

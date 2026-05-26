@@ -48,7 +48,7 @@ use nautilus_model::{
     },
     events::{
         OrderEmulated, OrderEventAny, OrderEventType, OrderFilled, OrderRejected, OrderReleased,
-        order::spec::OrderRejectedSpec,
+        order::spec::{OrderEmulatedSpec, OrderFilledSpec, OrderRejectedSpec, OrderReleasedSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
@@ -74,6 +74,73 @@ use ustr::Ustr;
 #[fixture]
 pub fn test_clock() -> Rc<RefCell<TestClock>> {
     Rc::new(RefCell::new(TestClock::new()))
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_filled(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    trade_id: TradeId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    last_qty: Quantity,
+    last_px: Price,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    position_id: Option<PositionId>,
+    commission: Option<Money>,
+) -> OrderFilled {
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .trade_id(trade_id)
+        .order_side(order_side)
+        .order_type(order_type)
+        .last_qty(last_qty)
+        .last_px(last_px)
+        .currency(currency)
+        .liquidity_side(liquidity_side)
+        .maybe_position_id(position_id)
+        .maybe_commission(commission)
+        .build()
+}
+
+fn build_order_emulated(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderEmulated {
+    OrderEmulatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .build()
+}
+
+fn build_order_released(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    released_price: Price,
+) -> OrderReleased {
+    OrderReleasedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .released_price(released_price)
+        .build()
 }
 
 #[fixture]
@@ -108,7 +175,7 @@ pub fn market_order_fill(
     account_id: AccountId,
     market_order_buy: OrderAny,
 ) -> OrderFilled {
-    OrderFilled::new(
+    build_order_filled(
         market_order_buy.trader_id(),
         market_order_buy.strategy_id(),
         market_order_buy.instrument_id(),
@@ -122,10 +189,6 @@ pub fn market_order_fill(
         Price::from("1000.000"),
         instrument_eth_usdt.quote_currency(),
         LiquiditySide::Taker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(PositionId::new("P-1")),
         None,
     )
@@ -1204,9 +1267,9 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
             "POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00"
         )
     );
-    assert_eq!(
-        rejected.due_post_only, 1,
-        "due_post_only should be set to true (1) for post-only rejections"
+    assert!(
+        rejected.due_post_only,
+        "due_post_only should be set for post-only rejections"
     );
 }
 
@@ -1350,26 +1413,20 @@ fn test_accept_order_released_dispatches_and_registers(
     let strategy_id = limit_order.strategy_id();
     let instrument_id = limit_order.instrument_id();
     limit_order
-        .apply(OrderEventAny::Emulated(OrderEmulated::new(
+        .apply(OrderEventAny::Emulated(build_order_emulated(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
         )))
         .unwrap();
     limit_order
-        .apply(OrderEventAny::Released(OrderReleased::new(
+        .apply(OrderEventAny::Released(build_order_released(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
             Price::from("1495.00"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
         )))
         .unwrap();
     assert_eq!(limit_order.status(), OrderStatus::Released);
@@ -9834,7 +9891,7 @@ fn open_long_option_position(
         .add_order(order, Some(position_id), None, false)
         .unwrap();
 
-    let fill = OrderFilled::new(
+    let fill = build_order_filled(
         trader_id,
         strategy_id,
         instrument.id(),
@@ -9848,10 +9905,6 @@ fn open_long_option_position(
         open_price,
         instrument.quote_currency(),
         LiquiditySide::Taker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
         Some(position_id),
         Some(Money::new(0.0, instrument.quote_currency())),
     );

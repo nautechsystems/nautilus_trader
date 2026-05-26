@@ -15,10 +15,11 @@
 
 //! Builder for constructing [`LiveNode`] instances.
 
-use std::{collections::HashMap, time::Duration};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig,
+    clock::Clock,
     enums::Environment,
     factories::{
         ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
@@ -31,7 +32,11 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
-use nautilus_system::{config::StreamingConfig, kernel::NautilusKernel};
+use nautilus_system::{
+    config::StreamingConfig,
+    event_store::{EventStoreFactory, KernelEventStore},
+    kernel::NautilusKernel,
+};
 
 use crate::{
     config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
@@ -48,9 +53,9 @@ enum ExecutionClientFactoryEntry {
 
 /// Builder for constructing a [`LiveNode`] with a fluent API.
 ///
-/// Provides configuration options specific to live nodes,
-/// including client factory registration and timeout settings.
-#[derive(Debug)]
+/// Provides configuration options specific to live nodes, including client factory
+/// registration, timeout settings, and optional event-store injection for run-lifecycle
+/// audit and replay (see [`Self::with_event_store`]).
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
@@ -62,6 +67,21 @@ pub struct LiveNodeBuilder {
     exec_client_factories: HashMap<String, ExecutionClientFactoryEntry>,
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
+    event_store_factory: Option<EventStoreFactory>,
+}
+
+impl Debug for LiveNodeBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(LiveNodeBuilder))
+            .field("name", &self.name)
+            .field("config", &self.config)
+            .field("data_client_factories", &self.data_client_factories.keys())
+            .field("exec_client_factories", &self.exec_client_factories.keys())
+            .field("data_client_configs", &self.data_client_configs.keys())
+            .field("exec_client_configs", &self.exec_client_configs.keys())
+            .field("event_store_factory", &self.event_store_factory.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl LiveNodeBuilder {
@@ -91,6 +111,7 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            event_store_factory: None,
         })
     }
 
@@ -114,6 +135,7 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            event_store_factory: None,
         })
     }
 
@@ -271,6 +293,24 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Inject an event-store implementation to drive run-lifecycle capture.
+    ///
+    /// The factory receives the kernel's instance id and clock so the returned
+    /// `KernelEventStore` shares the same time source the kernel uses to stamp run
+    /// lifecycle entries. The concrete implementation lives outside this crate;
+    /// callers typically build it from
+    /// [`LiveNodeConfig::event_store`](crate::config::LiveNodeConfig::event_store)
+    /// inside the closure.
+    #[must_use]
+    pub fn with_event_store<F>(mut self, factory: F) -> Self
+    where
+        F: FnOnce(UUID4, Rc<RefCell<dyn Clock>>) -> anyhow::Result<Box<dyn KernelEventStore>>
+            + 'static,
+    {
+        self.event_store_factory = Some(Box::new(factory));
+        self
+    }
+
     /// Set the logging configuration.
     #[must_use]
     pub fn with_logging(mut self, logging: LoggerConfig) -> Self {
@@ -370,10 +410,22 @@ impl LiveNodeBuilder {
 
         self.config.validate_runtime_support()?;
 
+        if self.config.event_store.is_some() && self.event_store_factory.is_none() {
+            anyhow::bail!(
+                "LiveNodeConfig.event_store is set but no factory was registered; \
+                 call LiveNodeBuilder::with_event_store(...) to install one"
+            );
+        }
+
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
-        let kernel = NautilusKernel::new(self.name.clone(), self.config.clone())?;
+        let kernel = NautilusKernel::new_with(
+            self.name.clone(),
+            self.config.clone(),
+            None,
+            self.event_store_factory.take(),
+        )?;
 
         for (name, factory) in self.data_client_factories {
             if let Some(config) = self.data_client_configs.remove(&name) {

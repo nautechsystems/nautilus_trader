@@ -15,7 +15,7 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -64,8 +64,7 @@ pub struct OrderCancelRejected {
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
     /// If the event was generated during reconciliation.
-    #[serde(deserialize_with = "from_bool_as_u8")]
-    pub reconciliation: u8, // TODO: Change to bool once Cython removed
+    pub reconciliation: bool,
     /// The venue order ID associated with the event.
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
@@ -101,7 +100,7 @@ impl OrderCancelRejected {
             event_id,
             ts_event,
             ts_init,
-            reconciliation: u8::from(reconciliation),
+            reconciliation,
             venue_order_id,
             account_id,
             causation_id: None,

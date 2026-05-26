@@ -23,7 +23,9 @@ from nautilus_trader.model import BinaryOption
 from nautilus_trader.model import Cfd
 from nautilus_trader.model import Commodity
 from nautilus_trader.model import CryptoFuture
+from nautilus_trader.model import CryptoFuturesSpread
 from nautilus_trader.model import CryptoOption
+from nautilus_trader.model import CryptoOptionSpread
 from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
@@ -637,6 +639,79 @@ def test_option_spread_construction_and_roundtrip():
 
     assert restored.id == os_.id
     assert restored.strategy_type == os_.strategy_type
+
+
+def test_crypto_futures_spread_construction_and_roundtrip():
+    cfs = CryptoFuturesSpread(
+        instrument_id=InstrumentId(Symbol("BTC-FS-19MAY26_PERP"), Venue("DERIBIT")),
+        raw_symbol=Symbol("BTC-FS-19MAY26_PERP"),
+        underlying=Currency.from_str("BTC"),
+        quote_currency=Currency.from_str("USD"),
+        settlement_currency=Currency.from_str("BTC"),
+        is_inverse=True,
+        strategy_type="FS",
+        activation_ns=1747008000000000000,
+        expiration_ns=1747641600000000000,
+        price_precision=1,
+        size_precision=0,
+        price_increment=Price.from_str("0.5"),
+        size_increment=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert cfs.id == InstrumentId(Symbol("BTC-FS-19MAY26_PERP"), Venue("DERIBIT"))
+    assert cfs.type_name == "CryptoFuturesSpread"
+    assert cfs.strategy_type == "FS"
+    assert cfs.is_inverse is True
+    assert cfs.settlement_currency == Currency.from_str("BTC")
+
+    restored = CryptoFuturesSpread.from_dict(cfs.to_dict())
+
+    assert restored.id == cfs.id
+    assert restored.strategy_type == cfs.strategy_type
+    assert restored.is_inverse == cfs.is_inverse
+    assert restored.settlement_currency == cfs.settlement_currency
+
+
+def test_crypto_option_spread_construction_and_roundtrip_preserves_fractional():
+    # Deribit BTC option combos carry min_trade_amount=0.1; this type
+    # preserves that through serialization without collapsing back to a
+    # whole-contract default
+    cos = CryptoOptionSpread(
+        instrument_id=InstrumentId(
+            Symbol("BTC-CS-19MAY26-70000_75000"),
+            Venue("DERIBIT"),
+        ),
+        raw_symbol=Symbol("BTC-CS-19MAY26-70000_75000"),
+        underlying=Currency.from_str("BTC"),
+        quote_currency=Currency.from_str("BTC"),
+        settlement_currency=Currency.from_str("BTC"),
+        is_inverse=True,
+        strategy_type="CS",
+        activation_ns=1747008000000000000,
+        expiration_ns=1747641600000000000,
+        price_precision=4,
+        size_precision=1,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("0.1"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert cos.type_name == "CryptoOptionSpread"
+    assert cos.strategy_type == "CS"
+    assert cos.is_inverse is True
+    assert cos.size_precision == 1
+    assert cos.size_increment == Quantity.from_str("0.1")
+
+    restored = CryptoOptionSpread.from_dict(cos.to_dict())
+
+    assert restored.id == cos.id
+    assert restored.strategy_type == cos.strategy_type
+    assert restored.is_inverse == cos.is_inverse
+    assert restored.size_precision == 1
+    assert restored.size_increment == Quantity.from_str("0.1")
 
 
 def test_betting_instrument_construction_and_roundtrip():

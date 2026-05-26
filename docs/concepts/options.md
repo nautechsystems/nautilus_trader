@@ -9,23 +9,26 @@ for risk management.
 
 The platform defines several option instrument types:
 
-| Instrument       | Description                                                                            |
-|------------------|----------------------------------------------------------------------------------------|
-| `OptionContract` | Exchange‑traded option (put or call) on an underlying with strike and expiry.           |
-| `OptionSpread`   | Exchange‑defined multi‑leg options strategy (vertical, calendar, straddle) as one line. |
-| `CryptoOption`   | Option on a crypto underlying with crypto quote/settlement; inverse or quanto styles.   |
-| `BinaryOption`   | Fixed‑payout option that settles to 0 or 1 based on a binary outcome.                  |
+| Instrument           | Description                                                                                  |
+|----------------------|----------------------------------------------------------------------------------------------|
+| `OptionContract`     | Exchange‑traded option (put or call) on an underlying with strike and expiry.                 |
+| `OptionSpread`       | Exchange‑defined multi‑leg options strategy (vertical, calendar, straddle) as one line.       |
+| `CryptoOption`       | Option on a crypto underlying with crypto quote/settlement; inverse or quanto styles.         |
+| `CryptoOptionSpread` | Crypto option spread mirroring `CryptoOption` (inverse, settlement currency, fractional size). |
+| `BinaryOption`       | Fixed‑payout option that settles to 0 or 1 based on a binary outcome.                        |
 
 Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption`: full Greeks inputs including `strike_price`,
   `option_kind` (CALL/PUT), `expiration_utc`, `underlying`, `multiplier`.
-- `OptionSpread`: a combination of up to 4 option legs, each weighted by a
-  ratio. Has `underlying`, `expiration_utc`, and `strategy_type` (vertical,
-  calendar, straddle, etc.). Per-leg `strike_price` and `option_kind` live on
-  each leg's `OptionContract`, not on the spread itself. Greeks are computed
-  per leg and aggregated. Spreads are commonly used for orders (the exchange
-  executes as a single order), while the individual legs appear as positions.
+- `OptionSpread`, `CryptoOptionSpread`: a combination of up to 4 option legs,
+  each weighted by a ratio. Has `underlying`, `expiration_utc`, and
+  `strategy_type` (vertical, calendar, straddle, etc.). Per-leg `strike_price`
+  and `option_kind` live on each leg's `OptionContract`/`CryptoOption`, not on
+  the spread itself. Greeks are computed per leg and aggregated. Spreads are
+  commonly used for orders (the exchange executes as a single order), while
+  the individual legs appear as positions. `CryptoOptionSpread` additionally
+  carries `is_inverse` and `settlement_currency` for venues like Deribit.
 - `BinaryOption`: has `expiration_utc` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 

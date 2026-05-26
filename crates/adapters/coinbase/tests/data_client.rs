@@ -48,8 +48,8 @@ use nautilus_common::{
         data::{
             RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
             SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument,
         },
     },
     testing::wait_until_async,
@@ -242,6 +242,28 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                                 "ticker" => load_json_str("ws_ticker.json"),
                                 "level2" => load_json_str("ws_l2_data_snapshot.json"),
                                 "candles" => load_json_str("ws_candles.json"),
+                                "status" => json!({
+                                    "channel": "status",
+                                    "client_id": "",
+                                    "timestamp": "2026-04-07T00:28:32.643779Z",
+                                    "sequence_num": 0,
+                                    "events": [{
+                                        "type": "snapshot",
+                                        "products": [{
+                                            "product_type": "SPOT",
+                                            "id": "BTC-USD",
+                                            "base_currency": "BTC",
+                                            "quote_currency": "USD",
+                                            "base_increment": "0.00000001",
+                                            "quote_increment": "0.01",
+                                            "display_name": "BTC/USD",
+                                            "status": "online",
+                                            "status_message": "",
+                                            "min_market_funds": "1"
+                                        }]
+                                    }]
+                                })
+                                .to_string(),
                                 _ => json!({"channel": channel}).to_string(),
                             };
 
@@ -1403,5 +1425,73 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
     );
 
     product_stall_enabled.store(false, Ordering::SeqCst);
+    client.disconnect().await.unwrap();
+}
+
+// Coinbase rewrites aliased products to their canonical id on the wire, so a
+// caller that subscribed to `BTC-USDC.COINBASE` must still receive status
+// events even though the venue's `status` channel reports `BTC-USD`. This
+// test exercises the alias resolution wired into `subscribe_instrument_status`
+// + `register_subscription_alias` end-to-end; a regression that drops either
+// would either time out or surface the canonical-id event.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    // Drain the instrument-emit events from connect bootstrap.
+    while rx.try_recv().is_ok() {}
+
+    let alias_id = InstrumentId::from("BTC-USDC.COINBASE");
+    let cmd = SubscribeInstrumentStatus::new(
+        alias_id,
+        Some(*COINBASE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe_instrument_status(cmd).unwrap();
+
+    let received = Arc::new(std::sync::Mutex::new(None));
+    let received_clone = Arc::clone(&received);
+
+    wait_until_async(
+        move || {
+            let received = Arc::clone(&received_clone);
+            let found = loop {
+                match rx.try_recv() {
+                    Ok(DataEvent::InstrumentStatus(status)) => {
+                        *received.lock().unwrap() = Some(status);
+                        break true;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break false,
+                }
+            };
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let status = received
+        .lock()
+        .unwrap()
+        .take()
+        .expect("InstrumentStatus must be emitted for the alias side");
+    assert_eq!(
+        status.instrument_id, alias_id,
+        "venue reports canonical BTC-USD; event must be re-keyed to the subscribed alias",
+    );
+
     client.disconnect().await.unwrap();
 }

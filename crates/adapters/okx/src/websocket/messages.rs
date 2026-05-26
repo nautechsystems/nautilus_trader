@@ -44,6 +44,7 @@ use crate::{
             deserialize_string_to_u64, deserialize_target_currency_as_none,
         },
     },
+    http::models::OKXSpreadOrder,
     websocket::enums::OKXSubscriptionEvent,
 };
 
@@ -125,6 +126,8 @@ pub enum OKXWsMessage {
     },
     /// Order push channel updates.
     Orders(Vec<OKXOrderMsg>),
+    /// Nitro spread order push channel updates.
+    SpreadOrders(Vec<OKXSpreadOrder>),
     /// Algo order push channel updates.
     AlgoOrders(Vec<OKXAlgoOrderMsg>),
     /// Account channel update (raw JSON).

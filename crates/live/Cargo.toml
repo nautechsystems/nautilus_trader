@@ -127,8 +127,8 @@ path = "tests/plugin.rs"
 required-features = ["plugin"]
 
 [[test]]
-name = "plugin_in_process"
-path = "tests/plugin_in_process.rs"
+name = "plugin_dispatch"
+path = "tests/plugin_dispatch.rs"
 required-features = ["plugin"]
 
 [[test]]

@@ -597,6 +597,16 @@ class OKXDataClient(LiveMarketDataClient):
                 instruments = await self._fetch_instruments_for_type(inst_type)
                 all_instruments.extend(instruments)
 
+        if self._instrument_provider.load_spreads:
+            try:
+                pyo3_instruments = await self._http_client.request_spread_instruments()
+                for pyo3_instrument in pyo3_instruments:
+                    self._cache_instrument(pyo3_instrument)
+                    instrument = transform_instrument_from_pyo3(pyo3_instrument)
+                    all_instruments.append(instrument)
+            except Exception as e:
+                self._log.error(f"Failed to fetch spread instruments: {e}")
+
         self._handle_instruments(
             request.venue,
             all_instruments,

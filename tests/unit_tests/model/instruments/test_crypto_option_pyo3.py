@@ -63,6 +63,68 @@ _XBTUSD_OPTION_INVERSE = nautilus_pyo3.CryptoOption(
     ts_init=0,
 )
 
+_ETHUSD_OPTION_QUANTO = nautilus_pyo3.CryptoOption(
+    instrument_id=InstrumentId.from_str("ETHUSD-240329-3000-C.DERIBIT"),
+    raw_symbol=Symbol("ETHUSD-240329-3000-C"),
+    underlying=Pyo3Currency.from_str("ETH"),
+    quote_currency=Pyo3Currency.from_str("USD"),
+    settlement_currency=Pyo3Currency.from_str("BTC"),
+    is_inverse=False,
+    option_kind=OptionKind.CALL,
+    strike_price=Pyo3Price.from_str("3000.00"),
+    activation_ns=1640390400000000000,
+    expiration_ns=1711670400000000000,
+    price_precision=2,
+    size_precision=0,
+    price_increment=Pyo3Price.from_str("0.01"),
+    size_increment=Pyo3Quantity.from_int(1),
+    maker_fee=Decimal("0.0003"),
+    taker_fee=Decimal("0.0003"),
+    margin_init=Decimal("0.15"),
+    margin_maint=Decimal("0.075"),
+    multiplier=None,
+    lot_size=None,
+    max_quantity=Pyo3Quantity.from_int(10_000),
+    min_quantity=Pyo3Quantity.from_int(1),
+    max_notional=None,
+    min_notional=None,
+    max_price=None,
+    min_price=None,
+    ts_event=0,
+    ts_init=0,
+)
+
+_ETHUSD_OPTION_USD_STABLE_SETTLED = nautilus_pyo3.CryptoOption(
+    instrument_id=InstrumentId.from_str("ETHUSD-240329-3000-C-USDT.DERIBIT"),
+    raw_symbol=Symbol("ETHUSD-240329-3000-C-USDT"),
+    underlying=Pyo3Currency.from_str("ETH"),
+    quote_currency=Pyo3Currency.from_str("USD"),
+    settlement_currency=Pyo3Currency.from_str("USDT"),
+    is_inverse=False,
+    option_kind=OptionKind.CALL,
+    strike_price=Pyo3Price.from_str("3000.00"),
+    activation_ns=1640390400000000000,
+    expiration_ns=1711670400000000000,
+    price_precision=2,
+    size_precision=0,
+    price_increment=Pyo3Price.from_str("0.01"),
+    size_increment=Pyo3Quantity.from_int(1),
+    maker_fee=Decimal("0.0003"),
+    taker_fee=Decimal("0.0003"),
+    margin_init=Decimal("0.15"),
+    margin_maint=Decimal("0.075"),
+    multiplier=None,
+    lot_size=None,
+    max_quantity=Pyo3Quantity.from_int(10_000),
+    min_quantity=Pyo3Quantity.from_int(1),
+    max_notional=None,
+    min_notional=None,
+    max_price=None,
+    min_price=None,
+    ts_event=0,
+    ts_init=0,
+)
+
 
 def test_equality():
     item_1 = TestInstrumentProviderPyo3.btcusd_option_deribit()
@@ -72,6 +134,12 @@ def test_equality():
 
 def test_hash():
     assert hash(_BTCUSD_OPTION) == hash(_BTCUSD_OPTION)
+
+
+def test_repr_includes_settlement_currency():
+    instrument = CryptoOption.from_pyo3(_BTCUSD_OPTION)
+
+    assert "settlement_currency=BTC" in repr(instrument)
 
 
 def test_to_dict():
@@ -122,6 +190,36 @@ def test_pyo3_cython_conversion():
     assert crypto_option_pyo3_dict == crypto_option_cython_dict
 
 
+def test_dict_round_trip_preserves_fractional_lot_size():
+    values = CryptoOption.to_dict(CryptoOption.from_pyo3(_BTCUSD_OPTION))
+    values["lot_size"] = "0.25"
+
+    restored = CryptoOption.from_dict(values)
+
+    assert restored.lot_size == Quantity.from_str("0.25")
+    assert CryptoOption.to_dict(restored)["lot_size"] == "0.25"
+
+
+def test_dict_round_trip_preserves_none_lot_size():
+    values = CryptoOption.to_dict(CryptoOption.from_pyo3(_BTCUSD_OPTION))
+    values["lot_size"] = None
+
+    restored = CryptoOption.from_dict(values)
+
+    assert restored.lot_size is None
+    assert CryptoOption.to_dict(restored)["lot_size"] is None
+
+
+def test_dict_round_trip_defaults_missing_lot_size_to_none():
+    values = CryptoOption.to_dict(CryptoOption.from_pyo3(_BTCUSD_OPTION))
+    values.pop("lot_size")
+
+    restored = CryptoOption.from_dict(values)
+
+    assert restored.lot_size is None
+    assert CryptoOption.to_dict(restored)["lot_size"] is None
+
+
 def test_get_base_currency_linear():
     # Linear option: base currency is the underlying
     linear = CryptoOption.from_pyo3(_BTCUSD_OPTION)
@@ -144,6 +242,20 @@ def test_get_cost_currency_inverse():
     # Inverse option: cost currency is underlying (base)
     inverse = CryptoOption.from_pyo3(_XBTUSD_OPTION_INVERSE)
     assert inverse.get_cost_currency() == Currency.from_str("BTC")
+
+
+def test_get_cost_currency_quanto():
+    quanto = CryptoOption.from_pyo3(_ETHUSD_OPTION_QUANTO)
+
+    assert quanto.is_quanto is True
+    assert quanto.get_cost_currency() == Currency.from_str("BTC")
+
+
+def test_usd_stable_settlement_is_not_quanto():
+    instrument = CryptoOption.from_pyo3(_ETHUSD_OPTION_USD_STABLE_SETTLED)
+
+    assert instrument.is_quanto is False
+    assert instrument.get_cost_currency() == Currency.from_str("USD")
 
 
 def test_notional_value_linear():
@@ -184,3 +296,25 @@ def test_notional_value_inverse_with_quote_override():
     # Should return quantity directly in quote currency (not calculated)
     assert notional.currency == Currency.from_str("USD")
     assert notional.as_decimal() == Decimal(100)
+
+
+def test_notional_value_quanto():
+    quanto = CryptoOption.from_pyo3(_ETHUSD_OPTION_QUANTO)
+    quantity = Quantity.from_int(10)
+    price = Price.from_str("200.00")
+
+    notional = quanto.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("BTC")
+    assert notional.as_decimal() == Decimal(2000)
+
+
+def test_notional_value_usd_stable_settlement_returns_quote():
+    instrument = CryptoOption.from_pyo3(_ETHUSD_OPTION_USD_STABLE_SETTLED)
+    quantity = Quantity.from_int(10)
+    price = Price.from_str("200.00")
+
+    notional = instrument.notional_value(quantity, price)
+
+    assert notional.currency == Currency.from_str("USD")
+    assert notional.as_decimal() == Decimal(2000)

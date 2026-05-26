@@ -53,7 +53,12 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{ACCOUNTS_PAGE_LIMIT, ORDER_STATUS_OPEN, REST_API_PATH},
+        consts::{
+            ACCOUNTS_PAGE_LIMIT, ORDER_STATUS_OPEN, QUERY_KEY_CURSOR, QUERY_KEY_END_DATE,
+            QUERY_KEY_END_SEQUENCE_TIMESTAMP, QUERY_KEY_LIMIT, QUERY_KEY_ORDER_IDS,
+            QUERY_KEY_ORDER_STATUS, QUERY_KEY_PRODUCT_IDS, QUERY_KEY_START_DATE,
+            QUERY_KEY_START_SEQUENCE_TIMESTAMP, REST_API_PATH,
+        },
         credential::CoinbaseCredential,
         enums::{
             CoinbaseEnvironment, CoinbaseMarginType, CoinbaseOrderSide, CoinbaseProductType,
@@ -574,9 +579,9 @@ impl CoinbaseRawHttpClient {
         let mut cursor: Option<String> = None;
 
         loop {
-            let mut pairs: Vec<(&str, &str)> = vec![("limit", ACCOUNTS_PAGE_LIMIT)];
+            let mut pairs: Vec<(&str, &str)> = vec![(QUERY_KEY_LIMIT, ACCOUNTS_PAGE_LIMIT)];
             if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
+                pairs.push((QUERY_KEY_CURSOR, c));
             }
             let query_str = encode_query(&pairs);
 
@@ -613,27 +618,27 @@ impl CoinbaseRawHttpClient {
             // Coinbase accepts `product_ids` as a repeated array parameter on
             // `/orders/historical/batch`; the singular form is silently ignored.
             if let Some(pid) = query.product_id.as_deref() {
-                pairs.push(("product_ids", pid));
+                pairs.push((QUERY_KEY_PRODUCT_IDS, pid));
             }
 
             if query.open_only {
-                pairs.push(("order_status", ORDER_STATUS_OPEN));
+                pairs.push((QUERY_KEY_ORDER_STATUS, ORDER_STATUS_OPEN));
             }
 
             if let Some(s) = start_str.as_deref() {
-                pairs.push(("start_date", s));
+                pairs.push((QUERY_KEY_START_DATE, s));
             }
 
             if let Some(e) = end_str.as_deref() {
-                pairs.push(("end_date", e));
+                pairs.push((QUERY_KEY_END_DATE, e));
             }
 
             if let Some(l) = limit_str.as_deref() {
-                pairs.push(("limit", l));
+                pairs.push((QUERY_KEY_LIMIT, l));
             }
 
             if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
+                pairs.push((QUERY_KEY_CURSOR, c));
             }
 
             let query_str = encode_query(&pairs);
@@ -682,27 +687,27 @@ impl CoinbaseRawHttpClient {
             // product and order IDs. Singular keys are accepted by the server
             // but silently ignored, which would scan the full fill history.
             if let Some(pid) = query.product_id.as_deref() {
-                pairs.push(("product_ids", pid));
+                pairs.push((QUERY_KEY_PRODUCT_IDS, pid));
             }
 
             if let Some(vid) = query.venue_order_id.as_deref() {
-                pairs.push(("order_ids", vid));
+                pairs.push((QUERY_KEY_ORDER_IDS, vid));
             }
 
             if let Some(s) = start_str.as_deref() {
-                pairs.push(("start_sequence_timestamp", s));
+                pairs.push((QUERY_KEY_START_SEQUENCE_TIMESTAMP, s));
             }
 
             if let Some(e) = end_str.as_deref() {
-                pairs.push(("end_sequence_timestamp", e));
+                pairs.push((QUERY_KEY_END_SEQUENCE_TIMESTAMP, e));
             }
 
             if let Some(l) = limit_str.as_deref() {
-                pairs.push(("limit", l));
+                pairs.push((QUERY_KEY_LIMIT, l));
             }
 
             if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
+                pairs.push((QUERY_KEY_CURSOR, c));
             }
 
             let query_str = encode_query(&pairs);

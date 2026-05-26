@@ -2604,7 +2604,7 @@ impl<'a> ToCapnp<'a> for OrderAccepted {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -2639,7 +2639,7 @@ impl<'a> FromCapnp<'a> for OrderAccepted {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -2688,8 +2688,8 @@ impl<'a> ToCapnp<'a> for OrderRejected {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
-        builder.set_due_post_only(self.due_post_only != 0);
+        builder.set_reconciliation(self.reconciliation);
+        builder.set_due_post_only(self.due_post_only);
     }
 }
 
@@ -2723,8 +2723,8 @@ impl<'a> FromCapnp<'a> for OrderRejected {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
-        let due_post_only = reader.get_due_post_only() as u8;
+        let reconciliation = reader.get_reconciliation();
+        let due_post_only = reader.get_due_post_only();
 
         Ok(Self {
             trader_id,
@@ -2777,7 +2777,7 @@ impl<'a> ToCapnp<'a> for OrderCanceled {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -2814,7 +2814,7 @@ impl<'a> FromCapnp<'a> for OrderCanceled {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -2866,7 +2866,7 @@ impl<'a> ToCapnp<'a> for OrderExpired {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -2903,7 +2903,7 @@ impl<'a> FromCapnp<'a> for OrderExpired {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -2955,7 +2955,7 @@ impl<'a> ToCapnp<'a> for OrderTriggered {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -2992,7 +2992,7 @@ impl<'a> FromCapnp<'a> for OrderTriggered {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -3044,7 +3044,7 @@ impl<'a> ToCapnp<'a> for OrderPendingUpdate {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -3083,7 +3083,7 @@ impl<'a> FromCapnp<'a> for OrderPendingUpdate {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -3135,7 +3135,7 @@ impl<'a> ToCapnp<'a> for OrderPendingCancel {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -3174,7 +3174,7 @@ impl<'a> FromCapnp<'a> for OrderPendingCancel {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -3225,7 +3225,7 @@ impl<'a> ToCapnp<'a> for OrderModifyRejected {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -3264,7 +3264,7 @@ impl<'a> FromCapnp<'a> for OrderModifyRejected {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -3316,7 +3316,7 @@ impl<'a> ToCapnp<'a> for OrderCancelRejected {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
     }
 }
 
@@ -3355,7 +3355,7 @@ impl<'a> FromCapnp<'a> for OrderCancelRejected {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -3423,7 +3423,7 @@ impl<'a> ToCapnp<'a> for OrderUpdated {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_reconciliation(self.reconciliation);
         builder.set_is_quote_quantity(self.is_quote_quantity);
     }
 }
@@ -3485,7 +3485,7 @@ impl<'a> FromCapnp<'a> for OrderUpdated {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        let reconciliation = reader.get_reconciliation() as u8;
+        let reconciliation = reader.get_reconciliation();
 
         Ok(Self {
             trader_id,
@@ -4617,7 +4617,10 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
 mod tests {
     use capnp::message::Builder;
     use nautilus_core::UnixNanos;
-    use nautilus_model::{data::stubs::*, events::order::stubs::*};
+    use nautilus_model::{
+        data::stubs::*,
+        events::order::{spec::OrderCanceledSpec, stubs::*},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -5220,18 +5223,15 @@ mod tests {
     }
 
     fn sample_order_canceled() -> OrderCanceled {
-        OrderCanceled::new(
-            trader_id(),
-            strategy_id_ema_cross(),
-            instrument_id_btc_usdt(),
-            client_order_id(),
-            uuid4(),
-            UnixNanos::from(7),
-            UnixNanos::from(8),
-            true,
-            Some(venue_order_id()),
-            Some(account_id()),
-        )
+        OrderCanceledSpec::builder()
+            .strategy_id(strategy_id_ema_cross())
+            .instrument_id(instrument_id_btc_usdt())
+            .ts_event(UnixNanos::from(7))
+            .ts_init(UnixNanos::from(8))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id())
+            .account_id(account_id())
+            .build()
     }
 
     fn sample_order_book_depth10() -> OrderBookDepth10 {

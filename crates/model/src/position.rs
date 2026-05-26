@@ -1041,7 +1041,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
+        enums::{OrderSide, OrderType, PositionAdjustmentType, PositionSide},
         events::{OrderEventAny, OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
         identifiers::{
             AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
@@ -1386,27 +1386,22 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill.into());
 
-        let fill2 = OrderFilled::new(
-            order.trader_id(),
-            StrategyId::new("S-001"),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::new("2"),
-            OrderSide::Sell,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00011"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            2_000_000_000.into(),
-            0.into(),
-            false,
-            Some(PositionId::new("T1")),
-            Some(Money::from("0.0 USD")),
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(StrategyId::new("S-001"))
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::new("2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00011"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(2_000_000_000.into())
+            .position_id(PositionId::new("T1"))
+            .commission(Money::from("0.0 USD"))
+            .build();
         position.apply(&fill2);
         let last = Price::from_str("1.0005").unwrap();
 
@@ -1819,51 +1814,40 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
 
-        let fill2 = OrderFilled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::from("2"),
-            OrderSide::Sell,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00011"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            Some(Money::from("0 USD")),
-        );
+        let fill2 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::from("2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00011"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(UnixNanos::from(2_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         position.apply(&fill2);
 
-        let fill3 = OrderFilled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            VenueOrderId::from("2"),
-            order.account_id().unwrap_or(AccountId::new("SIM-001")),
-            TradeId::from("3"),
-            OrderSide::Buy,
-            OrderType::Market,
-            order.quantity(),
-            Price::from("1.00012"),
-            audusd_sim.quote_currency(),
-            LiquiditySide::Taker,
-            uuid4(),
-            UnixNanos::from(3_000_000_000),
-            UnixNanos::default(),
-            false,
-            Some(PositionId::from("P-123456")),
-            Some(Money::from("0 USD")),
-        );
+        let fill3 = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("2"))
+            .account_id(order.account_id().unwrap_or(AccountId::new("SIM-001")))
+            .trade_id(TradeId::from("3"))
+            .last_qty(order.quantity())
+            .last_px(Price::from("1.00012"))
+            .currency(audusd_sim.quote_currency())
+            .ts_event(UnixNanos::from(3_000_000_000))
+            .position_id(PositionId::from("P-123456"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         position.apply(&fill3);
 

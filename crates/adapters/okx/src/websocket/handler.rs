@@ -331,6 +331,9 @@ impl OKXWsFeedHandler {
             OKXWsChannel::Account => Some(OKXWsMessage::Account(data)),
             OKXWsChannel::Positions => Some(OKXWsMessage::Positions(data)),
             OKXWsChannel::Orders => parse_array_items(data, "orders").map(OKXWsMessage::Orders),
+            OKXWsChannel::SprdOrders => {
+                parse_array_items(data, "spread orders").map(OKXWsMessage::SpreadOrders)
+            }
             OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
                 parse_array_items(data, "algo orders").map(OKXWsMessage::AlgoOrders)
             }

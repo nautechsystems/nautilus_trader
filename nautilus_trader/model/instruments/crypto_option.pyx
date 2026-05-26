@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.base cimport Price
+from nautilus_trader.model.instruments.base cimport settlement_currency_differs_for_quanto
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -56,6 +57,8 @@ cdef class CryptoOption(Instrument):
         The contract quote currency.
     settlement_currency : Currency
         The settlement currency.
+    is_quanto : bool
+        If the instrument is quanto.
     is_inverse : bool
         If the instrument costing is inverse (quantity expressed in quote currency units).
     option_kind : OptionKind
@@ -202,6 +205,14 @@ cdef class CryptoOption(Instrument):
 
         self.underlying = underlying
         self.settlement_currency = settlement_currency
+        if settlement_currency_differs_for_quanto(
+            settlement_currency,
+            quote_currency,
+            underlying,
+        ):
+            self.is_quanto = True
+        else:
+            self.is_quanto = False
         self.option_kind = option_kind
         self.strike_price = strike_price
         self.activation_ns = activation_ns
@@ -217,6 +228,7 @@ cdef class CryptoOption(Instrument):
             f"is_inverse={self.is_inverse}, "
             f"underlying={self.underlying}, "
             f"quote_currency={self.quote_currency}, "
+            f"settlement_currency={self.settlement_currency}, "
             f"option_kind={option_kind_to_str(self.option_kind)}, "
             f"strike_price={self.strike_price}, "
             f"activation={format_iso8601(self.activation_utc, nanos_precision=False)}, "
@@ -262,6 +274,7 @@ cdef class CryptoOption(Instrument):
 
         - Standard linear instruments = quote_currency
         - Inverse instruments = underlying (base currency)
+        - Quanto instruments = settlement_currency
 
         Returns
         -------
@@ -270,6 +283,8 @@ cdef class CryptoOption(Instrument):
         """
         if self.is_inverse:
             return self.underlying
+        elif self.is_quanto:
+            return self.settlement_currency
         else:
             return self.quote_currency
 
@@ -284,8 +299,9 @@ cdef class CryptoOption(Instrument):
         """
         Calculate the notional value.
 
-        Result will be in quote currency for standard instruments, or underlying
-        currency for inverse instruments.
+        Result will be in quote currency for standard instruments, underlying
+        currency for inverse instruments, or settlement currency for quanto
+        instruments.
 
         Parameters
         ----------
@@ -297,7 +313,7 @@ cdef class CryptoOption(Instrument):
             For inverse instruments only: if True, treats the quantity as already representing
             notional value in quote currency and returns it directly without calculation.
             This is useful when quantity already represents a USD value that doesn't need
-            conversion (e.g., for display purposes). Has no effect on linear instruments.
+            conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
         target_currency : Currency, optional
             The target currency for conversion.
         conversion_price : Price, optional
@@ -318,6 +334,8 @@ cdef class CryptoOption(Instrument):
                 notional = Money(quantity, self.quote_currency)
             else:
                 notional = Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.underlying)
+        elif self.is_quanto:
+            notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.settlement_currency)
         else:
             notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
 
@@ -361,6 +379,7 @@ cdef class CryptoOption(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+        cdef str lot_size = values.get("lot_size")
         return CryptoOption(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -377,6 +396,7 @@ cdef class CryptoOption(Instrument):
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
             multiplier=Quantity.from_str(values["multiplier"]),
+            lot_size=Quantity.from_str_c(lot_size) if lot_size is not None else None,
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
             max_notional=Money.from_str_c(max_n) if max_n is not None else None,
@@ -413,7 +433,7 @@ cdef class CryptoOption(Instrument):
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
             "multiplier": str(obj.multiplier),
-            "lot_size": str(obj.lot_size),
+            "lot_size": str(obj.lot_size) if obj.lot_size is not None else None,
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "max_notional": str(obj.max_notional) if obj.max_notional is not None else None,

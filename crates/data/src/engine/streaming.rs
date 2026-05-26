@@ -14,18 +14,32 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
+use chrono::{DateTime, Utc};
 use nautilus_common::messages::data::{
+    BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, QuotesResponse, RequestBars,
+    RequestBookDeltas, RequestBookDepth, RequestCommand, RequestQuotes, RequestTrades,
     SubscribeBars, SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
+    TradesResponse,
 };
 use nautilus_core::{
-    Params,
+    Params, UUID4, UnixNanos,
     correctness::{FAILED, check_key_not_in_map},
+};
+use nautilus_model::{
+    data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    identifiers::ClientId,
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use serde_json::Value;
 use ustr::Ustr;
 
-use super::DataEngine;
+use super::{DataEngine, requests::request_params};
+
+const PARAM_SKIP_CATALOG_DATA: &str = "skip_catalog_data";
+const PARAM_UPDATE_CATALOG: &str = "update_catalog";
+const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
+const PARAM_FROM_DAY_START: &str = "from_day_start";
+const CATALOG_CLIENT_ID: &str = "CATALOG";
 
 pub(crate) type CatalogMap = AHashMap<Ustr, ParquetDataCatalog>;
 
@@ -168,4 +182,607 @@ impl DataEngine {
 
         Ok(None)
     }
+
+    pub(super) fn catalogs_registered(&self) -> bool {
+        !self.catalogs.is_empty()
+    }
+
+    // Mirrors Cython `_handle_date_range_request` (engine.pyx:2071-2144): bound the
+    // request window, walk the catalogs to find one whose missing-intervals differ
+    // from the full requested range, then fan the parent out via the pipeline with
+    // one catalog leg plus one client leg per missing interval. With no catalog
+    // match and no resolvable client the engine emits an empty response keyed by
+    // the parent request id.
+    pub(super) fn dispatch_date_range_request(
+        &mut self,
+        req: RequestCommand,
+    ) -> anyhow::Result<()> {
+        let Some((data_cls, identifier)) = request_identifier(&req) else {
+            return self.dispatch_request_to_client(req).map(|_| ());
+        };
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let now_dt = now_ns.to_datetime_utc();
+        let query_past_data = request_params(&req)
+            .and_then(|p| p.get(PARAM_SUBSCRIPTION_NAME))
+            .is_none();
+
+        let (start_dt, end_dt) = bound_request_dates(
+            request_start(&req),
+            request_end(&req),
+            now_dt,
+            query_past_data,
+        );
+        let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
+        let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
+
+        if start_ns > end_ns {
+            anyhow::bail!(
+                "Cannot dispatch request, start {start_ns} was greater than end {end_ns}"
+            );
+        }
+
+        let client_id = req.client_id().copied();
+        let venue = req.venue().copied();
+        let used_client_id = self
+            .get_client(client_id.as_ref(), venue.as_ref())
+            .map(|client| client.client_id());
+
+        // Floor the catalog window to the UTC day boundary so the day-start F_SNAPSHOT frame is
+        // selected and read for the snapshot replay; client gaps keep the original window.
+        // The parent request keeps its original start, so the merged response trims back to it.
+        let (catalog_start_dt, catalog_start_ns) = if matches!(req, RequestCommand::BookDeltas(_))
+            && request_params(&req)
+                .and_then(|p| p.get_bool(PARAM_FROM_DAY_START))
+                .unwrap_or(true)
+        {
+            let floored = floor_to_utc_day(start_dt);
+            (floored, datetime_to_unix_nanos_or_zero(floored))
+        } else {
+            (start_dt, start_ns)
+        };
+
+        let query_interval = vec![(start_ns.as_u64(), end_ns.as_u64())];
+        let catalog_query_interval = vec![(catalog_start_ns.as_u64(), end_ns.as_u64())];
+        let mut missing_intervals = query_interval.clone();
+        let mut has_catalog_data = false;
+        let mut winning_catalog: Option<Ustr> = None;
+
+        for (name, catalog) in &self.catalogs {
+            let catalog_intervals = catalog.get_missing_intervals_for_request(
+                catalog_start_ns.as_u64(),
+                end_ns.as_u64(),
+                data_cls,
+                Some(&identifier),
+            )?;
+
+            if catalog_intervals != catalog_query_interval {
+                has_catalog_data = true;
+                winning_catalog = Some(*name);
+                // Client legs fill only the requested window, not the pre-start range
+                missing_intervals = if catalog_start_ns == start_ns {
+                    catalog_intervals
+                } else {
+                    catalog.get_missing_intervals_for_request(
+                        start_ns.as_u64(),
+                        end_ns.as_u64(),
+                        data_cls,
+                        Some(&identifier),
+                    )?
+                };
+                break;
+            }
+        }
+
+        let skip_catalog_data = request_params(&req)
+            .and_then(|p| p.get_bool(PARAM_SKIP_CATALOG_DATA))
+            .unwrap_or(false);
+
+        // When `skip_catalog_data` is set the client must serve the full parent window;
+        // dropping the catalog leg without resetting the missing intervals would leave
+        // the catalog-covered range unanswered.
+        if skip_catalog_data {
+            missing_intervals = query_interval;
+        }
+
+        let n_client_requests = if used_client_id.is_some() {
+            missing_intervals.len()
+        } else {
+            0
+        };
+        let n_catalog_requests = usize::from(has_catalog_data && !skip_catalog_data);
+        let n_requests = n_client_requests + n_catalog_requests;
+
+        if n_requests == 0 {
+            let empty = build_empty_response(&req, start_ns, end_ns, used_client_id, now_ns);
+            self.response(empty);
+            return Ok(());
+        }
+
+        let parent_id = *req.request_id();
+        self.new_request_pipeline(req.clone(), n_requests);
+
+        if n_catalog_requests == 1
+            && let Some(catalog_name) = winning_catalog
+        {
+            let leg = with_dates_for_pipeline(&req, Some(catalog_start_dt), Some(end_dt), now_ns);
+            let leg_id = *leg.request_id();
+            self.register_request_pipeline_leg(leg_id, parent_id);
+
+            match self.query_catalog_leg(
+                &leg,
+                catalog_name,
+                catalog_start_ns,
+                end_ns,
+                used_client_id,
+                now_ns,
+            ) {
+                Ok(resp) => self.response(resp),
+                Err(e) => {
+                    log::error!(
+                        "Catalog leg query failed for parent {parent_id} (catalog {catalog_name}): {e}"
+                    );
+                    let empty =
+                        build_empty_response(&leg, start_ns, end_ns, used_client_id, now_ns);
+                    self.response(empty);
+                }
+            }
+        }
+
+        if n_client_requests > 0 {
+            for (leg_start_ns, leg_end_ns) in &missing_intervals {
+                let leg_start_dt = UnixNanos::from(*leg_start_ns).to_datetime_utc();
+                let leg_end_dt = UnixNanos::from(*leg_end_ns).to_datetime_utc();
+                let leg =
+                    with_dates_for_pipeline(&req, Some(leg_start_dt), Some(leg_end_dt), now_ns);
+                let leg_id = *leg.request_id();
+                self.register_request_pipeline_leg(leg_id, parent_id);
+
+                if let Err(e) = self.dispatch_request_to_client(leg) {
+                    // Abort the whole pipeline so the parent does not stay half-registered
+                    // waiting on a leg the client never accepted. Any catalog leg already
+                    // buffered for this parent is discarded with the pipeline state.
+                    log::error!("Client leg dispatch failed for parent {parent_id}: {e}");
+                    self.abort_request_pipeline(parent_id);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn abort_request_pipeline(&mut self, parent_id: UUID4) {
+        self.request_pipeline_n_components.remove(&parent_id);
+        self.request_pipeline_parent_request.remove(&parent_id);
+        self.request_pipeline_responses.remove(&parent_id);
+        self.request_pipeline_parent_request_id
+            .retain(|_, p_id| *p_id != parent_id);
+    }
+
+    fn query_catalog_leg(
+        &mut self,
+        leg: &RequestCommand,
+        catalog_name: Ustr,
+        start_ns: UnixNanos,
+        end_ns: UnixNanos,
+        used_client_id: Option<ClientId>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<DataResponse> {
+        let catalog = self.catalogs.get_mut(&catalog_name).ok_or_else(|| {
+            anyhow::anyhow!("Catalog {catalog_name} disappeared between intervals query and read")
+        })?;
+
+        match leg {
+            RequestCommand::Quotes(cmd) => {
+                let data: Vec<QuoteTick> = catalog.quote_ticks(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_quotes_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
+            RequestCommand::Trades(cmd) => {
+                let data: Vec<TradeTick> = catalog.trade_ticks(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_trades_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
+            RequestCommand::Bars(cmd) => {
+                let data: Vec<Bar> = catalog.bars(
+                    Some(vec![cmd.bar_type.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_bars_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
+            RequestCommand::BookDeltas(cmd) => {
+                let data: Vec<OrderBookDelta> = catalog.order_book_deltas(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_book_deltas_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
+            RequestCommand::BookDepth(cmd) => {
+                let data: Vec<OrderBookDepth10> = catalog.order_book_depth10(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_book_depth_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
+            _ => {
+                anyhow::bail!("query_catalog_leg called with non-catalog-eligible variant {leg:?}")
+            }
+        }
+    }
+}
+
+pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
+    matches!(
+        req,
+        RequestCommand::Quotes(_)
+            | RequestCommand::Trades(_)
+            | RequestCommand::Bars(_)
+            | RequestCommand::BookDeltas(_)
+            | RequestCommand::BookDepth(_)
+    )
+}
+
+fn request_identifier(req: &RequestCommand) -> Option<(&'static str, String)> {
+    match req {
+        RequestCommand::Quotes(cmd) => Some(("quotes", cmd.instrument_id.to_string())),
+        RequestCommand::Trades(cmd) => Some(("trades", cmd.instrument_id.to_string())),
+        RequestCommand::Bars(cmd) => Some(("bars", cmd.bar_type.to_string())),
+        RequestCommand::BookDeltas(cmd) => {
+            Some(("order_book_deltas", cmd.instrument_id.to_string()))
+        }
+        RequestCommand::BookDepth(cmd) => {
+            Some(("order_book_depths", cmd.instrument_id.to_string()))
+        }
+        _ => None,
+    }
+}
+
+fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
+    match req {
+        RequestCommand::Quotes(cmd) => cmd.start,
+        RequestCommand::Trades(cmd) => cmd.start,
+        RequestCommand::Bars(cmd) => cmd.start,
+        RequestCommand::BookDeltas(cmd) => cmd.start,
+        RequestCommand::BookDepth(cmd) => cmd.start,
+        _ => None,
+    }
+}
+
+fn request_end(req: &RequestCommand) -> Option<DateTime<Utc>> {
+    match req {
+        RequestCommand::Quotes(cmd) => cmd.end,
+        RequestCommand::Trades(cmd) => cmd.end,
+        RequestCommand::Bars(cmd) => cmd.end,
+        RequestCommand::BookDeltas(cmd) => cmd.end,
+        RequestCommand::BookDepth(cmd) => cmd.end,
+        _ => None,
+    }
+}
+
+fn bound_request_dates(
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+    query_past_data: bool,
+) -> (DateTime<Utc>, DateTime<Utc>) {
+    let zero = DateTime::<Utc>::from_timestamp_nanos(0);
+    let mut start = start.unwrap_or(zero);
+    let mut end = end.unwrap_or(now);
+
+    if query_past_data {
+        if start > now {
+            start = now;
+        }
+
+        if end > now {
+            end = now;
+        }
+    }
+
+    (start, end)
+}
+
+fn datetime_to_unix_nanos_or_zero(dt: DateTime<Utc>) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.timestamp_nanos_opt().unwrap_or(0).max(0)).unwrap_or(0))
+}
+
+fn floor_to_utc_day(dt: DateTime<Utc>) -> DateTime<Utc> {
+    dt.date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always a valid time")
+        .and_utc()
+}
+
+fn with_dates_for_pipeline(
+    req: &RequestCommand,
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+    ts_init: UnixNanos,
+) -> RequestCommand {
+    let new_id = UUID4::new();
+
+    match req {
+        RequestCommand::Quotes(cmd) => RequestCommand::Quotes(RequestQuotes {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        RequestCommand::Trades(cmd) => RequestCommand::Trades(RequestTrades {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        RequestCommand::BookDeltas(cmd) => RequestCommand::BookDeltas(RequestBookDeltas {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        RequestCommand::BookDepth(cmd) => RequestCommand::BookDepth(RequestBookDepth {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            depth: cmd.depth,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        RequestCommand::Bars(cmd) => RequestCommand::Bars(RequestBars {
+            bar_type: cmd.bar_type,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        // `Join` and the non-date-range variants should never reach this path; the dispatcher
+        // gates on `is_date_range_variant` first. Cloning preserves behaviour if a caller
+        // reaches this arm.
+        _ => req.clone(),
+    }
+}
+
+fn build_empty_response(
+    req: &RequestCommand,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    match req {
+        RequestCommand::Quotes(cmd) => DataResponse::Quotes(QuotesResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::Trades(cmd) => DataResponse::Trades(TradesResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::Bars(cmd) => DataResponse::Bars(BarsResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.bar_type,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::BookDeltas(cmd) => DataResponse::BookDeltas(BookDeltasResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::BookDepth(cmd) => DataResponse::BookDepth(BookDepthResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        _ => unreachable!("build_empty_response called with non-catalog-eligible variant"),
+    }
+}
+
+fn build_quotes_catalog_response(
+    cmd: &RequestQuotes,
+    data: Vec<QuoteTick>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::Quotes(QuotesResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_trades_catalog_response(
+    cmd: &RequestTrades,
+    data: Vec<TradeTick>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::Trades(TradesResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_bars_catalog_response(
+    cmd: &RequestBars,
+    data: Vec<Bar>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::Bars(BarsResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.bar_type,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_book_deltas_catalog_response(
+    cmd: &RequestBookDeltas,
+    data: Vec<OrderBookDelta>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::BookDeltas(BookDeltasResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_book_depth_catalog_response(
+    cmd: &RequestBookDepth,
+    data: Vec<OrderBookDepth10>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::BookDepth(BookDepthResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn catalog_response_params(existing: Option<&Params>) -> Params {
+    let mut params = existing.cloned().unwrap_or_else(Params::new);
+    params.insert(PARAM_UPDATE_CATALOG.to_string(), Value::Bool(false));
+    params
+}
+
+fn resolve_response_client_id(
+    request_client_id: Option<ClientId>,
+    used_client_id: Option<ClientId>,
+) -> ClientId {
+    request_client_id
+        .or(used_client_id)
+        .unwrap_or_else(|| ClientId::new(CATALOG_CLIENT_ID))
 }

@@ -546,6 +546,30 @@ Combinations of contingent orders, or larger order bulks can be grouped together
 each other, as this is specific to how the orders themselves are constructed, and the
 specific venue they are being routed to.
 
+All orders in a list must share the same venue. Orders may target different instruments at that
+venue (e.g. pairs, calendar spreads, multi-leg legs); whether the destination venue accepts
+mixed-instrument batches is venue-specific. The list's `instrument_id` is taken from the first
+order as a representative value; downstream consumers that need a per-order instrument resolve
+each order individually.
+
+Caveats for mixed-instrument lists:
+
+- Pre-trade per-order checks (price/quantity precision, GTD) use each order's own instrument.
+- The cumulative risk check (free balance, min/max notional, position-reducing exposure,
+  per-order market-data lookups) uses the list's representative instrument. For mixed lists
+  this is a single-instrument bound, not per-instrument accuracy.
+- Cache lookups like `cache.order_lists(instrument_id=...)` filter against the representative
+  `instrument_id`; lists containing other instruments will not match queries for those other
+  instruments.
+- The execution engine denies mixed-instrument lists when a `position_id` is supplied
+  (a position belongs to a single instrument, regardless of OMS).
+- Adapter `submit_order_list` implementations vary. Some iterate orders per leg and resolve
+  each order's own `instrument_id` against the venue API; others still build the batch
+  request around the list's representative `instrument_id` and will misroute non-first
+  orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
+  behaviour before relying on it. Backtesting and custom strategy code that handle
+  multi-leg routing in user space remain the safest path today.
+
 ### Contingency types
 
 - **OTO (One-Triggers-Other)** – a parent order that, once executed, automatically places one or more child orders.

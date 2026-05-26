@@ -139,13 +139,13 @@ impl OrderRejected {
     #[getter]
     #[pyo3(name = "reconciliation")]
     fn py_reconciliation(&self) -> bool {
-        self.reconciliation != 0
+        self.reconciliation
     }
 
     #[getter]
     #[pyo3(name = "due_post_only")]
     fn py_due_post_only(&self) -> bool {
-        self.due_post_only != 0
+        self.due_post_only
     }
 
     #[pyo3(name = "to_dict")]

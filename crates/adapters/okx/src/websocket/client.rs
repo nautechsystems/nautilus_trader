@@ -106,12 +106,29 @@ pub static OKX_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).expect("non-zero")));
 
-/// Rate limit for order-related WebSocket operations: 250 requests per second.
-///
-/// Based on OKX documentation for sub-account order limits (1000 per 2 seconds,
-/// so we use half for conservative rate limiting).
+/// Rate limit for single order, cancel, and amend WebSocket operations: 30 requests per second.
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(250).expect("non-zero")).expect("valid constant")
+    Quota::per_second(NonZeroU32::new(30).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for batch order, cancel, and amend WebSocket operations: 7 requests per second.
+pub static OKX_WS_BATCH_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(7).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for mass cancel WebSocket operations: 2 requests per second.
+pub static OKX_WS_MASS_CANCEL_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for algo order WebSocket operations: 10 requests per second.
+pub static OKX_WS_ALGO_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for algo cancel WebSocket operations: 1 request per second.
+pub static OKX_WS_ALGO_CANCEL_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
 
 /// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
@@ -121,24 +138,57 @@ pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 pub static OKX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("subscription")]);
 
-/// Pre-interned rate limit key for order operations (place regular and algo orders).
+/// Pre-interned rate limit key for single regular order operations.
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
 pub static OKX_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("order")]);
 
-/// Pre-interned rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
+/// Pre-interned rate limit key for batch order operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-order")]);
+
+/// Pre-interned rate limit key for single regular cancel operations.
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
 pub static OKX_RATE_LIMIT_KEY_CANCEL: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("cancel")]);
+
+/// Pre-interned rate limit key for batch cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-cancel")]);
+
+/// Pre-interned rate limit key for mass cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
+pub static OKX_RATE_LIMIT_KEY_MASS_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("mass-cancel")]);
 
 /// Pre-interned rate limit key for amend operations (amend orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>
 pub static OKX_RATE_LIMIT_KEY_AMEND: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("amend")]);
+
+/// Pre-interned rate limit key for batch amend operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_AMEND: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-amend")]);
+
+/// Pre-interned rate limit key for algo order operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
+pub static OKX_RATE_LIMIT_KEY_ALGO_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("algo-order")]);
+
+/// Pre-interned rate limit key for algo cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
+pub static OKX_RATE_LIMIT_KEY_ALGO_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("algo-cancel")]);
 
 /// Context stored at order submission time for correlating venue responses.
 ///
@@ -529,12 +579,36 @@ impl OKXWebSocketClient {
                 *OKX_WS_ORDER_QUOTA,
             ),
             (
+                OKX_RATE_LIMIT_KEY_BATCH_ORDER[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
                 OKX_RATE_LIMIT_KEY_CANCEL[0].as_str().to_string(),
                 *OKX_WS_ORDER_QUOTA,
             ),
             (
+                OKX_RATE_LIMIT_KEY_BATCH_CANCEL[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_MASS_CANCEL[0].as_str().to_string(),
+                *OKX_WS_MASS_CANCEL_QUOTA,
+            ),
+            (
                 OKX_RATE_LIMIT_KEY_AMEND[0].as_str().to_string(),
                 *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_BATCH_AMEND[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_ALGO_ORDER[0].as_str().to_string(),
+                *OKX_WS_ALGO_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_ALGO_CANCEL[0].as_str().to_string(),
+                *OKX_WS_ALGO_CANCEL_QUOTA,
             ),
         ];
 
@@ -1857,6 +1931,36 @@ impl OKXWebSocketClient {
         self.unsubscribe(vec![arg]).await
     }
 
+    /// Subscribes to Nitro spread order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_orders(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::SprdOrders,
+            inst_type: None,
+            inst_family: None,
+            inst_id: None,
+        };
+        self.subscribe(vec![arg]).await
+    }
+
+    /// Unsubscribes from Nitro spread order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn unsubscribe_spread_orders(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::SprdOrders,
+            inst_type: None,
+            inst_family: None,
+            inst_id: None,
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
     /// Subscribes to algo order updates for the given instrument type.
     ///
     /// # Errors
@@ -2054,7 +2158,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ORDER.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_ORDER.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchOrders),
@@ -2082,7 +2186,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchCancelOrders),
@@ -2110,7 +2214,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_AMEND.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_AMEND.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchAmendOrders),
@@ -2663,7 +2767,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_MASS_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::MassCancel),
@@ -3029,7 +3133,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ORDER.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_ORDER.to_vec()),
             request_id: Some(request_id),
             client_order_id: Some(client_order_id),
             op: Some(super::enums::OKXWsOperation::OrderAlgo),
@@ -3092,7 +3196,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id,
             op: Some(super::enums::OKXWsOperation::CancelAlgos),

@@ -40,6 +40,11 @@ use crate::{
         PluginBuildId, PluginInitFn, PluginManifest, PluginManifestValidationErrors,
         ValidatedPluginManifest,
     },
+    surfaces::commands::{
+        CancelAllOrdersHandle, CancelOrderHandle, CancelOrdersHandle, CloseAllPositionsHandle,
+        ClosePositionHandle, ModifyOrderHandle, QueryAccountHandle, QueryOrderHandle,
+        SubmitOrderHandle, SubmitOrderListHandle,
+    },
 };
 
 /// Errors that can occur while loading a plug-in.
@@ -623,7 +628,7 @@ unbound_unit_fn!(
 
 unsafe extern "C" fn host_submit_order_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -633,7 +638,7 @@ unsafe extern "C" fn host_submit_order_unbound(
 
 unsafe extern "C" fn host_cancel_order_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrderHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -643,7 +648,7 @@ unsafe extern "C" fn host_cancel_order_unbound(
 
 unsafe extern "C" fn host_modify_order_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ModifyOrderHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -653,7 +658,7 @@ unsafe extern "C" fn host_modify_order_unbound(
 
 unsafe extern "C" fn host_submit_order_list_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderListHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -663,7 +668,7 @@ unsafe extern "C" fn host_submit_order_list_unbound(
 
 unsafe extern "C" fn host_cancel_orders_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrdersHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -673,7 +678,7 @@ unsafe extern "C" fn host_cancel_orders_unbound(
 
 unsafe extern "C" fn host_cancel_all_orders_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelAllOrdersHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -683,7 +688,7 @@ unsafe extern "C" fn host_cancel_all_orders_unbound(
 
 unsafe extern "C" fn host_close_position_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ClosePositionHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -693,7 +698,7 @@ unsafe extern "C" fn host_close_position_unbound(
 
 unsafe extern "C" fn host_close_all_positions_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CloseAllPositionsHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -703,7 +708,7 @@ unsafe extern "C" fn host_close_all_positions_unbound(
 
 unsafe extern "C" fn host_query_account_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryAccountHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -713,7 +718,7 @@ unsafe extern "C" fn host_query_account_unbound(
 
 unsafe extern "C" fn host_query_order_unbound(
     _ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryOrderHandle,
 ) -> PluginResult<()> {
     PluginResult::Err(PluginError::new(
         PluginErrorCode::NotImplemented,
@@ -942,8 +947,11 @@ mod tests {
         let rendered = format!("{err}");
 
         assert!(rendered.contains("plug-in '/test/plugin.so' ABI mismatch"));
-        assert!(rendered.contains("host = 1"));
-        assert!(rendered.contains("plug-in = 2"));
+        assert!(rendered.contains(&format!("host = {NAUTILUS_PLUGIN_ABI_VERSION}")));
+        assert!(rendered.contains(&format!(
+            "plug-in = {}",
+            NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1)
+        )));
         assert!(rendered.contains("manifest name='<unknown>'"));
         assert!(rendered.contains("version='<unknown>'"));
         assert!(rendered.contains("build_id(schema=7"));
@@ -1090,45 +1098,135 @@ mod tests {
     #[case::query_account("query_account is not wired into this host vtable")]
     #[case::query_order("query_order is not wired into this host vtable")]
     fn host_order_command_stubs_return_not_implemented(#[case] expected: &str) {
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::{
+            enums::{OrderSide, OrderType, TimeInForce},
+            identifiers::{
+                AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+            },
+            orders::{MarketOrder, OrderAny},
+            types::Quantity,
+        };
+
+        use crate::surfaces::commands::{
+            CancelAllOrdersCommand, CancelOrderCommand, CancelOrdersCommand,
+            CloseAllPositionsCommand, ClosePositionCommand, ModifyOrderCommand,
+            QueryAccountCommand, QueryOrderCommand, SubmitOrderCommand, SubmitOrderListCommand,
+        };
+
+        let _ = OrderType::Market;
+
         // The default loader's host vtable installs NotImplemented stubs for
         // callbacks that need live-node state.
         let p = host_vtable();
         // SAFETY: pointer is to a static `OnceLock`-backed HostVTable.
         let v = unsafe { &*p };
         let ctx = std::ptr::null::<HostContext>();
-        let payload = BorrowedStr::from_str("{}");
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-USDT.BINANCE"),
+            ClientOrderId::from("O-1"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        let submit_handle =
+            SubmitOrderHandle::new(SubmitOrderCommand::new(order.clone(), None, None, None));
+        let cancel_handle = CancelOrderHandle::new(CancelOrderCommand::new(
+            ClientOrderId::from("O-1"),
+            None,
+            None,
+        ));
+        let modify_handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+            ClientOrderId::from("O-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        let submit_list_handle =
+            SubmitOrderListHandle::new(SubmitOrderListCommand::new(vec![order], None, None, None));
+        let cancel_orders_handle =
+            CancelOrdersHandle::new(CancelOrdersCommand::new(vec![], None, None));
+        let cancel_all_handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
+            InstrumentId::from("ETH-USDT.BINANCE"),
+            None,
+            None,
+            None,
+        ));
+        let close_handle = ClosePositionHandle::new(ClosePositionCommand::new(
+            PositionId::from("P-001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        let close_all_handle = CloseAllPositionsHandle::new(CloseAllPositionsCommand::new(
+            InstrumentId::from("ETH-USDT.BINANCE"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        let query_account_handle = QueryAccountHandle::new(QueryAccountCommand::new(
+            AccountId::from("BINANCE-001"),
+            None,
+            None,
+        ));
+        let query_order_handle = QueryOrderHandle::new(QueryOrderCommand::new(
+            ClientOrderId::from("O-1"),
+            None,
+            None,
+        ));
 
         let r = match expected {
             s if s.starts_with("submit_order_list") =>
-            // SAFETY: stub does not deref ctx; payload outlives the call.
-            unsafe { (v.submit_order_list)(ctx, payload) },
+            // SAFETY: stub does not deref ctx; handle outlives the call.
+            unsafe { (v.submit_order_list)(ctx, &raw const submit_list_handle) },
             s if s.starts_with("submit_order") =>
             // SAFETY: see above.
-            unsafe { (v.submit_order)(ctx, payload) },
+            unsafe { (v.submit_order)(ctx, &raw const submit_handle) },
             s if s.starts_with("cancel_orders") =>
             // SAFETY: see above.
-            unsafe { (v.cancel_orders)(ctx, payload) },
+            unsafe { (v.cancel_orders)(ctx, &raw const cancel_orders_handle) },
             s if s.starts_with("cancel_all_orders") =>
             // SAFETY: see above.
-            unsafe { (v.cancel_all_orders)(ctx, payload) },
+            unsafe { (v.cancel_all_orders)(ctx, &raw const cancel_all_handle) },
             s if s.starts_with("cancel_order") =>
             // SAFETY: see above.
-            unsafe { (v.cancel_order)(ctx, payload) },
+            unsafe { (v.cancel_order)(ctx, &raw const cancel_handle) },
             s if s.starts_with("modify_order") =>
             // SAFETY: see above.
-            unsafe { (v.modify_order)(ctx, payload) },
+            unsafe { (v.modify_order)(ctx, &raw const modify_handle) },
             s if s.starts_with("close_position") =>
             // SAFETY: see above.
-            unsafe { (v.close_position)(ctx, payload) },
+            unsafe { (v.close_position)(ctx, &raw const close_handle) },
             s if s.starts_with("close_all_positions") =>
             // SAFETY: see above.
-            unsafe { (v.close_all_positions)(ctx, payload) },
+            unsafe { (v.close_all_positions)(ctx, &raw const close_all_handle) },
             s if s.starts_with("query_account") =>
             // SAFETY: see above.
-            unsafe { (v.query_account)(ctx, payload) },
+            unsafe { (v.query_account)(ctx, &raw const query_account_handle) },
             s if s.starts_with("query_order") =>
             // SAFETY: see above.
-            unsafe { (v.query_order)(ctx, payload) },
+            unsafe { (v.query_order)(ctx, &raw const query_order_handle) },
             _ => unreachable!(),
         };
 

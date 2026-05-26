@@ -95,8 +95,8 @@ mod tests {
         assert_eq!(event.reason, Ustr::from("TEST"));
         assert_eq!(event.ts_event, UnixNanos::default());
         assert_eq!(event.ts_init, UnixNanos::default());
-        assert_eq!(event.reconciliation, 0);
-        assert_eq!(event.due_post_only, 0);
+        assert!(!event.reconciliation);
+        assert!(!event.due_post_only);
     }
 
     #[rstest]
@@ -108,9 +108,8 @@ mod tests {
             .build();
 
         assert_eq!(event.reason, Ustr::from("INSUFFICIENT_MARGIN"));
-        // Production constructor stores the bools as u8; assert against encoded values.
-        assert_eq!(event.reconciliation, 1);
-        assert_eq!(event.due_post_only, 1);
+        assert!(event.reconciliation);
+        assert!(event.due_post_only);
         assert_eq!(event.trader_id, TraderId::test_default());
     }
 

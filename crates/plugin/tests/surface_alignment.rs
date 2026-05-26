@@ -27,11 +27,6 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     // State snapshots have no cdylib persistence contract in v1
     "on_save",
     "on_load",
-    // These payloads need routing or boundary-owned representations first
-    "on_data",
-    "on_instrument",
-    "on_book",
-    "on_option_chain",
     // DeFi callbacks are outside the v1 actor surface
     "on_block",
     "on_pool",
@@ -39,7 +34,8 @@ const PLUGIN_ACTOR_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
+    // Generic historical data stays out of the vtable; registered plug-in
+    // custom data reaches `on_data`.
     "on_historical_data",
 ];
 
@@ -47,11 +43,6 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     // State snapshots have no cdylib persistence contract in v1
     "on_save",
     "on_load",
-    // These payloads need routing or boundary-owned representations first
-    "on_data",
-    "on_instrument",
-    "on_book",
-    "on_option_chain",
     // DeFi callbacks are outside the v1 strategy surface
     "on_block",
     "on_pool",
@@ -59,7 +50,8 @@ const PLUGIN_STRATEGY_DEFERRED_CALLBACKS: &[&str] = &[
     "on_pool_liquidity_update",
     "on_pool_fee_collect",
     "on_pool_flash",
-    // `&dyn Any` cannot cross the FFI boundary; needs CustomData routing
+    // Generic historical data stays out of the vtable; registered plug-in
+    // custom data reaches `on_data`.
     "on_historical_data",
 ];
 

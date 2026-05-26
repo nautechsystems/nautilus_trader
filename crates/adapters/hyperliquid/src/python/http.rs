@@ -50,7 +50,7 @@ impl HyperliquidHttpClient {
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
-        account_address: Option<String>,
+        account_address: Option<&str>,
         environment: HyperliquidEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,

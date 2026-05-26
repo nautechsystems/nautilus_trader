@@ -30,7 +30,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         custom::CustomDataTrait,
         greeks::OptionGreekValues,
@@ -69,8 +69,9 @@ use crate::{
     component::Component,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
-        BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
-        InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, TradesResponse,
+        BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+        DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+        PARAMS_IS_PARENT, QuotesResponse, TradesResponse,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -144,6 +145,7 @@ struct TestDataActor {
     pub received_data: Vec<String>, // Use string for simplicity
     pub received_books: Vec<OrderBook>,
     pub received_deltas: Vec<OrderBookDelta>,
+    pub received_depths: Vec<OrderBookDepth10>,
     pub received_quotes: Vec<QuoteTick>,
     pub received_trades: Vec<TradeTick>,
     pub received_bars: Vec<Bar>,
@@ -229,6 +231,16 @@ impl DataActor for TestDataActor {
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_trades.extend(trades);
+        Ok(())
+    }
+
+    fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
+        self.received_deltas.extend(deltas);
+        Ok(())
+    }
+
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+        self.received_depths.extend(depths);
         Ok(())
     }
 
@@ -321,6 +333,7 @@ impl TestDataActor {
             received_data: Vec::new(),
             received_books: Vec::new(),
             received_deltas: Vec::new(),
+            received_depths: Vec::new(),
             received_quotes: Vec::new(),
             received_trades: Vec::new(),
             received_bars: Vec::new(),
@@ -1172,6 +1185,75 @@ fn test_request_trades(
 
     assert_eq!(actor.received_trades.len(), 1);
     assert_eq!(actor.received_trades[0], trade);
+}
+
+#[rstest]
+fn test_request_book_deltas(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_book_deltas(audusd_sim.id, None, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let delta = stub_delta();
+    let response = BookDeltasResponse::new(
+        request_id,
+        client_id,
+        audusd_sim.id,
+        vec![delta],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    msgbus::send_response(&request_id, &DataResponse::BookDeltas(response));
+
+    assert_eq!(actor.received_deltas.len(), 1);
+    assert_eq!(actor.received_deltas[0], delta);
+}
+
+#[rstest]
+fn test_request_book_depth(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_book_depth(audusd_sim.id, None, None, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let mut depth = stub_depth10();
+    depth.instrument_id = audusd_sim.id;
+    let response = BookDepthResponse::new(
+        request_id,
+        client_id,
+        audusd_sim.id,
+        vec![depth],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    msgbus::send_response(&request_id, &DataResponse::BookDepth(response));
+
+    assert_eq!(actor.received_depths.len(), 1);
+    assert_eq!(actor.received_depths[0], depth);
 }
 
 #[rstest]

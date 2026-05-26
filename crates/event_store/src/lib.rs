@@ -50,6 +50,7 @@ pub mod kernel;
 pub mod manifest;
 pub mod reader;
 pub mod replay;
+pub mod retention;
 pub mod snapshot;
 pub mod verifier;
 pub mod writer;
@@ -72,18 +73,29 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use kernel::{
-    BootError, EventStoreConfig, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError,
-    RecoveredRun, RecoveryOutcome, RetentionMode, RunIdentity, build_run_id, open_run,
-    recover_predecessors,
+    BootError, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError, RecoveredRun,
+    RecoveryOutcome, build_run_id, open_run, recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
-pub use nautilus_system::RegisteredComponents;
+pub use nautilus_system::{
+    RegisteredComponents,
+    event_store::{EventStoreConfig, RetentionMode, RunIdentity},
+};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
 pub use replay::{
-    CacheReplayError, CacheReplayReport, EventStoreReplayReport, apply_cache_replay_entry,
-    open_event_store_replay_source, replay_cache_snapshot_tail, restore_cache_from_sealed_run,
+    CacheReplayError, CacheReplayReport, CatalogReplayRecord, CatalogReplaySlice,
+    CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery, CatalogSliceSelector,
+    CatalogSliceStatus, EventStoreReplayReport, ReplayCatalog, ReplayInputError, ReplayInputPlan,
+    ReplayInputs, ReplayScope, ReplaySeqRange, ReplayTimeRange, apply_cache_replay_entry,
+    load_decision_replay_inputs, load_forensics_replay_inputs, load_full_incident_replay_inputs,
+    open_event_store_replay_source, plan_decision_replay_inputs, plan_forensics_replay_inputs,
+    plan_full_incident_replay_inputs, replay_cache_snapshot_tail, restore_cache_from_sealed_run,
     restore_cache_snapshot_and_replay_tail, restore_cache_snapshot_blob,
     validate_event_store_replay_source,
+};
+pub use retention::{
+    RetentionPlan, RetentionRun, SnapshotAnchorStatus, list_redb_sealed_runs, plan_redb_retention,
+    plan_retention,
 };
 pub use snapshot::{SnapshotAnchor, compute_snapshot_content_hash};
 pub use verifier::{

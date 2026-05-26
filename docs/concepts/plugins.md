@@ -5,6 +5,10 @@ loads each cdylib at process startup and runs its actors, strategies, and custom
 alongside compiled-in components. The host owns the C-ABI boundary; plug-in authors write standard
 Rust traits, and a macro emits the boundary glue.
 
+:::note
+The plug-in system is supported on Linux only.
+:::
+
 **The core philosophy**:
 
 - The boundary is C ABI, because Rust's `#[repr(Rust)]` layout is unstable across compilations.
@@ -18,10 +22,10 @@ Rust traits, and a macro emits the boundary glue.
   unwinds across the FFI boundary.
 
 :::warning
-The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` stays
-pinned at `1` and does not promise compatibility between Nautilus versions. Pin plug-in builds to
-the matching host version, and treat the concepts here as the design contract for current
-development.
+The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` tracks
+the current boundary layout and does not promise compatibility between Nautilus versions. Pin
+plug-in builds to the matching host version, and treat the concepts here as the design contract
+for current development.
 :::
 
 ## Terms
@@ -31,12 +35,14 @@ development.
 - Manifest: a `'static PluginManifest` returned from `nautilus_plugin_init` enumerating contributions.
 - VTable: a `#[repr(C)]` struct of function pointers the host calls for one plug point on one type.
 - `HostVTable`: the function-pointer table the host hands every plug-in for re-entrant callbacks.
-- `HostContext`: an opaque per-instance pointer that lets host thunks attribute callbacks to the calling adapter.
+- `HostContext`: an opaque boundary pointer that lets host thunks attribute callbacks to the
+  calling adapter. On the host side it points to a `HostContextInner` allocation carrying the
+  adapter's actor ID and whether the caller is a strategy.
 - Adapter: the host-side `PluginActorAdapter` or `PluginStrategyAdapter` that wraps a plug-in handle.
 
 ## What a plug-in contributes
 
-A v1 plug-in cdylib can publish three families of contributions through its manifest:
+A plug-in cdylib can publish three families of contributions through its manifest:
 
 - Custom-data types via `PluginCustomData` (`surfaces::custom_data`).
 - Plug-in actors via `PluginActor` (`surfaces::actor`).
@@ -46,11 +52,18 @@ Each family has its own `#[repr(C)]` vtable struct, an author-facing trait, and 
 the manifest lists in a `Slice<'static, Registration>`. Adding a future plug point means adding one
 module and one slice field, then bumping the ABI version.
 
-Each plug-point family carries a fixed callback set. The actor surface today covers the lifecycle
-hooks plus the data callbacks whose payload types are `#[repr(C)]`-clean end-to-end: quotes, trades,
-bars, mark/index/funding prices, instrument status and close, order filled and canceled events,
-signals, and time events. The strategy surface adds the order lifecycle and position event
-callbacks on top of the actor surface.
+Each plug point family carries a fixed callback set. The actor surface today covers:
+
+- Lifecycle hooks.
+- Market-data callbacks for instruments, order books, book deltas, quotes, trades, bars,
+  mark/index/funding prices, option greeks, option chain snapshots, instrument status, and
+  instrument close.
+- Order filled and canceled events.
+- Signals and time events.
+- Custom data values registered through `PluginCustomData`.
+
+The strategy surface adds the order lifecycle and position event callbacks on top of the actor
+surface.
 
 ## Boundaries
 
@@ -60,27 +73,64 @@ The plug-in system is intentionally narrow. Out of scope today:
 - Catalog, cache, and event-store backends as plug-ins.
 - Pre-trade risk gating as a plug-in.
 - Hot reload (plug-ins load at process startup and stay loaded).
-- `OrderBookDeltas`, `OrderBook`, `Instrument`, and arbitrary `CustomData` on the actor or
-  strategy callback surface (payload shapes are not `#[repr(C)]`-clean).
+- Mutable host `OrderBook` state and native or Python `CustomData` on the actor or strategy
+  callback surface. Order book callbacks receive cloned snapshots, and non-plug-in custom data has
+  no plug-in vtable and handle to downcast through.
 
 ## ABI boundary
 
-Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. Two
-patterns cover the v1 surface:
+Only `#[repr(C)]` types may cross between an independently compiled plug-in and the host. The
+following patterns cover the current surface:
 
 - Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
   model types. No serialisation, no per-event allocation.
-- Order commands flow out of the plug-in as opaque JSON. The host deserialises into the matching
-  `Strategy` command and dispatches. JSON keeps the command schema free to evolve without breaking
-  the in-engine `TradingCommand` shape.
+- Non-`#[repr(C)]` inbound payloads flow into the plug-in as borrowed handles:
+  `InstrumentAnyHandle`, `OrderBookHandle`, `OrderBookDeltasHandle`, and `OptionChainSliceHandle`.
+  The host owns each handle for the callback duration. `OrderBookHandle` wraps a cloned book
+  snapshot, so the plug-in never receives mutable host book state.
+- Order commands flow out of the plug-in as boundary-owned `*const XHandle` pointers
+  (`SubmitOrderHandle`, `CancelOrderHandle`, `ModifyOrderHandle`, `SubmitOrderListHandle`,
+  `CancelOrdersHandle`, `CancelAllOrdersHandle`, `ClosePositionHandle`,
+  `CloseAllPositionsHandle`, `QueryAccountHandle`, `QueryOrderHandle`) into command structs the
+  plug-in owns for the duration of the call. The host derefs the handle and dispatches into the
+  matching `Strategy` command, leaving the in-engine `TradingCommand` shape untouched. No JSON
+  crosses the boundary on any per-call command path.
+- Plug-in custom data flows into actor and strategy `on_data` callbacks as a borrowed
+  `PluginCustomDataRef`. The host only dispatches custom data values that came from a
+  `PluginCustomData` registration in a loaded manifest, because that wrapper carries the plug-in
+  vtable and opaque handle needed for a local downcast inside the cdylib.
+- Historical plug-in custom-data responses use the same boundary only when the value came from a
+  `PluginCustomData` registration. The host inspects `&dyn Any` only inside the adapter, extracts
+  registered plug-in `CustomData`, and calls the existing `on_data` slot with `PluginCustomDataRef`.
+  No `&dyn Any` value crosses the cdylib boundary.
 
 The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
 documented in `nautilus_plugin::boundary`.
 
+### Identifier interning
+
+Nautilus identifiers such as `ClientOrderId`, `InstrumentId`, `ClientId`, `AccountId`,
+`PositionId`, `StrategyId`, and `TraderId` wrap `Ustr`. A Rust cdylib has its own `ustr`
+global string cache, so equal text can have different `Ustr` pointers on the host and
+plug-in sides. The boundary treats `Ustr` values as receiver-local:
+
+- Host command dispatch re-interns every identifier in boundary-owned command handles before
+  calling the matching `Strategy::*` method.
+- Plug-in event thunks re-intern identifiers in inbound event payloads before calling
+  `PluginActor` or `PluginStrategy` trait methods.
+- Plug-in authors can compare and store identifiers received through trait callbacks normally.
+  Code that bypasses the macro-generated thunks must re-intern copied identifiers with
+  `Ustr::from(value.as_str())`.
+
+The policy also covers nested identifiers such as `Symbol`, `Venue`, `OrderListId`,
+`ExecAlgorithmId`, `VenueOrderId`, `OptionSeriesId`, raw `Ustr` tags and names, and
+currency codes carried inside command or event payloads. This does not change any vtable
+or handle layout, so it does not require an ABI version bump.
+
 ## Manifest
 
 The manifest is process-lifetime static data the plug-in returns from `nautilus_plugin_init`. It
-identifies the build and enumerates every plug-point contribution:
+identifies the build and enumerates every plug point contribution:
 
 - `abi_version`: must equal `NAUTILUS_PLUGIN_ABI_VERSION` or the host refuses to load.
 - `plugin_name`, `plugin_vendor`, `plugin_version`: identifier strings.
@@ -135,10 +185,11 @@ Once an adapter is registered, callbacks flow in both directions through stable 
 ```mermaid
 flowchart LR
     Engine["Live engine event"] --> Adapter["PluginActorAdapter / PluginStrategyAdapter"]
-    Adapter --> Guard["catch_unwind guard"]
-    Guard --> Thunk["plug-in extern C thunk"]
-    Thunk --> Trait["PluginActor / PluginStrategy method"]
-    Trait --> Host["HostVTable callback"]
+    Adapter --> HostGuard["host catch_unwind guard"]
+    HostGuard --> Thunk["plug-in extern C thunk"]
+    Thunk --> PluginGuard["plug-in catch_unwind guard"]
+    PluginGuard --> Trait["PluginActor / PluginStrategy method"]
+    Trait -. "optional reverse call" .-> Host["HostVTable callback"]
     Host --> Resolve["HostContextInner -> ActorId"]
     Resolve --> Live["Strategy::submit_order, cache reads, msgbus publish, timers"]
 ```
@@ -174,8 +225,8 @@ Key points:
   pointer, its `HostContextInner` pointer, and the verbatim JSON config payload.
 - Adapter drop runs the plug-in's `drop_handle` thunk and releases the heap-allocated
   `HostContextInner` allocation.
-- `dlclose` is intentionally never called in v1. The `LoadedPlugin` wraps its `libloading::Library`
-  in `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
+- `dlclose` is intentionally never called. The `LoadedPlugin` wraps its `libloading::Library` in
+  `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
 
 ## Configuration
 
@@ -219,7 +270,7 @@ without host-side support compiled in.
 
 ## Author API
 
-Plug-in authors implement one trait per plug-point family and call the `nautilus_plugin!` macro:
+Plug-in authors implement one trait per plug point family and call the `nautilus_plugin!` macro:
 
 ```rust
 use nautilus_model::data::QuoteTick;
@@ -251,11 +302,12 @@ nautilus_plugin::nautilus_plugin! {
 }
 ```
 
-The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the per-plug-point
-vtables. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
-(`create`, `drop_handle`, and custom-data `ts_event`/`ts_init`/`clone_handle`/`eq_handles`)
-forward through `guard_infallible`; trivial slots that cannot panic (the `type_name` thunks, which
-just return a `BorrowedStr` over a `&'static str` constant) carry no guard at all.
+The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the vtables for each plug
+point. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
+(`create`, `drop_handle`, and custom-data
+`ts_event`/`ts_init`/`clone_handle`/`drop_handle`/`eq_handles`) forward through
+`guard_infallible`; trivial slots that cannot panic (the `type_name` thunks, which just return a
+`BorrowedStr` over a `&'static str` constant) carry no guard at all.
 
 Authors never write `extern "C"` or `#[repr(C)]`. `unsafe` requirements depend on what the plug-in
 holds. The example actor in `crates/plugin/examples/custom_data_plugin.rs` discards the

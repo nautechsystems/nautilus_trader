@@ -165,6 +165,8 @@ pub enum OKXWsChannel {
     // BalanceAndPosition,
     #[serde(rename = "orders")]
     Orders,
+    #[serde(rename = "sprd-orders")]
+    SprdOrders,
     #[serde(rename = "fills")]
     Fills,
     #[serde(rename = "orders-algo")]

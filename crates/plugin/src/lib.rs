@@ -46,12 +46,12 @@
 ///
 /// The host refuses to load a plug-in whose [`PluginManifest::abi_version`]
 /// does not match this value. The plug-in surface is unreleased and unstable,
-/// so this stays pinned at `1` during early hardening and does not promise
-/// compatibility between Nautilus versions. Once the surface is released, every
-/// breaking change to a `#[repr(C)]` struct or vtable must bump it.
+/// so it only tracks the current boundary layout and does not promise
+/// compatibility between Nautilus versions. Every breaking change to a
+/// `#[repr(C)]` struct or vtable must bump it.
 ///
 /// [`PluginManifest::abi_version`]: crate::manifest::PluginManifest::abi_version
-pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 1;
+pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 3;
 
 /// Schema version for [`manifest::PluginBuildId`].
 pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;
@@ -74,6 +74,7 @@ pub mod bridge;
 pub mod loader;
 
 mod macros;
+mod normalize;
 
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
 pub use host::{HostContext, HostVTable};
@@ -87,13 +88,17 @@ pub use manifest::{
     ValidatedCustomDataVTable, ValidatedPluginManifest, ValidatedStrategyRegistration,
     ValidatedStrategyVTable,
 };
-pub use surfaces::{actor::PluginActor, custom_data::PluginCustomData, strategy::PluginStrategy};
+pub use surfaces::{
+    actor::PluginActor,
+    custom_data::{PluginCustomData, PluginCustomDataRef},
+    strategy::PluginStrategy,
+};
 
 /// Re-exports that plug-in authors typically want in scope.
 pub mod prelude {
     pub use crate::{
         BorrowedStr, HostContext, HostVTable, NAUTILUS_PLUGIN_ABI_VERSION, PluginActor,
-        PluginBuildId, PluginCustomData, PluginError, PluginErrorCode, PluginManifest,
-        PluginResult, PluginStrategy, Slice,
+        PluginBuildId, PluginCustomData, PluginCustomDataRef, PluginError, PluginErrorCode,
+        PluginManifest, PluginResult, PluginStrategy, Slice,
     };
 }

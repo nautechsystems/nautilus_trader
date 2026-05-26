@@ -1283,6 +1283,8 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
             DataResponse::Instrument(resp) => handler.0.handle(resp.as_ref()),
             DataResponse::Instruments(resp) => handler.0.handle(resp),
             DataResponse::Book(resp) => handler.0.handle(resp),
+            DataResponse::BookDeltas(resp) => handler.0.handle(resp),
+            DataResponse::BookDepth(resp) => handler.0.handle(resp),
             DataResponse::Quotes(resp) => handler.0.handle(resp),
             DataResponse::Trades(resp) => handler.0.handle(resp),
             DataResponse::FundingRates(resp) => handler.0.handle(resp),
@@ -1505,8 +1507,8 @@ mod tests {
     use nautilus_model::{
         data::{Bar, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
         enums::OrderSide,
-        events::OrderDenied,
-        identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+        events::order::spec::OrderDeniedSpec,
+        identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
     };
     use rstest::rstest;
 
@@ -1792,11 +1794,6 @@ mod tests {
 
     #[rstest]
     fn test_send_order_event_allows_reentrant_topic_access() {
-        use nautilus_model::{
-            events::OrderDenied,
-            identifiers::{ClientOrderId, StrategyId, TraderId},
-        };
-
         use crate::msgbus::switchboard::get_quotes_topic;
 
         let _msgbus = get_message_bus();
@@ -1812,16 +1809,7 @@ mod tests {
         let endpoint: MStr<Endpoint> = "ReentrantTest.orderEvent".into();
         register_order_event_endpoint(endpoint, handler);
 
-        let event = OrderEventAny::Denied(OrderDenied::new(
-            TraderId::new("TESTER-001"),
-            StrategyId::new("S-001"),
-            InstrumentId::from("TEST.VENUE"),
-            ClientOrderId::new("O-001"),
-            "test denied".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        ));
+        let event = OrderEventAny::Denied(OrderDeniedSpec::builder().build());
         send_order_event(endpoint, event);
 
         assert!(*topic_retrieved.borrow());
@@ -2028,16 +2016,7 @@ mod tests {
         let event_endpoint: MStr<Endpoint> = "ReentrantTest.orderEvt".into();
         register_order_event_endpoint(event_endpoint, event_handler);
 
-        let event = OrderEventAny::Denied(OrderDenied::new(
-            TraderId::new("TESTER-001"),
-            StrategyId::new("S-001"),
-            InstrumentId::from("TEST.VENUE"),
-            ClientOrderId::new("O-001"),
-            "Test denial".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        ));
+        let event = OrderEventAny::Denied(OrderDeniedSpec::builder().build());
         send_order_event(event_endpoint, event);
 
         assert!(
@@ -2111,16 +2090,7 @@ mod tests {
         register_order_event_endpoint(evt_endpoint, evt_handler);
 
         let cmd_handler = TypedIntoHandler::from(move |_cmd: TradingCommand| {
-            let event = OrderEventAny::Denied(OrderDenied::new(
-                TraderId::new("TESTER-001"),
-                StrategyId::new("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::new("O-001"),
-                "Test denial".into(),
-                UUID4::new(),
-                0.into(),
-                0.into(),
-            ));
+            let event = OrderEventAny::Denied(OrderDeniedSpec::builder().build());
             send_order_event(evt_endpoint, event);
             *event_sent_clone.borrow_mut() = true;
         });
@@ -2169,16 +2139,7 @@ mod tests {
         let call_depth_clone2 = call_depth.clone();
         let mid_cmd_handler = TypedIntoHandler::from(move |_cmd: TradingCommand| {
             *call_depth_clone2.borrow_mut() += 1;
-            let event = OrderEventAny::Denied(OrderDenied::new(
-                TraderId::new("TESTER-001"),
-                StrategyId::new("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::new("O-002"),
-                "Nested denial".into(),
-                UUID4::new(),
-                0.into(),
-                0.into(),
-            ));
+            let event = OrderEventAny::Denied(OrderDeniedSpec::builder().build());
             send_order_event(final_evt_endpoint, event);
         });
         let mid_cmd_endpoint: MStr<Endpoint> = "ReentrantTest.midCmd".into();
@@ -2203,16 +2164,7 @@ mod tests {
         let init_evt_endpoint: MStr<Endpoint> = "ReentrantTest.initEvt".into();
         register_order_event_endpoint(init_evt_endpoint, init_evt_handler);
 
-        let event = OrderEventAny::Denied(OrderDenied::new(
-            TraderId::new("TESTER-001"),
-            StrategyId::new("S-001"),
-            InstrumentId::from("TEST.VENUE"),
-            ClientOrderId::new("O-001"),
-            "Initial denial".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        ));
+        let event = OrderEventAny::Denied(OrderDeniedSpec::builder().build());
         send_order_event(init_evt_endpoint, event);
 
         assert_eq!(

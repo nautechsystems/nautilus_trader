@@ -294,16 +294,14 @@ check-all-targets:  #-- Run clippy on all targets including bins and examples (n
 #   @$(timer_start) \
 #       $(MAKE) ... \
 #       && $(MAKE) ... \
-#   $(call timer_end,Success message,Time label)
-# Prints the success message when the block exits 0, always prints
-# "<Time label> time: H:MM:SS", and propagates the block's exit code.
+#   $(call timer_end,Time label)
+# Prints "<Time label> time: H:MM:SS" and propagates the block's exit code.
 timer_start = _t_start=$$(date +%s); (
 
 define timer_end
 ); _t_rc=$$?; \
 _t_elapsed=$$(( $$(date +%s) - _t_start )); \
-printf "$(2) time: %d:%02d:%02d\n" $$(( _t_elapsed / 3600 )) $$(( (_t_elapsed % 3600) / 60 )) $$(( _t_elapsed % 60 )); \
-if [ $$_t_rc -eq 0 ]; then printf "$(GREEN)$(1)$(RESET)\n"; fi; \
+printf "$(1) time: %d:%02d:%02d\n" $$(( _t_elapsed / 3600 )) $$(( (_t_elapsed % 3600) / 60 )) $$(( _t_elapsed % 60 )); \
 exit $$_t_rc
 endef
 
@@ -324,7 +322,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory pytest \
 		&& $(MAKE) --no-print-directory security-audit \
-	$(call timer_end,All pre-flight checks passed,Pre-flight)
+	$(call timer_end,Pre-flight)
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
@@ -954,7 +952,7 @@ pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, 
 		&& $(MAKE) --no-print-directory build-debug-v2 \
 		&& $(MAKE) --no-print-directory pytest-v2 \
 		&& $(MAKE) --no-print-directory security-audit \
-	$(call timer_end,All v2 pre-flight checks passed,Pre-flight)
+	$(call timer_end,Pre-flight)
 
 #== CLI Tools
 

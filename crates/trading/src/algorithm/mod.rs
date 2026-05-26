@@ -1263,7 +1263,11 @@ mod tests {
     use nautilus_model::{
         enums::OrderSide,
         events::{
-            OrderAccepted, OrderCanceled, OrderDenied, OrderRejected, order::spec::OrderFilledSpec,
+            OrderAccepted, OrderCanceled, OrderDenied, OrderRejected,
+            order::spec::{
+                OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
+                OrderRejectedSpec,
+            },
         },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
@@ -2176,16 +2180,13 @@ mod tests {
                 .unwrap();
         }
 
-        let denied = OrderDenied::new(
-            spawned_order.trader_id(),
-            spawned_order.strategy_id(),
-            spawned_order.instrument_id(),
-            spawned_order.client_order_id(),
-            "TEST_DENIAL".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let denied = OrderDeniedSpec::builder()
+            .trader_id(spawned_order.trader_id())
+            .strategy_id(spawned_order.strategy_id())
+            .instrument_id(spawned_order.instrument_id())
+            .client_order_id(spawned_order.client_order_id())
+            .reason("TEST_DENIAL".into())
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();
@@ -2261,19 +2262,14 @@ mod tests {
                 .unwrap();
         }
 
-        let rejected = OrderRejected::new(
-            spawned_order.trader_id(),
-            spawned_order.strategy_id(),
-            spawned_order.instrument_id(),
-            spawned_order.client_order_id(),
-            AccountId::from("BINANCE-001"),
-            "TEST_REJECTION".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-            false,
-            false,
-        );
+        let rejected = OrderRejectedSpec::builder()
+            .trader_id(spawned_order.trader_id())
+            .strategy_id(spawned_order.strategy_id())
+            .instrument_id(spawned_order.instrument_id())
+            .client_order_id(spawned_order.client_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .reason("TEST_REJECTION".into())
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();
@@ -2351,16 +2347,13 @@ mod tests {
                 .unwrap();
         }
 
-        let denied = OrderDenied::new(
-            spawned_order.trader_id(),
-            spawned_order.strategy_id(),
-            spawned_order.instrument_id(),
-            spawned_order.client_order_id(),
-            "TEST_DENIAL".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let denied = OrderDeniedSpec::builder()
+            .trader_id(spawned_order.trader_id())
+            .strategy_id(spawned_order.strategy_id())
+            .instrument_id(spawned_order.instrument_id())
+            .client_order_id(spawned_order.client_order_id())
+            .reason("TEST_DENIAL".into())
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();
@@ -2445,16 +2438,13 @@ mod tests {
                 .unwrap();
         }
 
-        let denied = OrderDenied::new(
-            spawned_order2.trader_id(),
-            spawned_order2.strategy_id(),
-            spawned_order2.instrument_id(),
-            spawned_order2.client_order_id(),
-            "TEST_DENIAL".into(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let denied = OrderDeniedSpec::builder()
+            .trader_id(spawned_order2.trader_id())
+            .strategy_id(spawned_order2.strategy_id())
+            .instrument_id(spawned_order2.instrument_id())
+            .client_order_id(spawned_order2.client_order_id())
+            .reason("TEST_DENIAL".into())
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();
@@ -2543,18 +2533,14 @@ mod tests {
                 .unwrap();
         }
 
-        let accepted = OrderAccepted::new(
-            spawned_order.trader_id(),
-            spawned_order.strategy_id(),
-            spawned_order.instrument_id(),
-            spawned_order.client_order_id(),
-            VenueOrderId::from("V-123"),
-            AccountId::from("BINANCE-001"),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-            false,
-        );
+        let accepted = OrderAcceptedSpec::builder()
+            .trader_id(spawned_order.trader_id())
+            .strategy_id(spawned_order.strategy_id())
+            .instrument_id(spawned_order.instrument_id())
+            .client_order_id(spawned_order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-123"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();
@@ -2576,18 +2562,14 @@ mod tests {
         assert_eq!(primary_after_accept.quantity(), Quantity::from("0.5"));
 
         // Cancel after acceptance - no restoration should occur
-        let canceled = OrderCanceled::new(
-            spawned_order.trader_id(),
-            spawned_order.strategy_id(),
-            spawned_order.instrument_id(),
-            spawned_order.client_order_id(),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-            false,
-            Some(VenueOrderId::from("V-123")),
-            Some(AccountId::from("BINANCE-001")),
-        );
+        let canceled = OrderCanceledSpec::builder()
+            .trader_id(spawned_order.trader_id())
+            .strategy_id(spawned_order.strategy_id())
+            .instrument_id(spawned_order.instrument_id())
+            .client_order_id(spawned_order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-123"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .build();
 
         {
             let cache_rc = algo.core.cache_rc();

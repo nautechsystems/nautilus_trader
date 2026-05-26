@@ -25,6 +25,7 @@ from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.base cimport settlement_currency_differs_for_quanto
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -168,8 +169,11 @@ cdef class PerpetualContract(Instrument):
 
         if (
             base_currency is not None
-            and settlement_currency != base_currency
-            and settlement_currency != quote_currency
+            and settlement_currency_differs_for_quanto(
+                settlement_currency,
+                quote_currency,
+                base_currency,
+            )
         ):
             self.is_quanto = True
         else:

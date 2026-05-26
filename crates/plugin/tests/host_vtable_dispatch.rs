@@ -41,10 +41,24 @@ use std::sync::{
     atomic::{AtomicPtr, AtomicU8, AtomicU64, Ordering},
 };
 
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{
+    enums::{OrderSide, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+    orders::{MarketOrder, OrderAny},
+    types::Quantity,
+};
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
+    surfaces::commands::{
+        CancelAllOrdersCommand, CancelAllOrdersHandle, CancelOrderCommand, CancelOrderHandle,
+        CancelOrdersCommand, CancelOrdersHandle, CloseAllPositionsCommand, CloseAllPositionsHandle,
+        ClosePositionCommand, ClosePositionHandle, ModifyOrderCommand, ModifyOrderHandle,
+        QueryAccountCommand, QueryAccountHandle, QueryOrderCommand, QueryOrderHandle,
+        SubmitOrderCommand, SubmitOrderHandle, SubmitOrderListCommand, SubmitOrderListHandle,
+    },
 };
 use rstest::rstest;
 
@@ -322,7 +336,7 @@ unsafe extern "C" fn test_cancel_timer(
 
 unsafe extern "C" fn test_submit_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::SubmitOrder);
     PluginResult::Ok(())
@@ -330,7 +344,7 @@ unsafe extern "C" fn test_submit_order(
 
 unsafe extern "C" fn test_cancel_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::CancelOrder);
     PluginResult::Ok(())
@@ -338,7 +352,7 @@ unsafe extern "C" fn test_cancel_order(
 
 unsafe extern "C" fn test_modify_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ModifyOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::ModifyOrder);
     PluginResult::Ok(())
@@ -346,7 +360,7 @@ unsafe extern "C" fn test_modify_order(
 
 unsafe extern "C" fn test_submit_order_list(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const SubmitOrderListHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::SubmitOrderList);
     PluginResult::Ok(())
@@ -354,7 +368,7 @@ unsafe extern "C" fn test_submit_order_list(
 
 unsafe extern "C" fn test_cancel_orders(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelOrdersHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::CancelOrders);
     PluginResult::Ok(())
@@ -362,7 +376,7 @@ unsafe extern "C" fn test_cancel_orders(
 
 unsafe extern "C" fn test_cancel_all_orders(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CancelAllOrdersHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::CancelAllOrders);
     PluginResult::Ok(())
@@ -370,7 +384,7 @@ unsafe extern "C" fn test_cancel_all_orders(
 
 unsafe extern "C" fn test_close_position(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const ClosePositionHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::ClosePosition);
     PluginResult::Ok(())
@@ -378,7 +392,7 @@ unsafe extern "C" fn test_close_position(
 
 unsafe extern "C" fn test_close_all_positions(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const CloseAllPositionsHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::CloseAllPositions);
     PluginResult::Ok(())
@@ -386,7 +400,7 @@ unsafe extern "C" fn test_close_all_positions(
 
 unsafe extern "C" fn test_query_account(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryAccountHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::QueryAccount);
     PluginResult::Ok(())
@@ -394,10 +408,34 @@ unsafe extern "C" fn test_query_account(
 
 unsafe extern "C" fn test_query_order(
     ctx: *const HostContext,
-    _command_json: BorrowedStr<'_>,
+    _command: *const QueryOrderHandle,
 ) -> PluginResult<()> {
     record(ctx, HostHook::QueryOrder);
     PluginResult::Ok(())
+}
+
+fn make_market_order() -> OrderAny {
+    OrderAny::Market(MarketOrder::new(
+        TraderId::from("TRADER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("ETH-USDT.BINANCE"),
+        ClientOrderId::from("O-1"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ))
 }
 
 static TEST_HOST: HostVTable = HostVTable {
@@ -832,8 +870,14 @@ fn submit_order_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    // SAFETY: TEST_HOST is process-lifetime static.
-    let r = unsafe { (TEST_HOST.submit_order)(ctx, BorrowedStr::from_str(r#"{"kind":"submit"}"#)) };
+    let handle = SubmitOrderHandle::new(SubmitOrderCommand::new(
+        make_market_order(),
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.submit_order)(ctx, &raw const handle) };
     r.into_result().expect("submit_order");
     assert_only_hook(HostHook::SubmitOrder);
     assert_ctx(HostHook::SubmitOrder, ctx);
@@ -844,8 +888,13 @@ fn cancel_order_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    // SAFETY: TEST_HOST is process-lifetime static.
-    let r = unsafe { (TEST_HOST.cancel_order)(ctx, BorrowedStr::from_str(r#"{"kind":"cancel"}"#)) };
+    let handle = CancelOrderHandle::new(CancelOrderCommand::new(
+        ClientOrderId::from("O-1"),
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.cancel_order)(ctx, &raw const handle) };
     r.into_result().expect("cancel_order");
     assert_only_hook(HostHook::CancelOrder);
     assert_ctx(HostHook::CancelOrder, ctx);
@@ -856,8 +905,16 @@ fn modify_order_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    // SAFETY: TEST_HOST is process-lifetime static.
-    let r = unsafe { (TEST_HOST.modify_order)(ctx, BorrowedStr::from_str(r#"{"kind":"modify"}"#)) };
+    let handle = ModifyOrderHandle::new(ModifyOrderCommand::new(
+        ClientOrderId::from("O-1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.modify_order)(ctx, &raw const handle) };
     r.into_result().expect("modify_order");
     assert_only_hook(HostHook::ModifyOrder);
     assert_ctx(HostHook::ModifyOrder, ctx);
@@ -868,9 +925,14 @@ fn submit_order_list_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"submit_list"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.submit_order_list)(ctx, cmd) };
+    let handle = SubmitOrderListHandle::new(SubmitOrderListCommand::new(
+        vec![make_market_order()],
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.submit_order_list)(ctx, &raw const handle) };
     r.into_result().expect("submit_order_list");
     assert_only_hook(HostHook::SubmitOrderList);
     assert_ctx(HostHook::SubmitOrderList, ctx);
@@ -881,9 +943,13 @@ fn cancel_orders_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"cancel_list"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.cancel_orders)(ctx, cmd) };
+    let handle = CancelOrdersHandle::new(CancelOrdersCommand::new(
+        vec![ClientOrderId::from("O-1")],
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.cancel_orders)(ctx, &raw const handle) };
     r.into_result().expect("cancel_orders");
     assert_only_hook(HostHook::CancelOrders);
     assert_ctx(HostHook::CancelOrders, ctx);
@@ -894,9 +960,14 @@ fn cancel_all_orders_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"cancel_all"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.cancel_all_orders)(ctx, cmd) };
+    let handle = CancelAllOrdersHandle::new(CancelAllOrdersCommand::new(
+        InstrumentId::from("ETH-USDT.BINANCE"),
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.cancel_all_orders)(ctx, &raw const handle) };
     r.into_result().expect("cancel_all_orders");
     assert_only_hook(HostHook::CancelAllOrders);
     assert_ctx(HostHook::CancelAllOrders, ctx);
@@ -907,9 +978,16 @@ fn close_position_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"close_position"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.close_position)(ctx, cmd) };
+    let handle = ClosePositionHandle::new(ClosePositionCommand::new(
+        PositionId::from("P-001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.close_position)(ctx, &raw const handle) };
     r.into_result().expect("close_position");
     assert_only_hook(HostHook::ClosePosition);
     assert_ctx(HostHook::ClosePosition, ctx);
@@ -920,9 +998,17 @@ fn close_all_positions_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"close_all"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.close_all_positions)(ctx, cmd) };
+    let handle = CloseAllPositionsHandle::new(CloseAllPositionsCommand::new(
+        InstrumentId::from("ETH-USDT.BINANCE"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.close_all_positions)(ctx, &raw const handle) };
     r.into_result().expect("close_all_positions");
     assert_only_hook(HostHook::CloseAllPositions);
     assert_ctx(HostHook::CloseAllPositions, ctx);
@@ -933,9 +1019,13 @@ fn query_account_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"query_account"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.query_account)(ctx, cmd) };
+    let handle = QueryAccountHandle::new(QueryAccountCommand::new(
+        AccountId::from("BINANCE-001"),
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.query_account)(ctx, &raw const handle) };
     r.into_result().expect("query_account");
     assert_only_hook(HostHook::QueryAccount);
     assert_ctx(HostHook::QueryAccount, ctx);
@@ -946,9 +1036,13 @@ fn query_order_slot_invokes_bound_handler() {
     let _g = dispatch_lock();
     reset_all();
     let ctx = sentinel_ctx();
-    let cmd = BorrowedStr::from_str(r#"{"kind":"query_order"}"#);
-    // SAFETY: TEST_HOST is process-lifetime static; cmd outlives the call.
-    let r = unsafe { (TEST_HOST.query_order)(ctx, cmd) };
+    let handle = QueryOrderHandle::new(QueryOrderCommand::new(
+        ClientOrderId::from("O-1"),
+        None,
+        None,
+    ));
+    // SAFETY: TEST_HOST is process-lifetime static; handle outlives the call.
+    let r = unsafe { (TEST_HOST.query_order)(ctx, &raw const handle) };
     r.into_result().expect("query_order");
     assert_only_hook(HostHook::QueryOrder);
     assert_ctx(HostHook::QueryOrder, ctx);
