@@ -34,8 +34,7 @@ use nautilus_model::{
     orders::OrderAny,
 };
 
-/// Submit-order command. Mirrors the arguments to
-/// [`Strategy::submit_order`](nautilus_trading::strategy::Strategy::submit_order).
+/// Submit-order command. Mirrors the arguments to `Strategy::submit_order`.
 #[derive(Debug, Clone)]
 pub struct SubmitOrderCommand {
     /// The order to submit.
@@ -77,8 +76,8 @@ impl SubmitOrderCommand {
 /// wraps the whole command in this `#[repr(C)]` handle and passes a
 /// borrowed pointer to the host. Equivalent layout on both sides relies
 /// on operator-side pinning (plug-in cdylibs rebuilt to match each
-/// Nautilus version); `PluginBuildId` is recorded for load diagnostics
-/// but is not enforced by the loader in v1.
+/// Nautilus version); `PluginBuildId` is recorded for load diagnostics,
+/// and precision mode is enforced during manifest validation.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct SubmitOrderHandle(Box<SubmitOrderCommand>);
@@ -111,8 +110,7 @@ impl Deref for SubmitOrderHandle {
     }
 }
 
-/// Submit-order-list command. Mirrors the arguments to
-/// [`Strategy::submit_order_list`](nautilus_trading::strategy::Strategy::submit_order_list).
+/// Submit-order-list command. Mirrors the arguments to `Strategy::submit_order_list`.
 #[derive(Debug, Clone)]
 pub struct SubmitOrderListCommand {
     /// The orders to submit as a batched list.

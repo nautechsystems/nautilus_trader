@@ -33,7 +33,7 @@ use std::{
 use libloading::{Library, Symbol};
 
 use crate::{
-    NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL,
+    NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::{
@@ -103,6 +103,19 @@ impl PluginManifestDiagnostics {
             build_id: PluginBuildIdDiagnostics::from_build_id(&manifest.build_id),
         }
     }
+
+    fn from_abi_mismatch_manifest(manifest: &PluginManifest) -> Self {
+        let build_id = if manifest.build_id.schema_version == PLUGIN_BUILD_ID_VERSION {
+            PluginBuildIdDiagnostics::from_build_id(&manifest.build_id)
+        } else {
+            PluginBuildIdDiagnostics::schema_only(manifest.build_id.schema_version)
+        };
+        Self {
+            plugin_name: borrowed_str_diagnostic(manifest.plugin_name),
+            plugin_version: borrowed_str_diagnostic(manifest.plugin_version),
+            build_id,
+        }
+    }
 }
 
 impl Display for PluginManifestDiagnostics {
@@ -130,6 +143,10 @@ pub struct PluginBuildIdDiagnostics {
     pub target_triple: String,
     /// Cargo build profile, or empty when unavailable.
     pub build_profile: String,
+    /// Model fixed-point precision mode, or empty when unavailable.
+    pub precision_mode: String,
+    /// Maximum fixed-point decimal precision, or none when unavailable.
+    pub fixed_precision: Option<u8>,
 }
 
 impl PluginBuildIdDiagnostics {
@@ -140,6 +157,20 @@ impl PluginBuildIdDiagnostics {
             rustc_version: borrowed_str_diagnostic(build_id.rustc_version),
             target_triple: borrowed_str_diagnostic(build_id.target_triple),
             build_profile: borrowed_str_diagnostic(build_id.build_profile),
+            precision_mode: borrowed_str_diagnostic(build_id.precision_mode),
+            fixed_precision: Some(build_id.fixed_precision),
+        }
+    }
+
+    fn schema_only(schema_version: u32) -> Self {
+        Self {
+            schema_version,
+            nautilus_plugin_version: String::new(),
+            rustc_version: String::new(),
+            target_triple: String::new(),
+            build_profile: String::new(),
+            precision_mode: String::new(),
+            fixed_precision: None,
         }
     }
 }
@@ -151,10 +182,18 @@ impl Display for PluginBuildIdDiagnostics {
         let rustc_version = unknown_if_empty(&self.rustc_version);
         let target_triple = unknown_if_empty(&self.target_triple);
         let build_profile = unknown_if_empty(&self.build_profile);
+        let precision_mode = unknown_if_empty(&self.precision_mode);
+        let fixed_precision = self
+            .fixed_precision
+            .map_or_else(|| "<unknown>".to_string(), |value| value.to_string());
+        write!(f, "build_id(schema={schema_version}, ")?;
+        write!(f, "nautilus_plugin_version='{nautilus_plugin_version}', ")?;
+        write!(f, "rustc='{rustc_version}', target='{target_triple}', ")?;
         write!(
             f,
-            "build_id(schema={schema_version}, nautilus_plugin_version='{nautilus_plugin_version}', rustc='{rustc_version}', target='{target_triple}', profile='{build_profile}')"
-        )
+            "profile='{build_profile}', precision_mode='{precision_mode}', "
+        )?;
+        write!(f, "fixed_precision={fixed_precision})")
     }
 }
 
@@ -366,7 +405,9 @@ fn validate_manifest_ptr(
             path: path.to_path_buf(),
             expected: NAUTILUS_PLUGIN_ABI_VERSION,
             actual: abi,
-            diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
+            diagnostics: Box::new(PluginManifestDiagnostics::from_abi_mismatch_manifest(
+                manifest,
+            )),
         });
     }
 
@@ -383,8 +424,8 @@ fn validate_manifest_ptr(
 /// Returns the process-wide static `HostVTable` exposed to plug-ins.
 ///
 /// One `&'static HostVTable` is enough because plug-ins never compare
-/// vtables; they only call through the function pointers. Methods can be
-/// added by bumping [`NAUTILUS_PLUGIN_ABI_VERSION`].
+/// vtables; they only call through the function pointers. During alpha,
+/// methods can be added by rebuilding plug-ins to match the host.
 fn host_vtable() -> *const HostVTable {
     static HOST: OnceLock<HostVTable> = OnceLock::new();
     std::ptr::from_ref(HOST.get_or_init(|| HostVTable {
@@ -746,6 +787,7 @@ unsafe extern "C" fn host_log(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::fixed::FIXED_PRECISION;
     use rstest::rstest;
 
     use super::*;
@@ -912,6 +954,7 @@ mod tests {
                     diagnostics.build_id.nautilus_plugin_version.as_str(),
                     env!("CARGO_PKG_VERSION")
                 );
+                assert_eq!(diagnostics.build_id.fixed_precision, Some(FIXED_PRECISION));
             }
             other => panic!("expected AbiMismatch, was {other:?}"),
         }
@@ -922,6 +965,8 @@ mod tests {
         assert!(rendered.contains("rustc='"));
         assert!(rendered.contains("target='"));
         assert!(rendered.contains("profile='"));
+        assert!(rendered.contains("precision_mode='"));
+        assert!(rendered.contains("fixed_precision="));
     }
 
     #[rstest]
@@ -937,6 +982,8 @@ mod tests {
                 rustc_version: BorrowedStr::empty(),
                 target_triple: BorrowedStr::empty(),
                 build_profile: BorrowedStr::empty(),
+                precision_mode: BorrowedStr::empty(),
+                fixed_precision: 0,
             },
             custom_data: Slice::empty(),
             actors: Slice::empty(),
@@ -959,6 +1006,8 @@ mod tests {
         assert!(rendered.contains("rustc='<unknown>'"));
         assert!(rendered.contains("target='<unknown>'"));
         assert!(rendered.contains("profile='<unknown>'"));
+        assert!(rendered.contains("precision_mode='<unknown>'"));
+        assert!(rendered.contains("fixed_precision=<unknown>"));
     }
 
     #[rstest]

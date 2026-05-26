@@ -32,8 +32,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-/// Modify-order command. Mirrors the arguments to
-/// [`Strategy::modify_order`](nautilus_trading::strategy::Strategy::modify_order).
+/// Modify-order command. Mirrors the arguments to `Strategy::modify_order`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModifyOrderCommand {
     /// The client order identifier of the order to modify.

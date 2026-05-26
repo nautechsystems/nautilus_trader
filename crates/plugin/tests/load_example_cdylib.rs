@@ -27,7 +27,11 @@ use std::{
     process::Command,
 };
 
-use nautilus_plugin::{NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION, loader::PluginLoader};
+use nautilus_model::types::fixed::FIXED_PRECISION;
+use nautilus_plugin::{
+    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION, loader::PluginLoader,
+    manifest::compiled_precision_mode,
+};
 
 fn cdylib_extension() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -48,16 +52,20 @@ fn cdylib_prefix() -> &'static str {
 }
 
 fn build_example_cdylib() -> PathBuf {
-    let status = Command::new(env!("CARGO"))
-        .args([
-            "build",
-            "-p",
-            "nautilus-plugin",
-            "--example",
-            "custom_data_plugin",
-        ])
-        .status()
-        .expect("invoke cargo build");
+    let mut build_command = Command::new(env!("CARGO"));
+    build_command.args([
+        "build",
+        "-p",
+        "nautilus-plugin",
+        "--example",
+        "custom_data_plugin",
+    ]);
+
+    if FIXED_PRECISION > 9 {
+        build_command.args(["--features", "nautilus-model/high-precision"]);
+    }
+
+    let status = build_command.status().expect("invoke cargo build");
     assert!(status.success(), "cargo build --example failed");
 
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -118,6 +126,12 @@ fn loads_example_cdylib_and_walks_manifest() {
     assert!(!unsafe { manifest.build_id.target_triple.as_str() }.is_empty());
     // SAFETY: build id strings live in the cdylib for the process lifetime.
     assert!(!unsafe { manifest.build_id.build_profile.as_str() }.is_empty());
+    // SAFETY: build id strings live in the cdylib for the process lifetime.
+    assert_eq!(
+        unsafe { manifest.build_id.precision_mode.as_str() },
+        compiled_precision_mode()
+    );
+    assert_eq!(manifest.build_id.fixed_precision, FIXED_PRECISION);
 
     // SAFETY: slice points at storage inside the loaded cdylib.
     let cd = unsafe { manifest.custom_data.as_slice() };

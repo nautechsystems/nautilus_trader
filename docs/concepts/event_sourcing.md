@@ -181,10 +181,27 @@ Each run file contains:
 
 The manifest records the run identity and reproducibility inputs:
 
-- `run_id`, `parent_run_id`, and `instance_id`.
-- `binary_hash`, `crate_versions`, `feature_flags`, and adapter versions.
-- `config_hash`, registered components, and optional seed.
-- `start_ts_init`, `end_ts_init`, `high_watermark`, and status.
+- Run identity:
+  - `run_id`
+  - `parent_run_id`
+  - `instance_id`
+
+- Build identity:
+  - `binary_hash`
+  - `crate_versions`
+  - `feature_flags`
+  - adapter versions
+
+- Configuration identity:
+  - `config_hash`
+  - registered components
+  - optional seed
+
+- Lifecycle state:
+  - `start_ts_init`
+  - `end_ts_init`
+  - `high_watermark`
+  - status
 
 Run status is one of `Running`, `Ended`, `CrashedRecovered`, or `Quarantined`.
 
@@ -263,9 +280,13 @@ Decision and full incident planners take explicit `CatalogSliceSelector` values 
 `ReplayCatalog`. Planning resolves catalog time bounds from the event-store scan unless the
 selector supplies explicit bounds, reports missing catalog slices, and preserves `seq` as the
 entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
-catalog records grouped under their selected slice. These APIs do not open live venue clients, run
-strategies or actors, re-run reconciliation, delete files, or replay clock registration/cancel
-lifecycle.
+catalog records grouped under their selected slice. These APIs do not:
+
+- open live venue clients
+- run strategies or actors
+- re-run reconciliation
+- delete files
+- replay the clock registration/cancel lifecycle
 
 Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores
 cache state from the sealed run, records that run as the parent of the fresh child run, and skips
@@ -273,10 +294,17 @@ live engines, clients, startup, and venue reconciliation.
 
 The cache replay loader is state-only. It restores the cache-owned snapshot, scans the event-store
 tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
-`Cache`. It does not publish replayed entries to the live message bus, run strategy or actor code,
-query venues, run reconciliation, derive identifiers again, or re-arm clocks. Fired `TimeEvent`s and
-raw venue reports are forensic records on this path; replay applies the synthesized order, position,
-and account events captured later in the run.
+`Cache`. It does not:
+
+- publish replayed entries to the live message bus
+- run strategy or actor code
+- query venues
+- run reconciliation
+- derive identifiers again
+- re-arm clocks
+
+Fired `TimeEvent`s and raw venue reports are forensic records on this path; replay applies the
+synthesized order, position, and account events captured later in the run.
 
 ## Snapshot-anchored recovery
 
@@ -437,8 +465,13 @@ The event store and deterministic simulation testing (DST) solve different parts
 
 - The event store supplies the captured input history.
 - DST controls scheduling, time, seeded randomness, and other in-scope nondeterminism.
-- Together they let a run identified by `(seed, binary_hash, config_hash, schema_version, log)`
-  reproduce engine behavior inside the deterministic simulation scope.
+- Together they let a run reproduce engine behavior inside the deterministic simulation scope when
+  identified by:
+  - `seed`
+  - `binary_hash`
+  - `config_hash`
+  - `schema_version`
+  - `log`
 
 Under `cfg(madsim)`, the writer commits synchronously instead of spawning its writer thread. When a
 simulation harness supplies a `MemoryBackend` opener through lifecycle options, capture stays

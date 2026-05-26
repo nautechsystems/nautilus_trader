@@ -27,6 +27,8 @@ use std::{
     slice,
 };
 
+use nautilus_model::types::fixed::FIXED_PRECISION;
+
 use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, Slice},
@@ -46,8 +48,9 @@ pub type PluginInitFn = unsafe extern "C" fn(host: *const HostVTable) -> *const 
 /// Versioned build identifier carried by [`PluginManifest`].
 ///
 /// The fields identify the Nautilus plug-in crate and build environment that
-/// produced the manifest. They are diagnostic only: ABI compatibility is still
-/// enforced by [`PluginManifest::abi_version`].
+/// produced the manifest. The host validates the precision mode because it
+/// changes model type layout across the plug-in boundary. Other build fields
+/// remain diagnostic.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct PluginBuildId {
@@ -67,6 +70,12 @@ pub struct PluginBuildId {
 
     /// Cargo build profile, or empty when Cargo did not expose one.
     pub build_profile: BorrowedStr<'static>,
+
+    /// Model fixed-point precision mode used to build the plug-in.
+    pub precision_mode: BorrowedStr<'static>,
+
+    /// Maximum fixed-point decimal precision used to build the plug-in.
+    pub fixed_precision: u8,
 }
 
 impl PluginBuildId {
@@ -79,7 +88,19 @@ impl PluginBuildId {
             rustc_version: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_RUSTC_VERSION")),
             target_triple: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_TARGET")),
             build_profile: BorrowedStr::from_str(env!("NAUTILUS_PLUGIN_BUILD_PROFILE")),
+            precision_mode: BorrowedStr::from_str(compiled_precision_mode()),
+            fixed_precision: FIXED_PRECISION,
         }
+    }
+}
+
+/// Returns the model precision mode compiled into this crate.
+#[must_use]
+pub const fn compiled_precision_mode() -> &'static str {
+    if FIXED_PRECISION > 9 {
+        "high-precision"
+    } else {
+        "standard"
     }
 }
 
@@ -152,7 +173,7 @@ pub struct PluginManifest {
 
     /// Strategy registrations contributed by this plug-in.
     pub strategies: Slice<'static, StrategyRegistration>,
-    // Future plug-point slices land here in additive ABI bumps:
+    // Future plug-point slices land here and require rebuilding plug-ins:
     //   pub indicators: Slice<'static, IndicatorRegistration>,
     //   pub fill_models: Slice<'static, FillModelRegistration>,
     //   ...
@@ -167,9 +188,10 @@ impl PluginManifest {
 
     /// Validates manifest invariants the host relies on before registration.
     ///
-    /// This does not decide plug-in compatibility beyond the explicit ABI and
-    /// build-id schema versions. Build-id content stays diagnostic; empty
-    /// compiler, target, and profile strings do not make a manifest invalid.
+    /// This does not decide plug-in compatibility beyond the explicit ABI,
+    /// build-id schema, and fixed-point precision mode. The remaining build-id
+    /// content stays diagnostic; empty compiler, target, and profile strings do
+    /// not make a manifest invalid.
     ///
     /// # Errors
     ///
@@ -197,6 +219,7 @@ fn validate_build_id(build_id: &PluginBuildId, errors: &mut PluginManifestValida
             "build_id.schema_version {} does not match supported schema {}",
             build_id.schema_version, PLUGIN_BUILD_ID_VERSION
         ));
+        return;
     }
 
     validate_optional_str(
@@ -207,6 +230,23 @@ fn validate_build_id(build_id: &PluginBuildId, errors: &mut PluginManifestValida
     validate_optional_str("build_id.rustc_version", build_id.rustc_version, errors);
     validate_optional_str("build_id.target_triple", build_id.target_triple, errors);
     validate_optional_str("build_id.build_profile", build_id.build_profile, errors);
+    if let Some(precision_mode) =
+        validate_required_str("build_id.precision_mode", build_id.precision_mode, errors)
+    {
+        let expected = compiled_precision_mode();
+        if precision_mode != expected {
+            errors.push(format!(
+                "build_id.precision_mode '{precision_mode}' does not match host precision mode '{expected}'"
+            ));
+        }
+    }
+
+    if build_id.fixed_precision != FIXED_PRECISION {
+        errors.push(format!(
+            "build_id.fixed_precision {} does not match host fixed precision {}",
+            build_id.fixed_precision, FIXED_PRECISION
+        ));
+    }
 }
 
 macro_rules! validate_vtable_slots {
@@ -1316,6 +1356,12 @@ mod tests {
         assert!(!unsafe { id.target_triple.as_str() }.is_empty());
         // SAFETY: see above.
         assert!(!unsafe { id.build_profile.as_str() }.is_empty());
+        // SAFETY: see above.
+        assert_eq!(
+            unsafe { id.precision_mode.as_str() },
+            compiled_precision_mode()
+        );
+        assert_eq!(id.fixed_precision, FIXED_PRECISION);
     }
 
     #[rstest]
@@ -1327,7 +1373,7 @@ mod tests {
 
     #[rstest]
     #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
-    #[case::previous_v1(1)]
+    #[case::previous_v3(3)]
     #[case::zero(0)]
     #[case::max(u32::MAX)]
     fn mismatched_manifest_rejects(#[case] abi: u32) {
@@ -1420,6 +1466,37 @@ mod tests {
             PLUGIN_BUILD_ID_VERSION
         );
         assert!(errors.to_string().contains(&expected));
+    }
+
+    #[rstest]
+    fn validate_rejects_mismatched_precision_mode() {
+        let precision_mode = if compiled_precision_mode() == "high-precision" {
+            "standard"
+        } else {
+            "high-precision"
+        };
+        let fixed_precision = if FIXED_PRECISION > 9 { 9 } else { 16 };
+        let m = PluginManifest {
+            build_id: PluginBuildId {
+                precision_mode: BorrowedStr::from_str(precision_mode),
+                fixed_precision,
+                ..PluginBuildId::current()
+            },
+            ..valid_manifest()
+        };
+
+        let errors = m
+            .validate()
+            .expect_err("mismatched precision mode is invalid");
+
+        let rendered = errors.to_string();
+        assert!(rendered.contains(&format!(
+            "build_id.precision_mode '{precision_mode}' does not match host precision mode '{}'",
+            compiled_precision_mode()
+        )));
+        assert!(rendered.contains(&format!(
+            "build_id.fixed_precision {fixed_precision} does not match host fixed precision {FIXED_PRECISION}"
+        )));
     }
 
     #[rstest]

@@ -17,15 +17,17 @@ The plug-in system is supported on Linux only.
 - The host adapts each plug-in instance into a `DataActor` or `Strategy` so the live engine sees no FFI.
 - Callbacks from a plug-in back into the host route through a single static `HostVTable` of function pointers.
 - Every plug-in callback runs under `catch_unwind`. A panic in a fallible plug-in thunk surfaces as
-  a `PluginError`; a panic in an infallible plug-in thunk (`create`, `drop_handle`, custom-data
-  `ts_event`/`ts_init`/`clone_handle`/`drop_handle`/`eq_handles`) aborts the process. Neither path
-  unwinds across the FFI boundary.
+  a `PluginError`; a panic in an infallible plug-in thunk aborts the process. Neither path unwinds
+  across the FFI boundary. Infallible thunks include:
+  - `create`
+  - `drop_handle`
+  - custom-data `ts_event`, `ts_init`, `clone_handle`, `drop_handle`, and `eq_handles`
 
 :::warning
-The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` tracks
-the current boundary layout and does not promise compatibility between Nautilus versions. Pin
+The plug-in ABI and `LiveNodeConfig` wiring are early alpha. `NAUTILUS_PLUGIN_ABI_VERSION` and
+`PLUGIN_BUILD_ID_VERSION` remain `1` during this phase, even when the boundary changes. Pin
 plug-in builds to the matching host version, and treat the concepts here as the design contract
-for current development.
+for current development rather than a stable compatibility promise.
 :::
 
 ## Terms
@@ -50,14 +52,18 @@ A plug-in cdylib can publish three families of contributions through its manifes
 
 Each family has its own `#[repr(C)]` vtable struct, an author-facing trait, and a registration entry
 the manifest lists in a `Slice<'static, Registration>`. Adding a future plug point means adding one
-module and one slice field, then bumping the ABI version.
+module and one slice field, then rebuilding plug-ins to match the host.
 
 Each plug point family carries a fixed callback set. The actor surface today covers:
 
 - Lifecycle hooks.
-- Market-data callbacks for instruments, order books, book deltas, quotes, trades, bars,
-  mark/index/funding prices, option greeks, option chain snapshots, instrument status, and
-  instrument close.
+- Market-data callbacks for:
+  - instruments
+  - order books and book deltas
+  - quotes, trades, and bars
+  - mark, index, and funding prices
+  - option greeks and option chain snapshots
+  - instrument status and instrument close
 - Order filled and canceled events.
 - Signals and time events.
 - Custom data values registered through `PluginCustomData`.
@@ -85,16 +91,27 @@ following patterns cover the current surface:
 - Events flow into the plug-in as borrowed `*const T` pointers into the host's already-`#[repr(C)]`
   model types. No serialisation, no per-event allocation.
 - Non-`#[repr(C)]` inbound payloads flow into the plug-in as borrowed handles:
-  `InstrumentAnyHandle`, `OrderBookHandle`, `OrderBookDeltasHandle`, and `OptionChainSliceHandle`.
+  - `InstrumentAnyHandle`
+  - `OrderBookHandle`
+  - `OrderBookDeltasHandle`
+  - `OptionChainSliceHandle`
   The host owns each handle for the callback duration. `OrderBookHandle` wraps a cloned book
   snapshot, so the plug-in never receives mutable host book state.
-- Order commands flow out of the plug-in as boundary-owned `*const XHandle` pointers
-  (`SubmitOrderHandle`, `CancelOrderHandle`, `ModifyOrderHandle`, `SubmitOrderListHandle`,
-  `CancelOrdersHandle`, `CancelAllOrdersHandle`, `ClosePositionHandle`,
-  `CloseAllPositionsHandle`, `QueryAccountHandle`, `QueryOrderHandle`) into command structs the
-  plug-in owns for the duration of the call. The host derefs the handle and dispatches into the
-  matching `Strategy` command, leaving the in-engine `TradingCommand` shape untouched. No JSON
-  crosses the boundary on any per-call command path.
+- Order commands flow out of the plug-in as boundary-owned `*const XHandle` pointers:
+  - `SubmitOrderHandle`
+  - `SubmitOrderListHandle`
+  - `CancelOrderHandle`
+  - `CancelOrdersHandle`
+  - `CancelAllOrdersHandle`
+  - `ModifyOrderHandle`
+  - `ClosePositionHandle`
+  - `CloseAllPositionsHandle`
+  - `QueryAccountHandle`
+  - `QueryOrderHandle`
+
+  The plug-in owns the command structs for the duration of the call. The host derefs the handle and
+  dispatches into the matching `Strategy` command, leaving the in-engine `TradingCommand` shape
+  untouched. No JSON crosses the boundary on any per-call command path.
 - Plug-in custom data flows into actor and strategy `on_data` callbacks as a borrowed
   `PluginCustomDataRef`. The host only dispatches custom data values that came from a
   `PluginCustomData` registration in a loaded manifest, because that wrapper carries the plug-in
@@ -104,15 +121,28 @@ following patterns cover the current surface:
   registered plug-in `CustomData`, and calls the existing `on_data` slot with `PluginCustomDataRef`.
   No `&dyn Any` value crosses the cdylib boundary.
 
-The boundary primitives (`BorrowedStr`, `Slice`, `OwnedBytes`, `PluginError`, `PluginResult`) are
-documented in `nautilus_plugin::boundary`.
+The boundary primitives are documented in `nautilus_plugin::boundary`:
+
+- `BorrowedStr`
+- `Slice`
+- `OwnedBytes`
+- `PluginError`
+- `PluginResult`
 
 ### Identifier interning
 
-Nautilus identifiers such as `ClientOrderId`, `InstrumentId`, `ClientId`, `AccountId`,
-`PositionId`, `StrategyId`, and `TraderId` wrap `Ustr`. A Rust cdylib has its own `ustr`
-global string cache, so equal text can have different `Ustr` pointers on the host and
-plug-in sides. The boundary treats `Ustr` values as receiver-local:
+Nautilus identifiers wrap `Ustr`, including:
+
+- `ClientOrderId`
+- `InstrumentId`
+- `ClientId`
+- `AccountId`
+- `PositionId`
+- `StrategyId`
+- `TraderId`
+
+A Rust cdylib has its own `ustr` global string cache, so equal text can have different `Ustr`
+pointers on the host and plug-in sides. The boundary treats `Ustr` values as receiver-local:
 
 - Host command dispatch re-interns every identifier in boundary-owned command handles before
   calling the matching `Strategy::*` method.
@@ -122,10 +152,18 @@ plug-in sides. The boundary treats `Ustr` values as receiver-local:
   Code that bypasses the macro-generated thunks must re-intern copied identifiers with
   `Ustr::from(value.as_str())`.
 
-The policy also covers nested identifiers such as `Symbol`, `Venue`, `OrderListId`,
-`ExecAlgorithmId`, `VenueOrderId`, `OptionSeriesId`, raw `Ustr` tags and names, and
-currency codes carried inside command or event payloads. This does not change any vtable
-or handle layout, so it does not require an ABI version bump.
+The policy also covers nested identifiers carried inside command or event payloads:
+
+- `Symbol`
+- `Venue`
+- `OrderListId`
+- `ExecAlgorithmId`
+- `VenueOrderId`
+- `OptionSeriesId`
+- raw `Ustr` tags and names
+- currency codes
+
+This does not change any vtable or handle layout, so it does not require a plug-in rebuild.
 
 ## Manifest
 
@@ -134,15 +172,21 @@ identifies the build and enumerates every plug point contribution:
 
 - `abi_version`: must equal `NAUTILUS_PLUGIN_ABI_VERSION` or the host refuses to load.
 - `plugin_name`, `plugin_vendor`, `plugin_version`: identifier strings.
-- `build_id`: a versioned `PluginBuildId` carrying `nautilus-plugin` crate version, `rustc` version,
-  target triple, and build profile.
+- `build_id`: a versioned `PluginBuildId` carrying:
+  - `nautilus-plugin` crate version
+  - `rustc` version
+  - target triple
+  - build profile
+  - precision mode
+  - fixed precision
 - `custom_data`, `actors`, `strategies`: registration slices, one per plug point.
 
 The loader runs `ValidatedPluginManifest::new` on the manifest before exposing it to the live node.
 Validation checks identifier strings, the build-id schema version, every registration vtable
-pointer, every required vtable slot, and uniqueness of type names across all plug points. The build
-identifier itself stays diagnostic: empty `rustc_version`, `target_triple`, or `build_profile`
-strings do not make a manifest invalid.
+pointer, every required vtable slot, and uniqueness of type names across all plug points. It also
+checks the plug-in precision mode and fixed precision against the host, because standard-precision
+and high-precision builds use different model layouts at the boundary. The specific crate version,
+`rustc`, target triple, and build profile values stay diagnostic.
 
 ## Load flow
 
@@ -304,10 +348,14 @@ nautilus_plugin::nautilus_plugin! {
 
 The macro emits `nautilus_plugin_init`, the `'static PluginManifest`, and the vtables for each plug
 point. Fallible thunks forward through `panic::guard`; the heavier infallible thunks
-(`create`, `drop_handle`, and custom-data
-`ts_event`/`ts_init`/`clone_handle`/`drop_handle`/`eq_handles`) forward through
-`guard_infallible`; trivial slots that cannot panic (the `type_name` thunks, which just return a
-`BorrowedStr` over a `&'static str` constant) carry no guard at all.
+forward through `guard_infallible`:
+
+- `create`
+- `drop_handle`
+- custom-data `ts_event`, `ts_init`, `clone_handle`, `drop_handle`, and `eq_handles`
+
+Trivial slots that cannot panic (the `type_name` thunks, which just return a `BorrowedStr` over a
+`&'static str` constant) carry no guard at all.
 
 Authors never write `extern "C"` or `#[repr(C)]`. `unsafe` requirements depend on what the plug-in
 holds. The example actor in `crates/plugin/examples/custom_data_plugin.rs` discards the
@@ -329,8 +377,9 @@ cargo build -p nautilus-plugin --example custom_data_plugin
 ## Operating notes
 
 - Pin every plug-in build to the host's Nautilus version. The loader checks `abi_version` and the
-  build-id schema only; crate version, `rustc`, target triple, and build profile travel as
-  diagnostics in load-error output.
+  build-id schema, and rejects plug-ins built with a different precision mode or fixed precision.
+  Crate version, `rustc`, target triple, and build profile travel as diagnostics in load-error
+  output.
 - Use the optional `sha256` field on a `PluginConfig` entry as a deployment-time integrity check.
 - The node refuses to load plug-ins once it has left the `Idle` state, so any `LoadError` surfaces
   during startup, before client connections.
