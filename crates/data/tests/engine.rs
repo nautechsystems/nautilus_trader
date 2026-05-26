@@ -80,6 +80,8 @@ use nautilus_model::defi::{
     data::block::BlockPosition,
     pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
 };
+#[cfg(feature = "streaming")]
+use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
@@ -92,8 +94,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookAction, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, OrderSide, PriceType, RecordFlag,
+        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
