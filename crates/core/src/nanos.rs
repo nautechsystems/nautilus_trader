@@ -228,12 +228,11 @@ impl UnixNanos {
         }
 
         // Try parsing as a simple date string (YYYY-MM-DD format)
-        if let Ok(datetime) = NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            // SAFETY: unwrap() is safe here because and_hms_opt(0, 0, 0) always succeeds
-            // for valid dates (midnight is always a valid time)
-            .map(|date| date.and_hms_opt(0, 0, 0).unwrap())
-            .map(|naive_dt| DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc))
-        {
+        if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            let datetime = date
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| "Invalid midnight time".to_string())
+                .map(|naive_dt| DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc))?;
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
@@ -674,6 +673,12 @@ mod tests {
     fn test_from_str_invalid() {
         let result = "abc".parse::<UnixNanos>();
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_str_date() {
+        let nanos: UnixNanos = "2024-02-10".parse().unwrap();
+        assert_eq!(nanos.as_u64(), 1_707_523_200_000_000_000);
     }
 
     #[rstest]
