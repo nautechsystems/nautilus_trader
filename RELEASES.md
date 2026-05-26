@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed `StackStr::from_c_ptr_checked` to return `None` for null C string pointers
 
 ### Fixes
+- Fixed `PortfolioStatistic.downsample_to_daily_bins` arithmetic-sum aggregation producing incorrect `SharpeRatio`/`SortinoRatio`/`ReturnsVolatility`/`RiskReturnRatio`/`CAGR` for sub-daily returns; now compounds geometrically (Rust + Python)
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda

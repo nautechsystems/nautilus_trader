@@ -81,4 +81,7 @@ class TestSortinoRatioPortfolioStatistic:
         result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
-        assert result == 9.16515138991168
+        # Intraday returns are geometrically compounded into daily bins before
+        # the Sortino calculation; value reflects the corrected downsampling
+        # rather than the previous arithmetic-sum behavior.
+        assert result == 20.4939015319192

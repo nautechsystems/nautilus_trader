@@ -134,4 +134,11 @@ class PortfolioStatistic:
         return not (returns is None or returns.empty or returns.isna().all())
 
     def _downsample_to_daily_bins(self, returns: pd.Series) -> pd.Series:
-        return returns.dropna().resample("1D").sum()
+        # Geometrically compound returns within each day: (1 + r1)(1 + r2) - 1
+        # is the standard convention for chaining arithmetic period returns. For
+        # daily-frequency inputs (one return per day) the bin value equals the
+        # input value, so callers already operating on daily returns observe no
+        # behavior change. `pd.Series(...)` narrows the pandas-stub Series|DataFrame
+        # union back to Series for mypy; the runtime is always Series.
+        compounded = returns.dropna().resample("1D").agg(lambda x: (1.0 + x).prod() - 1.0)
+        return pd.Series(compounded)
