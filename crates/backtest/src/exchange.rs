@@ -1023,9 +1023,13 @@ impl SimulatedExchange {
     /// Checks if any margin accounts have breached maintenance margin and liquidates open
     /// positions when the trigger threshold is met.
     ///
-    /// > **Note**: This implementation assumes cross-margin mode — all positions in the same
-    /// > settlement currency share a single margin pool. Isolated-margin per-position tracking
-    /// > is not yet supported.
+    /// Liquidation is scoped to the breached settlement currency: only positions whose
+    /// instrument settles in the same currency as the breached margin account are closed.
+    /// Positions settled in other currencies remain open, isolating the liquidation to
+    /// the currency whose equity fell below the maintenance threshold.
+    ///
+    /// > **Note**: A future `cross_margin_mode` venue configuration could extend this to
+    /// > liquidate all positions across all settlement currencies simultaneously.
     pub fn process_liquidations(&mut self, ts_now: UnixNanos) {
         if !self.liquidation_enabled {
             return;
@@ -1121,8 +1125,11 @@ impl SimulatedExchange {
             );
 
             for matching_engine in self.matching_engines.values_mut() {
-                matching_engine
-                    .liquidate_open_positions(ts_now, self.liquidation_cancel_open_orders);
+                matching_engine.liquidate_open_positions(
+                    ts_now,
+                    self.liquidation_cancel_open_orders,
+                    currency,
+                );
             }
 
             break;

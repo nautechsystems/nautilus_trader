@@ -26,7 +26,6 @@ Run with:
 import json
 import sys
 
-from nautilus_trader.core.nautilus_pyo3.trading import ImportableStrategyConfig as _ISC
 from nautilus_trader.core.nautilus_pyo3.backtest import BacktestEngine
 from nautilus_trader.core.nautilus_pyo3.backtest import BacktestEngineConfig
 from nautilus_trader.core.nautilus_pyo3.model import AccountType
@@ -38,6 +37,7 @@ from nautilus_trader.core.nautilus_pyo3.model import Price
 from nautilus_trader.core.nautilus_pyo3.model import Quantity
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import Venue
+from nautilus_trader.core.nautilus_pyo3.trading import ImportableStrategyConfig as _ISC
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -111,7 +111,7 @@ def run_demo() -> dict:
                 "instrument_id": str(XBTUSD.id),
                 "trade_size": QUANTITY,
             },
-        )
+        ),
     )
 
     ticks = [

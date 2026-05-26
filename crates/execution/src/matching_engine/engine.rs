@@ -2498,7 +2498,21 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the venue order ID generator cannot produce an ID for the synthetic
     /// liquidation order (internal state inconsistency).
-    pub fn liquidate_open_positions(&mut self, ts_now: UnixNanos, cancel_open_orders: bool) {
+    ///
+    /// Only positions whose instrument settles in `settlement_currency` are closed.
+    /// Matching engines for other settlement currencies are skipped, scoping
+    /// liquidation to the currency whose margin account breached the threshold.
+    pub fn liquidate_open_positions(
+        &mut self,
+        ts_now: UnixNanos,
+        cancel_open_orders: bool,
+        settlement_currency: Currency,
+    ) {
+        // Only liquidate positions settled in the breached currency.
+        if self.instrument.settlement_currency() != settlement_currency {
+            return;
+        }
+
         if cancel_open_orders {
             let open_orders: Vec<RestingOrder> = self.get_open_orders();
             for order_info in &open_orders {
@@ -2540,24 +2554,23 @@ impl OrderMatchingEngine {
         };
 
         for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
-            self.account_ids.insert(trader_id, account_id);
-            let fill_price = if closing_side == OrderSide::Sell {
-                self.best_bid_price().or(self.settlement_price)
+            // Pre-check: ensure a price source is available before emitting events.
+            let has_price = if closing_side == OrderSide::Sell {
+                self.best_bid_price().is_some() || self.settlement_price.is_some()
             } else {
-                self.best_ask_price().or(self.settlement_price)
+                self.best_ask_price().is_some() || self.settlement_price.is_some()
             };
-
-            let Some(fill_price) = fill_price else {
+            if !has_price {
                 log::warn!(
                     "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
                 );
                 continue;
-            };
+            }
 
             let client_order_id = ClientOrderId::from(
                 format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
             );
-            let mut order = OrderAny::Market(MarketOrder::new(
+            let order = OrderAny::Market(MarketOrder::new(
                 trader_id,
                 strategy_id,
                 instrument_id,
@@ -2597,16 +2610,12 @@ impl OrderMatchingEngine {
                 }
             }
 
+            // Route through the normal market-order fill machinery (fill model,
+            // book depth consumption, slippage) instead of apply_fills directly.
+            self.account_ids.insert(trader_id, account_id);
             self.generate_order_submitted(&order, account_id);
             self.generate_order_accepted(&order, venue_order_id);
-            order.set_liquidity_side(LiquiditySide::Taker);
-            self.apply_fills(
-                &order,
-                &[(fill_price, quantity)],
-                LiquiditySide::Taker,
-                Some(position_id),
-                None,
-            );
+            self.fill_market_order(client_order_id);
         }
     }
 

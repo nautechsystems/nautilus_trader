@@ -91,7 +91,11 @@ def _make_engine(
     return engine
 
 
-def _add_buy_strategy(engine: BacktestEngine, trade_size: int = 10_000_000) -> None:
+def _add_buy_strategy(
+    engine: BacktestEngine,
+    trade_size: int = 10_000_000,
+    rebuy_after_close: bool = False,
+) -> None:
     engine.add_strategy_from_config(
         ImportableStrategyConfig(
             strategy_path=_BUY_STRATEGY,
@@ -99,6 +103,7 @@ def _add_buy_strategy(engine: BacktestEngine, trade_size: int = 10_000_000) -> N
             config={
                 "instrument_id": str(XBTUSD_BITMEX.id),
                 "trade_size": trade_size,
+                "rebuy_after_close": rebuy_after_close,
             },
         ),
     )
@@ -303,34 +308,56 @@ def test_higher_trigger_ratio_liquidates_at_least_as_early():
     )
 
 
-def test_liquidation_can_retrigger_after_reopen():
+def test_liquidation_retriggers_within_same_run():
     """
-    After a first liquidation the account can open a new position. If that new position
-    also goes underwater the liquidation engine must fire again.
+    After the first liquidation closes the position the strategy re-opens it within the
+    *same* engine.run() call. The liquidation engine must fire a second time without any
+    engine.reset() in between.
 
-    This verifies there is no permanent 'already-liquidated' guard that prevents re-
-    liquidation on the same account.
+    This is the critical test for the removal of the permanent 'already-
+    liquidated' dedupe set: if suppression were permanent, only one position
+    would be closed.
+
+    Parameters are chosen so the account survives both crashes:
+    - trade_size=10_000 contracts (small enough that a 50% crash = -0.25 BTC)
+    - starting_btc=0.255 (leaves ~0.005 BTC equity after the first crash)
+    - trigger_ratio=60 (maintenance margin is fixed at avg_px_open with 10x
+      default leverage: 0.0035 x 10_000 / 40_000 / 10 = 0.0000875 BTC)
+
+    Margin maths (maint_rate=0.0035, default_leverage=10, entry=40k, crash=20k):
+      PnL at crash  = 10_000 x (1/40_000 - 1/20_000) = -0.25 BTC
+      equity        = 0.255 - 0.25 ~= 0.0048 BTC  (after entry commission)
+      maint         = 0.0035 x 10_000 / 40_000 / 10 = 0.0000875 BTC (fixed at open)
+      threshold     = 60 x 0.0000875 = 0.00525 BTC  ->  0.0048 < 0.00525 -> fires
+      init_margin   = 0.01 x 10_000 / 40_000 / 10 = 0.00025 BTC  ->  0.0048 > rebuy
+
+    Tick sequence: ENTRY -> CRASH -> ENTRY -> CRASH
+    Expected outcome: >= 2 closed positions, 0 open.
 
     """
-    engine = _make_engine(liquidation_enabled=True)
-    _add_buy_strategy(engine)
-    ticks = _build_ticks(ENTRY_PRICE, CRASH_PRICE)
-    engine.add_data(ticks)
-    engine.run()
-
-    assert engine.cache.positions_open_count() == 0, "First liquidation must have fired"
-    assert engine.cache.positions_closed_count() >= 1
-
-    # Reset and verify liquidation fires again on the second run.
-    engine.reset()
-    engine.clear_strategies()
-    _add_buy_strategy(engine)
-    engine.clear_data()
-    engine.add_data(ticks)
-    engine.run()
-
-    assert engine.cache.positions_open_count() == 0, (
-        "Liquidation must fire on the second run as well (no permanent suppression)"
+    engine = _make_engine(
+        liquidation_enabled=True,
+        liquidation_trigger_ratio=60.0,
+        starting_btc=0.255,
     )
-    assert engine.cache.positions_closed_count() >= 1
+    _add_buy_strategy(engine, trade_size=10_000, rebuy_after_close=True)
+    ticks = _build_ticks(ENTRY_PRICE, CRASH_PRICE, ENTRY_PRICE, CRASH_PRICE)
+    engine.add_data(ticks)
+    engine.run()
+
+    cache = engine.cache
+    assert cache.positions_open_count() == 0, "All positions must be closed after two liquidations"
+    # In NETTING OMS a single instrument maps to one position_id, so
+    # positions_closed_count() is always 1 regardless of how many times the
+    # position cycles open/closed. Count FILLED liquidation orders instead to
+    # prove repeated liquidation executions happened in the same run.
+    liq_filled_orders = [
+        o
+        for o in cache.orders()
+        if "LIQUIDATION" in str(o.client_order_id) and str(o.status) == "FILLED"
+    ]
+    assert len(liq_filled_orders) >= 2, (
+        f"Expected >= 2 FILLED liquidation orders but got {len(liq_filled_orders)}; "
+        "liquidation must have fired twice in the same run (no permanent suppression)"
+    )
     engine.dispose()
