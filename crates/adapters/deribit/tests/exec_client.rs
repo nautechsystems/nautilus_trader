@@ -24,6 +24,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -41,8 +42,14 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_common::{
-    cache::Cache, clients::ExecutionClient, live::runner::set_exec_event_sender,
-    messages::ExecutionEvent, testing::wait_until_async,
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::set_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder},
+    },
+    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_deribit::{
@@ -53,14 +60,16 @@ use nautilus_deribit::{
     config::DeribitExecClientConfig,
     execution::DeribitExecutionClient,
     http::models::DeribitProductType,
+    websocket::enums::DeribitWsMethod,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType},
-    events::AccountState,
-    identifiers::{AccountId, TraderId},
-    types::{AccountBalance, Money},
+    enums::{AccountType, OmsType, OrderSide, TimeInForce},
+    events::{AccountState, OrderEventAny},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    orders::{LimitOrder, Order, OrderAny},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -76,6 +85,41 @@ fn load_json(filename: &str) -> Value {
     serde_json::from_str(&content).expect("invalid json")
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+enum CommandResponse {
+    #[default]
+    Success,
+    AmbiguousFailure,
+    MalformedSuccess,
+    VenueReject {
+        code: i64,
+        message: &'static str,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CommandResponses {
+    submit: CommandResponse,
+    cancel: CommandResponse,
+    modify: CommandResponse,
+    cancel_all: CommandResponse,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CommandOrderState {
+    Open,
+    Cancelled,
+}
+
+impl CommandOrderState {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
@@ -84,6 +128,8 @@ struct TestServerState {
     authenticated: Arc<AtomicBool>,
     auth_request_count: Arc<AtomicUsize>,
     disconnect_trigger: Arc<AtomicBool>,
+    command_responses: Arc<tokio::sync::Mutex<CommandResponses>>,
+    command_request_count: Arc<AtomicUsize>,
 }
 
 async fn handle_jsonrpc_request(
@@ -180,11 +226,14 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     continue;
                 };
 
-                let method = payload.get("method").and_then(|m| m.as_str());
+                let method = payload
+                    .get("method")
+                    .and_then(|m| m.as_str())
+                    .and_then(|method| DeribitWsMethod::from_str(method).ok());
                 let id = payload.get("id").and_then(|i| i.as_u64());
 
                 match method {
-                    Some("public/auth") => {
+                    Some(DeribitWsMethod::PublicAuth) => {
                         state.auth_request_count.fetch_add(1, Ordering::Relaxed);
                         state.authenticated.store(true, Ordering::Relaxed);
 
@@ -220,7 +269,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
-                    Some("public/subscribe" | "private/subscribe") => {
+                    Some(DeribitWsMethod::PublicSubscribe | DeribitWsMethod::PrivateSubscribe) => {
                         if let Some(params) = payload.get("params")
                             && let Some(channels) =
                                 params.get("channels").and_then(|c| c.as_array())
@@ -262,7 +311,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             }
                         }
                     }
-                    Some("public/unsubscribe" | "private/unsubscribe") => {
+                    Some(
+                        DeribitWsMethod::PublicUnsubscribe | DeribitWsMethod::PrivateUnsubscribe,
+                    ) => {
                         if let Some(params) = payload.get("params")
                             && let Some(channels) =
                                 params.get("channels").and_then(|c| c.as_array())
@@ -291,7 +342,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             }
                         }
                     }
-                    Some("public/set_heartbeat") => {
+                    Some(DeribitWsMethod::SetHeartbeat) => {
                         let response = json!({
                             "jsonrpc": "2.0",
                             "id": id,
@@ -307,7 +358,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
-                    Some("public/test") => {
+                    Some(DeribitWsMethod::Test) => {
                         let response = json!({
                             "jsonrpc": "2.0",
                             "id": id,
@@ -325,6 +376,38 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
+                    Some(DeribitWsMethod::Buy | DeribitWsMethod::Sell) => {
+                        state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        let response_kind = state.command_responses.lock().await.submit;
+                        let result = order_response_result(&payload);
+                        if !send_command_response(&mut socket, id, response_kind, &result).await {
+                            break;
+                        }
+                    }
+                    Some(DeribitWsMethod::Cancel) => {
+                        state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        let response_kind = state.command_responses.lock().await.cancel;
+                        let result = order_message_result(&payload, CommandOrderState::Cancelled);
+                        if !send_command_response(&mut socket, id, response_kind, &result).await {
+                            break;
+                        }
+                    }
+                    Some(DeribitWsMethod::Edit) => {
+                        state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        let response_kind = state.command_responses.lock().await.modify;
+                        let result = order_response_result(&payload);
+                        if !send_command_response(&mut socket, id, response_kind, &result).await {
+                            break;
+                        }
+                    }
+                    Some(DeribitWsMethod::CancelAllByInstrument) => {
+                        state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        let response_kind = state.command_responses.lock().await.cancel_all;
+                        let result = json!(0);
+                        if !send_command_response(&mut socket, id, response_kind, &result).await {
+                            break;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -338,6 +421,98 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
+}
+
+async fn send_command_response(
+    socket: &mut WebSocket,
+    id: Option<u64>,
+    response_kind: CommandResponse,
+    success_result: &Value,
+) -> bool {
+    let Some(response) = command_response(id, response_kind, success_result) else {
+        return true;
+    };
+
+    socket
+        .send(Message::Text(response.to_string().into()))
+        .await
+        .is_ok()
+}
+
+fn command_response(
+    id: Option<u64>,
+    response_kind: CommandResponse,
+    success_result: &Value,
+) -> Option<Value> {
+    match response_kind {
+        CommandResponse::Success => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": success_result,
+            "testnet": true,
+        })),
+        CommandResponse::AmbiguousFailure => None,
+        CommandResponse::MalformedSuccess => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "unexpected": true
+            },
+            "testnet": true,
+        })),
+        CommandResponse::VenueReject { code, message } => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": code,
+                "message": message
+            },
+            "testnet": true,
+        })),
+    }
+}
+
+fn order_response_result(request: &Value) -> Value {
+    json!({
+        "order": order_message_result(request, CommandOrderState::Open),
+        "trades": []
+    })
+}
+
+fn order_message_result(request: &Value, order_state: CommandOrderState) -> Value {
+    let params = request.get("params").unwrap_or(&Value::Null);
+    let label = params
+        .get("label")
+        .and_then(|value| value.as_str())
+        .unwrap_or("deribit-test-order");
+    let instrument_name = params
+        .get("instrument_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("BTC-PERPETUAL");
+    let amount = params.get("amount").cloned().unwrap_or_else(|| json!(1.0));
+    let price = params
+        .get("price")
+        .cloned()
+        .unwrap_or_else(|| json!(50000.0));
+
+    json!({
+        "label": label,
+        "price": price,
+        "amount": amount,
+        "direction": "buy",
+        "time_in_force": "good_til_cancelled",
+        "instrument_name": instrument_name,
+        "api": true,
+        "order_id": "DERIBIT-ORDER-1",
+        "creation_timestamp": 1767978363493_u64,
+        "filled_amount": 0.0,
+        "last_update_timestamp": 1767978363493_u64,
+        "post_only": true,
+        "reduce_only": false,
+        "average_price": 0.0,
+        "order_state": order_state.as_str(),
+        "order_type": "limit",
+    })
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -529,4 +704,686 @@ async fn test_exec_client_connect_emits_account_state() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ambiguous_submit_failure_does_not_emit_order_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("ambiguous-submit-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_response_parse_failure_does_not_emit_order_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::MalformedSuccess,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("parse-fail-submit-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: 10044,
+                message: "post_only_reject",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("venue-submit-reject-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("post_only_reject"));
+        }
+        other => panic!("Expected Rejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_submit_validation_failure_emits_order_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-submit-reject-test-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::AtTheOpen);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("Unsupported time_in_force"));
+        }
+        other => panic!("Expected Rejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ambiguous_cancel_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            cancel: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("ambiguous-cancel-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .cancel_order(cancel_order_command(client_order_id))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            cancel: CommandResponse::VenueReject {
+                code: 10003,
+                message: "order_not_found",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("venue-cancel-reject-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .cancel_order(cancel_order_command(client_order_id))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("order_not_found"));
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_cancel_validation_failure_emits_cancel_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-cancel-reject-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.cancel_order(cancel_order_command_without_venue_order_id(client_order_id));
+    assert!(result.is_err());
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("venue_order_id required"));
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("ambiguous-modify-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .modify_order(modify_order_command(client_order_id))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_response_parse_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: CommandResponse::MalformedSuccess,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("parse-fail-modify-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .modify_order(modify_order_command(client_order_id))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: CommandResponse::VenueReject {
+                code: 10003,
+                message: "price_not_changed",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("venue-modify-reject-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .modify_order(modify_order_command(client_order_id))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("price_not_changed"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_modify_validation_failure_emits_modify_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-modify-reject-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.modify_order(modify_order_command_without_venue_order_id(client_order_id));
+    assert!(result.is_err());
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("venue_order_id required"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_modify_missing_price_emits_modify_rejected() {
+    let (client, mut rx, cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-modify-no-price-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.modify_order(modify_order_command_without_price(client_order_id));
+    assert!(result.is_err());
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("price required"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_modify_missing_cached_order_emits_modify_rejected() {
+    let (client, mut rx, _cache, _request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-modify-no-cache-test-001");
+
+    let result = client.modify_order(modify_order_command_without_quantity(client_order_id));
+    assert!(result.is_err());
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("Order not found"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_whole_cancel_all_failure_does_not_emit_per_order_cancel_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            cancel_all: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    add_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("cancel-all-fail-test-001"),
+        TimeInForce::Gtc,
+    );
+    add_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new("cancel-all-fail-test-002"),
+        TimeInForce::Gtc,
+    );
+
+    client
+        .cancel_all_orders(cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+async fn connected_client_with_command_responses(
+    responses: CommandResponses,
+) -> (
+    DeribitExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    Arc<AtomicUsize>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.command_responses.lock().await = responses;
+    let request_count = state.command_request_count.clone();
+    let (mut client, rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+    (client, rx, cache, request_count)
+}
+
+fn test_trader_id() -> TraderId {
+    TraderId::from("TESTER-001")
+}
+
+fn test_strategy_id() -> StrategyId {
+    StrategyId::from("S-001")
+}
+
+fn test_instrument_id() -> InstrumentId {
+    InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+}
+
+fn add_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    let order = LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("50000.0"),
+        time_in_force,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::Limit(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn submit_order_command(order: &OrderAny) -> SubmitOrder {
+    SubmitOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn cancel_order_command(client_order_id: ClientOrderId) -> CancelOrder {
+    CancelOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn cancel_order_command_without_venue_order_id(client_order_id: ClientOrderId) -> CancelOrder {
+    CancelOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+        Some(Quantity::from("2")),
+        Some(Price::from("51000.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn modify_order_command_without_venue_order_id(client_order_id: ClientOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        None,
+        Some(Quantity::from("2")),
+        Some(Price::from("51000.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn modify_order_command_without_price(client_order_id: ClientOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+        Some(Quantity::from("2")),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn modify_order_command_without_quantity(client_order_id: ClientOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+        None,
+        Some(Price::from("51000.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn cancel_all_orders_command() -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+async fn wait_for_command_requests(request_count: &AtomicUsize, expected: usize) {
+    wait_until_async(
+        || async { request_count.load(Ordering::Relaxed) >= expected },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn assert_no_order_event_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) where
+    F: Fn(&OrderEventAny) -> bool,
+{
+    let unexpected = tokio::time::timeout(Duration::from_millis(500), async {
+        loop {
+            let event = rx.recv().await.expect("Execution event channel closed");
+            if let ExecutionEvent::Order(order_event) = &event
+                && predicate(order_event)
+            {
+                return event;
+            }
+        }
+    })
+    .await;
+
+    if let Ok(event) = unexpected {
+        panic!("Unexpected order event: {event:?}");
+    }
+}
+
+async fn recv_until<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) -> ExecutionEvent
+where
+    F: Fn(&ExecutionEvent) -> bool,
+{
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("Execution event channel closed");
+            if predicate(&event) {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for execution event")
 }

@@ -48,7 +48,7 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
-    enums::{DeribitBookMsgType, DeribitHeartbeatType, DeribitWsChannel},
+    enums::{DeribitBookMsgType, DeribitHeartbeatType, DeribitWsChannel, DeribitWsMethod},
     error::DeribitWsError,
     messages::{
         DeribitAuthResult, DeribitBookMsg, DeribitCancelAllByInstrumentParams, DeribitCancelParams,
@@ -395,11 +395,7 @@ impl DeribitWsFeedHandler {
                 return Err(e);
             }
         };
-        let result = self.send_with_retry(payload, rate_limit_keys).await;
-        if result.is_err() {
-            self.pending_requests.remove(&request_id);
-        }
-        result
+        self.send_with_retry(payload, rate_limit_keys).await
     }
 
     /// Sends a message over the WebSocket with retry logic.
@@ -451,14 +447,14 @@ impl DeribitWsFeedHandler {
             .iter()
             .any(|ch| DeribitWsChannel::requires_auth(ch))
         {
-            "private/subscribe"
+            DeribitWsMethod::PrivateSubscribe
         } else {
-            "public/subscribe"
+            DeribitWsMethod::PublicSubscribe
         };
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
-            method,
+            method.as_method_str(),
             DeribitSubscribeParams {
                 channels: channels.clone(),
             },
@@ -487,14 +483,14 @@ impl DeribitWsFeedHandler {
             .iter()
             .any(|ch| DeribitWsChannel::requires_auth(ch))
         {
-            "private/unsubscribe"
+            DeribitWsMethod::PrivateUnsubscribe
         } else {
-            "public/unsubscribe"
+            DeribitWsMethod::PublicUnsubscribe
         };
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
-            method,
+            method.as_method_str(),
             DeribitSubscribeParams {
                 channels: channels.clone(),
             },
@@ -517,7 +513,7 @@ impl DeribitWsFeedHandler {
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
-            "public/set_heartbeat",
+            DeribitWsMethod::SetHeartbeat.as_method_str(),
             DeribitHeartbeatParams { interval },
         );
 
@@ -538,7 +534,11 @@ impl DeribitWsFeedHandler {
         self.pending_requests
             .insert(request_id, PendingRequestType::Test);
 
-        let request = DeribitJsonRpcRequest::new(request_id, "public/test", serde_json::json!({}));
+        let request = DeribitJsonRpcRequest::new(
+            request_id,
+            DeribitWsMethod::Test.as_method_str(),
+            serde_json::json!({}),
+        );
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -568,7 +568,8 @@ impl DeribitWsFeedHandler {
             },
         );
 
-        let request = DeribitJsonRpcRequest::new(request_id, "private/buy", params);
+        let request =
+            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Buy.as_method_str(), params);
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -603,7 +604,8 @@ impl DeribitWsFeedHandler {
             },
         );
 
-        let request = DeribitJsonRpcRequest::new(request_id, "private/sell", params);
+        let request =
+            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Sell.as_method_str(), params);
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -639,7 +641,8 @@ impl DeribitWsFeedHandler {
             },
         );
 
-        let request = DeribitJsonRpcRequest::new(request_id, "private/edit", params);
+        let request =
+            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Edit.as_method_str(), params);
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -675,7 +678,8 @@ impl DeribitWsFeedHandler {
             },
         );
 
-        let request = DeribitJsonRpcRequest::new(request_id, "private/cancel", params);
+        let request =
+            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Cancel.as_method_str(), params);
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -704,8 +708,11 @@ impl DeribitWsFeedHandler {
             PendingRequestType::CancelAllByInstrument { instrument_id },
         );
 
-        let request =
-            DeribitJsonRpcRequest::new(request_id, "private/cancel_all_by_instrument", params);
+        let request = DeribitJsonRpcRequest::new(
+            request_id,
+            DeribitWsMethod::CancelAllByInstrument.as_method_str(),
+            params,
+        );
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -747,7 +754,11 @@ impl DeribitWsFeedHandler {
             "order_id": order_id
         });
 
-        let request = DeribitJsonRpcRequest::new(request_id, "private/get_order_state", params);
+        let request = DeribitJsonRpcRequest::new(
+            request_id,
+            DeribitWsMethod::GetOrderState.as_method_str(),
+            params,
+        );
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
@@ -783,7 +794,12 @@ impl DeribitWsFeedHandler {
                 self.pending_requests
                     .insert(request_id, PendingRequestType::Authenticate);
 
-                let request = DeribitJsonRpcRequest::new(request_id, "public/auth", auth_params);
+                let request = DeribitJsonRpcRequest::new(
+                    request_id,
+                    DeribitWsMethod::PublicAuth.as_method_str(),
+                    auth_params,
+                );
+
                 match serde_json::to_string(&request) {
                     Ok(payload) => {
                         if let Err(e) = self.send_with_retry(payload, None).await {
@@ -1282,24 +1298,6 @@ impl DeribitWsFeedHandler {
                                         log::error!(
                                             "Failed to parse order response: request_id={request_id}, error={e}"
                                         );
-                                        return Some(NautilusWsMessage::OrderRejected(
-                                            OrderRejected::new(
-                                                trader_id,
-                                                strategy_id,
-                                                instrument_id,
-                                                client_order_id,
-                                                self.account_id
-                                                    .unwrap_or(AccountId::new("DERIBIT-UNKNOWN")),
-                                                ustr::ustr(&format!(
-                                                    "Failed to parse response: {e}"
-                                                )),
-                                                UUID4::new(),
-                                                ts_init,
-                                                ts_init,
-                                                false,
-                                                false,
-                                            ),
-                                        ));
                                     }
                                 }
                             } else if let Some(error) = &response.error {
@@ -1394,23 +1392,6 @@ impl DeribitWsFeedHandler {
                                         log::error!(
                                             "Failed to parse edit response: request_id={request_id}, error={e}"
                                         );
-                                        return Some(NautilusWsMessage::OrderModifyRejected(
-                                            OrderModifyRejected::new(
-                                                trader_id,
-                                                strategy_id,
-                                                instrument_id,
-                                                client_order_id,
-                                                ustr::ustr(&format!(
-                                                    "Failed to parse response: {e}"
-                                                )),
-                                                UUID4::new(),
-                                                ts_init,
-                                                ts_init,
-                                                false,
-                                                None, // venue_order_id not available
-                                                self.account_id,
-                                            ),
-                                        ));
                                     }
                                 }
                             } else if let Some(error) = &response.error {
