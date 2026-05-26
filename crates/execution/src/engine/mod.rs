@@ -26,7 +26,7 @@ pub mod stubs;
 use std::{
     cell::{Cell, RefCell, RefMut},
     collections::{HashMap, HashSet},
-    fmt::Debug,
+    fmt::{Debug, Display},
     rc::Rc,
     time::SystemTime,
 };
@@ -1909,19 +1909,24 @@ impl ExecutionEngine {
 
     fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: SubmitOrder) {
         let client_order_id = cmd.client_order_id;
+        let cached_order = { self.cache.borrow().order_owned(&client_order_id) };
 
-        let order = {
-            let cache = self.cache.borrow();
-            match cache.order(&client_order_id) {
-                Some(order) => order.clone(),
-                None => {
-                    log::error!(
-                        "Cannot handle submit order: order not found in cache for {client_order_id}"
-                    );
+        let (order, added_to_cache) = match cached_order {
+            Some(order) => (order, false),
+            None => {
+                let Some(order) =
+                    self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd.client_id, &cmd)
+                else {
                     return;
-                }
+                };
+
+                (order, true)
             }
         };
+
+        if added_to_cache && self.config.snapshot_orders {
+            self.create_order_state_snapshot(&order);
+        }
 
         let order_venue = order.instrument_id().venue;
         let client_venue = client.venue();
@@ -1948,7 +1953,7 @@ impl ExecutionEngine {
 
         let instrument_id = order.instrument_id();
 
-        if self.config.snapshot_orders {
+        if !added_to_cache && self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);
         }
 
@@ -1973,10 +1978,45 @@ impl ExecutionEngine {
     }
 
     fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
-        let orders: Vec<OrderAny> = self
-            .cache
-            .borrow()
-            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
+        let mut orders = Vec::with_capacity(cmd.order_list.client_order_ids.len());
+        let mut added_client_order_ids = AHashSet::new();
+
+        for client_order_id in &cmd.order_list.client_order_ids {
+            let cached_order = { self.cache.borrow().order_owned(client_order_id) };
+
+            if let Some(order) = cached_order {
+                orders.push(order);
+                continue;
+            }
+
+            let Some(order_init) = cmd
+                .order_inits
+                .iter()
+                .find(|init| init.client_order_id == *client_order_id)
+            else {
+                log::error!(
+                    "Cannot handle submit order list: order not found in cache and no initialization event for {client_order_id}, {cmd}"
+                );
+                continue;
+            };
+
+            let Some(order) =
+                self.add_order_from_init(order_init, cmd.position_id, cmd.client_id, &cmd)
+            else {
+                continue;
+            };
+
+            added_client_order_ids.insert(order.client_order_id());
+            orders.push(order);
+        }
+
+        if self.config.snapshot_orders {
+            for order in &orders {
+                if added_client_order_ids.contains(&order.client_order_id()) {
+                    self.create_order_state_snapshot(order);
+                }
+            }
+        }
 
         if orders.len() != cmd.order_list.client_order_ids.len() {
             for order in &orders {
@@ -2036,7 +2076,9 @@ impl ExecutionEngine {
 
         if self.config.snapshot_orders {
             for order in &orders {
-                self.create_order_state_snapshot(order);
+                if !added_client_order_ids.contains(&order.client_order_id()) {
+                    self.create_order_state_snapshot(order);
+                }
             }
         }
 
@@ -2069,6 +2111,40 @@ impl ExecutionEngine {
                 );
             }
         }
+    }
+
+    fn add_order_from_init(
+        &self,
+        order_init: &OrderInitialized,
+        position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+        context: &dyn Display,
+    ) -> Option<OrderAny> {
+        let client_order_id = order_init.client_order_id;
+        let order = match OrderAny::from_events(vec![OrderEventAny::Initialized(
+            order_init.clone(),
+        )]) {
+            Ok(order) => order,
+            Err(e) => {
+                log::error!(
+                    "Cannot reconstruct order from initialization event for {client_order_id}: {e}, {context}"
+                );
+                return None;
+            }
+        };
+
+        if let Err(e) =
+            self.cache
+                .borrow_mut()
+                .add_order(order.clone(), position_id, client_id, true)
+        {
+            log::error!(
+                "Cannot add reconstructed order to cache for {client_order_id}: {e}, {context}"
+            );
+            return None;
+        }
+
+        Some(order)
     }
 
     fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: ModifyOrder) {

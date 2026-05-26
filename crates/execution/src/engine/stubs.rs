@@ -210,7 +210,11 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        self.submitted_order_ids
+            .borrow_mut()
+            .extend(cmd.order_list.client_order_ids);
+
         Ok(()) // Stub implementation always succeeds
     }
 
