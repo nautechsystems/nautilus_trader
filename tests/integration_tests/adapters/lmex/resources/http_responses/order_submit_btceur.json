@@ -1,0 +1,27 @@
+[
+  {
+    "status": 2,
+    "symbol": "BTC-EUR",
+    "orderType": 76,
+    "price": 1.0,
+    "side": "BUY",
+    "size": 5e-05,
+    "orderID": "8683ec74-260a-4f27-85db-56c07ca7418e",
+    "timestamp": 1779788196403,
+    "triggerPrice": 0,
+    "stopPrice": null,
+    "trigger": false,
+    "message": "",
+    "averageFillPrice": 0.0,
+    "fillSize": 0.0,
+    "clOrderID": null,
+    "stealth": 1,
+    "deviation": 1,
+    "postOnly": false,
+    "originalSize": 5e-05,
+    "remainingSize": 5e-05,
+    "orderDetailType": null,
+    "userCurrency": "EUR",
+    "time_in_force": "GTC"
+  }
+]

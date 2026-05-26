@@ -1,0 +1,20 @@
+{
+  "topic": "notificationsApi",
+  "data": [
+    {
+      "symbol": "BTC-USD",
+      "orderId": 987654322,
+      "clOrderId": "my-order-002",
+      "side": "SELL",
+      "price": 77000.0,
+      "size": 0.05,
+      "filledSize": 0.0,
+      "avgFillPrice": 0.0,
+      "feeAmount": 0.0,
+      "feeCurrency": "USD",
+      "tradeId": 0,
+      "status": 6,
+      "timestamp": 1779786500000
+    }
+  ]
+}

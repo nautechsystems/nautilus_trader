@@ -1,0 +1,10 @@
+[
+  {"currency": "USD",  "total": 0.0,       "available": 0.0},
+  {"currency": "EUR",  "total": 4.09310823, "available": 4.09305822},
+  {"currency": "HKD",  "total": 7.05199848, "available": 7.05199848},
+  {"currency": "SGD",  "total": 0.63230841, "available": 0.63230841},
+  {"currency": "JPY",  "total": 19.03278506,"available": 19.03278506},
+  {"currency": "BTC",  "total": 9.96e-06,   "available": 9.96e-06},
+  {"currency": "ETH",  "total": 0.0001,     "available": 0.0001},
+  {"currency": "TUSD", "total": 100000.0,   "available": 100000.0}
+]
