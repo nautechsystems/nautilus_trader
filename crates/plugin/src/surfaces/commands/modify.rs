@@ -33,6 +33,7 @@ use nautilus_model::{
 };
 
 /// Modify-order command. Mirrors the arguments to `Strategy::modify_order`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModifyOrderCommand {
     /// The client order identifier of the order to modify.

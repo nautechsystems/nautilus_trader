@@ -39,6 +39,7 @@ use ustr::Ustr;
 ///
 /// The host resolves `position_id` against the live cache to materialise the
 /// `&Position` reference the trait method requires.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosePositionCommand {
     /// The identifier of the position to close.
@@ -117,6 +118,7 @@ impl Deref for ClosePositionHandle {
 }
 
 /// Close-all-positions command. Mirrors the arguments to `Strategy::close_all_positions`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseAllPositionsCommand {
     /// The instrument identifier filtering which positions to close.

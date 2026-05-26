@@ -35,6 +35,7 @@ use nautilus_model::{
 };
 
 /// Submit-order command. Mirrors the arguments to `Strategy::submit_order`.
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct SubmitOrderCommand {
     /// The order to submit.
@@ -111,6 +112,7 @@ impl Deref for SubmitOrderHandle {
 }
 
 /// Submit-order-list command. Mirrors the arguments to `Strategy::submit_order_list`.
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct SubmitOrderListCommand {
     /// The orders to submit as a batched list.

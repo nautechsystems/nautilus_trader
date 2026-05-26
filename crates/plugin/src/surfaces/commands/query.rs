@@ -31,6 +31,7 @@ use nautilus_core::Params;
 use nautilus_model::identifiers::{AccountId, ClientId, ClientOrderId};
 
 /// Query-account command. Mirrors the arguments to `Strategy::query_account`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAccountCommand {
     /// The account identifier to query.
@@ -97,6 +98,7 @@ impl Deref for QueryAccountHandle {
 ///
 /// The host resolves `client_order_id` against the live cache to materialise
 /// the `&OrderAny` reference the trait method requires.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryOrderCommand {
     /// The client order identifier of the order to query.
