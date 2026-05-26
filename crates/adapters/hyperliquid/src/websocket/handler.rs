@@ -101,7 +101,7 @@ pub enum HandlerCommand {
         data_types: AHashSet<AssetContextDataType>,
     },
     /// Cache the ordered instrument IDs needed to normalize `allDexsAssetCtxs`.
-    CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<InstrumentId>>),
+    CacheAllDexAssetCtxsInstrumentIds(AHashMap<Ustr, Vec<Option<InstrumentId>>>),
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
@@ -170,7 +170,7 @@ pub(super) struct FeedHandler {
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
-    all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<InstrumentId>>,
+    all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -458,7 +458,7 @@ impl FeedHandler {
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
-        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<InstrumentId>>,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
@@ -977,7 +977,7 @@ impl FeedHandler {
 
     fn handle_all_dexs_asset_ctxs(
         data: WsAllDexsAssetCtxsData,
-        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<InstrumentId>>,
+        all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let mut entries = Vec::new();
@@ -990,7 +990,7 @@ impl FeedHandler {
             };
 
             for (index, ctx) in ctxs.into_iter().enumerate() {
-                let Some(instrument_id) = instrument_ids.get(index).copied() else {
+                let Some(Some(instrument_id)) = instrument_ids.get(index).copied() else {
                     log::warn!(
                         "Missing Hyperliquid allDexsAssetCtxs instrument mapping for dex='{dex}' index={index}"
                     );
@@ -1524,11 +1524,11 @@ mod tests {
         let mapping = AHashMap::from_iter([
             (
                 Ustr::from(""),
-                vec![InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")],
+                vec![Some(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))],
             ),
             (
                 Ustr::from("xyz"),
-                vec![InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")],
+                vec![Some(InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID"))],
             ),
         ]);
 
@@ -1558,6 +1558,70 @@ mod tests {
                 );
                 assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
                 assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+            }
+            other => panic!("expected custom data, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_all_dexs_asset_ctxs_preserves_index_alignment_when_mappings_are_missing() {
+        let data = WsAllDexsAssetCtxsData {
+            ctxs: vec![(
+                String::new(),
+                vec![
+                    PerpsAssetCtx {
+                        shared: SharedAssetCtx {
+                            day_ntl_vlm: "1516669192.1953897476".to_string(),
+                            prev_day_px: "76317.0".to_string(),
+                            mark_px: "77562.0".to_string(),
+                            mid_px: Some("77558.5".to_string()),
+                            impact_pxs: Some(vec!["77558.0".to_string(), "77559.0".to_string()]),
+                            day_base_vlm: Some("19707.77457".to_string()),
+                        },
+                        funding: "-0.0000015186".to_string(),
+                        open_interest: "27353.17682".to_string(),
+                        oracle_px: "77605.0".to_string(),
+                        premium: Some("-0.0005927453".to_string()),
+                    },
+                    PerpsAssetCtx {
+                        shared: SharedAssetCtx {
+                            day_ntl_vlm: "591989409.9392402172".to_string(),
+                            prev_day_px: "2094.6".to_string(),
+                            mark_px: "2123.7".to_string(),
+                            mid_px: Some("2123.95".to_string()),
+                            impact_pxs: Some(vec!["2123.65".to_string(), "2124.0".to_string()]),
+                            day_base_vlm: Some("281686.8234999999".to_string()),
+                        },
+                        funding: "0.0000125".to_string(),
+                        open_interest: "605822.2557999999".to_string(),
+                        oracle_px: "2124.6".to_string(),
+                        premium: Some("-0.0002824061".to_string()),
+                    },
+                ],
+            )],
+        };
+
+        let mapping = AHashMap::from_iter([(
+            Ustr::from(""),
+            vec![None, Some(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))],
+        )]);
+
+        let msg = FeedHandler::handle_all_dexs_asset_ctxs(data, &mapping, UnixNanos::default())
+            .expect("expected custom data");
+
+        match msg {
+            NautilusWsMessage::CustomData(Data::Custom(custom)) => {
+                let payload = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
+                    .expect("expected HyperliquidAllDexsAssetCtxs");
+                assert_eq!(payload.entries.len(), 1);
+                assert_eq!(
+                    payload.entries[0].instrument_id,
+                    InstrumentId::from("ETH-USD-PERP.HYPERLIQUID")
+                );
+                assert_eq!(payload.entries[0].mark_price.to_string(), "2123.7");
             }
             other => panic!("expected custom data, found {other:?}"),
         }

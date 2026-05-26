@@ -293,9 +293,9 @@ impl HyperliquidWebSocketClient {
     #[pyo3(name = "cache_all_dex_asset_ctxs_instrument_ids")]
     fn py_cache_all_dex_asset_ctxs_instrument_ids(
         &self,
-        mapping: std::collections::HashMap<String, Vec<InstrumentId>>,
+        mapping: std::collections::HashMap<String, Vec<Option<InstrumentId>>>,
     ) {
-        let ahash_mapping: ahash::AHashMap<ustr::Ustr, Vec<InstrumentId>> = mapping
+        let ahash_mapping: ahash::AHashMap<ustr::Ustr, Vec<Option<InstrumentId>>> = mapping
             .into_iter()
             .map(|(dex, instrument_ids)| (ustr::Ustr::from(&dex), instrument_ids))
             .collect();

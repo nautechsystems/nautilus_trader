@@ -54,6 +54,5 @@ DEFAULT_PRODUCT_TYPES = frozenset(
     {
         HyperliquidProductType.SPOT,
         HyperliquidProductType.PERP,
-        HyperliquidProductType.PERP_HIP3,
     },
 )

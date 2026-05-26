@@ -125,7 +125,7 @@ pub struct HyperliquidWebSocketClient {
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     bar_types: Arc<AtomicMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
-    all_dex_asset_ctxs_instrument_ids: Arc<AtomicMap<Ustr, Vec<InstrumentId>>>,
+    all_dex_asset_ctxs_instrument_ids: Arc<AtomicMap<Ustr, Vec<Option<InstrumentId>>>>,
     cloid_cache: CloidCache,
     post_router: Arc<PostRouter>,
     post_ids: Arc<PostIds>,
@@ -1538,7 +1538,7 @@ impl HyperliquidWebSocketClient {
     /// Cache the ordered instrument IDs required to normalize `allDexsAssetCtxs`.
     pub fn cache_all_dex_asset_ctxs_instrument_ids(
         &self,
-        mapping: AHashMap<Ustr, Vec<InstrumentId>>,
+        mapping: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     ) {
         self.all_dex_asset_ctxs_instrument_ids
             .store(mapping.clone());

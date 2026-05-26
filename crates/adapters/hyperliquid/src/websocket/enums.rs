@@ -229,12 +229,13 @@ mod tests {
     #[rstest]
     fn test_enum_iter() {
         let channels: Vec<HyperliquidWsChannel> = HyperliquidWsChannel::iter().collect();
-        assert_eq!(channels.len(), 22);
+        assert_eq!(channels.len(), 23);
         assert!(channels.contains(&HyperliquidWsChannel::Trades));
         assert!(channels.contains(&HyperliquidWsChannel::L2Book));
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));
         assert!(channels.contains(&HyperliquidWsChannel::Candle));
         assert!(channels.contains(&HyperliquidWsChannel::AllMids));
+        assert!(channels.contains(&HyperliquidWsChannel::AllDexsAssetCtxs));
         assert!(channels.contains(&HyperliquidWsChannel::Notification));
     }
 

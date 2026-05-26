@@ -62,6 +62,7 @@ from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import instruments_from_pyo3
 from nautilus_trader.model.objects import Price
 
 
@@ -348,6 +349,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
             environment=environment,
             proxy_url=config.proxy_url,
         )
+        self._all_dexs_asset_ctxs_bootstrapped = False
 
     @property
     def instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -356,7 +358,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
     async def _connect(self) -> None:
         await self.instrument_provider.initialize()
         self._cache_instruments()
-        await self._cache_all_dex_asset_ctxs_instrument_ids()
         self._send_all_instruments_to_data_engine()
 
         instruments = self.instrument_provider.instruments_pyo3()
@@ -385,7 +386,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
-    async def _cache_all_dex_asset_ctxs_instrument_ids(self) -> None:
+    async def _cache_all_dex_asset_ctxs_instrument_ids(self) -> bool:
         builder: Any = getattr(
             self._http_client,
             "build_all_dex_asset_ctxs_instrument_ids",
@@ -402,16 +403,41 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 "Skipping allDexsAssetCtxs cache bootstrap: mapping helpers unavailable",
                 LogColor.MAGENTA,
             )
-            return
+            return False
 
         try:
             mapping = await builder()
             cacher(mapping)
             self._log.debug("Cached allDexsAssetCtxs instrument IDs", LogColor.MAGENTA)
+            return True
         except Exception as e:
             self._log.warning(
                 f"Failed to bootstrap allDexsAssetCtxs instrument IDs: {e}",
             )
+            return False
+
+    async def _ensure_all_dexs_asset_ctxs_bootstrap(self) -> None:
+        if self._all_dexs_asset_ctxs_bootstrapped:
+            return
+
+        pyo3_instruments = await self._http_client.load_instrument_definitions(
+            include_spot=False,
+            include_perps=False,
+            include_perps_hip3=True,
+            include_outcomes=False,
+        )
+
+        for inst in pyo3_instruments:
+            self._http_client.cache_instrument(inst)
+            self._ws_client.cache_instrument(inst)
+
+        for instrument in instruments_from_pyo3(pyo3_instruments):
+            if self._cache.instrument(instrument.id) is None:
+                self._handle_data(instrument)
+
+        self._all_dexs_asset_ctxs_bootstrapped = (
+            await self._cache_all_dex_asset_ctxs_instrument_ids()
+        )
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self.instrument_provider.get_all().values():
@@ -503,6 +529,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
             )
             return
 
+        await self._ensure_all_dexs_asset_ctxs_bootstrap()
         await subscribe_all_dexs_asset_ctxs()
 
     async def _subscribe_all_mids(self, data_type: DataType) -> None:

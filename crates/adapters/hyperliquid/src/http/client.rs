@@ -1480,7 +1480,7 @@ impl HyperliquidHttpClient {
     /// incoming `ctxs` arrays can be normalized without leaking raw positional payloads.
     pub async fn build_all_dex_asset_ctxs_instrument_ids(
         &self,
-    ) -> Result<AHashMap<String, Vec<InstrumentId>>> {
+    ) -> Result<AHashMap<String, Vec<Option<InstrumentId>>>> {
         let all_metas = match self.inner.load_all_perp_metas().await {
             Ok(all_metas) => all_metas,
             Err(e) => {
@@ -1514,13 +1514,14 @@ impl HyperliquidHttpClient {
 
             for asset in &meta.universe {
                 if let Some(instrument_id) = raw_symbol_to_id.get(&asset.name) {
-                    instrument_ids.push(*instrument_id);
+                    instrument_ids.push(Some(*instrument_id));
                 } else {
                     log::warn!(
                         "Missing cached Hyperliquid instrument for dex='{}' raw_symbol='{}'",
                         dex_name,
                         asset.name
                     );
+                    instrument_ids.push(None);
                 }
             }
 

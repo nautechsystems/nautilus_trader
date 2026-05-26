@@ -600,19 +600,31 @@ async def test_subscribe_custom_data_all_mids_with_dex(data_client_builder, monk
 
 @pytest.mark.asyncio
 async def test_subscribe_custom_data_all_dexs_asset_ctxs(data_client_builder, monkeypatch):
-    client, ws_client, _, _ = data_client_builder(monkeypatch)
+    client, ws_client, http_client, _ = data_client_builder(monkeypatch)
 
     await client._connect()
     try:
         ws_client.subscribe_all_dexs_asset_ctxs.reset_mock()
+        http_client.load_instrument_definitions.reset_mock()
+        http_client.build_all_dex_asset_ctxs_instrument_ids.reset_mock()
+        ws_client.cache_all_dex_asset_ctxs_instrument_ids.reset_mock()
 
         command = SimpleNamespace(
             data_type=DataType(type=HyperliquidAllDexsAssetCtxs),
         )
 
         await client._subscribe(command)
+        await client._subscribe(command)
 
-        ws_client.subscribe_all_dexs_asset_ctxs.assert_awaited_once_with()
+        http_client.load_instrument_definitions.assert_awaited_once_with(
+            include_spot=False,
+            include_perps=False,
+            include_perps_hip3=True,
+            include_outcomes=False,
+        )
+        http_client.build_all_dex_asset_ctxs_instrument_ids.assert_awaited_once_with()
+        ws_client.cache_all_dex_asset_ctxs_instrument_ids.assert_called_once_with({})
+        assert ws_client.subscribe_all_dexs_asset_ctxs.await_count == 2
     finally:
         await client._disconnect()
 

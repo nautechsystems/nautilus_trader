@@ -395,17 +395,17 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
         (
             ustr::Ustr::from(""),
             vec![
-                InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
-                InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"),
-                InstrumentId::from("ATOM-USD-PERP.HYPERLIQUID"),
+                Some(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("ATOM-USD-PERP.HYPERLIQUID")),
             ],
         ),
         (
             ustr::Ustr::from("xyz"),
             vec![
-                InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID"),
-                InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID"),
-                InstrumentId::from("xyz:NVDA-USD-PERP.HYPERLIQUID"),
+                Some(InstrumentId::from("xyz:XYZ100-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID")),
+                Some(InstrumentId::from("xyz:NVDA-USD-PERP.HYPERLIQUID")),
             ],
         ),
     ]));

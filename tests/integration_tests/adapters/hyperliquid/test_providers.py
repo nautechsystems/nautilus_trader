@@ -40,7 +40,10 @@ class TestHyperliquidInstrumentProvider:
 
         # Assert
         assert provider is not None
-        assert HyperliquidProductType.PERP_HIP3 in provider._product_types
+        assert provider._product_types == {
+            HyperliquidProductType.SPOT,
+            HyperliquidProductType.PERP,
+        }
 
     def test_provider_with_perp_only(self, mock_http_client):
         # Arrange & Act
@@ -111,7 +114,7 @@ class TestHyperliquidInstrumentProvider:
         mock_http_client.load_instrument_definitions.assert_called_once_with(
             include_spot=True,
             include_perps=True,
-            include_perps_hip3=True,
+            include_perps_hip3=False,
             include_outcomes=False,
         )
 
@@ -131,7 +134,7 @@ class TestHyperliquidInstrumentProvider:
         mock_http_client.load_instrument_definitions.assert_called_once_with(
             include_spot=True,
             include_perps=True,
-            include_perps_hip3=True,
+            include_perps_hip3=False,
             include_outcomes=False,
         )
 
