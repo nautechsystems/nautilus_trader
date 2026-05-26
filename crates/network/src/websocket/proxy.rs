@@ -39,8 +39,6 @@
 //! 6. Hand the resulting stream to `tokio-tungstenite`'s `client_async` so the
 //!    WebSocket handshake completes over the tunnel.
 
-use std::fmt::Write as _;
-
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -330,7 +328,9 @@ where
     );
 
     if let Some(auth) = &proxy.auth_header {
-        write!(request, "Proxy-Authorization: {auth}\r\n").expect("writing to String never fails");
+        request.push_str("Proxy-Authorization: ");
+        request.push_str(auth);
+        request.push_str("\r\n");
     }
     request.push_str("\r\n");
 
@@ -510,6 +510,41 @@ mod tests {
         let header = proxy.auth_header.unwrap();
         // base64("us/er:p@ss") == "dXMvZXI6cEBzcw=="
         assert_eq!(header, "Basic dXMvZXI6cEBzcw==");
+    }
+
+    #[tokio::test]
+    async fn send_connect_includes_proxy_authorization() {
+        let (client, mut server) = tokio::io::duplex(1024);
+        let target = WsTarget::parse("ws://example.com:80/path").unwrap();
+        let proxy =
+            ProxyTarget::parse("http://proxytest:fixture42@proxy.example.com:8080").unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let mut request = Vec::new();
+            let mut chunk = [0; 64];
+            loop {
+                let n = server.read(&mut chunk).await.unwrap();
+                request.extend_from_slice(&chunk[..n]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            let request = String::from_utf8(request).unwrap();
+            assert_eq!(
+                request,
+                "CONNECT example.com:80 HTTP/1.1\r\n\
+                 Host: example.com:80\r\n\
+                 Proxy-Connection: Keep-Alive\r\n\
+                 Proxy-Authorization: Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==\r\n\r\n"
+            );
+            server
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+        });
+
+        let _stream = send_connect(client, &target, &proxy).await.unwrap();
+        server_task.await.unwrap().unwrap();
     }
 
     #[rstest]
