@@ -453,7 +453,6 @@ impl BinanceFuturesExecutionClient {
         if self.ws_trading_active() && !use_algo_api {
             let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
             let dispatch_state = self.dispatch_state.clone();
-            let ts_init = clock.get_time_ns();
 
             let symbol = format_binance_symbol(&instrument_id);
             let binance_side = BinanceSide::try_from(order_side)?;
@@ -520,21 +519,7 @@ impl BinanceFuturesExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-
-                    let rejected = OrderRejected::new(
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        account_id,
-                        format!("ws-submit-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
-                        false,
-                        false,
-                    );
-                    emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                    log::error!("WS submit request failed for {client_order_id}: {e}");
                     anyhow::bail!("WS submit order failed: {e}");
                 }
                 Ok(())
@@ -598,24 +583,30 @@ impl BinanceFuturesExecutionClient {
                     // Keep order registered - if HTTP failed due to timeout but order
                     // reached Binance, WebSocket updates will still arrive. The order
                     // will be cleaned up via WebSocket rejection or reconciliation.
-                    let due_post_only = classify_submit_order_error(&e);
-                    let ts_now = clock.get_time_ns();
+                    if is_structured_venue_rejection(&e) {
+                        let due_post_only = classify_submit_order_error(&e);
+                        let ts_now = clock.get_time_ns();
 
-                    let rejected = OrderRejected::new(
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        account_id,
-                        format!("submit-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        due_post_only,
-                    );
+                        let rejected = OrderRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            account_id,
+                            format!("submit-order-error: {e}").into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            due_post_only,
+                        );
 
-                    emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                        emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                    } else {
+                        log::error!(
+                            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                        );
+                    }
 
                     return Err(e);
                 }
@@ -708,22 +699,7 @@ impl BinanceFuturesExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    let ts_now = clock.get_time_ns();
-
-                    let rejected = OrderCancelRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        client_order_id,
-                        format!("ws-cancel-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
-                    );
-                    emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    log::error!("WS cancel request failed for {client_order_id}: {e}");
                     anyhow::bail!("WS cancel order failed: {e}");
                 }
                 Ok(())
@@ -760,23 +736,29 @@ impl BinanceFuturesExecutionClient {
                     log::debug!("Cancel request accepted: client_order_id={client_order_id}");
                 }
                 Err(e) => {
-                    let ts_now = clock.get_time_ns();
+                    if is_structured_venue_rejection(&e) {
+                        let ts_now = clock.get_time_ns();
 
-                    let rejected = OrderCancelRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        client_order_id,
-                        format!("cancel-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
-                    );
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            client_order_id,
+                            format!("cancel-order-error: {e}").into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
 
-                    emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                        emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    } else {
+                        log::error!(
+                            "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
+                        );
+                    }
 
                     return Err(e);
                 }
@@ -914,6 +896,11 @@ pub(crate) fn classify_submit_order_error(err: &anyhow::Error) -> bool {
         );
     }
     venue_code == Some(BINANCE_GTX_ORDER_REJECT_CODE)
+}
+
+fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceFuturesHttpError>()
+        .is_some_and(|be| matches!(be, BinanceFuturesHttpError::BinanceError { .. }))
 }
 
 #[async_trait(?Send)]
@@ -1946,21 +1933,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    let ts_now = clock.get_time_ns();
-                    let rejected = OrderModifyRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        format!("ws-modify-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
+                    log::error!(
+                        "WS modify request failed for {}: {e}",
+                        command.client_order_id
                     );
-                    emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
                     anyhow::bail!("WS modify order failed: {e}");
                 }
                 Ok(())
@@ -2006,23 +1982,30 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     emitter.send_order_event(OrderEventAny::Updated(updated_event));
                 }
                 Err(e) => {
-                    let ts_now = clock.get_time_ns();
+                    if is_structured_venue_rejection(&e) {
+                        let ts_now = clock.get_time_ns();
 
-                    let rejected = OrderModifyRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        format!("modify-order-failed: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
-                    );
+                        let rejected = OrderModifyRejected::new(
+                            trader_id,
+                            command.strategy_id,
+                            command.instrument_id,
+                            command.client_order_id,
+                            format!("modify-order-failed: {e}").into(),
+                            UUID4::new(),
+                            ts_now,
+                            ts_now,
+                            false,
+                            command.venue_order_id,
+                            Some(account_id),
+                        );
 
-                    emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                        emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                    } else {
+                        log::error!(
+                            "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
+                            command.client_order_id
+                        );
+                    }
 
                     anyhow::bail!("Modify order failed: {e}");
                 }
@@ -2169,23 +2152,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         }
                     }
                     Err(e) => {
-                        for cancel in chunk {
-                            let rejected = OrderCancelRejected::new(
-                                trader_id,
-                                cancel.strategy_id,
-                                cancel.instrument_id,
-                                cancel.client_order_id,
-                                format!("batch-cancel-request-failed: {e}").into(),
-                                UUID4::new(),
-                                clock.get_time_ns(),
-                                cancel.ts_init,
-                                false,
-                                cancel.venue_order_id,
-                                Some(account_id),
-                            );
-
-                            emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
-                        }
+                        log::error!(
+                            "Ambiguous batch cancel request failure for {} orders, awaiting reconciliation: {e}",
+                            chunk.len()
+                        );
+                        return Err(e.into());
                     }
                 }
             }

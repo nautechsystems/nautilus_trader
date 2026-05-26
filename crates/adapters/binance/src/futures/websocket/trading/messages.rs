@@ -123,6 +123,13 @@ pub enum BinanceFuturesWsTradingMessage {
         /// Error message from venue.
         msg: String,
     },
+    /// Request failed without a structured venue response.
+    RequestFailed {
+        /// Request ID for correlation.
+        request_id: String,
+        /// Failure reason.
+        msg: String,
+    },
     /// Error from venue or network.
     Error(String),
 }
