@@ -2625,23 +2625,29 @@ impl ExecutionEngine {
             self.create_order_state_snapshot(&order);
         }
 
-        if let OrderEventAny::Filled(fill) = event {
-            self.send_non_margin_fill_to_portfolio(fill);
-        }
+        self.send_order_update_to_portfolio(event);
 
         Some(order)
     }
 
-    fn send_non_margin_fill_to_portfolio(&self, fill: &OrderFilled) {
-        let send_to_portfolio = self
-            .cache
-            .borrow()
-            .account(&fill.account_id)
-            .is_none_or(|account| !account.is_margin_account());
+    fn send_order_update_to_portfolio(&self, event: &OrderEventAny) {
+        let send_to_portfolio = match event {
+            OrderEventAny::Filled(fill) => self
+                .cache
+                .borrow()
+                .account(&fill.account_id)
+                .is_none_or(|account| !account.is_margin_account()),
+            OrderEventAny::Accepted(_)
+            | OrderEventAny::Canceled(_)
+            | OrderEventAny::Expired(_)
+            | OrderEventAny::Rejected(_)
+            | OrderEventAny::Updated(_) => true,
+            _ => false,
+        };
 
         if send_to_portfolio {
             let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
-            msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(*fill));
+            msgbus::send_order_event(portfolio_endpoint, event.clone());
         }
     }
 

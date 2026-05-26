@@ -31,7 +31,9 @@ use nautilus_model::{
         account::stubs::cash_account_state,
         order::{
             spec::OrderFilledSpec,
-            stubs::{order_accepted, order_filled, order_submitted},
+            stubs::{
+                order_accepted, order_filled, order_rejected_insufficient_margin, order_submitted,
+            },
         },
     },
     identifiers::{
@@ -564,6 +566,229 @@ fn test_reset_clears_initialized_flag(mut portfolio: Portfolio) {
 
     portfolio.reset();
     assert!(!portfolio.is_initialized());
+}
+
+#[rstest]
+fn test_order_topic_republishes_last_account_state_without_order_update(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    cash_account_state: AccountState,
+    instrument_audusd: InstrumentAny,
+) {
+    use nautilus_common::msgbus::{MessageBus, TypedHandler, switchboard};
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    portfolio.update_account(&cash_account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&cash_account_state.account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::new(50000.0, 0))
+        .build();
+    let accepted = OrderEventAny::Accepted(accept_order(&order));
+    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+
+    msgbus::publish_order_event(topic, &accepted);
+
+    let captured = captured.borrow();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, cash_account_state.account_id);
+    assert_eq!(captured[0].event_id, cash_account_state.event_id);
+    assert_eq!(captured[0].ts_event, cash_account_state.ts_event);
+}
+
+#[rstest]
+fn test_order_endpoint_then_topic_publishes_account_state_once(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    cash_account_state: AccountState,
+    instrument_audusd: InstrumentAny,
+) {
+    use nautilus_common::msgbus::{MessageBus, TypedHandler, switchboard};
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    portfolio.update_account(&cash_account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&cash_account_state.account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::new(50000.0, 0))
+        .build();
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        cash_account_state.account_id,
+        uuid4(),
+    );
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    let accepted = order_accepted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        cash_account_state.account_id,
+        VenueOrderId::new("1"),
+        uuid4(),
+    );
+    let accepted_event = OrderEventAny::Accepted(accepted);
+    order.apply(accepted_event.clone()).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        accepted_event.clone(),
+    );
+    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+    msgbus::publish_order_event(topic, &accepted_event);
+
+    let captured = captured.borrow();
+    let account_last_event = portfolio
+        .cache()
+        .borrow()
+        .account(&cash_account_state.account_id)
+        .unwrap()
+        .last_event()
+        .unwrap();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, cash_account_state.account_id);
+    assert_eq!(captured[0].event_id, account_last_event.event_id);
+    assert_ne!(captured[0].event_id, cash_account_state.event_id);
+}
+
+#[rstest]
+fn test_rejected_endpoint_then_topic_republishes_existing_account_state_once(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    cash_account_state: AccountState,
+    instrument_audusd: InstrumentAny,
+) {
+    use nautilus_common::msgbus::{MessageBus, TypedHandler, switchboard};
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    portfolio.update_account(&cash_account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&cash_account_state.account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::new(50000.0, 0))
+        .build();
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        cash_account_state.account_id,
+        uuid4(),
+    );
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    let rejected = order_rejected_insufficient_margin(
+        order.trader_id(),
+        cash_account_state.account_id,
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        uuid4(),
+    );
+    let rejected_event = OrderEventAny::Rejected(rejected);
+    order.apply(rejected_event.clone()).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        rejected_event.clone(),
+    );
+    let topic = switchboard::get_event_orders_topic(order.strategy_id());
+    msgbus::publish_order_event(topic, &rejected_event);
+
+    let captured = captured.borrow();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, cash_account_state.account_id);
+    assert_eq!(captured[0].event_id, cash_account_state.event_id);
 }
 
 //TODO: FIX: It should return an error

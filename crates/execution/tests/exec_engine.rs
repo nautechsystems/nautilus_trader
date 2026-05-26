@@ -54,9 +54,11 @@ use nautilus_model::{
         OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated,
+        AccountState, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderPendingUpdate,
+        OrderRejected, OrderUpdated,
         order::spec::{
-            OrderCanceledSpec, OrderFilledSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
+            OrderCanceledSpec, OrderExpiredSpec, OrderFilledSpec, OrderPendingUpdateSpec,
+            OrderRejectedSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -204,6 +206,41 @@ fn build_order_canceled(
         .client_order_id(client_order_id)
         .maybe_venue_order_id(venue_order_id)
         .maybe_account_id(account_id)
+        .build()
+}
+
+fn build_order_expired(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+) -> OrderExpired {
+    OrderExpiredSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build()
+}
+
+fn build_order_rejected(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+) -> OrderRejected {
+    OrderRejectedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .reason(Ustr::from("INSUFFICIENT_MARGIN"))
         .build()
 }
 
@@ -1300,6 +1337,15 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
     assert_eq!(topics.borrow().as_slice(), ["fills", "orders"]);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PortfolioNonFillEventKind {
+    Accepted,
+    Canceled,
+    Expired,
+    Rejected,
+    Updated,
+}
+
 #[rstest]
 fn test_process_cash_account_fill_sends_portfolio_update_order_endpoint(
     mut execution_engine: ExecutionEngine,
@@ -1353,6 +1399,75 @@ fn test_process_cash_account_fill_sends_portfolio_update_order_endpoint(
     assert_eq!(received[0].0.client_order_id(), order.client_order_id());
     assert_eq!(received[0].1, OrderStatus::Filled);
     assert_eq!(received[0].2, 0);
+}
+
+#[rstest]
+#[case::accepted(PortfolioNonFillEventKind::Accepted, OrderStatus::Accepted)]
+#[case::canceled(PortfolioNonFillEventKind::Canceled, OrderStatus::Canceled)]
+#[case::expired(PortfolioNonFillEventKind::Expired, OrderStatus::Expired)]
+#[case::rejected(PortfolioNonFillEventKind::Rejected, OrderStatus::Rejected)]
+#[case::updated(PortfolioNonFillEventKind::Updated, OrderStatus::Accepted)]
+fn test_process_non_fill_order_event_sends_portfolio_update_order_endpoint(
+    mut execution_engine: ExecutionEngine,
+    #[case] event_kind: PortfolioNonFillEventKind,
+    #[case] expected_status: OrderStatus,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::test_default();
+    let (instrument, order) = prepare_submitted_limit_order_with_account(
+        &mut execution_engine,
+        CashAccount::default().into(),
+    );
+
+    if matches!(
+        event_kind,
+        PortfolioNonFillEventKind::Canceled
+            | PortfolioNonFillEventKind::Expired
+            | PortfolioNonFillEventKind::Updated
+    ) {
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-001"));
+        execution_engine.process(&accepted);
+    }
+
+    if event_kind == PortfolioNonFillEventKind::Updated {
+        let pending_update = OrderEventAny::PendingUpdate(build_order_pending_update(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            account_id,
+            Some(VenueOrderId::from("V-001")),
+        ));
+        execution_engine.process(&pending_update);
+    }
+
+    let received = Rc::new(RefCell::new(Vec::<(OrderEventAny, OrderStatus)>::new()));
+    let handler = TypedIntoHandler::from({
+        let cache = Rc::clone(execution_engine.cache());
+        let received = received.clone();
+        move |event: OrderEventAny| {
+            let status = cache
+                .borrow()
+                .order(&event.client_order_id())
+                .expect("portfolio update should see cached order")
+                .status();
+            received.borrow_mut().push((event, status));
+        }
+    });
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::portfolio_update_order(), handler);
+
+    let event = build_portfolio_non_fill_event(event_kind, &instrument, &order, account_id);
+    let expected_event_type = event.event_type();
+
+    execution_engine.process(&event);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].0.event_type(), expected_event_type);
+    assert_eq!(received[0].0.client_order_id(), order.client_order_id());
+    assert_eq!(received[0].1, expected_status);
 }
 
 #[rstest]
@@ -1528,6 +1643,92 @@ fn prepare_accepted_order_with_account(
     execution_engine.process(&accepted);
 
     (instrument, order)
+}
+
+fn prepare_submitted_limit_order_with_account(
+    execution_engine: &mut ExecutionEngine,
+    account: AccountAny,
+) -> (InstrumentAny, OrderAny) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = InstrumentAny::from(audusd_sim());
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account)
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("1.00000").unwrap())
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+
+    (instrument, order)
+}
+
+fn build_portfolio_non_fill_event(
+    event_kind: PortfolioNonFillEventKind,
+    instrument: &InstrumentAny,
+    order: &OrderAny,
+    account_id: AccountId,
+) -> OrderEventAny {
+    match event_kind {
+        PortfolioNonFillEventKind::Accepted => {
+            TestOrderEventStubs::accepted(order, account_id, VenueOrderId::from("V-001"))
+        }
+        PortfolioNonFillEventKind::Canceled => {
+            TestOrderEventStubs::canceled(order, account_id, Some(VenueOrderId::from("V-001")))
+        }
+        PortfolioNonFillEventKind::Expired => OrderEventAny::Expired(build_order_expired(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            VenueOrderId::from("V-001"),
+            account_id,
+        )),
+        PortfolioNonFillEventKind::Rejected => OrderEventAny::Rejected(build_order_rejected(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            account_id,
+        )),
+        PortfolioNonFillEventKind::Updated => OrderEventAny::Updated(build_order_updated(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            order.quantity(),
+            Some(VenueOrderId::from("V-001")),
+            Some(account_id),
+            Some(Price::from_str("1.10000").unwrap()),
+            None,
+            None,
+            false,
+        )),
+    }
 }
 
 #[rstest]
