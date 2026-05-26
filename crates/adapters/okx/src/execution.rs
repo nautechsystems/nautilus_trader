@@ -67,13 +67,14 @@ use crate::{
         parse::{is_okx_spread_symbol, nanos_to_datetime, okx_instrument_type_from_symbol},
     },
     config::OKXExecClientConfig,
-    http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
+    http::{client::OKXHttpClient, error::OKXHttpError, models::OKXCancelAlgoOrderRequest},
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
             AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_ws_message,
             emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
+        error::OKXWsError,
         parse::OrderStateSnapshot,
     },
 };
@@ -371,20 +372,25 @@ impl OKXExecutionClient {
                     outcome,
                     slippage_pct,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &format!("submit-order-error: {e}"),
-                    ts_event,
-                    false,
-                );
-                return Err(e);
+                if is_okx_ws_local_command_failure(&e) {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &format!("submit-order-error: {e}"),
+                        ts_event,
+                        false,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("submit order failed"));
             }
 
             Ok(())
@@ -448,20 +454,27 @@ impl OKXExecutionClient {
                     None,
                     None,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &format!("submit-order-error: {e}"),
-                    ts_event,
-                    false,
-                );
-                return Err(e);
+                if is_okx_http_structured_venue_rejection(&e)
+                    || is_okx_http_local_command_failure(&e)
+                {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &format!("submit-order-error: {e}"),
+                        ts_event,
+                        false,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous HTTP submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("submit order failed"));
             }
 
             Ok(())
@@ -555,20 +568,27 @@ impl OKXExecutionClient {
                     callback_spread,
                     activation_price,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Submit algo order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &format!("submit-order-error: {e}"),
-                    ts_event,
-                    false,
-                );
-                return Err(e);
+                if is_okx_http_structured_venue_rejection(&e)
+                    || is_okx_http_local_command_failure(&e)
+                {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &format!("submit-order-error: {e}"),
+                        ts_event,
+                        false,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous algo submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("submit algo order failed"));
             }
 
             Ok(())
@@ -595,20 +615,26 @@ impl OKXExecutionClient {
                     Some(command.client_order_id),
                     command.venue_order_id,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    command.strategy_id,
-                    command.instrument_id,
-                    command.client_order_id,
-                    command.venue_order_id,
-                    &format!("cancel-order-error: {e}"),
-                    ts_event,
-                );
-                return Err(e);
+                if is_okx_ws_local_command_failure(&e) {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_cancel_rejected_event(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        &format!("cancel-order-error: {e}"),
+                        ts_event,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous cancel failure for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
 
             Ok(())
@@ -630,20 +656,28 @@ impl OKXExecutionClient {
                     Some(command.client_order_id),
                     command.venue_order_id,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    command.strategy_id,
-                    command.instrument_id,
-                    command.client_order_id,
-                    command.venue_order_id,
-                    &format!("cancel-order-error: {e}"),
-                    ts_event,
-                );
-                return Err(e);
+                if is_okx_http_structured_venue_rejection(&e)
+                    || is_okx_http_local_command_failure(&e)
+                {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_cancel_rejected_event(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        &format!("cancel-order-error: {e}"),
+                        ts_event,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous HTTP cancel failure for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
 
             Ok(())
@@ -675,19 +709,25 @@ impl OKXExecutionClient {
 
         self.spawn_task("cancel_algo_order", async move {
             let responses = if is_advance {
-                http_client
-                    .cancel_advance_algo_orders(vec![request])
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Cancel advance algo order failed: {e}"))
+                http_client.cancel_advance_algo_orders(vec![request]).await
             } else {
-                http_client
-                    .cancel_algo_orders(vec![request])
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Cancel algo order failed: {e}"))
+                http_client.cancel_algo_orders(vec![request]).await
             };
 
             let reject_reason = match &responses {
-                Err(e) => Some(format!("cancel-algo-order-error: {e}")),
+                Err(e)
+                    if is_okx_http_structured_venue_rejection(e)
+                        || is_okx_http_local_command_failure(e) =>
+                {
+                    Some(format!("cancel-algo-order-error: {e}"))
+                }
+                Err(e) => {
+                    log::error!(
+                        "Ambiguous algo cancel failure for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
+                    );
+                    None
+                }
                 Ok(resps) => {
                     // Check per-order business status code
                     resps.first().and_then(|r| {
@@ -716,6 +756,10 @@ impl OKXExecutionClient {
                     ts_event,
                 );
                 anyhow::bail!("{reason}");
+            }
+
+            if let Err(e) = responses {
+                return Err(anyhow::Error::new(e).context("cancel algo order failed"));
             }
 
             Ok(())
@@ -831,9 +875,24 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &regular_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        let msg = format!("{e}");
-                        emit_batch_cancel_failure(&regular_contexts, &msg, &emitter, clock);
-                        anyhow::bail!("{e}");
+                        if is_okx_http_local_command_failure(&e) {
+                            let reason = format!("cancel-algo-order-error: {e}");
+
+                            for ctx in &regular_contexts {
+                                emitter.emit_order_cancel_rejected_event(
+                                    ctx.strategy_id,
+                                    ctx.instrument_id,
+                                    ctx.client_order_id,
+                                    ctx.venue_order_id,
+                                    &reason,
+                                    clock.get_time_ns(),
+                                );
+                            }
+                        } else {
+                            let msg = format!("{e}");
+                            emit_batch_cancel_failure(&regular_contexts, &msg, &emitter, clock);
+                        }
+                        return Err(anyhow::Error::new(e).context("cancel algo orders failed"));
                     }
                 }
                 Ok(())
@@ -851,9 +910,26 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &advance_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        let msg = format!("{e}");
-                        emit_batch_cancel_failure(&advance_contexts, &msg, &emitter, clock);
-                        anyhow::bail!("{e}");
+                        if is_okx_http_local_command_failure(&e) {
+                            let reason = format!("cancel-algo-order-error: {e}");
+
+                            for ctx in &advance_contexts {
+                                emitter.emit_order_cancel_rejected_event(
+                                    ctx.strategy_id,
+                                    ctx.instrument_id,
+                                    ctx.client_order_id,
+                                    ctx.venue_order_id,
+                                    &reason,
+                                    clock.get_time_ns(),
+                                );
+                            }
+                        } else {
+                            let msg = format!("{e}");
+                            emit_batch_cancel_failure(&advance_contexts, &msg, &emitter, clock);
+                        }
+                        return Err(
+                            anyhow::Error::new(e).context("cancel advance algo orders failed")
+                        );
                     }
                 }
                 Ok(())
@@ -1913,24 +1989,30 @@ impl ExecutionClient for OKXExecutionClient {
         self.spawn_task("batch_submit_orders", async move {
             let result = ws_private
                 .batch_submit_orders(batch_orders)
-                .await
-                .map_err(|e| anyhow::anyhow!("Batch submit orders failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
+                if is_okx_ws_local_command_failure(&e) {
+                    let ts_event = clock.get_time_ns();
 
-                for cid in &client_order_ids {
-                    dispatch_state.order_identities.remove(cid);
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        *cid,
-                        &format!("batch-submit-error: {e}"),
-                        ts_event,
-                        false,
+                    for cid in &client_order_ids {
+                        dispatch_state.order_identities.remove(cid);
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            *cid,
+                            &format!("batch-submit-error: {e}"),
+                            ts_event,
+                            false,
+                        );
+                    }
+                } else {
+                    log::error!(
+                        "Ambiguous batch submit failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
+                        client_order_ids.len()
                     );
                 }
-                return Err(e);
+                return Err(anyhow::Error::new(e).context("batch submit orders failed"));
             }
 
             Ok(())
@@ -1978,20 +2060,26 @@ impl ExecutionClient for OKXExecutionClient {
                     new_px_vol,
                     speed_bump,
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
+                .await;
 
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_modify_rejected_event(
-                    command.strategy_id,
-                    command.instrument_id,
-                    command.client_order_id,
-                    command.venue_order_id,
-                    &format!("modify-order-error: {e}"),
-                    ts_event,
-                );
-                return Err(e);
+                if is_okx_ws_local_command_failure(&e) {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_modify_rejected_event(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        &format!("modify-order-error: {e}"),
+                        ts_event,
+                    );
+                } else {
+                    log::error!(
+                        "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
+                    );
+                }
+                return Err(anyhow::Error::new(e).context("modify order failed"));
             }
 
             Ok(())
@@ -2092,19 +2180,26 @@ impl ExecutionClient for OKXExecutionClient {
 
                     self.spawn_task("batch_cancel_orders", async move {
                         if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
-                            let ts = clock.get_time_ns();
+                            if is_okx_ws_local_command_failure(&e) {
+                                let ts = clock.get_time_ns();
 
-                            for (cid, inst_id, strat_id) in &regular_cancel_contexts {
-                                emitter.emit_order_cancel_rejected_event(
-                                    *strat_id,
-                                    *inst_id,
-                                    *cid,
-                                    None,
-                                    &format!("batch-cancel-error: {e}"),
-                                    ts,
+                                for (cid, inst_id, strat_id) in &regular_cancel_contexts {
+                                    emitter.emit_order_cancel_rejected_event(
+                                        *strat_id,
+                                        *inst_id,
+                                        *cid,
+                                        None,
+                                        &format!("batch-cancel-error: {e}"),
+                                        ts,
+                                    );
+                                }
+                            } else {
+                                log::error!(
+                                    "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
+                                    regular_cancel_contexts.len()
                                 );
                             }
-                            anyhow::bail!("Batch cancel orders failed: {e}");
+                            return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                         }
                         Ok(())
                     });
@@ -2210,19 +2305,26 @@ impl ExecutionClient for OKXExecutionClient {
 
             self.spawn_task("batch_cancel_orders", async move {
                 if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
-                    let ts = clock.get_time_ns();
+                    if is_okx_ws_local_command_failure(&e) {
+                        let ts = clock.get_time_ns();
 
-                    for (cid, inst_id, strat_id) in &cancel_contexts {
-                        emitter.emit_order_cancel_rejected_event(
-                            *strat_id,
-                            *inst_id,
-                            *cid,
-                            None,
-                            &format!("batch-cancel-error: {e}"),
-                            ts,
+                        for (cid, inst_id, strat_id) in &cancel_contexts {
+                            emitter.emit_order_cancel_rejected_event(
+                                *strat_id,
+                                *inst_id,
+                                *cid,
+                                None,
+                                &format!("batch-cancel-error: {e}"),
+                                ts,
+                            );
+                        }
+                    } else {
+                        log::error!(
+                            "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
+                            cancel_contexts.len()
                         );
                     }
-                    anyhow::bail!("Batch cancel orders failed: {e}");
+                    return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                 }
                 Ok(())
             });
@@ -2266,15 +2368,23 @@ impl ExecutionClient for OKXExecutionClient {
                         .cancel_order(instrument_id, Some(client_order_id), venue_order_id)
                         .await
                     {
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &format!("cancel-http-order-error: {e}"),
-                            ts_event,
-                        );
+                        if is_okx_http_structured_venue_rejection(&e)
+                            || is_okx_http_local_command_failure(&e)
+                        {
+                            let ts_event = clock.get_time_ns();
+                            emitter.emit_order_cancel_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                &format!("cancel-http-order-error: {e}"),
+                                ts_event,
+                            );
+                        } else {
+                            log::error!(
+                                "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
+                            );
+                        }
                     }
                 }
                 Ok(())
@@ -2297,6 +2407,69 @@ enum CancelAllOrdersRoute {
     BatchWs,
     MassCancelHttp,
     SpreadHttp,
+}
+
+fn is_okx_http_structured_venue_rejection(error: &OKXHttpError) -> bool {
+    matches!(error, OKXHttpError::OkxError { .. })
+}
+
+fn is_okx_http_local_command_failure(error: &OKXHttpError) -> bool {
+    match error {
+        OKXHttpError::MissingCredentials => true,
+        OKXHttpError::ValidationError(message) => !is_ambiguous_okx_http_failure(message),
+        _ => false,
+    }
+}
+
+fn is_okx_ws_local_command_failure(error: &OKXWsError) -> bool {
+    match error {
+        OKXWsError::ClientError(message) => !is_ambiguous_okx_ws_client_failure(message),
+        OKXWsError::JsonError(_) => true,
+        _ => false,
+    }
+}
+
+fn is_ambiguous_okx_http_failure(message: &str) -> bool {
+    contains_any_ignore_ascii_case(
+        message,
+        &[
+            "empty response",
+            "timeout",
+            "timed out",
+            "retry",
+            "request canceled",
+            "network",
+            "unexpected http status",
+            "status code",
+            "failed to deserialize",
+            "failed to parse",
+        ],
+    )
+}
+
+fn is_ambiguous_okx_ws_client_failure(message: &str) -> bool {
+    contains_any_ignore_ascii_case(
+        message,
+        &[
+            "handler not available",
+            "no active websocket client",
+            "send failed",
+            "timeout",
+            "timed out",
+            "retry",
+            "connection",
+            "network",
+        ],
+    )
+}
+
+fn contains_any_ignore_ascii_case(value: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| {
+        value
+            .as_bytes()
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+    })
 }
 
 fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {

@@ -136,7 +136,7 @@ pub enum OKXWsMessage {
     Positions(serde_json::Value),
     /// Instrument definition updates.
     Instruments(Vec<OKXInstrument>),
-    /// A WebSocket send failed; carries context for emitting the appropriate rejection event.
+    /// A WebSocket send failed without a structured venue response.
     SendFailed {
         request_id: String,
         client_order_id: Option<ClientOrderId>,

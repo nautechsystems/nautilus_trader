@@ -401,7 +401,11 @@ pub fn dispatch_ws_message(
                     continue;
                 };
 
-                let Some(ident) = state.order_identities.get(&client_order_id) else {
+                let Some(ident) = state
+                    .order_identities
+                    .get(&client_order_id)
+                    .map(|entry| entry.clone())
+                else {
                     log::warn!(
                         "Order response error for untracked order: \
                          op={op:?} cl_ord_id={cl_ord_id} s_code={s_code} s_msg={s_msg}"
@@ -473,10 +477,14 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
-            log::error!("WebSocket send failed: request_id={request_id} error={error}");
+            log::error!(
+                "WebSocket send failed without structured venue response: \
+                 request_id={request_id}, client_order_id={client_order_id:?}, \
+                 op={op:?}, awaiting reconciliation: {error}"
+            );
 
             if let Some(client_order_id) = client_order_id {
-                let ts_init = clock.get_time_ns();
+                let key = client_order_id.as_str();
 
                 match op {
                     Some(
@@ -484,18 +492,7 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::BatchOrders
                         | OKXWsOperation::OrderAlgo,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_orders.remove(key);
-                        if let Some((_, ident)) = state.order_identities.remove(&client_order_id) {
-                            emitter.emit_order_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                &error,
-                                ts_init,
-                                false,
-                            );
-                        }
                     }
                     Some(
                         OKXWsOperation::CancelOrder
@@ -503,38 +500,12 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::MassCancel
                         | OKXWsOperation::CancelAlgos,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_cancels.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_cancel_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-                        let key = client_order_id.as_str();
                         state.pending_amends.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_modify_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
-                    _ => {
-                        log::warn!(
-                            "SendFailed for {client_order_id} with unknown op, cannot emit rejection"
-                        );
-                    }
+                    _ => {}
                 }
             }
         }
@@ -1304,18 +1275,13 @@ pub fn emit_algo_cancel_rejections(
 pub fn emit_batch_cancel_failure(
     contexts: &[AlgoCancelContext],
     error: &str,
-    emitter: &ExecutionEventEmitter,
-    clock: &'static AtomicTime,
+    _emitter: &ExecutionEventEmitter,
+    _clock: &'static AtomicTime,
 ) {
     for ctx in contexts {
-        let ts = clock.get_time_ns();
-        emitter.emit_order_cancel_rejected_event(
-            ctx.strategy_id,
-            ctx.instrument_id,
-            ctx.client_order_id,
-            ctx.venue_order_id,
-            error,
-            ts,
+        log::error!(
+            "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {error}",
+            ctx.client_order_id
         );
     }
 }

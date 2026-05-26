@@ -28,8 +28,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, QueryAccount,
-            SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
+            QueryAccount, SubmitOrder, SubmitOrderList,
             report::{GenerateFillReports, GenerateOrderStatusReports},
         },
     },
@@ -45,7 +45,7 @@ use nautilus_model::{
         VenueOrderId,
     },
     instruments::{CryptoFuturesSpread, InstrumentAny},
-    orders::{OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
@@ -63,6 +63,7 @@ use nautilus_okx::{
             AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_execution_reports,
             dispatch_ws_message, emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
+        enums::OKXWsOperation,
         messages::{ExecutionReport, OKXWsMessage},
         parse::OrderStateSnapshot,
     },
@@ -245,6 +246,367 @@ fn drain_events(
         events.push(e);
     }
     events
+}
+
+#[rstest]
+fn test_ambiguous_submit_send_failure_does_not_emit_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-send-failure");
+    let (events, state) = dispatch_send_failed_response(OKXWsOperation::Order, cid);
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(event, OrderEventAny::Rejected(_))),
+        "ambiguous submit failure should not emit OrderRejected: {events:?}"
+    );
+    assert!(state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_explicit_venue_submit_rejection_emits_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-explicit-reject");
+    let events = dispatch_explicit_rejection_response(OKXWsOperation::Order, cid);
+
+    assert!(
+        contains_order_event(&events, |event| matches!(event, OrderEventAny::Rejected(_))),
+        "explicit venue submit rejection should emit OrderRejected: {events:?}"
+    );
+}
+
+#[rstest]
+fn test_ambiguous_cancel_send_failure_does_not_emit_order_cancel_rejected() {
+    let cid = ClientOrderId::new("O-cancel-send-failure");
+    let (events, state) = dispatch_send_failed_response(OKXWsOperation::CancelOrder, cid);
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::CancelRejected(_)
+        )),
+        "ambiguous cancel failure should not emit OrderCancelRejected: {events:?}"
+    );
+    assert!(state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_explicit_venue_cancel_rejection_emits_order_cancel_rejected() {
+    let cid = ClientOrderId::new("O-cancel-explicit-reject");
+    let events = dispatch_explicit_rejection_response(OKXWsOperation::CancelOrder, cid);
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::CancelRejected(_)
+        )),
+        "explicit venue cancel rejection should emit OrderCancelRejected: {events:?}"
+    );
+}
+
+#[rstest]
+fn test_ambiguous_modify_send_failure_does_not_emit_order_modify_rejected() {
+    let cid = ClientOrderId::new("O-modify-send-failure");
+    let (events, state) = dispatch_send_failed_response(OKXWsOperation::AmendOrder, cid);
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::ModifyRejected(_)
+        )),
+        "ambiguous modify failure should not emit OrderModifyRejected: {events:?}"
+    );
+    assert!(state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_explicit_venue_modify_rejection_emits_order_modify_rejected() {
+    let cid = ClientOrderId::new("O-modify-explicit-reject");
+    let events = dispatch_explicit_rejection_response(OKXWsOperation::AmendOrder, cid);
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::ModifyRejected(_)
+        )),
+        "explicit venue modify rejection should emit OrderModifyRejected: {events:?}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_submit_validation_failure_emits_order_rejected() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let client_order_id = ClientOrderId::new("OLOCALSUBMITREJECT1");
+    let order = cache_limit_order(&cache, client_order_id);
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    match recv_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        OrderEventAny::Rejected(rejected) => {
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert!(
+                rejected.reason.as_str().contains("No instIdCode cached"),
+                "reason was: {}",
+                rejected.reason
+            );
+        }
+        other => panic!("expected OrderRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_cancel_validation_failure_emits_order_cancel_rejected() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let client_order_id = ClientOrderId::new("OLOCALCANCELREJECT1");
+    let order = cache_limit_order(&cache, client_order_id);
+    let cmd = CancelOrder {
+        trader_id: TraderId::from("TESTER-001"),
+        client_id: Some(*OKX_CLIENT_ID),
+        strategy_id: order.strategy_id(),
+        instrument_id: order.instrument_id(),
+        client_order_id,
+        venue_order_id: Some(VenueOrderId::new("v-1")),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    client.cancel_order(cmd).unwrap();
+
+    match recv_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(rejected) if rejected.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        OrderEventAny::CancelRejected(rejected) => {
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert!(
+                rejected.reason.as_str().contains("No instIdCode cached"),
+                "reason was: {}",
+                rejected.reason
+            );
+        }
+        other => panic!("expected OrderCancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let client_order_id = ClientOrderId::new("OLOCALMODIFYREJECT1");
+    let order = cache_limit_order(&cache, client_order_id);
+    let cmd = ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::new("v-1")),
+        Some(Quantity::from("2")),
+        Some(Price::from("2001.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    match recv_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(rejected) if rejected.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        OrderEventAny::ModifyRejected(rejected) => {
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert!(
+                rejected.reason.as_str().contains("No instIdCode cached"),
+                "reason was: {}",
+                rejected.reason
+            );
+        }
+        other => panic!("expected OrderModifyRejected event, was {other:?}"),
+    }
+}
+
+fn dispatch_send_failed_response(
+    op: OKXWsOperation,
+    client_order_id: ClientOrderId,
+) -> (Vec<ExecutionEvent>, WsDispatchState) {
+    let (emitter, mut rx) = test_emitter();
+    let state = state_with_order_identity(client_order_id);
+
+    dispatch_command_response(
+        OKXWsMessage::SendFailed {
+            request_id: "req-send-failure".to_string(),
+            client_order_id: Some(client_order_id),
+            op: Some(op),
+            error: "send failed after retries".to_string(),
+        },
+        &emitter,
+        &state,
+    );
+
+    (drain_events(&mut rx), state)
+}
+
+fn dispatch_explicit_rejection_response(
+    op: OKXWsOperation,
+    client_order_id: ClientOrderId,
+) -> Vec<ExecutionEvent> {
+    let (emitter, mut rx) = test_emitter();
+    let state = state_with_order_identity(client_order_id);
+
+    dispatch_command_response(
+        OKXWsMessage::OrderResponse {
+            id: Some("req-explicit-reject".to_string()),
+            op,
+            code: "1".to_string(),
+            msg: "All operations failed".to_string(),
+            data: vec![json!({
+                "sCode": "51000",
+                "sMsg": "Order rejected by venue",
+                "clOrdId": client_order_id.as_str(),
+                "ordId": "12345",
+            })],
+        },
+        &emitter,
+        &state,
+    );
+
+    drain_events(&mut rx)
+}
+
+fn dispatch_command_response(
+    message: OKXWsMessage,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) {
+    let instruments = AtomicMap::new();
+    let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+    let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+    let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> = AHashMap::new();
+
+    dispatch_ws_message(
+        message,
+        emitter,
+        state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+}
+
+fn state_with_order_identity(client_order_id: ClientOrderId) -> WsDispatchState {
+    let state = WsDispatchState::default();
+    state.order_identities.insert(
+        client_order_id,
+        OrderIdentity {
+            instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        },
+    );
+    state
+}
+
+fn contains_order_event<F>(events: &[ExecutionEvent], predicate: F) -> bool
+where
+    F: Fn(&OrderEventAny) -> bool,
+{
+    events.iter().any(|event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(order_event) if predicate(order_event)
+        )
+    })
+}
+
+async fn recv_order_event_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) -> OrderEventAny
+where
+    F: Fn(&OrderEventAny) -> bool,
+{
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut seen = Vec::new();
+
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else {
+                    panic!("event stream closed before matching order event, seen: {seen:?}");
+                };
+
+                if let ExecutionEvent::Order(order_event) = event {
+                    if predicate(&order_event) {
+                        return order_event;
+                    }
+
+                    seen.push(format!("{order_event:?}"));
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => {
+                panic!("timed out waiting for matching order event, seen: {seen:?}");
+            }
+        }
+    }
+}
+
+fn cache_limit_order(cache: &Rc<RefCell<Cache>>, client_order_id: ClientOrderId) -> OrderAny {
+    let order = build_test_limit_order(InstrumentId::from("ETH-USDT-SWAP.OKX"), client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    order
 }
 
 #[rstest]
@@ -1224,7 +1586,7 @@ fn test_algo_cancel_rejection_missing_context_does_not_panic() {
 }
 
 #[rstest]
-fn test_batch_cancel_failure_emits_for_all_orders() {
+fn test_batch_cancel_failure_does_not_emit_rejections() {
     let (emitter, mut rx) = test_emitter();
     let clock = get_atomic_clock_realtime();
 
@@ -1237,7 +1599,11 @@ fn test_batch_cancel_failure_emits_for_all_orders() {
     emit_batch_cancel_failure(&contexts, "network timeout", &emitter, clock);
 
     let events = drain_events(&mut rx);
-    assert_eq!(events.len(), 3, "each order should get a rejection");
+    assert_eq!(
+        events.len(),
+        0,
+        "whole batch failure should not emit per-order rejection"
+    );
 }
 
 #[rstest]
