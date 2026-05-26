@@ -73,8 +73,9 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use kernel::{
-    BootError, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError, RecoveredRun,
-    RecoveryOutcome, build_run_id, open_run, recover_predecessors,
+    BootError, EventStoreLifecycle, EventStoreLifecycleOptions, EventStoreSession, HaltSignal,
+    KernelError, RecoveredRun, RecoveryOutcome, build_run_id, open_run, open_run_with_options,
+    recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
 pub use nautilus_system::{
