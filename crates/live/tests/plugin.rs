@@ -53,7 +53,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedIntoHandler, switchboard::get_quotes_topic},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, UnixNanos, hex};
+use nautilus_core::{Params, UUID4, UnixNanos, hex};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig, PluginConfig},
     node::LiveNode,
@@ -70,10 +70,10 @@ use nautilus_model::{
     enums::{BookType, OmsType, OrderSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{
-        AccountId, ActorId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TraderId, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+        StrategyId, TraderId, VenueOrderId,
     },
-    instruments::{InstrumentAny, stubs},
+    instruments::{Instrument, InstrumentAny, stubs},
     orderbook::OrderBook,
     orders::{MarketOrder, Order, OrderAny, stubs::TestOrderEventStubs},
     position::Position,
@@ -997,6 +997,485 @@ fn cdylib_strategy_close_position_normalizes_identifiers_for_cache_lookup() {
         }
         other => panic!("expected SubmitOrder, was {other:?}"),
     }
+}
+
+#[rstest]
+fn cdylib_strategy_submit_order_list_normalizes_identifiers_and_routes_command_fields() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginSubmitListCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-LIST-001");
+    let secondary_client_order_id = ClientOrderId::from("O-CDYLIB-LIST-002");
+    let position_id = PositionId::from("P-CDYLIB-LIST-001");
+    let client_id = ClientId::from("BINANCE");
+    let expected_params = expected_params("cdylib-submit-order-list");
+    let config_json = serde_json::json!({
+        "action": "submit_order_list",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "secondary_client_order_id": secondary_client_order_id.to_string(),
+        "position_id": position_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibSubmitListRiskProbe.{}", UUID4::new());
+    let risk_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrderList(command) => {
+            assert_eq!(command.strategy_id, strategy_id);
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.position_id, Some(position_id));
+            assert_eq!(command.params, Some(expected_params));
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+            assert_eq!(
+                command.order_list.client_order_ids,
+                vec![client_order_id, secondary_client_order_id]
+            );
+            assert_eq!(command.order_inits.len(), 2);
+            assert_eq!(command.order_inits[0].client_order_id, client_order_id);
+            assert_eq!(
+                command.order_inits[1].client_order_id,
+                secondary_client_order_id
+            );
+            assert_eq!(command.order_inits[0].order_side, OrderSide::Buy);
+            assert_eq!(command.order_inits[1].order_side, OrderSide::Sell);
+            assert_eq!(command.order_inits[0].time_in_force, TimeInForce::Gtc);
+            assert_eq!(command.order_inits[1].time_in_force, TimeInForce::Gtc);
+        }
+        other => panic!("expected SubmitOrderList, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn cdylib_strategy_cancel_orders_normalizes_identifiers_for_cache_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCancelListCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-LIST-001");
+    let secondary_client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-LIST-002");
+    let client_id = ClientId::from("BINANCE");
+    let expected_params = expected_params("cdylib-cancel-orders");
+    let config_json = serde_json::json!({
+        "action": "cancel_orders",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "secondary_client_order_id": secondary_client_order_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let cache_rc = adapter.core_mut().cache_rc();
+    for id in [client_order_id, secondary_client_order_id] {
+        cache_rc
+            .borrow_mut()
+            .add_order(
+                plugin_test_accepted_order(strategy_id, id),
+                None,
+                None,
+                true,
+            )
+            .expect("seed cancel orders cache");
+    }
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibCancelListExecProbe.{}", UUID4::new());
+    let exec_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::BatchCancelOrders(command) => {
+            assert_eq!(command.strategy_id, strategy_id);
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+            assert_eq!(command.params, Some(expected_params.clone()));
+            assert_eq!(command.cancels.len(), 2);
+            assert_eq!(command.cancels[0].client_order_id, client_order_id);
+            assert_eq!(
+                command.cancels[1].client_order_id,
+                secondary_client_order_id
+            );
+
+            for cancel in command.cancels {
+                assert_eq!(cancel.strategy_id, strategy_id);
+                assert_eq!(cancel.client_id, Some(client_id));
+                assert_eq!(cancel.instrument_id, plugin_test_instrument_id());
+                assert_eq!(
+                    cancel.venue_order_id,
+                    Some(VenueOrderId::from("V-CDYLIB-001"))
+                );
+                assert_eq!(cancel.params, Some(expected_params.clone()));
+            }
+        }
+        other => panic!("expected BatchCancelOrders, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn cdylib_strategy_cancel_orders_normalizes_identifiers_and_surfaces_missing_cache_error() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCancelMissingCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-MISSING-001");
+    let secondary_client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-MISSING-002");
+    let client_id = ClientId::from("BINANCE");
+    let config_json = serde_json::json!({
+        "action": "cancel_orders",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "secondary_client_order_id": secondary_client_order_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    let err = unsafe { DataActor::on_start(&mut *registered.get()) }
+        .expect_err("missing cached order should surface as an error");
+    let message = err.to_string();
+
+    assert!(
+        message.contains("Cannot cancel order: O-CDYLIB-CANCEL-MISSING-001 not found in cache"),
+        "unexpected error: {message}"
+    );
+}
+
+#[rstest]
+fn cdylib_strategy_cancel_all_orders_normalizes_identifiers_and_routes_command_fields() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCancelAllCdylib-001");
+    let client_order_id = ClientOrderId::from("O-CDYLIB-CANCEL-ALL-001");
+    let client_id = ClientId::from("BINANCE");
+    let expected_params = expected_params("cdylib-cancel-all-orders");
+    let config_json = serde_json::json!({
+        "action": "cancel_all_orders",
+        "strategy_id": strategy_id.to_string(),
+        "client_order_id": client_order_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let cache_rc = adapter.core_mut().cache_rc();
+    let order = plugin_test_order(strategy_id, client_order_id);
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("SIM-001"));
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::from("SIM-001"),
+        VenueOrderId::from("V-CDYLIB-001"),
+    );
+    {
+        let mut cache = cache_rc.borrow_mut();
+        cache
+            .add_order(order, None, None, true)
+            .expect("seed cancel all orders cache");
+        cache
+            .update_order(&submitted)
+            .expect("seed cancel all orders submitted state");
+        cache
+            .update_order(&accepted)
+            .expect("seed cancel all orders accepted state");
+    }
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibCancelAllExecProbe.{}", UUID4::new());
+    let exec_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::CancelAllOrders(command) => {
+            assert_eq!(command.strategy_id, strategy_id);
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.instrument_id, plugin_test_instrument_id());
+            assert_eq!(command.order_side, OrderSide::Buy);
+            assert_eq!(command.params, Some(expected_params));
+        }
+        other => panic!("expected CancelAllOrders, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn cdylib_strategy_close_all_positions_normalizes_identifiers_for_position_lookup() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginCloseAllCdylib-001");
+    let position_id = PositionId::from("P-CDYLIB-CLOSE-ALL-001");
+    let client_id = ClientId::from("BINANCE");
+    let instrument = InstrumentAny::CurrencyPair(stubs::currency_pair_ethusdt());
+    let expected_instrument_id = instrument.id();
+    let config_json = serde_json::json!({
+        "action": "close_all_positions",
+        "strategy_id": strategy_id.to_string(),
+        "position_id": position_id.to_string(),
+        "instrument_id": expected_instrument_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let position = plugin_test_position(strategy_id, position_id);
+    assert_eq!(position.instrument_id, expected_instrument_id);
+    let cache_rc = adapter.core_mut().cache_rc();
+    cache_rc
+        .borrow_mut()
+        .add_instrument(instrument)
+        .expect("seed close all positions instrument");
+    cache_rc
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .expect("seed close all positions cache");
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibCloseAllRiskProbe.{}", UUID4::new());
+    let risk_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::SubmitOrder(command) => {
+            assert_eq!(command.strategy_id, strategy_id);
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.instrument_id, expected_instrument_id);
+            assert_eq!(command.position_id, Some(position_id));
+            assert_eq!(command.params, None);
+            assert_eq!(command.order_init.order_side, OrderSide::Sell);
+            assert_eq!(command.order_init.time_in_force, TimeInForce::Ioc);
+            assert!(command.order_init.reduce_only);
+            assert!(!command.order_init.quote_quantity);
+            assert_eq!(
+                command.order_init.tags,
+                Some(vec![ustr::Ustr::from("cdylib-flatten")])
+            );
+        }
+        other => panic!("expected SubmitOrder, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn cdylib_strategy_query_account_normalizes_identifiers_and_routes_command_fields() {
+    let manifest = ValidatedPluginManifest::new(loaded_exec_manifest())
+        .expect("exec test manifest passes validation");
+    let entry = manifest.strategies().next().expect("exec strategy entry");
+
+    let strategy_id = StrategyId::from("PluginQueryAccountCdylib-001");
+    let account_id = AccountId::from("BINANCE-001");
+    let client_id = ClientId::from("BINANCE");
+    let expected_params = expected_params("cdylib-query-account");
+    let config_json = serde_json::json!({
+        "action": "query_account",
+        "strategy_id": strategy_id.to_string(),
+        "account_id": account_id.to_string(),
+        "client_id": client_id.to_string(),
+    })
+    .to_string();
+    let config = StrategyConfig::builder()
+        .strategy_id(strategy_id)
+        .order_id_tag("001".to_string())
+        .build();
+
+    // SAFETY: host_vtable() is process-lifetime static.
+    let mut adapter = unsafe {
+        PluginStrategyAdapter::new(
+            config,
+            "exec-test-plugin",
+            entry.type_name(),
+            entry.vtable(),
+            host_vtable(),
+            &config_json,
+        )
+    }
+    .expect("strategy adapter construction succeeds");
+    register_strategy_adapter(&mut adapter);
+
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let captured_clone = std::sync::Arc::clone(&captured);
+    let handler_id = format!("PluginCdylibQueryAccountExecProbe.{}", UUID4::new());
+    let exec_handler =
+        TypedIntoHandler::from_with_id(&handler_id, move |command: TradingCommand| {
+            *captured_clone.lock().unwrap() = Some(command);
+        });
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+
+    let registered = register_actor(adapter);
+    // SAFETY: `registered` owns the adapter and this test holds the only
+    // mutable access while invoking on_start.
+    unsafe { DataActor::on_start(&mut *registered.get()) }.expect("on_start dispatches");
+
+    let captured = captured.lock().unwrap().take().expect("command captured");
+    match captured {
+        TradingCommand::QueryAccount(command) => {
+            assert_eq!(command.account_id, account_id);
+            assert_eq!(command.client_id, Some(client_id));
+            assert_eq!(command.params, Some(expected_params));
+        }
+        other => panic!("expected QueryAccount, was {other:?}"),
+    }
+}
+
+fn expected_params(marker: &str) -> Params {
+    let mut params = Params::new();
+    params.insert(
+        "marker".to_string(),
+        serde_json::Value::String(marker.to_string()),
+    );
+    params
 }
 
 #[rstest]
