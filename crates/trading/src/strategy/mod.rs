@@ -42,7 +42,9 @@ use nautilus_model::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+    },
     orders::{
         LIMIT_ORDER_TYPES, Order, OrderAny, OrderCore, OrderError, OrderList, STOP_ORDER_TYPES,
     },
@@ -115,7 +117,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -168,8 +170,8 @@ pub trait Strategy: DataActor {
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::SubmitOrder(command));
-        } else if order.exec_algorithm_id().is_some() {
-            manager.send_algo_command(command, order.exec_algorithm_id().unwrap());
+        } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
+            manager.send_algo_command(command, exec_algorithm_id);
         } else {
             manager.send_risk_command(TradingCommand::SubmitOrder(command));
         }
@@ -233,7 +235,7 @@ pub trait Strategy: DataActor {
 
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -342,7 +344,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
             )
         };
@@ -449,7 +451,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id, ts_init) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
                 core.clock().timestamp_ns(),
             )
@@ -532,7 +534,7 @@ pub trait Strategy: DataActor {
         let (trader_id, strategy_id, ts_init) = {
             let core = self.core_mut();
             (
-                core.trader_id().expect("Trader ID not set"),
+                registered_trader_id(core)?,
                 StrategyId::from(core.actor_id().inner().as_str()),
                 core.clock().timestamp_ns(),
             )
@@ -622,6 +624,7 @@ pub trait Strategy: DataActor {
         }
 
         let strategy_id = order.strategy_id();
+        required_account_id(order, "pending update")?;
         let event = OrderEventAny::PendingUpdate(self.generate_order_pending_update(order));
 
         {
@@ -667,6 +670,7 @@ pub trait Strategy: DataActor {
         }
 
         let strategy_id = order.strategy_id();
+        required_account_id(order, "pending cancel")?;
         let event = OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order));
 
         {
@@ -749,7 +753,7 @@ pub trait Strategy: DataActor {
         let params = params.filter(|params| !params.is_empty());
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
         let cache = core.cache();
@@ -1005,7 +1009,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let ts_init = core.clock().timestamp_ns();
 
         let command = QueryAccount::new(
@@ -1039,7 +1043,7 @@ pub trait Strategy: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
@@ -1667,7 +1671,13 @@ pub trait Strategy: DataActor {
     /// and updates the cache.
     fn deny_order(&mut self, order: &OrderAny, reason: Ustr) {
         let core = self.core_mut();
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let Some(trader_id) = core.trader_id() else {
+            log::error!(
+                "Cannot deny order {}: trader_id is not set",
+                order.client_order_id()
+            );
+            return;
+        };
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_now = core.clock().timestamp_ns();
 
@@ -1866,6 +1876,20 @@ fn publish_order_initialized(order: &OrderAny) {
     let topic = format!("events.order.{}", order.strategy_id());
     let event = OrderEventAny::Initialized(order.init_event().clone());
     msgbus::publish_order_event(topic.into(), &event);
+}
+
+fn registered_trader_id(core: &StrategyCore) -> anyhow::Result<TraderId> {
+    core.trader_id()
+        .ok_or_else(|| anyhow::anyhow!("Strategy not registered: trader_id is not set"))
+}
+
+fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<AccountId> {
+    order.account_id().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Cannot generate {operation} event for {}: account_id is not set",
+            order.client_order_id()
+        )
+    })
 }
 
 #[cfg(test)]
@@ -2450,6 +2474,34 @@ mod tests {
             OrderEventAny::Initialized(order.init_event().clone())
         );
         assert_eq!(timeline.borrow().as_slice(), &["init", "command"]);
+    }
+
+    #[rstest]
+    fn test_submit_order_errors_when_strategy_not_registered() {
+        let mut strategy = create_test_strategy();
+        let order = make_initialized_market_order("O-20250208-UNREGISTERED-001");
+
+        let err = strategy
+            .submit_order(order, None, None, None)
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(err, "Strategy not registered: trader_id is not set");
+    }
+
+    #[rstest]
+    fn test_required_account_id_errors_when_missing_for_strategy_event() {
+        let order = make_initialized_market_order("O-20250208-NO-ACCOUNT-001");
+
+        let err = required_account_id(&order, "pending cancel")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "Cannot generate pending cancel event for O-20250208-NO-ACCOUNT-001: \
+             account_id is not set"
+        );
     }
 
     #[rstest]

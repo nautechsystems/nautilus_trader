@@ -60,7 +60,7 @@ use nautilus_model::{
         OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
         PositionOpened,
     },
-    identifiers::{ClientId, ExecAlgorithmId, PositionId, StrategyId},
+    identifiers::{AccountId, ClientId, ExecAlgorithmId, PositionId, StrategyId, TraderId},
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderError, OrderList},
     types::{Price, Quantity},
 };
@@ -627,7 +627,7 @@ pub trait ExecutionAlgorithm: DataActor {
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let ts_init = core.clock().timestamp_ns();
 
         // For spawned orders, use the parent's strategy ID
@@ -711,10 +711,11 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         let core = self.core_mut();
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
         if !order.is_active_local() {
+            required_account_id(order, "pending update")?;
             let event = self.generate_order_pending_update(order);
             let event = OrderEventAny::PendingUpdate(event);
 
@@ -884,10 +885,11 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         let core = self.core_mut();
-        let trader_id = core.trader_id().expect("Trader ID not set");
+        let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
         if !order.is_active_local() {
+            required_account_id(order, "pending cancel")?;
             let event = self.generate_order_pending_cancel(order);
             let event = OrderEventAny::PendingCancel(event);
 
@@ -1252,6 +1254,20 @@ fn publish_order_event(event: &OrderEventAny) {
     msgbus::publish_order_event(topic.into(), event);
 }
 
+fn registered_trader_id(core: &ExecutionAlgorithmCore) -> anyhow::Result<TraderId> {
+    core.trader_id()
+        .ok_or_else(|| anyhow::anyhow!("ExecutionAlgorithm not registered: trader_id is not set"))
+}
+
+fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<AccountId> {
+    order.account_id().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Cannot generate {operation} event for {}: account_id is not set",
+            order.client_order_id()
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -1370,6 +1386,76 @@ mod tests {
 
         assert!(algo.core.trader_id().is_some());
         assert_eq!(algo.core.trader_id(), Some(TraderId::from("TRADER-001")));
+    }
+
+    #[rstest]
+    fn test_submit_order_errors_when_algorithm_not_registered() {
+        let mut algo = create_test_algorithm();
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            InstrumentId::from("BTC/USDT.BINANCE"),
+            ClientOrderId::from("O-UNREGISTERED-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let err = algo
+            .submit_order(order, None, None)
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "ExecutionAlgorithm not registered: trader_id is not set"
+        );
+    }
+
+    #[rstest]
+    fn test_required_account_id_errors_when_missing_for_algorithm_event() {
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            InstrumentId::from("BTC/USDT.BINANCE"),
+            ClientOrderId::from("O-NO-ACCOUNT-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let err = required_account_id(&order, "pending update")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "Cannot generate pending update event for O-NO-ACCOUNT-001: account_id is not set"
+        );
     }
 
     #[rstest]

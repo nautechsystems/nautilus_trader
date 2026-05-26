@@ -87,18 +87,17 @@ impl GridMarketMaker {
         net_position: f64,
         worst_long: Decimal,
         worst_short: Decimal,
-    ) -> Vec<(OrderSide, Price)> {
-        let instrument = self
-            .instrument
-            .as_ref()
-            .expect("instrument should be resolved in on_start");
+    ) -> anyhow::Result<Vec<(OrderSide, Price)>> {
+        let Some(instrument) = self.instrument.as_ref() else {
+            anyhow::bail!("Cannot compute grid orders: instrument is not resolved");
+        };
         let mid_f64 = mid.as_f64();
         let skew_f64 = self.config.skew_factor * net_position;
         let pct = self.config.grid_step_bps as f64 / 10_000.0;
-        let trade_size = self
-            .trade_size
-            .expect("trade_size should be resolved in on_start")
-            .as_decimal();
+        let Some(trade_size) = self.trade_size else {
+            anyhow::bail!("Cannot compute grid orders: trade_size is not resolved");
+        };
+        let trade_size = trade_size.as_decimal();
         let max_pos = self.config.max_position.as_decimal();
         let mut projected_long = worst_long;
         let mut projected_short = worst_short;
@@ -128,7 +127,7 @@ impl GridMarketMaker {
             }
         }
 
-        orders
+        Ok(orders)
     }
 }
 
@@ -193,11 +192,10 @@ impl DataActor for GridMarketMaker {
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         // f64 division by 2 is exact in IEEE 754
         let mid_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
-        let mid = Price::new(
-            mid_f64,
-            self.price_precision
-                .expect("price_precision should be resolved in on_start"),
-        );
+        let price_precision = self.price_precision.ok_or_else(|| {
+            anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
+        })?;
+        let mid = Price::new(mid_f64, price_precision);
 
         let instrument_id = self.config.instrument_id;
         let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
@@ -292,7 +290,7 @@ impl DataActor for GridMarketMaker {
             )
         };
 
-        let grid = self.grid_orders(mid, net_position, worst_long, worst_short);
+        let grid = self.grid_orders(mid, net_position, worst_long, worst_short)?;
 
         // Don't advance the requote anchor when no orders are placed,
         // otherwise the strategy can stall with zero resting orders
@@ -302,7 +300,7 @@ impl DataActor for GridMarketMaker {
 
         let trade_size = self
             .trade_size
-            .expect("trade_size should be resolved in on_start");
+            .ok_or_else(|| anyhow::anyhow!("Cannot handle quote: trade_size is not resolved"))?;
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {

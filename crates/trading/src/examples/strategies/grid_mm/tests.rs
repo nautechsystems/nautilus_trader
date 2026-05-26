@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::actor::DataActor;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
+    data::QuoteTick,
     enums::OrderSide,
     events::{
         OrderCanceled, OrderExpired, OrderRejected,
@@ -58,6 +60,18 @@ fn mid(value: &str) -> Price {
     Price::new(value.parse::<f64>().unwrap(), PRECISION)
 }
 
+fn quote(bid: &str, ask: &str) -> QuoteTick {
+    QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        mid(bid),
+        mid(ask),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
 #[rstest]
 fn test_should_requote_true_when_no_previous_quote() {
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
@@ -89,7 +103,9 @@ fn test_should_requote_true_beyond_threshold_negative() {
 fn test_grid_orders_flat_position_symmetric() {
     // 1% geometric grid: buy = mid × 0.99^level, sell = mid × 1.01^level
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .unwrap();
 
     assert_eq!(orders.len(), 6);
 
@@ -119,7 +135,9 @@ fn test_grid_orders_flat_position_symmetric() {
 fn test_grid_orders_skew_shifts_prices() {
     // 500 bps (5%) geometric grid, skew_factor=1.0, net_position=2.0 → skew_f64=2.0
     let strategy = create_strategy(1, 500, 1.0, Quantity::from("10.0"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 2.0, dec!(2), dec!(2));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 2.0, dec!(2), dec!(2))
+        .unwrap();
 
     assert_eq!(orders.len(), 2);
     // Buy: 1000 × 0.95^1 - 2.0 = 950.0 - 2.0 = 948.0
@@ -136,7 +154,9 @@ fn count_side(orders: &[(OrderSide, Price)], side: OrderSide) -> usize {
 fn test_grid_orders_max_position_limits_buy_levels() {
     // net_position=9.9, trade_size=0.1, max=10.0 → only 1 buy level fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 9.9, dec!(9.9), dec!(9.9));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 9.9, dec!(9.9), dec!(9.9))
+        .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 1);
     assert_eq!(count_side(&orders, OrderSide::Sell), 3);
@@ -146,7 +166,9 @@ fn test_grid_orders_max_position_limits_buy_levels() {
 fn test_grid_orders_max_position_limits_sell_levels() {
     // net_position=-9.9, trade_size=0.1, max=10.0 → only 1 sell level fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), -9.9, dec!(-9.9), dec!(-9.9));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), -9.9, dec!(-9.9), dec!(-9.9))
+        .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 3);
     assert_eq!(count_side(&orders, OrderSide::Sell), 1);
@@ -156,7 +178,9 @@ fn test_grid_orders_max_position_limits_sell_levels() {
 fn test_grid_orders_max_position_blocks_all_buys() {
     // net_position=10.0 (at max) → no buys, all sells
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 10.0, dec!(10), dec!(10));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 10.0, dec!(10), dec!(10))
+        .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 0);
     assert_eq!(count_side(&orders, OrderSide::Sell), 3);
@@ -166,7 +190,9 @@ fn test_grid_orders_max_position_blocks_all_buys() {
 fn test_grid_orders_projected_exposure_across_levels() {
     // max_position=0.15, trade_size=0.1, 3 levels → only 1 level fits per side
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("0.150"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 1);
     assert_eq!(count_side(&orders, OrderSide::Sell), 1);
@@ -176,8 +202,47 @@ fn test_grid_orders_projected_exposure_across_levels() {
 fn test_grid_orders_empty_when_fully_constrained() {
     // max_position=0.05, trade_size=0.1 → nothing fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("0.050"), 5);
-    let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
+    let orders = strategy
+        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .unwrap();
     assert!(orders.is_empty());
+}
+
+#[rstest]
+fn test_grid_orders_errors_when_instrument_not_resolved() {
+    let config = GridMarketMakerConfig::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Quantity::from("10.0"),
+    )
+    .with_trade_size(Quantity::from("0.100"));
+    let strategy = GridMarketMaker::new(config);
+
+    let err = strategy
+        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(
+        err,
+        "Cannot compute grid orders: instrument is not resolved"
+    );
+}
+
+#[rstest]
+fn test_on_quote_errors_when_price_precision_not_resolved() {
+    let config = GridMarketMakerConfig::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Quantity::from("10.0"),
+    )
+    .with_trade_size(Quantity::from("0.100"));
+    let mut strategy = GridMarketMaker::new(config);
+
+    let err = strategy
+        .on_quote(&quote("1000.00", "1000.10"))
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(err, "Cannot handle quote: price_precision is not resolved");
 }
 
 fn order_canceled(client_order_id: &str) -> OrderCanceled {
