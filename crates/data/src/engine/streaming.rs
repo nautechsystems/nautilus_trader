@@ -16,18 +16,23 @@
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_common::messages::data::{
-    BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, QuotesResponse, RequestBars,
-    RequestBookDeltas, RequestBookDepth, RequestCommand, RequestQuotes, RequestTrades,
-    SubscribeBars, SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades,
-    TradesResponse,
+    BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataResponse,
+    FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
+    RequestBookDeltas, RequestBookDepth, RequestCommand, RequestCustomData, RequestFundingRates,
+    RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+    SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades, TradesResponse,
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos,
     correctness::{FAILED, check_key_not_in_map},
 };
 use nautilus_model::{
-    data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
-    identifiers::ClientId,
+    data::{
+        Bar, CustomData, Data, FundingRateUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
+        TradeTick,
+    },
+    identifiers::{ClientId, Venue},
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use serde_json::Value;
@@ -37,6 +42,7 @@ use super::{DataEngine, requests::request_params};
 
 const PARAM_SKIP_CATALOG_DATA: &str = "skip_catalog_data";
 const PARAM_UPDATE_CATALOG: &str = "update_catalog";
+const PARAM_FORCE_INSTRUMENT_UPDATE: &str = "force_instrument_update";
 const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
 const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
@@ -197,7 +203,14 @@ impl DataEngine {
         &mut self,
         req: RequestCommand,
     ) -> anyhow::Result<()> {
-        let Some((data_cls, identifier)) = request_identifier(&req) else {
+        if matches!(
+            req,
+            RequestCommand::Instrument(_) | RequestCommand::Instruments(_)
+        ) {
+            return self.dispatch_instrument_catalog_request(req);
+        }
+
+        let Some(key) = request_identifier(&req) else {
             return self.dispatch_request_to_client(req).map(|_| ());
         };
 
@@ -249,11 +262,11 @@ impl DataEngine {
         let mut winning_catalog: Option<Ustr> = None;
 
         for (name, catalog) in &self.catalogs {
-            let catalog_intervals = catalog.get_missing_intervals_for_request(
+            let catalog_intervals = catalog_missing_intervals(
+                catalog,
                 catalog_start_ns.as_u64(),
                 end_ns.as_u64(),
-                data_cls,
-                Some(&identifier),
+                &key,
             )?;
 
             if catalog_intervals != catalog_query_interval {
@@ -263,12 +276,7 @@ impl DataEngine {
                 missing_intervals = if catalog_start_ns == start_ns {
                     catalog_intervals
                 } else {
-                    catalog.get_missing_intervals_for_request(
-                        start_ns.as_u64(),
-                        end_ns.as_u64(),
-                        data_cls,
-                        Some(&identifier),
-                    )?
+                    catalog_missing_intervals(catalog, start_ns.as_u64(), end_ns.as_u64(), &key)?
                 };
                 break;
             }
@@ -404,6 +412,21 @@ impl DataEngine {
                     ts_init,
                 ))
             }
+            RequestCommand::FundingRates(cmd) => {
+                let data: Vec<FundingRateUpdate> = catalog.funding_rates(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_funding_rates_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
             RequestCommand::Bars(cmd) => {
                 let data: Vec<Bar> = catalog.bars(
                     Some(vec![cmd.bar_type.to_string()]),
@@ -416,6 +439,32 @@ impl DataEngine {
                     start_ns,
                     end_ns,
                     used_client_id,
+                    ts_init,
+                ))
+            }
+            RequestCommand::Data(cmd) => {
+                let identifiers = cmd
+                    .data_type
+                    .identifier()
+                    .map(|identifier| vec![identifier.to_string()]);
+                let where_clause = cmd
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.get_str("filter_expr"));
+                let data = catalog.query_custom_data_dynamic(
+                    cmd.data_type.type_name(),
+                    identifiers.as_deref(),
+                    Some(start_ns),
+                    Some(end_ns),
+                    where_clause,
+                    None,
+                    true,
+                )?;
+                Ok(build_custom_data_catalog_response(
+                    cmd,
+                    custom_data_from_dynamic(data),
+                    start_ns,
+                    end_ns,
                     ts_init,
                 ))
             }
@@ -454,38 +503,238 @@ impl DataEngine {
             }
         }
     }
+
+    fn dispatch_instrument_catalog_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        match req {
+            RequestCommand::Instrument(cmd) => self.dispatch_instrument_request(cmd),
+            RequestCommand::Instruments(cmd) => self.dispatch_instruments_request(cmd),
+            _ => self.dispatch_request_to_client(req).map(|_| ()),
+        }
+    }
+
+    fn dispatch_instrument_request(&mut self, cmd: RequestInstrument) -> anyhow::Result<()> {
+        let force_instrument_update = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool(PARAM_FORCE_INSTRUMENT_UPDATE))
+            .unwrap_or(false);
+
+        if force_instrument_update {
+            return self
+                .dispatch_request_to_client(RequestCommand::Instrument(cmd))
+                .map(|_| ());
+        }
+
+        let identifier = cmd.instrument_id.to_string();
+        let Some(catalog_name) = self.catalog_with_last_timestamp("instruments", &identifier)?
+        else {
+            return self
+                .dispatch_request_to_client(RequestCommand::Instrument(cmd))
+                .map(|_| ());
+        };
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let used_client_id = self
+            .get_client(cmd.client_id.as_ref(), Some(&cmd.instrument_id.venue))
+            .map(|client| client.client_id());
+        let (start_dt, end_dt) =
+            bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
+        let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
+        let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
+        let query_end = cmd.end.map(datetime_to_unix_nanos_or_zero);
+        let catalog = self.catalogs.get(&catalog_name).ok_or_else(|| {
+            anyhow::anyhow!("Catalog {catalog_name} disappeared between timestamp query and read")
+        })?;
+        let mut data = catalog.instruments(
+            Some(std::slice::from_ref(&identifier)),
+            Some(start_ns),
+            query_end,
+        )?;
+        data = latest_instruments(data);
+
+        if let Some(instrument) = data.into_iter().next() {
+            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                cmd.request_id,
+                resolve_response_client_id(cmd.client_id, used_client_id),
+                cmd.instrument_id,
+                instrument,
+                Some(start_ns),
+                Some(end_ns),
+                now_ns,
+                Some(catalog_response_params(cmd.params.as_ref())),
+            )));
+            self.response(response);
+            return Ok(());
+        }
+
+        self.dispatch_request_to_client(RequestCommand::Instrument(cmd))
+            .map(|_| ())
+    }
+
+    fn dispatch_instruments_request(&mut self, cmd: RequestInstruments) -> anyhow::Result<()> {
+        let update_catalog = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool(PARAM_UPDATE_CATALOG))
+            .unwrap_or(false);
+        let force_instrument_update = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool(PARAM_FORCE_INSTRUMENT_UPDATE))
+            .unwrap_or(false);
+
+        if update_catalog || force_instrument_update {
+            return self
+                .dispatch_request_to_client(RequestCommand::Instruments(cmd))
+                .map(|_| ());
+        }
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let used_client_id = self
+            .get_client(cmd.client_id.as_ref(), cmd.venue.as_ref())
+            .map(|client| client.client_id());
+        let (start_dt, end_dt) =
+            bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
+        let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
+        let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
+        let query_end = cmd.end.map(datetime_to_unix_nanos_or_zero);
+        let mut data = Vec::new();
+
+        for catalog in self.catalogs.values() {
+            data.extend(catalog.instruments(None, Some(start_ns), query_end)?);
+        }
+
+        if let Some(venue) = cmd.venue {
+            data.retain(|instrument| instrument.venue() == venue);
+        }
+
+        if instrument_only_last(cmd.params.as_ref()) {
+            data = latest_instruments(data);
+        }
+
+        let response = DataResponse::Instruments(InstrumentsResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            instrument_response_venue(cmd.venue, &data),
+            data,
+            Some(start_ns),
+            Some(end_ns),
+            now_ns,
+            Some(catalog_response_params(cmd.params.as_ref())),
+        ));
+        self.response(response);
+        Ok(())
+    }
+
+    fn catalog_with_last_timestamp(
+        &self,
+        data_cls: &str,
+        identifier: &str,
+    ) -> anyhow::Result<Option<Ustr>> {
+        for (name, catalog) in &self.catalogs {
+            if catalog
+                .query_last_timestamp(data_cls, Some(identifier))?
+                .is_some()
+            {
+                return Ok(Some(*name));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+struct RequestCatalogKey {
+    data_cls: String,
+    type_name: Option<String>,
+    identifier: Option<String>,
 }
 
 pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
     matches!(
         req,
-        RequestCommand::Quotes(_)
+        RequestCommand::Data(_)
+            | RequestCommand::Instrument(_)
+            | RequestCommand::Instruments(_)
+            | RequestCommand::Quotes(_)
             | RequestCommand::Trades(_)
+            | RequestCommand::FundingRates(_)
             | RequestCommand::Bars(_)
             | RequestCommand::BookDeltas(_)
             | RequestCommand::BookDepth(_)
     )
 }
 
-fn request_identifier(req: &RequestCommand) -> Option<(&'static str, String)> {
+fn request_identifier(req: &RequestCommand) -> Option<RequestCatalogKey> {
     match req {
-        RequestCommand::Quotes(cmd) => Some(("quotes", cmd.instrument_id.to_string())),
-        RequestCommand::Trades(cmd) => Some(("trades", cmd.instrument_id.to_string())),
-        RequestCommand::Bars(cmd) => Some(("bars", cmd.bar_type.to_string())),
-        RequestCommand::BookDeltas(cmd) => {
-            Some(("order_book_deltas", cmd.instrument_id.to_string()))
-        }
-        RequestCommand::BookDepth(cmd) => {
-            Some(("order_book_depths", cmd.instrument_id.to_string()))
-        }
+        RequestCommand::Data(cmd) => Some(RequestCatalogKey {
+            data_cls: format!("custom/{}", cmd.data_type.type_name()),
+            type_name: Some(cmd.data_type.type_name().to_string()),
+            identifier: cmd.data_type.identifier().map(String::from),
+        }),
+        RequestCommand::Quotes(cmd) => Some(RequestCatalogKey::new(
+            "quotes",
+            Some(cmd.instrument_id.to_string()),
+        )),
+        RequestCommand::Trades(cmd) => Some(RequestCatalogKey::new(
+            "trades",
+            Some(cmd.instrument_id.to_string()),
+        )),
+        RequestCommand::FundingRates(cmd) => Some(RequestCatalogKey::new(
+            "funding_rate_update",
+            Some(cmd.instrument_id.to_string()),
+        )),
+        RequestCommand::Bars(cmd) => Some(RequestCatalogKey::new(
+            "bars",
+            Some(cmd.bar_type.to_string()),
+        )),
+        RequestCommand::BookDeltas(cmd) => Some(RequestCatalogKey::new(
+            "order_book_deltas",
+            Some(cmd.instrument_id.to_string()),
+        )),
+        RequestCommand::BookDepth(cmd) => Some(RequestCatalogKey::new(
+            "order_book_depths",
+            Some(cmd.instrument_id.to_string()),
+        )),
         _ => None,
     }
 }
 
+impl RequestCatalogKey {
+    fn new(data_cls: &str, identifier: Option<String>) -> Self {
+        Self {
+            data_cls: data_cls.to_string(),
+            type_name: None,
+            identifier,
+        }
+    }
+}
+
+fn catalog_missing_intervals(
+    catalog: &ParquetDataCatalog,
+    start: u64,
+    end: u64,
+    key: &RequestCatalogKey,
+) -> anyhow::Result<Vec<(u64, u64)>> {
+    if let Some(type_name) = key.type_name.as_deref()
+        && let Some(identifier) = key.identifier.as_deref()
+    {
+        let directory = catalog.make_path_custom_data(type_name, Some(identifier))?;
+        let intervals = catalog.get_directory_intervals(&directory)?;
+        return Ok(missing_interval_diff(start, end, &intervals));
+    }
+
+    catalog.get_missing_intervals_for_request(start, end, &key.data_cls, key.identifier.as_deref())
+}
+
 fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
     match req {
+        RequestCommand::Data(cmd) => cmd.start,
+        RequestCommand::Instrument(cmd) => cmd.start,
+        RequestCommand::Instruments(cmd) => cmd.start,
         RequestCommand::Quotes(cmd) => cmd.start,
         RequestCommand::Trades(cmd) => cmd.start,
+        RequestCommand::FundingRates(cmd) => cmd.start,
         RequestCommand::Bars(cmd) => cmd.start,
         RequestCommand::BookDeltas(cmd) => cmd.start,
         RequestCommand::BookDepth(cmd) => cmd.start,
@@ -495,8 +744,12 @@ fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
 
 fn request_end(req: &RequestCommand) -> Option<DateTime<Utc>> {
     match req {
+        RequestCommand::Data(cmd) => cmd.end,
+        RequestCommand::Instrument(cmd) => cmd.end,
+        RequestCommand::Instruments(cmd) => cmd.end,
         RequestCommand::Quotes(cmd) => cmd.end,
         RequestCommand::Trades(cmd) => cmd.end,
+        RequestCommand::FundingRates(cmd) => cmd.end,
         RequestCommand::Bars(cmd) => cmd.end,
         RequestCommand::BookDeltas(cmd) => cmd.end,
         RequestCommand::BookDepth(cmd) => cmd.end,
@@ -567,6 +820,16 @@ fn with_dates_for_pipeline(
             ts_init,
             params: cmd.params.clone(),
         }),
+        RequestCommand::FundingRates(cmd) => RequestCommand::FundingRates(RequestFundingRates {
+            instrument_id: cmd.instrument_id,
+            start,
+            end,
+            limit: cmd.limit,
+            client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
         RequestCommand::BookDeltas(cmd) => RequestCommand::BookDeltas(RequestBookDeltas {
             instrument_id: cmd.instrument_id,
             start,
@@ -584,6 +847,16 @@ fn with_dates_for_pipeline(
             limit: cmd.limit,
             depth: cmd.depth,
             client_id: cmd.client_id,
+            request_id: new_id,
+            ts_init,
+            params: cmd.params.clone(),
+        }),
+        RequestCommand::Data(cmd) => RequestCommand::Data(RequestCustomData {
+            client_id: cmd.client_id,
+            data_type: cmd.data_type.clone(),
+            start,
+            end,
+            limit: cmd.limit,
             request_id: new_id,
             ts_init,
             params: cmd.params.clone(),
@@ -613,6 +886,17 @@ fn build_empty_response(
     ts_init: UnixNanos,
 ) -> DataResponse {
     match req {
+        RequestCommand::Data(cmd) => DataResponse::Data(CustomDataResponse::new(
+            cmd.request_id,
+            cmd.client_id,
+            None,
+            cmd.data_type.clone(),
+            Vec::<CustomData>::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
         RequestCommand::Quotes(cmd) => DataResponse::Quotes(QuotesResponse::new(
             cmd.request_id,
             resolve_response_client_id(cmd.client_id, used_client_id),
@@ -624,6 +908,16 @@ fn build_empty_response(
             cmd.params.clone(),
         )),
         RequestCommand::Trades(cmd) => DataResponse::Trades(TradesResponse::new(
+            cmd.request_id,
+            resolve_response_client_id(cmd.client_id, used_client_id),
+            cmd.instrument_id,
+            Vec::new(),
+            Some(start),
+            Some(end),
+            ts_init,
+            cmd.params.clone(),
+        )),
+        RequestCommand::FundingRates(cmd) => DataResponse::FundingRates(FundingRatesResponse::new(
             cmd.request_id,
             resolve_response_client_id(cmd.client_id, used_client_id),
             cmd.instrument_id,
@@ -709,6 +1003,27 @@ fn build_trades_catalog_response(
     ))
 }
 
+fn build_funding_rates_catalog_response(
+    cmd: &RequestFundingRates,
+    data: Vec<FundingRateUpdate>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::FundingRates(FundingRatesResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
 fn build_bars_catalog_response(
     cmd: &RequestBars,
     data: Vec<Bar>,
@@ -722,6 +1037,27 @@ fn build_bars_catalog_response(
         cmd.request_id,
         resolve_response_client_id(cmd.client_id, used_client_id),
         cmd.bar_type,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_custom_data_catalog_response(
+    cmd: &RequestCustomData,
+    data: Vec<CustomData>,
+    start: UnixNanos,
+    end: UnixNanos,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::Data(CustomDataResponse::new(
+        cmd.request_id,
+        cmd.client_id,
+        None,
+        cmd.data_type.clone(),
         data,
         Some(start),
         Some(end),
@@ -776,6 +1112,86 @@ fn catalog_response_params(existing: Option<&Params>) -> Params {
     let mut params = existing.cloned().unwrap_or_else(Params::new);
     params.insert(PARAM_UPDATE_CATALOG.to_string(), Value::Bool(false));
     params
+}
+
+fn custom_data_from_dynamic(data: Vec<Data>) -> Vec<CustomData> {
+    data.into_iter()
+        .filter_map(|item| match item {
+            Data::Custom(custom) => Some(custom),
+            other => {
+                log::error!("Custom catalog query returned non-custom data {other:?}");
+                None
+            }
+        })
+        .collect()
+}
+
+fn instrument_only_last(params: Option<&Params>) -> bool {
+    params
+        .and_then(|params| params.get_bool("only_last"))
+        .unwrap_or(true)
+}
+
+fn latest_instruments(data: Vec<InstrumentAny>) -> Vec<InstrumentAny> {
+    let mut instruments: AHashMap<_, InstrumentAny> = AHashMap::new();
+
+    for instrument in data {
+        let id = instrument.id();
+        match instruments.get(&id) {
+            Some(existing) if existing.ts_init() >= instrument.ts_init() => {}
+            _ => {
+                instruments.insert(id, instrument);
+            }
+        }
+    }
+
+    let mut data: Vec<_> = instruments.into_values().collect();
+    data.sort_by_key(|instrument| instrument.id().to_string());
+    data
+}
+
+fn instrument_response_venue(request_venue: Option<Venue>, data: &[InstrumentAny]) -> Venue {
+    request_venue.unwrap_or_else(|| {
+        data.iter()
+            .map(Instrument::venue)
+            .min_by_key(std::string::ToString::to_string)
+            .unwrap_or_else(|| Venue::from(CATALOG_CLIENT_ID))
+    })
+}
+
+fn missing_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    if closed_intervals.is_empty() {
+        return vec![(start, end)];
+    }
+
+    let mut missing = Vec::new();
+    let mut cursor = start;
+
+    for &(closed_start, closed_end) in closed_intervals {
+        if closed_end < cursor {
+            continue;
+        }
+
+        if closed_start > end {
+            break;
+        }
+
+        if closed_start > cursor {
+            missing.push((cursor, closed_start.saturating_sub(1)));
+        }
+
+        cursor = cursor.max(closed_end.saturating_add(1));
+
+        if cursor > end {
+            break;
+        }
+    }
+
+    if cursor <= end {
+        missing.push((cursor, end));
+    }
+
+    missing
 }
 
 fn resolve_response_client_id(

@@ -73,6 +73,8 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-serialization = { workspace = true, features = ["arrow"] }
+
 criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }

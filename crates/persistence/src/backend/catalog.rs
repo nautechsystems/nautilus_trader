@@ -2121,6 +2121,16 @@ impl ParquetDataCatalog {
         self.query_typed_data::<OrderBookDepth10>(instrument_ids, start, end, None, None, true)
     }
 
+    /// Queries funding rate updates for the specified instrument(s) and time range.
+    pub fn funding_rates(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        self.query_typed::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
+    }
+
     /// Queries instrument close data for the specified instrument(s) and time range.
     pub fn instrument_closes(
         &mut self,
@@ -2135,10 +2145,10 @@ impl ParquetDataCatalog {
     pub fn instruments(
         &self,
         instrument_ids: Option<&[String]>,
-        _start: Option<UnixNanos>,
-        _end: Option<UnixNanos>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        self.query_instruments(instrument_ids)
+        self.query_instruments_filtered(instrument_ids, start, end)
     }
 
     /// Retrieves a list of file paths for a given data type.

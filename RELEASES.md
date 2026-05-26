@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added `DataEngine` continuous futures historical bar requests and live bar subscriptions (Rust)
 - Added `DataEngine` response bounds-trim and request-pipeline fan-in with `RequestJoin` support (Rust)
 - Added `DataEngine` catalog / client response-side request splitting (Rust)
+- Added `DataEngine` catalog orchestration for funding rates, custom data, and instruments (Rust)
 - Added `DataEngine` time-range pipeline support for long historical requests (Rust)
 - Added `DataEngine` order book deltas request and response with catalog/client split (Rust)
 - Added `DataEngine` historical order book snapshot replay at UTC day boundaries (Rust)

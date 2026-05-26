@@ -72,12 +72,12 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        BarsResponse, BookDeltasResponse, BookDepthResponse, DataCommand, DataResponse,
-        ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars, RequestCommand,
-        RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
+        DataResponse, ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars,
+        RequestCommand, RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
         UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
@@ -99,7 +99,7 @@ use nautilus_core::{
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
+        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
         OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
@@ -5049,6 +5049,29 @@ fn rebuild_pipeline_response(
     let first = iter.next()?;
 
     match first {
+        DataResponse::Data(mut acc) => {
+            let mut data = custom_response_data(&acc, parent_id)?;
+
+            for leg in iter {
+                let DataResponse::Data(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                data.extend(custom_response_data(&other, parent_id)?);
+            }
+
+            data.sort_by_key(CustomData::ts_init);
+            acc.data = std::sync::Arc::new(data);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::Data(acc))
+        }
         DataResponse::Quotes(mut acc) => {
             for leg in iter {
                 let DataResponse::Quotes(other) = leg else {
@@ -5177,7 +5200,7 @@ fn rebuild_pipeline_response(
         other => {
             // Pipelines today rebuild same-variant time-series legs. Variants
             // without a per-item ts_init payload (singular Book/Instrument,
-            // ForwardPrices, custom Data) cannot be concatenated and would
+            // ForwardPrices) cannot be concatenated and would
             // otherwise leak a leg-keyed response. Drop rather than forward.
             log::error!(
                 "Pipeline rebuild not supported for variant {} (parent {parent_id})",
@@ -5186,6 +5209,34 @@ fn rebuild_pipeline_response(
             None
         }
     }
+}
+
+fn custom_response_data(resp: &CustomDataResponse, parent_id: UUID4) -> Option<Vec<CustomData>> {
+    if let Some(data) = resp.data.as_ref().downcast_ref::<Vec<CustomData>>() {
+        return Some(data.clone());
+    }
+
+    if let Some(data) = resp.data.as_ref().downcast_ref::<CustomData>() {
+        return Some(vec![data.clone()]);
+    }
+
+    if let Some(data) = resp.data.as_ref().downcast_ref::<Vec<Data>>() {
+        let mut custom = Vec::with_capacity(data.len());
+        for item in data {
+            let Data::Custom(value) = item else {
+                log::error!("Custom data pipeline {parent_id} received non-custom data {item:?}");
+                return None;
+            };
+            custom.push(value.clone());
+        }
+        return Some(custom);
+    }
+
+    log::error!(
+        "Custom data pipeline {parent_id} received unsupported payload for {}",
+        resp.data_type,
+    );
+    None
 }
 
 fn parent_request_window(
