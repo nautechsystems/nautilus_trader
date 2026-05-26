@@ -57,6 +57,7 @@ pub struct StubExecutionClient {
     reset_count: Rc<Cell<usize>>,
     dispose_count: Rc<Cell<usize>>,
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
+    queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
     handles_all_order_venues: bool,
 }
 
@@ -84,6 +85,7 @@ impl StubExecutionClient {
             reset_count: Rc::new(Cell::new(0)),
             dispose_count: Rc::new(Cell::new(0)),
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
+            queried_account_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
         }
     }
@@ -105,6 +107,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn submitted_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
         self.submitted_order_ids.clone()
+    }
+
+    /// Returns a shared handle to the queried account IDs.
+    #[must_use]
+    pub fn queried_account_ids(&self) -> Rc<RefCell<Vec<AccountId>>> {
+        self.queried_account_ids.clone()
     }
 
     /// Returns the number of times [`ExecutionClient::start`] was invoked.
@@ -222,7 +230,9 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
+        self.queried_account_ids.borrow_mut().push(cmd.account_id);
+
         Ok(()) // Stub implementation always succeeds
     }
 

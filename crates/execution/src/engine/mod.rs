@@ -71,7 +71,8 @@ use nautilus_model::{
         PositionOpened,
     },
     identifiers::{
-        ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
+        VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
@@ -1766,28 +1767,19 @@ impl ExecutionEngine {
             return;
         }
 
-        let client = if let Some(adapter) = command
-            .client_id()
-            .and_then(|cid| self.clients.get(&cid))
-            .or_else(|| {
-                self.routing_map
-                    .get(&command.instrument_id().venue)
-                    .and_then(|client_id| self.clients.get(client_id))
-            })
-            .or(self.default_client.as_ref())
-        {
+        let client = if let Some(adapter) = self.find_client_for_command(&command) {
             adapter.client.as_ref()
         } else {
+            let routing_context = Self::routing_context_for_command(&command);
+
             log::error!(
-                "No execution client found for command: client_id={:?}, venue={}, command={command:?}",
+                "No execution client found for command: client_id={:?}, {routing_context}, command={command:?}",
                 command.client_id(),
-                command.instrument_id().venue,
             );
 
             let reason = format!(
-                "No execution client found for client_id={:?}, venue={}",
+                "No execution client found for client_id={:?}, {routing_context}",
                 command.client_id(),
-                command.instrument_id().venue,
             );
 
             match command {
@@ -1826,6 +1818,92 @@ impl ExecutionEngine {
             TradingCommand::BatchCancelOrders(cmd) => self.handle_batch_cancel_orders(client, cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
+        }
+    }
+
+    fn routing_context_for_command(command: &TradingCommand) -> String {
+        match command {
+            TradingCommand::SubmitOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::SubmitOrderList(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::ModifyOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::CancelOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::CancelAllOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::BatchCancelOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::QueryOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
+            TradingCommand::QueryAccount(cmd) => {
+                let issuer = cmd.account_id.get_issuer();
+                format!("account_id={}, issuer={issuer}", cmd.account_id)
+            }
+        }
+    }
+
+    fn find_client_for_command(&self, command: &TradingCommand) -> Option<&ExecutionClientAdapter> {
+        if let Some(client_id) = command.client_id()
+            && let Some(adapter) = self.clients.get(&client_id)
+        {
+            return Some(adapter);
+        }
+
+        if let Some(account_id) = self.account_id_for_command(command) {
+            let issuer = account_id.get_issuer();
+            let issuer_client_id = ClientId::from(issuer.as_str());
+
+            if let Some(adapter) = self.clients.get(&issuer_client_id) {
+                return Some(adapter);
+            }
+
+            if let Some(client_id) = self.routing_map.get(&issuer)
+                && let Some(adapter) = self.clients.get(client_id)
+            {
+                return Some(adapter);
+            }
+        }
+
+        if let Some(instrument_id) = Self::instrument_id_for_command(command)
+            && let Some(client_id) = self.routing_map.get(&instrument_id.venue)
+            && let Some(adapter) = self.clients.get(client_id)
+        {
+            return Some(adapter);
+        }
+
+        self.default_client.as_ref()
+    }
+
+    fn account_id_for_command(&self, command: &TradingCommand) -> Option<AccountId> {
+        match command {
+            TradingCommand::QueryAccount(cmd) => Some(cmd.account_id),
+            TradingCommand::SubmitOrder(cmd) => self
+                .cache
+                .borrow()
+                .order(&cmd.client_order_id)
+                .and_then(|order| order.account_id()),
+            TradingCommand::ModifyOrder(cmd) => self
+                .cache
+                .borrow()
+                .order(&cmd.client_order_id)
+                .and_then(|order| order.account_id()),
+            TradingCommand::CancelOrder(cmd) => self
+                .cache
+                .borrow()
+                .order(&cmd.client_order_id)
+                .and_then(|order| order.account_id()),
+            TradingCommand::SubmitOrderList(_)
+            | TradingCommand::CancelAllOrders(_)
+            | TradingCommand::BatchCancelOrders(_)
+            | TradingCommand::QueryOrder(_) => None,
+        }
+    }
+
+    const fn instrument_id_for_command(command: &TradingCommand) -> Option<InstrumentId> {
+        match command {
+            TradingCommand::SubmitOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::SubmitOrderList(cmd) => Some(cmd.instrument_id),
+            TradingCommand::ModifyOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::CancelOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::CancelAllOrders(cmd) => Some(cmd.instrument_id),
+            TradingCommand::BatchCancelOrders(cmd) => Some(cmd.instrument_id),
+            TradingCommand::QueryOrder(cmd) => Some(cmd.instrument_id),
+            TradingCommand::QueryAccount(_) => None,
         }
     }
 

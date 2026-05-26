@@ -33,7 +33,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, SubmitOrder, SubmitOrderList,
+            TradingCommand,
         },
     },
     msgbus::{
@@ -10901,6 +10902,252 @@ fn test_get_all_clients_with_registered_and_default(
     assert_eq!(clients.len(), 2);
     assert!(client_ids.contains(&registered_id));
     assert!(client_ids.contains(&default_id));
+}
+
+#[rstest]
+fn test_query_account_routes_by_account_issuer_client_id(mut execution_engine: ExecutionEngine) {
+    let client = StubExecutionClient::new(
+        ClientId::from("IBKR"),
+        AccountId::from("IBKR-PRIMARY"),
+        Venue::from("BROKER"),
+        OmsType::Netting,
+        None,
+    );
+    let queried_account_ids = client.queried_account_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    let account_id = AccountId::from("IBKR-123");
+    let query_account = QueryAccount {
+        trader_id: TraderId::test_default(),
+        client_id: None,
+        account_id,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::QueryAccount(query_account));
+
+    assert_eq!(queried_account_ids.borrow().as_slice(), &[account_id]);
+}
+
+#[rstest]
+fn test_query_account_routes_by_account_issuer_venue(mut execution_engine: ExecutionEngine) {
+    let client = StubExecutionClient::new(
+        ClientId::from("BROKER"),
+        AccountId::from("BROKER-PRIMARY"),
+        Venue::from("IBKR"),
+        OmsType::Netting,
+        None,
+    );
+    let queried_account_ids = client.queried_account_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    let account_id = AccountId::from("IBKR-123");
+    let query_account = QueryAccount {
+        trader_id: TraderId::test_default(),
+        client_id: None,
+        account_id,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::QueryAccount(query_account));
+
+    assert_eq!(queried_account_ids.borrow().as_slice(), &[account_id]);
+}
+
+#[rstest]
+fn test_query_account_falls_back_to_default_client(mut execution_engine: ExecutionEngine) {
+    let default_client = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("DEFAULT-ACCOUNT"),
+        Venue::from("DEFAULT"),
+        OmsType::Netting,
+        None,
+    );
+    let queried_account_ids = default_client.queried_account_ids();
+    execution_engine.register_default_client(Box::new(default_client));
+
+    let account_id = AccountId::from("IBKR-123");
+    let query_account = QueryAccount {
+        trader_id: TraderId::test_default(),
+        client_id: None,
+        account_id,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::QueryAccount(query_account));
+
+    assert_eq!(queried_account_ids.borrow().as_slice(), &[account_id]);
+}
+
+#[rstest]
+fn test_query_account_without_client_does_not_panic_when_unrouted(
+    execution_engine: ExecutionEngine,
+) {
+    let query_account = QueryAccount {
+        trader_id: TraderId::test_default(),
+        client_id: None,
+        account_id: AccountId::from("IBKR-123"),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::QueryAccount(query_account));
+
+    assert_eq!(execution_engine.command_count(), 1);
+}
+
+#[rstest]
+fn test_submit_order_routes_by_instrument_venue(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let client = StubExecutionClient::new(
+        ClientId::from("SIM_CLIENT"),
+        AccountId::from("SIM-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = client.submitted_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(10))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        position_id: None,
+        params: None,
+        client_id: None,
+        exec_algorithm_id: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+}
+
+#[rstest]
+fn test_submit_order_routes_by_account_issuer_before_instrument_venue(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let account_client = StubExecutionClient::new(
+        ClientId::from("ACCOUNT"),
+        AccountId::from("ACCOUNT-PRIMARY"),
+        Venue::from("ACCOUNT"),
+        OmsType::Netting,
+        None,
+    )
+    .with_handles_all_order_venues();
+    let account_submitted_order_ids = account_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(account_client))
+        .unwrap();
+
+    let venue_client = StubExecutionClient::new(
+        ClientId::from("SIM_CLIENT"),
+        AccountId::from("SIM-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let venue_submitted_order_ids = venue_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(venue_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(10))
+        .submit(true)
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        position_id: None,
+        params: None,
+        client_id: None,
+        exec_algorithm_id: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    assert_eq!(
+        account_submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+    assert!(venue_submitted_order_ids.borrow().is_empty());
 }
 
 #[rstest]
