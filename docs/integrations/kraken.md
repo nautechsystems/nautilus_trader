@@ -399,24 +399,23 @@ command through REST regardless of the configured default. Set it on
 ### WebSocket request timeout
 
 When a WebSocket round-trip exceeds `ws_request_timeout_secs` (default `5`)
-the dispatcher synthesises a local rejection event stamped with the
-timeout-fire timestamp:
+the dispatcher treats the command outcome as unknown and leaves the order in
+its current in-flight state:
 
-- Submit / batch_add: `OrderRejected` (one per leg for batches). The
-  dispatcher then sends a best-effort compensating `cancel_order` over the
-  same WebSocket so a delayed venue acceptance is not left as an orphan
-  order.
-- Modify: `OrderModifyRejected`.
-- Cancel: `OrderCancelRejected`.
+- Submit / batch_add: the dispatcher may send a best-effort compensating
+  `cancel_order` over the same WebSocket so a delayed venue acceptance is not
+  left as an orphan order.
+- Modify: the order remains in `PENDING_UPDATE`.
+- Cancel: the order remains in `PENDING_CANCEL`.
 
-The timeout does not trigger an automatic REST retry; strategies must
-resubmit if they want to try again. If the venue actually accepted the
-order and the compensating cancel does not land, the live execution
-reconciliation engine (`open_check_interval_secs`) is the recovery path.
+The timeout does not emit `OrderRejected`, `OrderModifyRejected`, or
+`OrderCancelRejected` by itself. If the venue actually accepted the command,
+WebSocket order updates or the live execution reconciliation engine
+(`open_check_interval_secs`) are the recovery path.
 
 :::tip
 Set `ws_request_timeout_secs` comfortably above your observed round-trip
-latency (the default `5` is roughly 25× typical) so the timeout only fires
+latency (the default `5` is roughly 25x typical) so the timeout only fires
 under genuine network failure.
 :::
 
@@ -424,10 +423,10 @@ under genuine network failure.
 
 The Rust `KrakenExecClientConfig` (and its pyo3 wrapper) exposes:
 
-| Option                    | Default | Description                                                      |
-|---------------------------|---------|------------------------------------------------------------------|
-| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.            |
-| `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before a synthesised rejection is emitted. |
+| Option                    | Default | Description                                                   |
+|---------------------------|---------|---------------------------------------------------------------|
+| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.         |
+| `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before marking command outcome unknown. |
 
 These are not exposed on the Python live `KrakenExecClientConfig` because
 the Python live execution client does not yet honour them.

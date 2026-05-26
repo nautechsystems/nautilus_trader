@@ -781,9 +781,10 @@ ALO (Add-Liquidity-Only) lane.
 | Batch cancel      | ✓          | ✓    | Single batched `cancelByCloid` for the provided list. |
 
 :::info
-When the venue rejects individual orders inside a batch cancel (for example
-`MissingOrder` for an already-terminal order), the adapter emits a per-order
-`OrderCancelRejected` event and leaves the other cancels intact.
+When the venue returns an authoritative per-order rejection inside a batch-cancel response (for
+example `MissingOrder` for an already-terminal order), the adapter emits a per-order
+`OrderCancelRejected` event and leaves the other cancels intact. Whole-request failures with
+unknown venue outcome do not carry this per-order evidence.
 :::
 
 :::info

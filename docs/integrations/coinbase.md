@@ -549,8 +549,9 @@ Nautilus order fields:
 
 On a successful HTTP create, an `OrderAccepted` is emitted carrying the
 venue order ID returned in `success_response.order_id`. On a `success=false`
-response or HTTP error, `OrderRejected` is emitted with the formatted
-failure reason.
+response, `OrderRejected` is emitted with the formatted venue failure reason.
+HTTP failures with unknown venue outcome leave the order in flight for WebSocket
+updates, open-order polling, or reconciliation.
 
 ### Order modification
 
@@ -566,22 +567,27 @@ auto-fills missing fields from the cached order, so strategies can call
 the `ModifyOrder` command win; otherwise the cached order's current `price`
 and `quantity` are used.
 
-Failures emit `OrderModifyRejected` with the typed `EditOrderResponse` reason
-(preferring `edit_failure_reason`, falling back to `preview_failure_reason`).
+Venue edit failures emit `OrderModifyRejected` with the typed `EditOrderResponse`
+reason (preferring `edit_failure_reason`, falling back to `preview_failure_reason`).
+HTTP failures with unknown venue outcome leave the order in `PENDING_UPDATE` until
+an update, query result, or reconciliation resolves it.
 
 ### Cancellation
 
-- `cancel_order` posts a single-id `batch_cancel`. Per-order failure surfaces
-  as `OrderCancelRejected`.
+- `cancel_order` posts a single-id `batch_cancel`. An explicit per-order venue
+  failure surfaces as `OrderCancelRejected`; a whole-request transport failure
+  with unknown venue outcome leaves the order in `PENDING_CANCEL` for
+  reconciliation.
 - `cancel_all_orders` lists open orders via REST without the `OPEN`-only
   filter (because Coinbase's `OPEN` filter excludes `PENDING` and `QUEUED`
   orders that are still cancelable), filters locally to
   `{Submitted, Accepted, Triggered, PendingUpdate, PartiallyFilled}` and
   the requested side, then chunks `batch_cancel` calls in groups of 100.
-  Per-order and transport failures emit `OrderCancelRejected` for every
-  affected order.
-- `batch_cancel_orders` chunks the same way and surfaces both per-order
-  failures and transport errors as `OrderCancelRejected`.
+  Per-order venue failures emit `OrderCancelRejected`; whole-request failures
+  with unknown venue outcome leave affected orders pending reconciliation.
+- `batch_cancel_orders` chunks the same way and surfaces explicit per-order
+  venue failures as `OrderCancelRejected`. Transport failures with unknown
+  venue outcome leave affected orders pending reconciliation.
 
 ### User WebSocket channel
 

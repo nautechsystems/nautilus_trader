@@ -32,22 +32,50 @@ An **in-flight order** is one awaiting venue acknowledgement:
 These orders are monitored by the continuous reconciliation loop to detect stale or lost messages.
 :::
 
-### Submit outcome policy
+### Order command outcome policy
 
-Live adapters must only emit `OrderRejected` when the venue gives positive evidence that it
-rejected the order. Examples include a venue order response with rejected status, a rejected
-order status report, or a venue error response that explicitly confirms the submitted order was
-rejected.
+Live adapters may emit `OrderRejected`, `OrderCancelRejected`, or `OrderModifyRejected` only when
+they have one of these signals:
 
-If the submit call fails and the venue outcome is unknown, the adapter logs the failure and leaves
-the local order in flight. WebSocket updates, open-order polling, in-flight checks, or startup
-reconciliation must resolve the final state. Unknown outcomes include transport errors, request
-timeouts, disconnects, canceled local tasks, missing acknowledgements, server errors, and
-post-submit lookup failures after an order ID was returned.
+- Local validation fails before a request can reach the venue.
+- A structured venue response explicitly rejects the command.
+- A per-order batch response explicitly rejects that order's command.
+- A venue order status or report says the order was rejected.
 
-Use `OrderDenied` for local validation before sending a request to the venue. Do not convert an
-ambiguous submit failure into `OrderRejected`, because that can make the local order terminal and
-block later fills from reaching the strategy.
+Live adapters must treat these failures as unknown outcomes, not rejections:
+
+- Transport errors.
+- WebSocket send failures.
+- Request timeouts.
+- Disconnects.
+- Canceled local tasks.
+- Missing acknowledgements.
+- Server errors.
+- Rate limits.
+- Retry exhaustion.
+- Parse failures after a request may have reached the venue.
+- Whole-batch request failures without per-order venue results.
+
+When the outcome is unknown:
+
+- Log the failure.
+- Leave the order in its current in-flight state.
+- Keep submit orders `SUBMITTED`.
+- Keep modify commands `PENDING_UPDATE`.
+- Keep cancel commands `PENDING_CANCEL`.
+- Let WebSocket updates, open-order polling, in-flight checks, or startup reconciliation resolve
+  the final state.
+
+The `LiveExecutionEngine` in-flight check owns terminal resolution for a never-acknowledged
+submit. After it queries the venue and the order stays unconfirmed beyond
+`inflight_check_retries`, the engine, not the adapter, resolves it to `REJECTED`. See the
+Runtime checks table below.
+
+Use `OrderDenied` for validation that fails before a submit request enters the live execution path.
+Adapters that validate after `OrderSubmitted` may emit `OrderRejected` only when they can prove no
+venue request was sent. Do not convert ambiguous command failures into rejection events, because
+that can make local state terminal or roll it back while the venue order is still live and may
+fill, cancel, or be modified at the venue.
 
 Two scenarios:
 
