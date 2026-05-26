@@ -15,8 +15,8 @@
 
 //! End-to-end load test that builds the example cdylib and `dlopen`s it.
 //!
-//! Marked `#[ignore]` so `cargo test` stays fast; run explicitly with
-//! `cargo test -p nautilus-plugin --features host --test load_example_cdylib -- --ignored`.
+//! Marked `#[ignore]` so plain `cargo test` stays fast. The required Linux cdylib smoke check
+//! runs it through `make cargo-test-plugin-cdylib-smoke`.
 
 #![cfg(feature = "host")]
 #![allow(unsafe_code)]
@@ -32,6 +32,8 @@ use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION, loader::PluginLoader,
     manifest::compiled_precision_mode,
 };
+
+const PLUGIN_TEST_PROFILE: &str = "nextest";
 
 fn cdylib_extension() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -59,6 +61,8 @@ fn build_example_cdylib() -> PathBuf {
         "nautilus-plugin",
         "--example",
         "custom_data_plugin",
+        "--profile",
+        PLUGIN_TEST_PROFILE,
     ]);
 
     if FIXED_PRECISION > 9 {
@@ -72,11 +76,7 @@ fn build_example_cdylib() -> PathBuf {
     path.pop(); // crates/
     path.pop(); // workspace root
     path = cargo_target_dir(&path);
-    path.push(if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    });
+    path.push(PLUGIN_TEST_PROFILE);
     path.push("examples");
     path.push(format!(
         "{}custom_data_plugin.{}",

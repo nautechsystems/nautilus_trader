@@ -672,6 +672,14 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
 	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 
+PLUGIN_CDYLIB_SMOKE_LIVE_FILTER := \
+    test(=loader_loads_example_cdylib) \
+    | test(=custom_data_registration_round_trips_via_registry) \
+    | test(=live_node_loads_configured_plugin_actor_strategy_and_custom_data) \
+    | test(=live_node_start_invokes_configured_plugin_actor) \
+    | (test(~cdylib_actor_) & test(~normalizes_identifiers_for_plugin)) \
+    | (test(~cdylib_strategy_) & test(~normalizes_identifiers))
+
 .PHONY: cargo-test-plugin-cdylib-smoke
 cargo-test-plugin-cdylib-smoke: export RUST_BACKTRACE=1
 cargo-test-plugin-cdylib-smoke: check-nextest-installed
@@ -680,15 +688,29 @@ cargo-test-plugin-cdylib-smoke:  #-- Run Linux plug-in cdylib smoke tests
 		echo "cargo-test-plugin-cdylib-smoke requires Linux"; \
 		exit 1; \
 	fi
+	$(info $(M) Running nautilus-plugin loader cdylib smoke test...)
+	cargo nextest run \
+		-p nautilus-plugin \
+		--features host \
+		--test load_example_cdylib \
+		--run-ignored only \
+		-E 'test(=loads_example_cdylib_and_walks_manifest)' \
+		$(FAIL_FAST_FLAG) \
+		--profile $(NEXTEST_PROFILE) \
+		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
+		--status-level fail \
+		--final-status-level flaky
 	$(info $(M) Running nautilus-live plug-in cdylib smoke tests...)
 	cargo nextest run \
 		-p nautilus-live \
 		--features plugin \
 		--test plugin \
-		-E 'test(=loader_loads_example_cdylib) | test(=live_node_loads_configured_plugin_actor_strategy_and_custom_data)' \
+		-E '$(PLUGIN_CDYLIB_SMOKE_LIVE_FILTER)' \
 		$(FAIL_FAST_FLAG) \
 		--profile $(NEXTEST_PROFILE) \
 		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
 		--status-level fail \
 		--final-status-level flaky
 
