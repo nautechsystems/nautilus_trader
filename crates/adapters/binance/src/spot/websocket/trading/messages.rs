@@ -141,6 +141,13 @@ pub enum BinanceSpotWsTradingMessage {
         /// Error message from venue.
         msg: String,
     },
+    /// Request failed without a structured venue response.
+    RequestFailed {
+        /// Request ID for correlation.
+        request_id: String,
+        /// Failure reason.
+        msg: String,
+    },
     /// All orders canceled for a symbol.
     AllOrdersCanceled {
         /// Request ID for correlation.
