@@ -44,6 +44,18 @@ pub(crate) fn remote_store_root_url(uri: &str) -> anyhow::Result<Url> {
     Ok(url)
 }
 
+pub(crate) fn datafusion_store_root_url(uri: &str) -> anyhow::Result<Url> {
+    let url = Url::parse(uri)?;
+
+    match url.scheme() {
+        // DataFusion's object store registry resolves S3 paths through the
+        // scheme-level store URL. The concrete bucket remains configured on
+        // the AmazonS3 object store itself.
+        "s3" => Ok(Url::parse("s3://")?),
+        _ => remote_store_root_url(uri),
+    }
+}
+
 pub(crate) fn remote_full_uri(uri: &str, object_path: &str) -> anyhow::Result<String> {
     let root = remote_store_root_url(uri)?;
     let root = root.as_str().trim_end_matches('/');
@@ -1089,6 +1101,19 @@ mod tests {
                 .expect("S3 should be remote")
                 .as_str()
                 .trim_end_matches('/'),
+            "s3://test-bucket"
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    fn test_datafusion_store_root_url_uses_generic_s3_scheme() {
+        let root = datafusion_store_root_url("s3://test-bucket/path/to/catalog").unwrap();
+        assert_eq!(root.as_str(), "s3://");
+
+        let catalog_root = remote_store_root_url("s3://test-bucket/path/to/catalog").unwrap();
+        assert_eq!(
+            catalog_root.as_str().trim_end_matches('/'),
             "s3://test-bucket"
         );
     }

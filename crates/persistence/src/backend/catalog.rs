@@ -119,8 +119,8 @@ use super::{
     session::{self, DataBackendSession, QueryResult, build_query},
 };
 use crate::parquet::{
-    is_remote_uri_scheme, read_parquet_from_object_store, remote_full_uri, remote_store_root_url,
-    write_batches_to_object_store,
+    datafusion_store_root_url, is_remote_uri_scheme, read_parquet_from_object_store,
+    remote_full_uri, remote_store_root_url, write_batches_to_object_store,
 };
 
 /// A high-performance data catalog for storing and retrieving financial market data using Apache Parquet format.
@@ -2828,7 +2828,7 @@ impl ParquetDataCatalog {
 
     fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
         if self.is_remote_uri() {
-            let base_url = remote_store_root_url(&self.original_uri)?;
+            let base_url = datafusion_store_root_url(&self.original_uri)?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
         }

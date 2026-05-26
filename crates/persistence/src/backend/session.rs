@@ -109,7 +109,8 @@ impl DataBackendSession {
         let location =
             crate::parquet::create_object_store_location_from_path(uri, storage_options)?;
 
-        if let Some(root_url) = location.store_root_url().cloned() {
+        if location.store_root_url().is_some() {
+            let root_url = crate::parquet::datafusion_store_root_url(uri)?;
             self.register_object_store(&root_url, location.object_store);
         }
 
