@@ -245,7 +245,6 @@ def _create_ws_mock() -> MagicMock:
     mock.unsubscribe_all_mids = AsyncMock()
     mock.unsubscribe_all_mids_with_dex = AsyncMock()
     mock.cache_all_dex_asset_ctxs_instrument_ids = MagicMock()
-    mock.cache_instrument = MagicMock()
     mock.cache_instruments = MagicMock()
     mock.subscribe_order_updates = AsyncMock()
     mock.subscribe_user_events = AsyncMock()

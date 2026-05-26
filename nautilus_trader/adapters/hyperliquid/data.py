@@ -429,7 +429,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         for inst in pyo3_instruments:
             self._http_client.cache_instrument(inst)
-            self._ws_client.cache_instrument(inst)
 
         for instrument in instruments_from_pyo3(pyo3_instruments):
             if self._cache.instrument(instrument.id) is None:
