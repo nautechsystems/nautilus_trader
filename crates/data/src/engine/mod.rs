@@ -154,7 +154,7 @@ pub struct DataEngine {
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
-    book_deltas_subs: AHashSet<InstrumentId>,
+    book_deltas_counts: IndexMap<BookDeltasKey, usize>,
     book_depth10_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
     book_deltas_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
@@ -203,6 +203,14 @@ pub struct DataEngine {
     pub(crate) pool_event_buffers: AHashMap<InstrumentId, Vec<DefiData>>,
 }
 
+enum BookDeltasUnsubscribeResult {
+    NotSubscribed,
+    Decremented,
+    Removed,
+}
+
+type BookDeltasKey = (InstrumentId, Option<ClientId>, Option<Venue>);
+
 impl DataEngine {
     /// Creates a new [`DataEngine`] instance.
     #[must_use]
@@ -229,7 +237,7 @@ impl DataEngine {
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
-            book_deltas_subs: AHashSet::new(),
+            book_deltas_counts: IndexMap::new(),
             book_depth10_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
             book_deltas_parent_expansions: AHashMap::new(),
@@ -600,7 +608,7 @@ impl DataEngine {
         self.book_deltas_parent_expansions.clear();
         self.book_depth10_parent_expansions.clear();
 
-        self.book_deltas_subs.clear();
+        self.book_deltas_counts.clear();
         self.book_depth10_subs.clear();
         self.book_intervals.clear();
         self.book_snapshot_counts.clear();
@@ -945,7 +953,9 @@ impl DataEngine {
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         // Update internal engine state
         match &cmd {
-            SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
+            SubscribeCommand::BookDeltas(cmd) if !self.subscribe_book_deltas(cmd)? => {
+                return Ok(());
+            }
             SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
             SubscribeCommand::BookSnapshots(cmd) => {
                 // Handles client forwarding internally (forwards as BookDeltas)
@@ -2809,7 +2819,7 @@ impl DataEngine {
         log::info!("Proactively torn down expired option chain {series_id}");
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<bool> {
         if cmd.instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
@@ -2818,12 +2828,15 @@ impl DataEngine {
         // failure leaves the engine bookkeeping unchanged.
         let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
 
-        self.book_deltas_subs.insert(cmd.instrument_id);
+        let had_deltas =
+            self.has_book_delta_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
+        self.increment_book_delta_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
+
         if cmd.managed {
             self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, parent)?;
         }
 
-        Ok(())
+        Ok(!had_deltas)
     }
 
     fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
@@ -2859,7 +2872,7 @@ impl DataEngine {
             self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
         }
 
-        if had_snapshots || self.book_deltas_subs.contains(&cmd.instrument_id) {
+        if had_snapshots || self.has_book_delta_subscriptions(&cmd.instrument_id) {
             return Ok(());
         }
 
@@ -3147,17 +3160,21 @@ impl DataEngine {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> bool {
-        if !self.book_deltas_subs.contains(&cmd.instrument_id) {
-            log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
-            return false;
+        match self.decrement_book_delta_subscription(cmd.instrument_id, cmd.client_id, cmd.venue) {
+            BookDeltasUnsubscribeResult::NotSubscribed => {
+                log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
+                return false;
+            }
+            BookDeltasUnsubscribeResult::Decremented => return false,
+            BookDeltasUnsubscribeResult::Removed => {}
         }
 
-        self.book_deltas_subs.remove(&cmd.instrument_id);
         self.maintain_book_updater(&cmd.instrument_id);
 
         // Snapshot subscriptions reuse the deltas feed.
         // Keep the client subscribed until the last snapshot consumer is gone.
-        !self.has_book_snapshot_subscriptions(&cmd.instrument_id)
+        !self.has_book_delta_subscriptions(&cmd.instrument_id)
+            && !self.has_book_snapshot_subscriptions(&cmd.instrument_id)
     }
 
     fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> bool {
@@ -3188,7 +3205,7 @@ impl DataEngine {
 
         self.maintain_book_updater(&cmd.instrument_id);
 
-        if self.book_deltas_subs.contains(&cmd.instrument_id) {
+        if self.has_book_delta_subscriptions(&cmd.instrument_id) {
             return;
         }
 
@@ -3488,7 +3505,7 @@ impl DataEngine {
             // memo via setup_book_updater. Keep each memo alive while any
             // sibling subscription that drives the same handler kind remains
             // active for this parent id.
-            let parent_still_needs_deltas = self.book_deltas_subs.contains(instrument_id)
+            let parent_still_needs_deltas = self.has_book_delta_subscriptions(instrument_id)
                 || self.book_depth10_subs.contains(instrument_id)
                 || self.has_book_snapshot_subscriptions(instrument_id);
             let parent_still_needs_depth10 = self.book_depth10_subs.contains(instrument_id)
@@ -3535,6 +3552,58 @@ impl DataEngine {
         self.book_snapshot_counts
             .keys()
             .any(|(id, _)| id == instrument_id)
+    }
+
+    fn has_book_delta_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_deltas_counts
+            .keys()
+            .any(|(id, _, _)| id == instrument_id)
+    }
+
+    fn has_book_delta_subscription_key(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) -> bool {
+        self.book_deltas_counts
+            .contains_key(&(instrument_id, client_id, venue))
+    }
+
+    fn increment_book_delta_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) {
+        let key = (instrument_id, client_id, venue);
+
+        if let Some(count) = self.book_deltas_counts.get_mut(&key) {
+            *count += 1;
+        } else {
+            self.book_deltas_counts.insert(key, 1);
+        }
+    }
+
+    fn decrement_book_delta_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) -> BookDeltasUnsubscribeResult {
+        let key = (instrument_id, client_id, venue);
+
+        let Some(count) = self.book_deltas_counts.get_mut(&key) else {
+            return BookDeltasUnsubscribeResult::NotSubscribed;
+        };
+
+        if *count > 1 {
+            *count -= 1;
+            return BookDeltasUnsubscribeResult::Decremented;
+        }
+
+        self.book_deltas_counts.shift_remove(&key);
+        BookDeltasUnsubscribeResult::Removed
     }
 
     fn increment_book_snapshot_subscription(
@@ -3913,7 +3982,7 @@ impl DataEngine {
         // Any of {deltas, depth10, snapshots} subs causes setup_book_updater to
         // subscribe the deltas handler (depth10/snapshots use only_deltas=false),
         // so all three keep the per-underlying deltas handler alive.
-        if self.book_deltas_subs.contains(target_id)
+        if self.has_book_delta_subscriptions(target_id)
             || self.book_depth10_subs.contains(target_id)
             || self.has_book_snapshot_subscriptions(target_id)
         {

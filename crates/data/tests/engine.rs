@@ -5021,7 +5021,7 @@ fn test_parent_subscribe_with_unparsable_id_returns_error(
     }
     assert!(
         !data_engine.subscribed_book_deltas().contains(&runner),
-        "rejected parent subscribe must NOT leave the id in book_deltas_subs",
+        "rejected parent subscribe must NOT leave the id in book delta state",
     );
 
     // Retrying without the parent flag on the same id must succeed; the
@@ -12018,6 +12018,12 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
             deltas_cmd,
         )));
 
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "snapshot and direct book-delta subscribers must share one physical deltas feed",
+    );
+
     let unsubscribe_cmd = UnsubscribeBookDeltas::new(
         audusd_sim.id,
         Some(client_id),
@@ -12043,6 +12049,257 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
 
     assert_eq!(saver.get_messages().len(), 1);
     assert_eq!(saver.get_messages()[0].instrument_id, audusd_sim.id);
+}
+
+#[rstest]
+fn test_duplicate_book_deltas_unsubscribe_keeps_remaining_subscription_active(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "duplicate logical book-delta subscribers must share one physical deltas feed",
+    );
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one logical book-delta owner must keep the physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one logical subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the physical deltas feed should unsubscribe after the last logical owner leaves",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after the last unsubscribe must not reach the torn-down updater",
+    );
+}
+
+#[rstest]
+fn test_distinct_book_deltas_keys_share_physical_subscription(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+    execute_book_delta_subscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "distinct logical book-delta keys routed to one client must share the physical feed",
+    );
+
+    execute_book_delta_unsubscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one routed book-delta key must keep the shared physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one routed subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the shared physical feed should unsubscribe after all routed keys leave",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after all routed keys leave must not reach the torn-down updater",
+    );
+}
+
+fn book_deltas_subscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn book_deltas_unsubscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn execute_book_delta_subscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_subscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_subscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let subscribe = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+            subscribe,
+        )));
+}
+
+fn execute_book_delta_unsubscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_unsubscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_unsubscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let unsubscribe = UnsubscribeBookDeltas::new(
+        instrument_id,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+            unsubscribe,
+        )));
 }
 
 fn execute_book_snapshot_subscribe(
