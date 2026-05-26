@@ -2290,8 +2290,9 @@ impl ExecutionEngine {
                         return;
                     };
 
-                    self.handle_order_fill(&order, fill, oms_type);
+                    let position_events = self.handle_order_fill(&order, fill, oms_type);
                     self.publish_order_event(&event);
+                    self.publish_position_events(position_events);
                 }
             }
             _ => {
@@ -2661,6 +2662,19 @@ impl ExecutionEngine {
         }
     }
 
+    fn publish_position_events(&self, events: Vec<PositionEvent>) {
+        for event in events {
+            let strategy_id = match &event {
+                PositionEvent::PositionOpened(event) => event.strategy_id,
+                PositionEvent::PositionChanged(event) => event.strategy_id,
+                PositionEvent::PositionClosed(event) => event.strategy_id,
+                PositionEvent::PositionAdjusted(event) => event.strategy_id,
+            };
+            let topic = switchboard::get_event_positions_topic(strategy_id);
+            msgbus::publish_position_event(topic, &event);
+        }
+    }
+
     fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
         let potential_overfill = order.calculate_overfill(fill.last_qty);
 
@@ -2691,7 +2705,12 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    fn handle_order_fill(&mut self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
+    fn handle_order_fill(
+        &mut self,
+        order: &OrderAny,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) -> Vec<PositionEvent> {
         let instrument =
             if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
                 instrument.clone()
@@ -2700,7 +2719,7 @@ impl ExecutionEngine {
                     "Cannot handle order fill: no instrument found for {}, {fill}",
                     fill.instrument_id,
                 );
-                return;
+                return Vec::new();
             };
 
         let is_margin_account = {
@@ -2710,7 +2729,7 @@ impl ExecutionEngine {
                     "Cannot handle order fill: no account found for {}, {fill}",
                     fill.instrument_id.venue,
                 );
-                return;
+                return Vec::new();
             };
 
             account.is_margin_account()
@@ -2723,12 +2742,15 @@ impl ExecutionEngine {
             msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(fill));
         }
 
-        let position = if instrument.is_spread() {
-            None
+        let (position, position_events) = if instrument.is_spread() {
+            (None, Vec::new())
         } else {
-            self.handle_position_update(&instrument, fill, oms_type);
+            let position_events = self.handle_position_update(&instrument, fill, oms_type);
             let position_id = fill.position_id.unwrap();
-            self.cache.borrow().position_owned(&position_id)
+            (
+                self.cache.borrow().position_owned(&position_id),
+                position_events,
+            )
         };
 
         // Handle contingent orders for both spread and non-spread instruments
@@ -2779,6 +2801,8 @@ impl ExecutionEngine {
         let event = OrderEventAny::Filled(fill);
         let fills_topic = switchboard::get_order_fills_topic(fill.instrument_id);
         msgbus::publish_order_event(fills_topic, &event);
+
+        position_events
     }
 
     /// Handle position creation or update for a fill.
@@ -2789,12 +2813,12 @@ impl ExecutionEngine {
         instrument: &InstrumentAny,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) {
+    ) -> Vec<PositionEvent> {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
             log::error!("Cannot handle position update: no position ID found for fill {fill}");
-            return;
+            return Vec::new();
         };
 
         let position_opt = self.cache.borrow().position_owned(&position_id);
@@ -2802,34 +2826,25 @@ impl ExecutionEngine {
         match position_opt {
             None => {
                 if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
-                    return;
+                    return Vec::new();
                 }
 
-                // Position is None - open new position
-                if self.open_position(instrument, None, fill, oms_type).is_ok() {
-                    // Position opened successfully
-                }
+                self.open_position(instrument, None, fill, oms_type)
+                    .unwrap_or_default()
             }
             Some(pos) if pos.is_closed() => {
                 if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
-                    return;
+                    return Vec::new();
                 }
 
-                // Position is closed - open new position
-                if self
-                    .open_position(instrument, Some(&pos), fill, oms_type)
-                    .is_ok()
-                {
-                    // Position opened successfully
-                }
+                self.open_position(instrument, Some(&pos), fill, oms_type)
+                    .unwrap_or_default()
             }
             Some(mut pos) => {
                 if self.will_flip_position(&pos, fill) {
-                    // Position will flip
-                    self.flip_position(instrument, &mut pos, fill, oms_type);
+                    self.flip_position(instrument, &mut pos, fill, oms_type)
                 } else {
-                    // Update existing position
-                    self.update_position(&mut pos, fill);
+                    self.update_position(&mut pos, fill).into_iter().collect()
                 }
             }
         }
@@ -2890,7 +2905,7 @@ impl ExecutionEngine {
         position: Option<&Position>,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<PositionEvent>> {
         if let Some(position) = position {
             if Self::is_duplicate_closed_fill(position, &fill) {
                 log::warn!(
@@ -2901,7 +2916,7 @@ impl ExecutionEngine {
                     fill.last_qty,
                     fill.last_px
                 );
-                return Ok(());
+                return Ok(Vec::new());
             }
             self.reopen_position(position, oms_type)?;
         }
@@ -2915,10 +2930,8 @@ impl ExecutionEngine {
 
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
-        let topic = switchboard::get_event_positions_topic(event.strategy_id);
-        msgbus::publish_position_event(topic, &PositionEvent::PositionOpened(event));
 
-        Ok(())
+        Ok(vec![PositionEvent::PositionOpened(event)])
     }
 
     fn is_duplicate_closed_fill(position: &Position, fill: &OrderFilled) -> bool {
@@ -2961,7 +2974,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn update_position(&self, position: &mut Position, fill: OrderFilled) {
+    fn update_position(&self, position: &mut Position, fill: OrderFilled) -> Option<PositionEvent> {
         // Apply the fill to the position
         position.apply(&fill);
 
@@ -2971,7 +2984,7 @@ impl ExecutionEngine {
         // Update position in cache - this should handle the closed state tracking
         if let Err(e) = self.cache.borrow_mut().update_position(position) {
             log::error!("Failed to update position: {e:?}");
-            return;
+            return None;
         }
 
         // Verify cache state after update
@@ -2984,16 +2997,14 @@ impl ExecutionEngine {
             self.create_position_state_snapshot(position);
         }
 
-        // Create and publish appropriate position event
-        let topic = switchboard::get_event_positions_topic(position.strategy_id);
         let ts_init = self.clock.borrow().timestamp_ns();
 
         if is_closed {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish_position_event(topic, &PositionEvent::PositionClosed(event));
+            Some(PositionEvent::PositionClosed(event))
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish_position_event(topic, &PositionEvent::PositionChanged(event));
+            Some(PositionEvent::PositionChanged(event))
         }
     }
 
@@ -3030,7 +3041,8 @@ impl ExecutionEngine {
         position: &mut Position,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) {
+    ) -> Vec<PositionEvent> {
+        let mut position_events = Vec::new();
         let difference = match position.side {
             PositionSide::Long => Quantity::from_raw(
                 fill.last_qty.raw - position.quantity.raw,
@@ -3080,7 +3092,9 @@ impl ExecutionEngine {
                 commission1,
             ));
 
-            self.update_position(position, fill_split1.unwrap());
+            if let Some(position_event) = self.update_position(position, fill_split1.unwrap()) {
+                position_events.push(position_event);
+            }
 
             // Snapshot closed position before reusing ID (NETTING mode)
             if oms_type == OmsType::Netting {
@@ -3096,7 +3110,7 @@ impl ExecutionEngine {
             log::warn!(
                 "Zero fill size during position flip calculation, this could be caused by a mismatch between instrument `size_precision` and a quantity `size_precision`"
             );
-            return;
+            return position_events;
         }
 
         let position_id_flip = if oms_type == OmsType::Hedging
@@ -3141,9 +3155,12 @@ impl ExecutionEngine {
         }
 
         // Open flipped position
-        if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
-            log::error!("Failed to open flipped position: {e:?}");
+        match self.open_position(instrument, None, fill_split2, oms_type) {
+            Ok(opened_events) => position_events.extend(opened_events),
+            Err(e) => log::error!("Failed to open flipped position: {e:?}"),
         }
+
+        position_events
     }
 
     /// Sets the internal position ID generator counts based on existing cached positions.

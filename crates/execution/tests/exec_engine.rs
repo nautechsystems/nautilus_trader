@@ -55,7 +55,7 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderPendingUpdate,
-        OrderRejected, OrderUpdated,
+        OrderRejected, OrderUpdated, PositionEvent,
         order::spec::{
             OrderCanceledSpec, OrderExpiredSpec, OrderFilledSpec, OrderPendingUpdateSpec,
             OrderRejectedSpec, OrderUpdatedSpec,
@@ -1284,11 +1284,17 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
 }
 
 #[rstest]
-fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: ExecutionEngine) {
+fn test_process_filled_order_publishes_fill_order_position_topics_in_order(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
     let (instrument, order) = prepare_accepted_order(&mut execution_engine);
     let fills_topic = switchboard::get_order_fills_topic(instrument.id());
     let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let position_topic = switchboard::get_event_positions_topic(order.strategy_id());
     let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_positions = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
     let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
     let fills_handler = TypedHandler::from({
         let received = received.clone();
@@ -1304,8 +1310,17 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
             topics.borrow_mut().push("orders");
         }
     });
+    let position_handler = TypedHandler::from({
+        let received_positions = received_positions.clone();
+        let topics = topics.clone();
+        move |event: &PositionEvent| {
+            topics.borrow_mut().push("positions");
+            received_positions.borrow_mut().push(event.clone());
+        }
+    });
     msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
     msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
 
     let event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
@@ -1328,13 +1343,107 @@ fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: E
     execution_engine.process(&event);
     msgbus::unsubscribe_order_events(fills_topic.into(), &fills_handler);
     msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
 
     let received = received.borrow();
+    let received_positions = received_positions.borrow();
     assert_eq!(received.len(), 1);
     assert!(matches!(received[0], OrderEventAny::Filled(_)));
     assert_eq!(received[0].client_order_id(), order.client_order_id());
     assert_eq!(received[0].instrument_id(), instrument.id());
-    assert_eq!(topics.borrow().as_slice(), ["fills", "orders"]);
+    assert_eq!(received_positions.len(), 1);
+    assert!(matches!(
+        received_positions[0],
+        PositionEvent::PositionOpened(_)
+    ));
+    assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
+}
+
+#[rstest]
+fn test_process_same_side_fill_publishes_position_changed_after_order_topic(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let opening_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-001"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(50_000),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("1 USD")),
+    ));
+    execution_engine.process(&opening_fill);
+
+    let fills_topic = switchboard::get_order_fills_topic(instrument.id());
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let position_topic = switchboard::get_event_positions_topic(order.strategy_id());
+    let received_positions = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+    let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+    let fills_handler = TypedHandler::from({
+        let topics = topics.clone();
+        move |_event: &OrderEventAny| {
+            topics.borrow_mut().push("fills");
+        }
+    });
+    let order_handler = TypedHandler::from({
+        let topics = topics.clone();
+        move |_event: &OrderEventAny| {
+            topics.borrow_mut().push("orders");
+        }
+    });
+    let position_handler = TypedHandler::from({
+        let received_positions = received_positions.clone();
+        let topics = topics.clone();
+        move |event: &PositionEvent| {
+            topics.borrow_mut().push("positions");
+            received_positions.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
+
+    let event = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-002"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(25_000),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("1 USD")),
+    ));
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(fills_topic.into(), &fills_handler);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
+
+    let received_positions = received_positions.borrow();
+    assert_eq!(received_positions.len(), 1);
+    assert!(matches!(
+        received_positions[0],
+        PositionEvent::PositionChanged(_)
+    ));
+    assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
