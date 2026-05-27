@@ -14,22 +14,19 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     fs::{File, create_dir_all},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::PathBuf,
-    sync::OnceLock,
 };
 
 use chrono::{NaiveDate, Utc};
 use log::LevelFilter;
 use nautilus_core::consts::NAUTILUS_PREFIX;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::logging::logger::LogLine;
-
-static ANSI_RE: OnceLock<Regex> = OnceLock::new();
 
 pub trait LogWriter {
     /// Writes a log line.
@@ -413,7 +410,7 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
 
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
-        let line = strip_ansi_codes(line);
+        let line = sanitize_file_line(line);
         let line_size = line.len() as u64;
 
         // Rotate file if needed (size-based or date-based depending on configuration)
@@ -449,17 +446,110 @@ impl LogWriter for FileWriter {
     }
 }
 
-fn strip_nonprinting_except_newline(s: &str) -> String {
+fn contains_ansi_escape(s: &str) -> bool {
+    s.as_bytes().contains(&b'\x1b')
+}
+
+fn contains_nonprinting_except_newline(s: &str) -> bool {
+    if s.is_ascii() {
+        return s.bytes().any(|b| b != b'\n' && (b < b' ' || b == b'\x7f'));
+    }
+
+    s.chars()
+        .any(|c| c != '\n' && (c.is_control() || c == '\u{7F}'))
+}
+
+fn strip_nonprinting_except_newline(s: &str) -> Cow<'_, str> {
+    if !contains_nonprinting_except_newline(s) {
+        return Cow::Borrowed(s);
+    }
+
+    Cow::Owned(strip_nonprinting_to_string(s))
+}
+
+fn strip_nonprinting_to_string(s: &str) -> String {
     s.chars()
         .filter(|&c| c == '\n' || (!c.is_control() && c != '\u{7F}'))
         .collect()
 }
 
-fn strip_ansi_codes(s: &str) -> String {
-    let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1B\[[0-9;?=]*[A-Za-z]|\x1B\].*?\x07").unwrap());
-    // Strip ANSI codes first (while \x1B is still present), then remove other control chars
-    let no_ansi = re.replace_all(s, "");
-    strip_nonprinting_except_newline(&no_ansi)
+fn sanitize_file_line(s: &str) -> Cow<'_, str> {
+    if !contains_ansi_escape(s) {
+        return strip_nonprinting_except_newline(s);
+    }
+
+    Cow::Owned(strip_ansi_and_nonprinting_to_string(s))
+}
+
+fn strip_ansi_and_nonprinting_to_string(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\x1b' {
+            if let Some(end) = ansi_escape_end(bytes, i) {
+                i = end;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+
+        if bytes[i].is_ascii() {
+            if bytes[i] == b'\n' || (bytes[i] >= b' ' && bytes[i] != b'\x7f') {
+                out.push(bytes[i] as char);
+            }
+            i += 1;
+            continue;
+        }
+
+        let ch = s[i..]
+            .chars()
+            .next()
+            .expect("valid UTF-8 char boundary expected");
+
+        if ch == '\n' || (!ch.is_control() && ch != '\u{7F}') {
+            out.push(ch);
+        }
+        i += ch.len_utf8();
+    }
+
+    out
+}
+
+fn ansi_escape_end(bytes: &[u8], start: usize) -> Option<usize> {
+    match bytes.get(start + 1).copied() {
+        Some(b'[') => csi_escape_end(bytes, start + 2),
+        Some(b']') => osc_escape_end(bytes, start + 2),
+        _ => None,
+    }
+}
+
+fn csi_escape_end(bytes: &[u8], mut i: usize) -> Option<usize> {
+    while let Some(byte) = bytes.get(i).copied() {
+        if byte.is_ascii_alphabetic() {
+            return Some(i + 1);
+        }
+
+        if !matches!(byte, b'0'..=b'9' | b';' | b'?' | b'=') {
+            return None;
+        }
+        i += 1;
+    }
+
+    None
+}
+
+fn osc_escape_end(bytes: &[u8], mut i: usize) -> Option<usize> {
+    while let Some(byte) = bytes.get(i).copied() {
+        if byte == b'\x07' {
+            return Some(i + 1);
+        }
+        i += 1;
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -523,9 +613,18 @@ mod tests {
     #[case("Before\x1B[0mAfter", "BeforeAfter")]
     #[case("\x1B]0;Title\x07Content", "Content")]
     #[case("Text\t\x1B[31mRed\x1B[0m", "TextRed")]
-    fn test_strip_ansi_codes(#[case] input: &str, #[case] expected: &str) {
-        let result = strip_ansi_codes(input);
+    #[case("Broken\x1B[31", "Broken[31")]
+    #[case("Broken\x1B]Title", "Broken]Title")]
+    fn test_sanitize_file_line(#[case] input: &str, #[case] expected: &str) {
+        let result = sanitize_file_line(input);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_sanitize_file_line_borrows_clean_input() {
+        let result = sanitize_file_line("Plain text\n");
+
+        assert!(matches!(result, Cow::Borrowed(_)));
     }
 
     #[rstest]
