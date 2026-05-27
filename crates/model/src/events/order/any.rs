@@ -145,6 +145,30 @@ impl OrderEventAny {
     }
 
     #[must_use]
+    pub fn with_client_order_id(mut self, client_order_id: ClientOrderId) -> Self {
+        match &mut self {
+            Self::Initialized(event) => event.client_order_id = client_order_id,
+            Self::Denied(event) => event.client_order_id = client_order_id,
+            Self::Emulated(event) => event.client_order_id = client_order_id,
+            Self::Released(event) => event.client_order_id = client_order_id,
+            Self::Submitted(event) => event.client_order_id = client_order_id,
+            Self::Accepted(event) => event.client_order_id = client_order_id,
+            Self::Rejected(event) => event.client_order_id = client_order_id,
+            Self::Canceled(event) => event.client_order_id = client_order_id,
+            Self::Expired(event) => event.client_order_id = client_order_id,
+            Self::Triggered(event) => event.client_order_id = client_order_id,
+            Self::PendingUpdate(event) => event.client_order_id = client_order_id,
+            Self::PendingCancel(event) => event.client_order_id = client_order_id,
+            Self::ModifyRejected(event) => event.client_order_id = client_order_id,
+            Self::CancelRejected(event) => event.client_order_id = client_order_id,
+            Self::Updated(event) => event.client_order_id = client_order_id,
+            Self::Filled(event) => event.client_order_id = client_order_id,
+        }
+
+        self
+    }
+
+    #[must_use]
     pub fn venue_order_id(&self) -> Option<VenueOrderId> {
         match self {
             Self::Initialized(event) => event.venue_order_id(),

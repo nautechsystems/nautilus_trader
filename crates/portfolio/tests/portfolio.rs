@@ -43,7 +43,9 @@ use nautilus_model::{
     },
     instruments::{
         CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
-        stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
+        stubs::{
+            audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex, futures_spread_es,
+        },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
     position::Position,
@@ -1046,6 +1048,101 @@ fn test_update_order_filled_restores_account_before_unrealized_pnl(
         portfolio.unrealized_pnl(&instrument_id),
         Some(Money::new(0.0, Currency::USDT()))
     );
+}
+
+#[rstest]
+fn test_update_order_filled_without_cached_order_updates_account(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_btcusdt: InstrumentAny,
+) {
+    let account_id = AccountId::new("BINANCE-01234");
+    let account_state = get_margin_account(Some("BINANCE-01234"));
+    let instrument_id = instrument_btcusdt.id();
+
+    let mut account = AccountAny::from(account_state);
+    account.set_calculate_account_state(true);
+
+    simple_cache.add_instrument(instrument_btcusdt).unwrap();
+    simple_cache.add_account(account).unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+    let filled = build_order_filled(
+        TraderId::test_default(),
+        StrategyId::test_default(),
+        instrument_id,
+        ClientOrderId::new("LEG-1"),
+        VenueOrderId::new("V-LEG-1"),
+        account_id,
+        TradeId::new("T-LEG-1"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from("1.000"),
+        Price::new(25_000.0, 1),
+        Currency::USDT(),
+        LiquiditySide::Taker,
+        Some(PositionId::new("P-001")),
+        Some(Money::new(0.0, Currency::USDT())),
+    );
+
+    portfolio.update_order(&OrderEventAny::Filled(filled));
+
+    assert!(cache.borrow().account(&account_id).is_some());
+    assert_eq!(
+        portfolio.unrealized_pnl(&instrument_id),
+        Some(Money::new(0.0, Currency::USDT()))
+    );
+}
+
+#[rstest]
+fn test_update_order_filled_spread_instrument_skips_balance_update(
+    mut simple_cache: Cache,
+    clock: TestClock,
+) {
+    let account_id = AccountId::new("BINANCE-01234");
+    let account_state = get_margin_account(Some("BINANCE-01234"));
+    let instrument = InstrumentAny::FuturesSpread(futures_spread_es());
+
+    let mut account = AccountAny::from(account_state);
+    account.set_calculate_account_state(true);
+    let starting_usd = account.balance_total(Some(Currency::USD())).unwrap();
+
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    simple_cache.add_account(account).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build();
+    simple_cache
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(cache, Rc::new(RefCell::new(clock)), None);
+    let filled = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::new("V-SPREAD-1"),
+        account_id,
+        TradeId::new("T-SPREAD-1"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from("1"),
+        Price::new(100.0, 2),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        Some(PositionId::new("P-SPREAD-1")),
+        Some(Money::new(2.0, Currency::USD())),
+    );
+
+    portfolio.update_order(&OrderEventAny::Filled(filled));
+
+    assert_eq!(usd_balance_total(&portfolio, &account_id), starting_usd);
 }
 
 #[rstest]

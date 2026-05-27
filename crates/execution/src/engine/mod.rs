@@ -1761,6 +1761,9 @@ impl ExecutionEngine {
         if let Some(cid) = command.client_id()
             && self.external_clients.contains(&cid)
         {
+            let topic = format!("commands.trading.{cid}");
+            msgbus::publish_any(topic.into(), &command);
+
             if self.config.debug {
                 log::debug!("Skipping execution command for external client {cid}: {command:?}");
             }
@@ -2295,7 +2298,13 @@ impl ExecutionEngine {
 
         drop(cache);
 
-        match event {
+        let event = if event_client_order_id == client_order_id {
+            event.clone()
+        } else {
+            event.clone().with_client_order_id(client_order_id)
+        };
+
+        match &event {
             OrderEventAny::Filled(fill) => {
                 let Some(order_before_fill) = order_before_fill else {
                     log::error!(
@@ -2326,8 +2335,8 @@ impl ExecutionEngine {
                 }
             }
             _ => {
-                if self.update_cached_order(client_order_id, event).is_some() {
-                    self.publish_order_event(event);
+                if self.update_cached_order(client_order_id, &event).is_some() {
+                    self.publish_order_event(&event);
                 }
             }
         }
@@ -3203,7 +3212,7 @@ impl ExecutionEngine {
                 fill.last_px,
                 fill.currency,
                 fill.liquidity_side,
-                UUID4::new(),
+                fill.event_id,
                 fill.ts_event,
                 fill.ts_init,
                 fill.reconciliation,

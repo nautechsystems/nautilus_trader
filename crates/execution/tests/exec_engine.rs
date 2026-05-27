@@ -538,6 +538,48 @@ fn test_execution_engine_default_config_initializes_correctly(execution_engine: 
 }
 
 #[rstest]
+fn test_external_client_command_publishes_to_client_topic_and_skips_local_routing() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let external_client_id = ClientId::from("EXTERNAL");
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        external_clients: Some(vec![external_client_id]),
+        ..Default::default()
+    };
+    let execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+    let topic = format!("commands.trading.{external_client_id}");
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
+    let (handler, saver) = get_any_saving_handler::<TradingCommand>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    let command = CancelAllOrders::new(
+        TraderId::test_default(),
+        Some(external_client_id),
+        StrategyId::test_default(),
+        audusd_sim().id(),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    execution_engine.execute(TradingCommand::CancelAllOrders(command.clone()));
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let captured = saver.get_messages();
+    assert_eq!(execution_engine.command_count(), 1);
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0],
+        TradingCommand::CancelAllOrders(command),
+        "external client command should publish to the client command topic",
+    );
+}
+
+#[rstest]
 fn test_counters_increment_and_reset(mut execution_engine: ExecutionEngine) {
     assert_eq!(execution_engine.command_count(), 0);
     assert_eq!(execution_engine.event_count(), 0);
@@ -1357,6 +1399,150 @@ fn test_process_filled_order_publishes_fill_order_position_topics_in_order(
         PositionEvent::PositionOpened(_)
     ));
     assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
+}
+
+#[rstest]
+fn test_process_fill_resolved_by_venue_order_id_rewrites_client_order_id_and_preserves_topic_order(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let fills_topic = switchboard::get_order_fills_topic(instrument.id());
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let position_topic = switchboard::get_event_positions_topic(order.strategy_id());
+    let received_fills = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_orders = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_positions = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+    let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+    let fills_handler = TypedHandler::from({
+        let received_fills = received_fills.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("fills");
+            received_fills.borrow_mut().push(event.clone());
+        }
+    });
+    let order_handler = TypedHandler::from({
+        let received_orders = received_orders.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("orders");
+            received_orders.borrow_mut().push(event.clone());
+        }
+    });
+    let position_handler = TypedHandler::from({
+        let received_positions = received_positions.clone();
+        let topics = topics.clone();
+        move |event: &PositionEvent| {
+            topics.borrow_mut().push("positions");
+            received_positions.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
+
+    let event = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        ClientOrderId::from("WEB-ONLY-001"),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-001"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(fills_topic.into(), &fills_handler);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
+
+    let cache = execution_engine.cache().borrow();
+    let order_after = cache
+        .order(&order.client_order_id())
+        .expect("cached order should still be addressable by original client order id");
+    let received_fills = received_fills.borrow();
+    let received_orders = received_orders.borrow();
+    let received_positions = received_positions.borrow();
+
+    assert_eq!(order_after.status(), OrderStatus::Filled);
+    assert_eq!(received_fills.len(), 1);
+    assert_eq!(received_orders.len(), 1);
+    assert_eq!(received_positions.len(), 1);
+    assert_eq!(received_fills[0].client_order_id(), order.client_order_id());
+    assert_eq!(
+        received_orders[0].client_order_id(),
+        order.client_order_id()
+    );
+    assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
+}
+
+#[rstest]
+fn test_process_non_fill_event_resolved_by_venue_order_id_rewrites_client_order_id(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let cancels_topic = switchboard::get_order_cancels_topic(order.instrument_id());
+    let received_orders = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_cancels = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let order_handler = TypedHandler::from({
+        let received_orders = received_orders.clone();
+        move |event: &OrderEventAny| {
+            received_orders.borrow_mut().push(event.clone());
+        }
+    });
+    let cancels_handler = TypedHandler::from({
+        let received_cancels = received_cancels.clone();
+        move |event: &OrderEventAny| {
+            received_cancels.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_order_events(cancels_topic.into(), cancels_handler.clone(), None);
+
+    let event = OrderEventAny::Canceled(build_order_canceled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        ClientOrderId::from("WEB-ONLY-CANCEL"),
+        Some(VenueOrderId::from("V-001")),
+        Some(AccountId::test_default()),
+    ));
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_order_events(cancels_topic.into(), &cancels_handler);
+
+    let cache = execution_engine.cache().borrow();
+    let order_after = cache
+        .order(&order.client_order_id())
+        .expect("cached order should still be addressable by original client order id");
+    let received_orders = received_orders.borrow();
+    let received_cancels = received_cancels.borrow();
+
+    assert_eq!(order_after.status(), OrderStatus::Canceled);
+    assert_eq!(received_orders.len(), 1);
+    assert_eq!(received_cancels.len(), 1);
+    assert_eq!(
+        received_orders[0].client_order_id(),
+        order.client_order_id()
+    );
+    assert_eq!(
+        received_cancels[0].client_order_id(),
+        order.client_order_id()
+    );
 }
 
 #[rstest]
@@ -5175,6 +5361,10 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
         None,
         Some(AccountId::test_default()),
     );
+    let flip_fill_event_id = match &order2_filled_event {
+        OrderEventAny::Filled(fill) => fill.event_id,
+        _ => unreachable!("test fill fixture should produce an OrderFilled event"),
+    };
     execution_engine.process(&order2_filled_event);
 
     let cache = execution_engine.cache().borrow();
@@ -5205,6 +5395,15 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
         assert!(
             original_position.is_closed(),
             "Original position should be closed after flip"
+        );
+        assert_eq!(
+            original_position
+                .events
+                .last()
+                .expect("closed position should include the closing split fill")
+                .event_id,
+            flip_fill_event_id,
+            "close-side split fill should retain the original fill event ID",
         );
     }
 

@@ -2245,17 +2245,17 @@ fn update_order(
             }
         }
 
-        let order = if let Some(order) = cache_ref.order(&event.client_order_id()) {
-            order
-        } else {
+        let order = cache_ref.order(&event.client_order_id());
+        if order.is_none() && !matches!(event, OrderEventAny::Filled(_)) {
             log::error!(
                 "Cannot update order: {} not found in the cache",
                 event.client_order_id()
             );
             return; // No Order Found
-        };
+        }
 
-        if matches!(event, OrderEventAny::Rejected(_)) && order.order_type() != OrderType::StopLimit
+        if matches!(event, OrderEventAny::Rejected(_))
+            && order.is_some_and(|order| order.order_type() != OrderType::StopLimit)
         {
             return; // No change to account state
         }
@@ -2288,12 +2288,14 @@ fn update_order(
     };
 
     if let OrderEventAny::Filled(order_filled) = event {
-        let (post_balance, _state) =
-            inner
-                .borrow()
-                .accounts
-                .update_balances(working_account, &instrument, *order_filled);
-        working_account = post_balance;
+        if !instrument.is_spread() {
+            let (post_balance, _state) = inner.borrow().accounts.update_balances(
+                working_account,
+                &instrument,
+                *order_filled,
+            );
+            working_account = post_balance;
+        }
 
         cache.borrow_mut().cache_account_owned(working_account);
 
