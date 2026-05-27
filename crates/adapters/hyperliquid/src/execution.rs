@@ -1084,13 +1084,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
                 None => {
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("Asset index not found for symbol {symbol}"),
-                        clock.get_time_ns(),
+                    log::warn!(
+                        "Local cancel validation failed for {client_order_id}: Asset index not found for symbol {symbol}"
                     );
                     return Ok(());
                 }
@@ -1107,13 +1102,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
                         },
                         Err(_) => {
-                            emitter.emit_order_cancel_rejected_event(
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                Some(venue_order_id),
-                                "Invalid venue order ID format",
-                                clock.get_time_ns(),
+                            log::warn!(
+                                "Local cancel validation failed for {client_order_id}: Invalid venue order ID format"
                             );
                             return Ok(());
                         }
@@ -1141,13 +1131,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             log::info!("Order cancelled successfully: {response:?}");
                         }
                     } else {
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &extract_error_message(&response),
-                            clock.get_time_ns(),
+                        let error_msg = extract_error_message(&response);
+                        log::warn!(
+                            "Cancel failed without per-order result for {client_order_id}, awaiting WS reconciliation: {error_msg}"
                         );
                     }
                 }
@@ -1158,13 +1144,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                              awaiting WS reconciliation",
                         );
                     } else {
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &format!("Cancel WebSocket post request failed: {e}"),
-                            clock.get_time_ns(),
+                        log::warn!(
+                            "Ambiguous cancel failure for {client_order_id}, awaiting WS reconciliation: {e}"
                         );
                     }
                 }
@@ -1216,20 +1197,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
                 None => {
-                    let reason = format!("Asset index not found for symbol {symbol}");
-                    log::warn!("{reason}");
-                    let ts = clock.get_time_ns();
-
-                    for entry in &entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
-                        );
-                    }
+                    log::warn!(
+                        "Local cancel-all validation failed: Asset index not found for symbol {symbol}"
+                    );
                     return Ok(());
                 }
             };
@@ -1237,7 +1207,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
-                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
+                cancel_dispatch.push(entry, asset, &http_client);
             }
 
             if cancel_dispatch.is_empty() {
@@ -1292,21 +1262,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 let asset = match http_client.get_asset_index(&entry.symbol) {
                     Some(a) => a,
                     None => {
-                        let reason = format!("Asset index not found for symbol {}", entry.symbol);
-                        log::warn!("{reason}, skipping cancel for {}", entry.client_order_id);
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
+                        log::warn!(
+                            "Local batch cancel validation failed for {}: Asset index not found for symbol {}",
                             entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            clock.get_time_ns(),
+                            entry.symbol,
                         );
                         continue;
                     }
                 };
 
-                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
+                cancel_dispatch.push(entry, asset, &http_client);
             }
 
             if cancel_dispatch.is_empty() {
@@ -1856,14 +1821,7 @@ impl CancelDispatch {
         self.cloid_requests.is_empty() && self.oid_requests.is_empty()
     }
 
-    fn push(
-        &mut self,
-        entry: &CancelEntry,
-        asset: u32,
-        http_client: &HyperliquidHttpClient,
-        emitter: &ExecutionEventEmitter,
-        clock: &'static AtomicTime,
-    ) {
+    fn push(&mut self, entry: &CancelEntry, asset: u32, http_client: &HyperliquidHttpClient) {
         if let Some(cloid) = http_client.cached_client_order_id_cloid(&entry.client_order_id) {
             self.cloid_requests
                 .push(HyperliquidExecCancelByCloidRequest { asset, cloid });
@@ -1876,13 +1834,9 @@ impl CancelDispatch {
                     self.oid_entries.push(entry.clone());
                 }
                 Err(_) => {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
+                    log::warn!(
+                        "Local cancel validation failed for {}: Invalid venue order ID format",
                         entry.client_order_id,
-                        Some(venue_order_id),
-                        "Invalid venue order ID format",
-                        clock.get_time_ns(),
                     );
                 }
             }
@@ -1966,17 +1920,6 @@ async fn submit_cancel_action(
                     inner_errors.len(),
                 ) {
                     log::warn!("{reason}");
-
-                    for entry in sent_entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
-                        );
-                    }
                 } else {
                     for (i, entry) in sent_entries.iter().enumerate() {
                         if let Some(Some(error_msg)) = inner_errors.get(i) {
@@ -1997,39 +1940,16 @@ async fn submit_cancel_action(
                 }
             } else {
                 let error_msg = extract_error_message(&response);
-                log::warn!("{label} rejected by exchange: {error_msg}");
-                let ts = clock.get_time_ns();
-
-                for entry in sent_entries {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
-                        entry.client_order_id,
-                        entry.venue_order_id,
-                        &error_msg,
-                        ts,
-                    );
-                }
+                log::warn!(
+                    "{label} failed without per-order results, awaiting WS reconciliation: {error_msg}"
+                );
             }
         }
         Err(e) => {
             if e.is_transport_error() {
                 log::warn!("{label} transport failure: {e}; awaiting WS reconciliation");
             } else {
-                let reason = format!("{label} WebSocket post request failed: {e}");
-                log::warn!("{reason}");
-                let ts = clock.get_time_ns();
-
-                for entry in sent_entries {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
-                        entry.client_order_id,
-                        entry.venue_order_id,
-                        &reason,
-                        ts,
-                    );
-                }
+                log::warn!("{label} ambiguous failure, awaiting WS reconciliation: {e}");
             }
         }
     }

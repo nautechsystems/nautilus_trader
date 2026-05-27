@@ -2759,7 +2759,7 @@ async fn test_batch_cancel_orders_per_item_error_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_short_statuses_rejects_all_sent() {
+async fn test_batch_cancel_orders_short_statuses_emit_no_cancel_rejected() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({
         "status": "ok",
@@ -2803,14 +2803,9 @@ async fn test_batch_cancel_orders_short_statuses_rejects_all_sent() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-
-    assert_eq!(events.len(), 2);
-    assert!(events.iter().any(|(coid, _)| *coid == coid_a));
-    assert!(events.iter().any(|(coid, _)| *coid == coid_b));
     assert!(
-        events
-            .iter()
-            .all(|(_, reason)| reason.contains("status count mismatch"))
+        events.is_empty(),
+        "short status arrays are ambiguous and should not reject individual cancels: {events:?}",
     );
 
     client.disconnect().await.unwrap();
@@ -2818,9 +2813,8 @@ async fn test_batch_cancel_orders_short_statuses_rejects_all_sent() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_post_error_rejects_all_sent() {
-    // Post error: every entry that was actually dispatched must have
-    // a cancel_rejected event so the engine does not wait on ghost acks.
+async fn test_batch_cancel_orders_post_error_emits_no_cancel_rejected() {
+    // A whole request failure gives no per-order venue evidence.
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
 
@@ -2856,24 +2850,19 @@ async fn test_batch_cancel_orders_post_error_rejects_all_sent() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(
-        events.len(),
-        2,
-        "every sent cancel must be rejected on post error"
+    assert!(
+        events.is_empty(),
+        "whole-request cancel failure should remain unresolved: {events:?}",
     );
-    let coids: std::collections::HashSet<_> = events.iter().map(|(c, _)| *c).collect();
-    assert!(coids.contains(&coid_a));
-    assert!(coids.contains(&coid_b));
 
     client.disconnect().await.unwrap();
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
+async fn test_batch_cancel_orders_missing_asset_index_logs_and_skips() {
     // No trading action should happen for an entry whose instrument symbol
-    // is unknown; the helper must emit a cancel_rejected for the skipped
-    // entry and still dispatch the remaining one.
+    // is unknown. The valid entry should still dispatch.
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -2920,12 +2909,81 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, unknown_coid);
     assert!(
-        events[0].1.contains("Asset index not found"),
-        "reason should explain the skip: {}",
-        events[0].1,
+        events.is_empty(),
+        "local cancel validation should not emit OrderCancelRejected: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_batch_cancel_orders_invalid_venue_id_logs_and_dispatches_valid() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let valid_coid = ClientOrderId::new("O-BATCH-VALID-VOI");
+    let invalid_coid = ClientOrderId::new("O-BATCH-BAD-VOI");
+    let invalid_entry = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        invalid_coid,
+        Some(VenueOrderId::from("bad-venue-order-id")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    let batch = BatchCancelOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        vec![
+            make_cancel_entry(valid_coid, VenueOrderId::from("310")),
+            invalid_entry,
+        ],
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.batch_cancel_orders(batch).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(
+        events.is_empty(),
+        "invalid venue ID should not emit OrderCancelRejected: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        action["cancels"][0].get("o").and_then(|v| v.as_u64()),
+        Some(310)
     );
 
     client.disconnect().await.unwrap();
@@ -3056,7 +3114,7 @@ async fn test_cancel_all_orders_per_item_error_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_short_statuses_rejects_every_open_order() {
+async fn test_cancel_all_orders_short_statuses_emit_no_cancel_rejected() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({
         "status": "ok",
@@ -3074,8 +3132,8 @@ async fn test_cancel_all_orders_short_statuses_rejects_every_open_order() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let order_a = open_limit_order_in_cache(&cache, "O-CA-SHORT-A", "750");
-    let order_b = open_limit_order_in_cache(&cache, "O-CA-SHORT-B", "751");
+    let _order_a = open_limit_order_in_cache(&cache, "O-CA-SHORT-A", "750");
+    let _order_b = open_limit_order_in_cache(&cache, "O-CA-SHORT-B", "751");
 
     client
         .cancel_all_orders(make_cancel_all_cmd(
@@ -3091,22 +3149,9 @@ async fn test_cancel_all_orders_short_statuses_rejects_every_open_order() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-
-    assert_eq!(events.len(), 2);
     assert!(
-        events
-            .iter()
-            .any(|(coid, _)| *coid == order_a.client_order_id())
-    );
-    assert!(
-        events
-            .iter()
-            .any(|(coid, _)| *coid == order_b.client_order_id())
-    );
-    assert!(
-        events
-            .iter()
-            .all(|(_, reason)| reason.contains("status count mismatch"))
+        events.is_empty(),
+        "short status arrays are ambiguous and should not reject open orders: {events:?}",
     );
 
     client.disconnect().await.unwrap();
@@ -3114,9 +3159,8 @@ async fn test_cancel_all_orders_short_statuses_rejects_every_open_order() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_post_error_rejects_every_open_order() {
-    // Post error: every order that was dispatched in the batch must
-    // get a cancel_rejected event so the engine does not wait for ghost acks.
+async fn test_cancel_all_orders_post_error_emits_no_cancel_rejected() {
+    // A whole request failure gives no per-order venue evidence.
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
 
@@ -3126,8 +3170,8 @@ async fn test_cancel_all_orders_post_error_rejects_every_open_order() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let a = open_limit_order_in_cache(&cache, "O-CA-A", "800");
-    let b = open_limit_order_in_cache(&cache, "O-CA-B", "801");
+    let _a = open_limit_order_in_cache(&cache, "O-CA-A", "800");
+    let _b = open_limit_order_in_cache(&cache, "O-CA-B", "801");
 
     client
         .cancel_all_orders(make_cancel_all_cmd(
@@ -3143,27 +3187,22 @@ async fn test_cancel_all_orders_post_error_rejects_every_open_order() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(
-        events.len(),
-        2,
-        "every open order must be rejected on post error",
+    assert!(
+        events.is_empty(),
+        "whole-request cancel-all failure should remain unresolved: {events:?}",
     );
-    let coids: std::collections::HashSet<_> = events.iter().map(|(c, _)| *c).collect();
-    assert!(coids.contains(&a.client_order_id()));
-    assert!(coids.contains(&b.client_order_id()));
 
     client.disconnect().await.unwrap();
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
+async fn test_cancel_all_orders_missing_asset_index_logs_and_emits_no_cancel_rejected() {
     // Instrument symbol is not registered with the asset-index map, so
-    // no trading action happens. Every open order must still receive a
-    // cancel_rejected event with the "Asset index not found" reason.
+    // no trading action happens and no venue-backed rejection exists.
     const UNKNOWN_INSTRUMENT: &str = "NOPE-USD-PERP.HYPERLIQUID";
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
     client.start().unwrap();
@@ -3252,13 +3291,138 @@ async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 2, "both open orders must be rejected");
-    for (_, reason) in &events {
-        assert!(
-            reason.contains("Asset index not found"),
-            "reason should explain the skip: {reason}",
-        );
-    }
+    assert!(
+        events.is_empty(),
+        "local cancel-all validation should not emit OrderCancelRejected: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_order_post_error_emits_no_cancel_rejected() {
+    // A single cancel post failure gives no per-order venue evidence.
+    let state = TestServerState::default();
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let coid = ClientOrderId::new("O-CANCEL-POST-FAIL");
+    let cmd = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        coid,
+        Some(VenueOrderId::from("776")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(
+        events.is_empty(),
+        "ambiguous single cancel failure should remain unresolved: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_order_missing_asset_index_logs_and_emits_no_cancel_rejected() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let cmd = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from("NOPE-USD-PERP.HYPERLIQUID"),
+        ClientOrderId::new("O-CANCEL-UNKNOWN-ASSET"),
+        Some(VenueOrderId::from("777")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(
+        events.is_empty(),
+        "local cancel validation should not emit OrderCancelRejected: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_order_invalid_venue_id_logs_and_emits_no_cancel_rejected() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let cmd = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::new("O-CANCEL-BAD-VOI"),
+        Some(VenueOrderId::from("bad-venue-order-id")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(
+        events.is_empty(),
+        "invalid venue ID should not emit OrderCancelRejected: {events:?}",
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
 
     client.disconnect().await.unwrap();
 }
