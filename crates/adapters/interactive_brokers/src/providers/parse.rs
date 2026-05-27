@@ -168,7 +168,9 @@ pub fn parse_ib_contract_to_instrument(
         SecurityType::Stock => Ok(parse_equity_contract(details, instrument_id)),
         SecurityType::ForexPair => Ok(parse_forex_contract(details, instrument_id)),
         SecurityType::Crypto => Ok(parse_crypto_contract(details, instrument_id)),
-        SecurityType::Future => Ok(parse_futures_contract(details, instrument_id)),
+        SecurityType::Future | SecurityType::ContinuousFuture => {
+            Ok(parse_futures_contract(details, instrument_id))
+        }
         SecurityType::Option => parse_option_contract(details, instrument_id),
         SecurityType::FuturesOption => parse_option_contract(details, instrument_id), // FOP uses same parsing as OPT
         SecurityType::Index => Ok(parse_index_contract(details, instrument_id)),
@@ -378,9 +380,19 @@ fn parse_futures_contract(
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 1.0);
 
+    let raw_symbol = if matches!(
+        details.contract.security_type,
+        SecurityType::ContinuousFuture
+    ) && !details.contract.symbol.as_str().is_empty()
+    {
+        details.contract.symbol.as_str()
+    } else {
+        details.contract.local_symbol.as_str()
+    };
+
     let instrument = FuturesContract::new(
         instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
+        Symbol::from(raw_symbol),
         sec_type_to_asset_class(details.under_security_type.as_str()),
         None, // exchange
         Ustr::from(details.under_symbol.as_str()),
@@ -487,12 +499,15 @@ mod tests {
         enums::AssetClass,
         identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
         instruments::{Instrument, InstrumentAny},
-        types::Quantity,
+        types::{Price, Quantity},
     };
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::{parse_contract_multiplier, parse_ib_contract_to_instrument};
+    use super::{
+        parse_contract_multiplier, parse_ib_contract_to_instrument,
+        parse_option_spread_instrument_id,
+    };
 
     #[rstest]
     fn test_parse_option_contract_prefixes_index_underlying() {
@@ -571,6 +586,79 @@ mod tests {
             Quantity::new(expected, 0)
         );
     }
+
+    #[rstest]
+    fn test_parse_continuous_future_contract_uses_symbol_as_raw_symbol() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ES"),
+                security_type: SecurityType::ContinuousFuture,
+                exchange: Exchange::from("CME"),
+                currency: Currency::from("USD"),
+                local_symbol: String::new(),
+                multiplier: "50".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.25,
+            under_symbol: "ES".to_string(),
+            under_security_type: "IND".to_string(),
+            ..Default::default()
+        };
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("ES"), Venue::from("CME"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::FuturesContract(future) = instrument else {
+            panic!("expected futures contract");
+        };
+
+        assert_eq!(future.raw_symbol().as_str(), "ES");
+    }
+
+    #[rstest]
+    fn test_parse_option_spread_uses_minimum_leg_tick() {
+        let leg1 = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("SPY"),
+                security_type: SecurityType::Option,
+                exchange: Exchange::from("SMART"),
+                currency: Currency::from("USD"),
+                local_symbol: "SPY   260120C00400000".to_string(),
+                multiplier: "100".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.05,
+            under_symbol: "SPY".to_string(),
+            ..Default::default()
+        };
+        let leg2 = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("SPY"),
+                security_type: SecurityType::Option,
+                exchange: Exchange::from("SMART"),
+                currency: Currency::from("USD"),
+                local_symbol: "SPY   260120C00410000".to_string(),
+                multiplier: "100".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.01,
+            under_symbol: "SPY".to_string(),
+            ..Default::default()
+        };
+        let instrument_id =
+            InstrumentId::from("(1)SPY   260120C00400000_((-1))SPY   260120C00410000.SMART");
+
+        let spread = parse_option_spread_instrument_id(
+            instrument_id,
+            &[(&leg1, 1), (&leg2, -1)],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(spread.price_precision(), 2);
+        assert_eq!(spread.price_increment(), Price::from("0.01"));
+    }
 }
 
 /// Parse index contract (IND).
@@ -641,9 +729,13 @@ pub fn parse_spread_instrument_id(
         _ => AssetClass::Equity,                                            // Equity options
     };
 
-    // Calculate price precision and increment
-    let price_precision = tick_size_to_precision(first_details.min_tick);
-    let price_increment = Price::new(first_details.min_tick, price_precision);
+    // Calculate price precision and increment from the finest leg tick.
+    let min_tick = leg_contract_details
+        .iter()
+        .map(|(details, _)| details.min_tick)
+        .fold(first_details.min_tick, f64::min);
+    let price_precision = tick_size_to_precision(min_tick);
+    let price_increment = Price::new(min_tick, price_precision);
 
     // Use provided timestamp or current time
     let timestamp = timestamp_ns.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
@@ -713,8 +805,12 @@ pub fn parse_futures_spread_instrument_id(
     };
     let multiplier = Quantity::from_str(&first_contract.multiplier.to_string())
         .unwrap_or_else(|_| Quantity::new(1.0, 0));
-    let price_precision = tick_size_to_precision(first_details.min_tick);
-    let price_increment = Price::new(first_details.min_tick, price_precision);
+    let min_tick = leg_contract_details
+        .iter()
+        .map(|(details, _)| details.min_tick)
+        .fold(first_details.min_tick, f64::min);
+    let price_precision = tick_size_to_precision(min_tick);
+    let price_increment = Price::new(min_tick, price_precision);
     let timestamp = timestamp_ns.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
 
     Ok(FuturesSpread::new_checked(

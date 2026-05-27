@@ -126,7 +126,8 @@ impl HistoricalInteractiveBrokersClient {
     /// * `instrument_ids` - Optional list of instrument IDs
     /// * `use_rth` - Use regular trading hours only
     /// * `timeout` - Request timeout in seconds
-    #[pyo3(signature = (tick_type, start_date_time, end_date_time, contracts=None, instrument_ids=None, use_rth=true, timeout=60))]
+    /// * `limit` - Maximum number of ticks to return, or 0 for no explicit limit
+    #[pyo3(signature = (tick_type, start_date_time, end_date_time, contracts=None, instrument_ids=None, use_rth=true, timeout=60, limit=0))]
     #[pyo3(name = "request_ticks")]
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_pass_by_value)]
@@ -140,6 +141,7 @@ impl HistoricalInteractiveBrokersClient {
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
         timeout: u64,
+        limit: usize,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -166,6 +168,7 @@ impl HistoricalInteractiveBrokersClient {
                     instrument_ids,
                     use_rth,
                     timeout,
+                    limit,
                 )
                 .await
                 .map_err(to_pyruntime_err)?;

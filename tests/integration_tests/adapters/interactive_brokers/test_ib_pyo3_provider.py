@@ -298,18 +298,22 @@ async def test_pyo3_historical_client_normalizes_results_for_v1(monkeypatch):
         instrument_provider=provider,
         config=config,
     )
+    bars_start = pd.Timestamp("2025-11-06 09:30:00").to_pydatetime()
+    bars_end = pd.Timestamp("2025-11-06 10:30:00").to_pydatetime()
+    ticks_start = pd.Timestamp("2025-11-06 10:00:00").to_pydatetime()
+    ticks_end = pd.Timestamp("2025-11-06 10:01:00").to_pydatetime()
 
     instruments = await client.request_instruments(instrument_ids=["AAPL.NASDAQ"])
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST"],
-        start_date_time=pd.Timestamp("2025-11-06 09:30:00").to_pydatetime(),
-        end_date_time=pd.Timestamp("2025-11-06 10:30:00").to_pydatetime(),
+        start_date_time=bars_start,
+        end_date_time=bars_end,
         instrument_ids=["AAPL.NASDAQ"],
     )
     ticks = await client.request_ticks(
         tick_type="TRADES",
-        start_date_time=pd.Timestamp("2025-11-06 10:00:00").to_pydatetime(),
-        end_date_time=pd.Timestamp("2025-11-06 10:01:00").to_pydatetime(),
+        start_date_time=ticks_start,
+        end_date_time=ticks_end,
         instrument_ids=["AAPL.NASDAQ"],
     )
 
@@ -321,11 +325,15 @@ async def test_pyo3_historical_client_normalizes_results_for_v1(monkeypatch):
         "contracts": None,
     }
     assert client._rust_client.request_bars_kwargs["instrument_ids"] == ["pyo3:AAPL.NASDAQ"]
+    assert client._rust_client.request_bars_kwargs["start_date_time"] == bars_start
+    assert client._rust_client.request_bars_kwargs["end_date_time"] == bars_end
     assert client._rust_client.request_ticks_kwargs["instrument_ids"] == ["pyo3:AAPL.NASDAQ"]
+    assert client._rust_client.request_ticks_kwargs["start_date_time"] == ticks_start
+    assert client._rust_client.request_ticks_kwargs["end_date_time"] == ticks_end
 
 
 @pytest.mark.asyncio
-async def test_pyo3_historical_client_rejects_non_utc_aware_datetimes(monkeypatch):
+async def test_pyo3_historical_client_leaves_datetime_validation_to_rust(monkeypatch):
     from nautilus_trader.adapters.interactive_brokers_pyo3 import historical as historical_module
 
     monkeypatch.setattr(
@@ -334,35 +342,48 @@ async def test_pyo3_historical_client_rejects_non_utc_aware_datetimes(monkeypatc
         _FakeHistoricalRustClient,
     )
     monkeypatch.setattr(historical_module, "PyO3InstrumentId", _FakePyO3InstrumentId)
+    monkeypatch.setattr(
+        historical_module,
+        "Bar",
+        type("_FakeBar", (), {"from_pyo3_list": staticmethod(lambda values: values)}),
+    )
+    monkeypatch.setattr(historical_module, "capsule_to_data", lambda value: value)
 
     client = historical_module.HistoricalInteractiveBrokersClient(
         instrument_provider=SimpleNamespace(_rust_provider=object()),
         config=SimpleNamespace(),
     )
 
-    with pytest.raises(ValueError, match="must be UTC"):
-        await client.request_bars(
-            bar_specifications=["1-HOUR-LAST"],
-            start_date_time=pd.Timestamp("2025-11-06 09:30:00").to_pydatetime(),
-            end_date_time=pd.Timestamp("2025-11-06 10:30:00")
-            .to_pydatetime()
-            .replace(
-                tzinfo=timezone(timedelta(hours=-5)),
-            ),
-            instrument_ids=["AAPL.NASDAQ"],
+    bars_end = (
+        pd.Timestamp("2025-11-06 10:30:00")
+        .to_pydatetime()
+        .replace(
+            tzinfo=timezone(timedelta(hours=-5)),
         )
+    )
+    ticks_start = (
+        pd.Timestamp("2025-11-06 10:00:00")
+        .to_pydatetime()
+        .replace(
+            tzinfo=timezone(timedelta(hours=1)),
+        )
+    )
 
-    with pytest.raises(ValueError, match="must be UTC"):
-        await client.request_ticks(
-            tick_type="TRADES",
-            start_date_time=pd.Timestamp("2025-11-06 10:00:00")
-            .to_pydatetime()
-            .replace(
-                tzinfo=timezone(timedelta(hours=1)),
-            ),
-            end_date_time=pd.Timestamp("2025-11-06 10:01:00").to_pydatetime(),
-            instrument_ids=["AAPL.NASDAQ"],
-        )
+    await client.request_bars(
+        bar_specifications=["1-HOUR-LAST"],
+        start_date_time=pd.Timestamp("2025-11-06 09:30:00").to_pydatetime(),
+        end_date_time=bars_end,
+        instrument_ids=["AAPL.NASDAQ"],
+    )
+    await client.request_ticks(
+        tick_type="TRADES",
+        start_date_time=ticks_start,
+        end_date_time=pd.Timestamp("2025-11-06 10:01:00").to_pydatetime(),
+        instrument_ids=["AAPL.NASDAQ"],
+    )
+
+    assert client._rust_client.request_bars_kwargs["end_date_time"] == bars_end
+    assert client._rust_client.request_ticks_kwargs["start_date_time"] == ticks_start
 
 
 @pytest.mark.asyncio

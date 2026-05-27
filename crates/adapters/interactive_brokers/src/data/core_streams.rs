@@ -110,7 +110,7 @@ pub(super) async fn handle_historical_bars_subscription(
     use_rth: bool,
     start_ns: Option<UnixNanos>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    _handle_revised_bars: bool,
+    handle_revised_bars: bool,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -194,6 +194,10 @@ pub(super) async fn handle_historical_bars_subscription(
                             }
                         }
                         Some(HistoricalBarUpdate::Update(ib_bar)) => {
+                            if !handle_revised_bars {
+                                continue;
+                            }
+
                             let bar = ib_bar_to_nautilus_bar(
                                 &ib_bar,
                                 bar_type,
@@ -530,16 +534,22 @@ pub(super) async fn handle_realtime_bars_subscription(
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
     bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
     handle_revised_bars: bool,
+    use_rth: bool,
     cancellation_token: CancellationToken,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting bars subscription for {}", bar_type);
+    let trading_hours = if use_rth {
+        TradingHours::Regular
+    } else {
+        TradingHours::Extended
+    };
 
     let mut subscription = client
         .realtime_bars(
             &contract,
             RealtimeBarSize::Sec5,
             RealtimeWhatToShow::Trades,
-            TradingHours::Regular,
+            trading_hours,
         )
         .await
         .context("Failed to create realtime bars subscription")?;
