@@ -26,7 +26,7 @@ use nautilus_common::{
         system::trading::TradingStateChanged,
     },
     msgbus::{
-        self, MessagingSwitchboard,
+        self, MessagingSwitchboard, TypedHandler,
         stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     },
     throttler::RateLimit,
@@ -42,6 +42,7 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderSubmitted,
+        PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
@@ -599,6 +600,112 @@ fn test_counters_increment_and_reset(get_stub_submit_order: (OrderAny, SubmitOrd
     assert_eq!(risk_engine.event_count(), 0);
 }
 
+#[rstest]
+fn test_register_msgbus_handlers_registers_process_and_event_subscriptions(
+    get_stub_submit_order: (OrderAny, SubmitOrder),
+) {
+    msgbus::get_message_bus().borrow_mut().dispose();
+
+    let (order, _) = get_stub_submit_order;
+    let risk_engine = Rc::new(RefCell::new(get_risk_engine(None, None, None, true)));
+    RiskEngine::register_msgbus_handlers(&risk_engine);
+
+    let submitted = OrderEventAny::Submitted(order_submitted(&order));
+    msgbus::send_order_event(
+        MessagingSwitchboard::risk_engine_process(),
+        submitted.clone(),
+    );
+
+    let order_topic = format!("events.order.{}", order.strategy_id());
+    msgbus::publish_order_event(order_topic.into(), &submitted);
+
+    let position_event = PositionEvent::PositionOpened(position_opened(&order));
+    let position_topic = format!("events.position.{}", order.strategy_id());
+    msgbus::publish_position_event(position_topic.into(), &position_event);
+
+    assert_eq!(risk_engine.borrow().event_count(), 3);
+}
+
+#[rstest]
+fn test_register_msgbus_handlers_subscribes_event_topics_at_priority_10(
+    get_stub_submit_order: (OrderAny, SubmitOrder),
+) {
+    msgbus::get_message_bus().borrow_mut().dispose();
+
+    let (order, _) = get_stub_submit_order;
+    let risk_engine = Rc::new(RefCell::new(get_risk_engine(None, None, None, true)));
+    let order_observations = Rc::new(RefCell::new(Vec::new()));
+    let position_observations = Rc::new(RefCell::new(Vec::new()));
+
+    let high_order_observations = order_observations.clone();
+    let high_order_engine = risk_engine.clone();
+    msgbus::subscribe_order_events(
+        "events.order.*".into(),
+        TypedHandler::from_with_id("order-high", move |_: &OrderEventAny| {
+            high_order_observations
+                .borrow_mut()
+                .push(("high", high_order_engine.borrow().event_count()));
+        }),
+        Some(11),
+    );
+
+    let high_position_observations = position_observations.clone();
+    let high_position_engine = risk_engine.clone();
+    msgbus::subscribe_position_events(
+        "events.position.*".into(),
+        TypedHandler::from_with_id("position-high", move |_: &PositionEvent| {
+            high_position_observations
+                .borrow_mut()
+                .push(("high", high_position_engine.borrow().event_count()));
+        }),
+        Some(11),
+    );
+
+    RiskEngine::register_msgbus_handlers(&risk_engine);
+
+    let low_order_observations = order_observations.clone();
+    let low_order_engine = risk_engine.clone();
+    msgbus::subscribe_order_events(
+        "events.order.*".into(),
+        TypedHandler::from_with_id("order-low", move |_: &OrderEventAny| {
+            low_order_observations
+                .borrow_mut()
+                .push(("low", low_order_engine.borrow().event_count()));
+        }),
+        Some(9),
+    );
+
+    let low_position_observations = position_observations.clone();
+    let low_position_engine = risk_engine.clone();
+    msgbus::subscribe_position_events(
+        "events.position.*".into(),
+        TypedHandler::from_with_id("position-low", move |_: &PositionEvent| {
+            low_position_observations
+                .borrow_mut()
+                .push(("low", low_position_engine.borrow().event_count()));
+        }),
+        Some(9),
+    );
+
+    let submitted = OrderEventAny::Submitted(order_submitted(&order));
+    let order_topic = format!("events.order.{}", order.strategy_id());
+    msgbus::publish_order_event(order_topic.into(), &submitted);
+
+    let position_event = PositionEvent::PositionOpened(position_opened(&order));
+    let position_topic = format!("events.position.{}", order.strategy_id());
+    msgbus::publish_position_event(position_topic.into(), &position_event);
+
+    assert_eq!(
+        order_observations.borrow().as_slice(),
+        &[("high", 0), ("low", 1)]
+    );
+    assert_eq!(
+        position_observations.borrow().as_slice(),
+        &[("high", 1), ("low", 2)]
+    );
+    assert_eq!(risk_engine.borrow().event_count(), 2);
+}
+
 fn order_submitted(order: &OrderAny) -> OrderSubmitted {
     OrderSubmittedSpec::builder()
         .trader_id(order.trader_id())
@@ -607,6 +714,28 @@ fn order_submitted(order: &OrderAny) -> OrderSubmitted {
         .client_order_id(order.client_order_id())
         .account_id(order.account_id().unwrap_or(account_id()))
         .build()
+}
+
+fn position_opened(order: &OrderAny) -> PositionOpened {
+    PositionOpened {
+        trader_id: order.trader_id(),
+        strategy_id: order.strategy_id(),
+        instrument_id: order.instrument_id(),
+        position_id: PositionId::new("P-001"),
+        account_id: account_id(),
+        opening_order_id: order.client_order_id(),
+        entry: OrderSide::Buy,
+        side: PositionSide::Long,
+        signed_qty: 1.0,
+        quantity: order.quantity(),
+        last_qty: order.quantity(),
+        last_px: Price::from("1.0"),
+        currency: Currency::USD(),
+        avg_px_open: 1.0,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(1),
+    }
 }
 
 fn order_accepted(
@@ -2725,7 +2854,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
     assert_eq!(first_message.event_type(), OrderEventType::Denied);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("REJECTED BY THROTTLER")
+        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
     );
 }
 
@@ -4730,7 +4859,7 @@ fn test_submit_order_list_beyond_rate_limit_then_denies_all_orders(
     assert_eq!(first_message.event_type(), OrderEventType::Denied);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("REJECTED BY THROTTLER")
+        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
     );
 }
 
@@ -4869,7 +4998,7 @@ fn test_submit_order_list_beyond_rate_limit_denies_all_orders_in_list(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(
             event.message().unwrap(),
-            Ustr::from("REJECTED BY THROTTLER")
+            Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE")
         );
     }
 }

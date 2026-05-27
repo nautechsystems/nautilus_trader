@@ -31,7 +31,7 @@ use nautilus_common::{
         system::trading::TradingStateChanged,
     },
     msgbus,
-    msgbus::{MessagingSwitchboard, TypedIntoHandler, get_message_bus},
+    msgbus::{MessagingSwitchboard, TypedHandler, TypedIntoHandler, get_message_bus},
     runner::try_get_trading_cmd_sender,
     throttler::{RateLimit, Throttler},
 };
@@ -45,7 +45,7 @@ use nautilus_model::{
         OrderSide, OrderStatus, PositionSide, TimeInForce, TradingState, TrailingOffsetType,
         TriggerType,
     },
-    events::{OrderDenied, OrderEventAny, OrderModifyRejected},
+    events::{OrderDenied, OrderEventAny, OrderModifyRejected, PositionEvent},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -133,10 +133,11 @@ impl RiskEngine {
     pub fn register_msgbus_handlers(engine: &Rc<RefCell<Self>>) {
         let weak = WeakCell::from(Rc::downgrade(engine));
 
+        let weak_execute = weak.clone();
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::risk_engine_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
-                if let Some(rc) = weak.upgrade() {
+                if let Some(rc) = weak_execute.upgrade() {
                     rc.borrow_mut().execute(cmd);
                 }
             }),
@@ -161,6 +162,38 @@ impl RiskEngine {
                 }
             }),
         );
+
+        let weak_process = weak.clone();
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::risk_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                if let Some(rc) = weak_process.upgrade() {
+                    rc.borrow_mut().process(event);
+                }
+            }),
+        );
+
+        let weak_order_events = weak.clone();
+        msgbus::subscribe_order_events(
+            "events.order.*".into(),
+            TypedHandler::from(move |event: &OrderEventAny| {
+                if let Some(rc) = weak_order_events.upgrade() {
+                    rc.borrow_mut().process(event.clone());
+                }
+            }),
+            Some(10),
+        );
+
+        let weak_position_events = weak;
+        msgbus::subscribe_position_events(
+            "events.position.*".into(),
+            TypedHandler::from(move |event: &PositionEvent| {
+                if let Some(rc) = weak_position_events.upgrade() {
+                    rc.borrow_mut().process_position_event(event);
+                }
+            }),
+            Some(10),
+        );
     }
 
     fn create_submit_throttler(
@@ -179,7 +212,7 @@ impl RiskEngine {
             let cache = cache;
             let clock = clock.clone();
             Box::new(move |command: TradingCommand| {
-                let reason = "REJECTED BY THROTTLER";
+                let reason = "Exceeded MAX_ORDER_SUBMIT_RATE";
 
                 match command {
                     TradingCommand::SubmitOrder(submit_order) => {
@@ -367,6 +400,12 @@ impl RiskEngine {
 
         // This will extend to other events such as `RiskEvent`
         self.handle_event(&event);
+    }
+
+    fn process_position_event(&mut self, event: &PositionEvent) {
+        self.event_count += 1;
+
+        self.handle_position_event(event);
     }
 
     /// Sets the trading state for risk control enforcement.
@@ -1864,6 +1903,12 @@ impl RiskEngine {
     fn handle_event(&self, event: &OrderEventAny) {
         // We intend to extend the risk engine to be able to handle additional events.
         // For now we just log.
+        if self.config.debug {
+            log::debug!("{RECV}{EVT} {event:?}");
+        }
+    }
+
+    fn handle_position_event(&self, event: &PositionEvent) {
         if self.config.debug {
             log::debug!("{RECV}{EVT} {event:?}");
         }
