@@ -634,18 +634,31 @@ impl RiskEngine {
         }
 
         for order in &orders {
-            let instrument = instruments
-                .get(&order.instrument_id())
-                .expect("instrument resolved above");
+            let Some(instrument) = instruments.get(&order.instrument_id()) else {
+                self.deny_order(
+                    order,
+                    &format!("no instrument found for {}", order.instrument_id()),
+                );
+                return; // Denied
+            };
+
             if !self.check_order(instrument, order) {
                 return; // Denied
             }
         }
 
-        let representative = instruments
-            .get(&command.instrument_id)
-            .expect("representative instrument resolved above")
-            .clone();
+        let representative = if let Some(instrument) = instruments.get(&command.instrument_id) {
+            instrument.clone()
+        } else {
+            self.deny_order_list(
+                &orders,
+                &format!(
+                    "no representative instrument found for {}",
+                    command.instrument_id
+                ),
+            );
+            return; // Denied
+        };
 
         if !self.check_orders_risk(&representative, &orders) {
             self.deny_order_list(
@@ -766,7 +779,11 @@ impl RiskEngine {
         }
 
         if order.time_in_force() == TimeInForce::Gtd {
-            let expire_time = order.expire_time().expect("GTD has expire time");
+            let Some(expire_time) = order.expire_time() else {
+                self.deny_order(order, "GTD order missing expire time");
+                return false; // Denied
+            };
+
             if expire_time <= self.clock.borrow().timestamp_ns() {
                 self.deny_order(
                     order,
@@ -844,12 +861,19 @@ impl RiskEngine {
         // Determine max notional
         let max_notional_setting = self.max_notional_per_order.get(&instrument.id());
         if let Some(max_notional_setting_val) = max_notional_setting.copied() {
-            max_notional = Some(Money::new(
-                max_notional_setting_val
-                    .to_f64()
-                    .expect("Invalid decimal conversion"),
-                instrument.quote_currency(),
-            ));
+            let Some(max_notional_f64) = max_notional_setting_val.to_f64() else {
+                for order in orders {
+                    self.deny_order(
+                        order,
+                        &format!(
+                            "Invalid max_notional_per_order for {}: {max_notional_setting_val}",
+                            instrument.id()
+                        ),
+                    );
+                }
+                return false; // Denied
+            };
+            max_notional = Some(Money::new(max_notional_f64, instrument.quote_currency()));
         }
 
         // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
@@ -980,12 +1004,27 @@ impl RiskEngine {
             last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
                     if last_px.is_none() {
-                        let cache = self.cache.borrow();
-                        if let Some(last_quote) = cache.quote(&instrument.id()) {
-                            match order.order_side() {
-                                OrderSide::Buy => Some(last_quote.ask_price),
-                                OrderSide::Sell => Some(last_quote.bid_price),
-                                _ => panic!("Invalid order side"),
+                        let quote_price = {
+                            let cache = self.cache.borrow();
+                            cache.quote(&instrument.id()).map(|last_quote| {
+                                match order.order_side() {
+                                    OrderSide::Buy => Ok(last_quote.ask_price),
+                                    OrderSide::Sell => Ok(last_quote.bid_price),
+                                    OrderSide::NoOrderSide => Err(format!(
+                                        "invalid `OrderSide`, was {}",
+                                        order.order_side()
+                                    )),
+                                }
+                            })
+                        };
+
+                        if let Some(quote_price) = quote_price {
+                            match quote_price {
+                                Ok(price) => Some(price),
+                                Err(reason) => {
+                                    self.deny_order(order, &reason);
+                                    return false; // Denied
+                                }
                             }
                         } else {
                             let cache = self.cache.borrow();
@@ -1011,7 +1050,10 @@ impl RiskEngine {
                         Some(trigger_price)
                     } else {
                         // Validate trailing offset type is supported
-                        let offset_type = order.trailing_offset_type().unwrap();
+                        let Some(offset_type) = order.trailing_offset_type() else {
+                            self.deny_order(order, "missing trailing offset type");
+                            return false; // Denied
+                        };
 
                         if !matches!(
                             offset_type,
@@ -1026,7 +1068,14 @@ impl RiskEngine {
                             return false;
                         }
 
-                        let trigger_type = order.trigger_type().unwrap();
+                        let Some(trigger_type) = order.trigger_type() else {
+                            self.deny_order(order, "missing trigger type");
+                            return false; // Denied
+                        };
+                        let Some(trailing_offset) = order.trailing_offset() else {
+                            self.deny_order(order, "missing trailing offset");
+                            return false; // Denied
+                        };
 
                         // Compute trailing stop trigger inside a scoped cache borrow
                         // to avoid RefCell conflict if deny_order is called below
@@ -1037,9 +1086,9 @@ impl RiskEngine {
                                 if let Some(quote) = cache.quote(&instrument.id()) {
                                     trailing_stop_calculate_with_bid_ask(
                                         instrument.price_increment(),
-                                        order.trailing_offset_type().unwrap(),
+                                        offset_type,
                                         order.order_side_specified(),
-                                        order.trailing_offset().unwrap(),
+                                        trailing_offset,
                                         quote.bid_price,
                                         quote.ask_price,
                                     )
@@ -1056,9 +1105,9 @@ impl RiskEngine {
                             } else if let Some(last_trade) = cache.trade(&instrument.id()) {
                                 trailing_stop_calculate_with_last(
                                     instrument.price_increment(),
-                                    order.trailing_offset_type().unwrap(),
+                                    offset_type,
                                     order.order_side_specified(),
-                                    order.trailing_offset().unwrap(),
+                                    trailing_offset,
                                     last_trade.price,
                                 )
                                 .map(Some)
@@ -1067,9 +1116,9 @@ impl RiskEngine {
                                 if let Some(quote) = cache.quote(&instrument.id()) {
                                     trailing_stop_calculate_with_bid_ask(
                                         instrument.price_increment(),
-                                        order.trailing_offset_type().unwrap(),
+                                        offset_type,
                                         order.order_side_specified(),
-                                        order.trailing_offset().unwrap(),
+                                        trailing_offset,
                                         quote.bid_price,
                                         quote.ask_price,
                                     )
@@ -1340,7 +1389,11 @@ impl RiskEngine {
                         OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
                         OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
                         OrderSide::NoOrderSide => {
-                            panic!("invalid `OrderSide`, was {}", order.order_side());
+                            self.deny_order(
+                                order,
+                                &format!("invalid `OrderSide`, was {}", order.order_side()),
+                            );
+                            return false; // Denied
                         }
                     }
                 };
@@ -1473,16 +1526,17 @@ impl RiskEngine {
                             return false; // Denied
                         }
                     } else if let Some(base_currency) = base_currency {
-                        let cash_value = Money::from_raw(
-                            effective_quantity
-                                .raw
-                                .try_into()
-                                .map_err(|e| {
-                                    log::error!("Unable to convert Quantity to f64: {e}");
-                                })
-                                .unwrap(),
-                            base_currency,
-                        );
+                        let cash_value_raw = match effective_quantity.raw.try_into() {
+                            Ok(value) => value,
+                            Err(e) => {
+                                self.deny_order(
+                                    order,
+                                    &format!("Unable to convert Quantity to f64: {e}"),
+                                );
+                                return false; // Denied
+                            }
+                        };
+                        let cash_value = Money::from_raw(cash_value_raw, base_currency);
 
                         // Use base-currency free balance for sell checks
                         let base_free = match &account {
@@ -1631,7 +1685,7 @@ impl RiskEngine {
                 self.deny_order_list(&orders, reason);
             }
             _ => {
-                panic!("Cannot deny command {command}");
+                log::error!("Cannot deny command {command}");
             }
         }
     }
@@ -1650,13 +1704,11 @@ impl RiskEngine {
         // Scope the cache borrow to avoid RefCell conflict when sending to ExecEngine
         {
             let mut cache = self.cache.borrow_mut();
-            if !cache.order_exists(&order.client_order_id()) {
-                cache
-                    .add_order(order.clone(), None, None, false)
-                    .map_err(|e| {
-                        log::error!("Cannot add order to cache: {e}");
-                    })
-                    .unwrap();
+            if !cache.order_exists(&order.client_order_id())
+                && let Err(e) = cache.add_order(order.clone(), None, None, false)
+            {
+                log::error!("Cannot add order to cache: {e}");
+                return;
             }
         }
 
