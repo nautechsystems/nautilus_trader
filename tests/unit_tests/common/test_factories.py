@@ -26,6 +26,22 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
+class PrefixedClientOrderIdGenerator:
+    def __init__(self):
+        self.count = 0
+        self.use_uuids = False
+
+    def generate(self):
+        self.count += 1
+        return ClientOrderId(f"t-{self.count}")
+
+    def set_count(self, count):
+        self.count = count
+
+    def reset(self):
+        self.count = 0
+
+
 class TestOrderFactory:
     def setup(self):
         # Fixture Setup
@@ -127,6 +143,18 @@ class TestOrderFactory:
 
         # Assert
         assert result == OrderListId("OL-19700101-000000-000-001-2")
+
+    def test_set_client_order_id_generator(self):
+        # Arrange
+        generator = PrefixedClientOrderIdGenerator()
+        self.order_factory.set_client_order_id_generator(generator)
+
+        # Act
+        result = self.order_factory.generate_client_order_id()
+
+        # Assert
+        assert result == ClientOrderId("t-1")
+        assert self.order_factory.get_client_order_id_count() == 1
 
     def test_create_list(self):
         # Arrange

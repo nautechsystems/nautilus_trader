@@ -153,6 +153,20 @@ cdef class OrderFactory:
         """
         self._order_list_id_generator.set_count(count)
 
+    cpdef void set_client_order_id_generator(self, object generator):
+        """
+        Set the client order ID generator used by the factory.
+
+        Parameters
+        ----------
+        generator : object
+            The generator, which must provide a ``generate`` method returning a `ClientOrderId`.
+
+        """
+        Condition.not_none(generator, "generator")
+        Condition.is_true(hasattr(generator, "generate"), "generator must provide a generate method")
+        self._order_id_generator = generator
+
     cpdef ClientOrderId generate_client_order_id(self):
         """
         Generate and return a new client order ID.
@@ -166,7 +180,7 @@ cdef class OrderFactory:
         """
         cdef ClientOrderId client_order_id = self._order_id_generator.generate()
 
-        if self._order_id_generator.use_uuids:
+        if getattr(self._order_id_generator, "use_uuids", False):
             return client_order_id
 
         if self._cache is not None:

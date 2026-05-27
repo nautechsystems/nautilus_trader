@@ -19,7 +19,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
-from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -50,7 +49,7 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 cdef class OrderFactory:
     cdef Clock _clock
     cdef CacheFacade _cache
-    cdef ClientOrderIdGenerator _order_id_generator
+    cdef object _order_id_generator
     cdef OrderListIdGenerator _order_list_id_generator
 
     cdef readonly TraderId trader_id
@@ -66,6 +65,7 @@ cdef class OrderFactory:
     cpdef get_order_list_id_count(self)
     cpdef void set_client_order_id_count(self, int count)
     cpdef void set_order_list_id_count(self, int count)
+    cpdef void set_client_order_id_generator(self, object generator)
     cpdef ClientOrderId generate_client_order_id(self)
     cpdef OrderListId generate_order_list_id(self)
     cpdef void reset(self)
