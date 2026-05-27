@@ -2560,6 +2560,7 @@ impl OrderMatchingEngine {
             } else {
                 self.best_ask_price().is_some() || self.settlement_price.is_some()
             };
+
             if !has_price {
                 log::warn!(
                     "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
