@@ -27,12 +27,34 @@ use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OmsType,
-    events::{AccountState, OrderEventAny, OrderFilled, OrderInitialized, PositionAdjusted},
+    events::{
+        AccountState, OrderEventAny, OrderFilled, OrderInitialized, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionOpened,
+    },
     orders::OrderAny,
     position::Position,
 };
 use serde::de::DeserializeOwned;
 
+#[cfg(test)]
+use crate::capture::builtins::{
+    PAYLOAD_TYPE_BARS_RESPONSE, PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
+    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE, PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+    PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS, PAYLOAD_TYPE_CANCEL_ORDER,
+    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE, PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+    PAYLOAD_TYPE_FILL_REPORT, PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
+    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER, PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+    PAYLOAD_TYPE_ORDER_WITH_FILLS, PAYLOAD_TYPE_POSITION_STATUS_REPORT, PAYLOAD_TYPE_QUERY_ACCOUNT,
+    PAYLOAD_TYPE_QUERY_ORDER, PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_REQUEST_COMMAND,
+    PAYLOAD_TYPE_SUBMIT_ORDER, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_TIME_EVENT, PAYLOAD_TYPE_TRADES_RESPONSE, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+};
+#[cfg(all(test, feature = "defi"))]
+use crate::capture::builtins::{
+    PAYLOAD_TYPE_DEFI_REQUEST_COMMAND, PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+};
 use crate::{
     RedbBackend,
     backend::{EventStore, ScanDirection},
@@ -44,6 +66,7 @@ use crate::{
         PAYLOAD_TYPE_ORDER_PENDING_CANCEL, PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
         PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
         PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
+        PAYLOAD_TYPE_POSITION_CHANGED, PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED,
     },
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -71,6 +94,69 @@ pub struct EventStoreReplayReport {
     /// Cache snapshot-tail replay result.
     pub cache: CacheReplayReport,
 }
+
+#[cfg(test)]
+pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_ORDER_INITIALIZED,
+    PAYLOAD_TYPE_ORDER_DENIED,
+    PAYLOAD_TYPE_ORDER_EMULATED,
+    PAYLOAD_TYPE_ORDER_RELEASED,
+    PAYLOAD_TYPE_ORDER_SUBMITTED,
+    PAYLOAD_TYPE_ORDER_ACCEPTED,
+    PAYLOAD_TYPE_ORDER_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCELED,
+    PAYLOAD_TYPE_ORDER_EXPIRED,
+    PAYLOAD_TYPE_ORDER_TRIGGERED,
+    PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+    PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+    PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+    PAYLOAD_TYPE_ORDER_UPDATED,
+    PAYLOAD_TYPE_ORDER_FILLED,
+    PAYLOAD_TYPE_POSITION_OPENED,
+    PAYLOAD_TYPE_POSITION_CHANGED,
+    PAYLOAD_TYPE_POSITION_CLOSED,
+    PAYLOAD_TYPE_POSITION_ADJUSTED,
+];
+
+#[cfg(test)]
+pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_SUBMIT_ORDER,
+    PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
+    PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_CANCEL_ORDER,
+    PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
+    PAYLOAD_TYPE_QUERY_ORDER,
+    PAYLOAD_TYPE_QUERY_ACCOUNT,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+    PAYLOAD_TYPE_FILL_REPORT,
+    PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    PAYLOAD_TYPE_POSITION_STATUS_REPORT,
+    PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+    PAYLOAD_TYPE_TIME_EVENT,
+    PAYLOAD_TYPE_REQUEST_COMMAND,
+    PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_REQUEST_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+    PAYLOAD_TYPE_QUOTES_RESPONSE,
+    PAYLOAD_TYPE_TRADES_RESPONSE,
+    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
+    PAYLOAD_TYPE_BARS_RESPONSE,
+];
 
 /// Replay input scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1152,6 +1238,18 @@ pub fn apply_cache_replay_entry(
             apply_result(entry, cache.update_order(&event))?;
             apply_fill_to_position(cache, entry, &fill)?;
         }
+        PAYLOAD_TYPE_POSITION_OPENED => {
+            let opened = decode_payload::<PositionOpened>(entry)?;
+            apply_position_opened(cache, entry, &opened)?;
+        }
+        PAYLOAD_TYPE_POSITION_CHANGED => {
+            let changed = decode_payload::<PositionChanged>(entry)?;
+            apply_position_changed(cache, entry, &changed)?;
+        }
+        PAYLOAD_TYPE_POSITION_CLOSED => {
+            let closed = decode_payload::<PositionClosed>(entry)?;
+            apply_position_closed(cache, entry, &closed)?;
+        }
         PAYLOAD_TYPE_POSITION_ADJUSTED => {
             let adjustment = decode_payload::<PositionAdjusted>(entry)?;
             apply_position_adjustment(cache, entry, adjustment)?;
@@ -1213,6 +1311,108 @@ fn apply_fill_to_position(
     Ok(())
 }
 
+fn apply_position_opened(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    opened: &PositionOpened,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&opened.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = opened.trader_id;
+    position.strategy_id = opened.strategy_id;
+    position.instrument_id = opened.instrument_id;
+    position.id = opened.position_id;
+    position.account_id = opened.account_id;
+    position.opening_order_id = opened.opening_order_id;
+    position.closing_order_id = None;
+    position.entry = opened.entry;
+    position.side = opened.side;
+    position.signed_qty = opened.signed_qty;
+    position.quantity = opened.quantity;
+    position.peak_qty = opened.quantity;
+    position.quote_currency = opened.currency;
+    position.ts_opened = opened.ts_event;
+    position.ts_last = opened.ts_event;
+    position.ts_closed = None;
+    position.duration_ns = 0;
+    position.avg_px_open = opened.avg_px_open;
+    position.avg_px_close = None;
+    position.realized_return = 0.0;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
+fn apply_position_changed(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    changed: &PositionChanged,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&changed.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = changed.trader_id;
+    position.strategy_id = changed.strategy_id;
+    position.instrument_id = changed.instrument_id;
+    position.id = changed.position_id;
+    position.account_id = changed.account_id;
+    position.opening_order_id = changed.opening_order_id;
+    position.entry = changed.entry;
+    position.side = changed.side;
+    position.signed_qty = changed.signed_qty;
+    position.quantity = changed.quantity;
+    position.peak_qty = changed.peak_quantity;
+    position.quote_currency = changed.currency;
+    position.ts_opened = changed.ts_opened;
+    position.ts_last = changed.ts_event;
+    position.ts_closed = None;
+    position.avg_px_open = changed.avg_px_open;
+    position.avg_px_close = changed.avg_px_close;
+    position.realized_return = changed.realized_return;
+    position.realized_pnl = changed.realized_pnl;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
+fn apply_position_closed(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    closed: &PositionClosed,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&closed.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = closed.trader_id;
+    position.strategy_id = closed.strategy_id;
+    position.instrument_id = closed.instrument_id;
+    position.id = closed.position_id;
+    position.account_id = closed.account_id;
+    position.opening_order_id = closed.opening_order_id;
+    position.closing_order_id = closed.closing_order_id;
+    position.entry = closed.entry;
+    position.side = closed.side;
+    position.signed_qty = closed.signed_qty;
+    position.quantity = closed.quantity;
+    position.peak_qty = closed.peak_quantity;
+    position.quote_currency = closed.currency;
+    position.ts_opened = closed.ts_opened;
+    position.ts_last = closed.ts_event;
+    position.ts_closed = closed.ts_closed;
+    position.duration_ns = closed.duration;
+    position.avg_px_open = closed.avg_px_open;
+    position.avg_px_close = closed.avg_px_close;
+    position.realized_return = closed.realized_return;
+    position.realized_pnl = closed.realized_pnl;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
 fn apply_position_adjustment(
     cache: &mut Cache,
     entry: &EventStoreEntry,
@@ -1269,13 +1469,14 @@ fn reject_quarantined_replay_source(
 mod tests {
     use std::{any::Any, cell::Cell, rc::Rc};
 
+    use ahash::AHashSet;
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_common::msgbus::{self, BusTap, Endpoint, MStr, Topic as BusTopic};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         accounts::AccountAny,
-        enums::{OrderStatus, PositionAdjustmentType},
+        enums::{OrderSide, OrderStatus, PositionAdjustmentType},
         events::{
             PositionEvent,
             account::stubs::{cash_account_state, cash_account_state_million_usd},
@@ -1283,10 +1484,10 @@ mod tests {
                 OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec,
             },
         },
-        identifiers::{AccountId, PositionId},
+        identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::Order,
-        types::{Currency, Money},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use tempfile::TempDir;
@@ -1296,7 +1497,9 @@ mod tests {
     use crate::{
         backend::{AppendEntry, MemoryBackend, RedbBackend},
         capture::{
-            builtins::{encode_order_event_any, encode_position_event},
+            builtins::{
+                DEFAULT_CAPTURE_PAYLOAD_TYPES, encode_order_event_any, encode_position_event,
+            },
             encode_account_state,
         },
         entry::Topic as EntryTopic,
@@ -1981,6 +2184,93 @@ mod tests {
     }
 
     #[rstest]
+    fn default_capture_payload_types_are_classified_for_cache_replay() {
+        let mut classified = AHashSet::new();
+        let mut overlap = Vec::new();
+
+        for payload_type in CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES {
+            classified.insert(*payload_type);
+        }
+
+        for payload_type in FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES {
+            if !classified.insert(*payload_type) {
+                overlap.push(*payload_type);
+            }
+        }
+
+        let mut seen_defaults = AHashSet::new();
+        let duplicate_defaults: Vec<_> = DEFAULT_CAPTURE_PAYLOAD_TYPES
+            .iter()
+            .copied()
+            .filter(|payload_type| !seen_defaults.insert(*payload_type))
+            .collect();
+        let unclassified: Vec<_> = DEFAULT_CAPTURE_PAYLOAD_TYPES
+            .iter()
+            .copied()
+            .filter(|payload_type| !classified.contains(payload_type))
+            .collect();
+        let extra: Vec<_> = classified
+            .iter()
+            .copied()
+            .filter(|payload_type| !seen_defaults.contains(payload_type))
+            .collect();
+
+        assert!(
+            duplicate_defaults.is_empty(),
+            "default capture payload types must be unique: {duplicate_defaults:?}",
+        );
+        assert!(
+            overlap.is_empty(),
+            "cache replay and forensic-only classes must not overlap: {overlap:?}",
+        );
+        assert!(
+            unclassified.is_empty(),
+            "default capture payload types must be cache replayed or forensic-only: {unclassified:?}",
+        );
+        assert!(
+            extra.is_empty(),
+            "cache replay classification must not list uncaptured payload types: {extra:?}",
+        );
+    }
+
+    #[rstest]
+    fn cache_replay_capture_payload_types_have_replay_rules() {
+        for payload_type in CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES {
+            let entry = append_payload(1, payload_type, Bytes::from_static(&[0xc1])).entry;
+            let mut cache = Cache::default();
+
+            let err = apply_cache_replay_entry(&mut cache, &entry)
+                .expect_err("cache replay payload type must have a decode rule");
+
+            match err {
+                CacheReplayError::Decode {
+                    payload_type: actual,
+                    ..
+                } => {
+                    assert_eq!(actual, *payload_type);
+                }
+                other => panic!("expected Decode for {payload_type}, was {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
+    fn forensic_only_capture_payload_types_are_not_cache_replayed() {
+        for payload_type in FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES {
+            let entry = append_payload(1, payload_type, Bytes::from_static(&[0xc1])).entry;
+            let mut cache = Cache::default();
+
+            let applied = apply_cache_replay_entry(&mut cache, &entry)
+                .expect("forensic-only payload type must not be decoded by cache replay");
+
+            assert!(
+                !applied,
+                "forensic-only payload type must be ignored by cache replay: {payload_type}",
+            );
+        }
+    }
+
+    #[rstest]
     fn order_fill_replay_updates_order_and_creates_position() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-001");
@@ -2033,6 +2323,110 @@ mod tests {
         assert_eq!(position.last_event(), Some(filled));
         assert_eq!(position.trade_ids(), vec![filled.trade_id]);
         assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
+    }
+
+    #[rstest]
+    fn position_lifecycle_replay_updates_existing_position() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-001");
+        let opened_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-OPEN"))
+            .venue_order_id(VenueOrderId::from("V-OPEN"))
+            .trade_id(TradeId::from("T-OPEN"))
+            .position_id(position_id)
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("1.00000"))
+            .build();
+        let mut live_position = Position::new(&instrument, opened_fill);
+        let opened = PositionOpened::create(
+            &live_position,
+            &opened_fill,
+            UUID4::new(),
+            UnixNanos::from(10),
+        );
+
+        let changed_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CHANGE"))
+            .venue_order_id(VenueOrderId::from("V-CHANGE"))
+            .trade_id(TradeId::from("T-CHANGE"))
+            .position_id(position_id)
+            .last_qty(Quantity::from("2"))
+            .last_px(Price::from("1.10000"))
+            .build();
+        live_position.apply(&changed_fill);
+        let changed = PositionChanged::create(
+            &live_position,
+            &changed_fill,
+            UUID4::new(),
+            UnixNanos::from(20),
+        );
+
+        let closed_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CLOSE"))
+            .venue_order_id(VenueOrderId::from("V-CLOSE"))
+            .trade_id(TradeId::from("T-CLOSE"))
+            .order_side(OrderSide::Sell)
+            .position_id(position_id)
+            .last_qty(Quantity::from("3"))
+            .last_px(Price::from("1.20000"))
+            .build();
+        live_position.apply(&closed_fill);
+        let closed = PositionClosed::create(
+            &live_position,
+            &closed_fill,
+            UUID4::new(),
+            UnixNanos::from(30),
+        );
+
+        let mut stale_position = Position::new(&instrument, opened_fill);
+        stale_position.signed_qty = 9.0;
+        stale_position.quantity = Quantity::from("9");
+        let mut cache = Cache::default();
+        cache
+            .add_position(&stale_position, OmsType::Unspecified)
+            .expect("seed stale position");
+
+        let opened_entry =
+            append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
+        let changed_entry =
+            append_position_event(2, &PositionEvent::PositionChanged(changed.clone())).entry;
+        let closed_entry =
+            append_position_event(3, &PositionEvent::PositionClosed(closed.clone())).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &opened_entry).expect("apply opened"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after opened");
+        assert_eq!(replayed.signed_qty.to_bits(), opened.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, opened.quantity);
+        assert_eq!(replayed.ts_last, opened.ts_event);
+
+        assert!(apply_cache_replay_entry(&mut cache, &changed_entry).expect("apply changed"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after changed");
+        assert_eq!(replayed.signed_qty.to_bits(), changed.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, changed.quantity);
+        assert_eq!(replayed.peak_qty, changed.peak_quantity);
+        assert_eq!(
+            replayed.avg_px_open.to_bits(),
+            changed.avg_px_open.to_bits()
+        );
+        assert!(replayed.is_open());
+
+        assert!(apply_cache_replay_entry(&mut cache, &closed_entry).expect("apply closed"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after closed");
+        assert_eq!(replayed.signed_qty.to_bits(), closed.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, closed.quantity);
+        assert_eq!(replayed.closing_order_id, closed.closing_order_id);
+        assert_eq!(replayed.duration_ns, closed.duration);
+        assert!(replayed.is_closed());
+        assert!(cache.is_position_closed(&position_id));
     }
 
     #[rstest]
