@@ -315,7 +315,7 @@ impl OrderEmulator {
             && let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id())
             && let Err(e) = matching_core.delete_order(event.client_order_id())
         {
-            log::error!("Error deleting order: {e}");
+            log::debug!("Error deleting order: {e}");
         }
         // else: Order not in cache yet
     }
@@ -876,7 +876,7 @@ impl OrderEmulator {
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
             && let Err(e) = matching_core.delete_order(order.client_order_id())
         {
-            log::error!("Cannot delete order: {e:?}");
+            log::debug!("Cannot delete order: {e:?}");
         }
 
         self.manager
@@ -1035,7 +1035,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(client_order_id) {
-                log::error!("Error deleting order: {e:?}");
+                log::debug!("Error deleting order: {e:?}");
             }
 
             let emulation_trigger = TriggerType::NoTrigger;
@@ -1190,7 +1190,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(client_order_id) {
-                log::error!("Cannot delete order: {e:?}");
+                log::debug!("Cannot delete order: {e:?}");
             }
 
             order.set_emulation_trigger(Some(TriggerType::NoTrigger));
