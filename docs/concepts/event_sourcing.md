@@ -280,7 +280,15 @@ Decision and full incident planners take explicit `CatalogSliceSelector` values 
 `ReplayCatalog`. Planning resolves catalog time bounds from the event-store scan unless the
 selector supplies explicit bounds, reports missing catalog slices, and preserves `seq` as the
 entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
-catalog records grouped under their selected slice. These APIs do not:
+catalog records grouped under their selected slice.
+
+`ReplayInputs::context_timeline()` builds an analysis-only timeline over those already-loaded
+inputs. It returns indices into the loaded event-store entries and catalog records, sorted by
+`ts_init` for context inspection. It does not load more data, publish messages, run engine logic,
+or define the order used by cache replay. Replay drivers continue to use the loaded event-store
+entries in durable `seq` order.
+
+These APIs do not:
 
 - open live venue clients
 - run strategies or actors

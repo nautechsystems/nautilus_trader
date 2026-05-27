@@ -444,6 +444,96 @@ pub struct ReplayInputs {
     pub catalog_slices: Vec<CatalogReplaySlice>,
 }
 
+impl ReplayInputs {
+    /// Builds an analysis-only context timeline over loaded event entries and catalog records.
+    ///
+    /// The returned items are indices into [`ReplayInputs::entries`] and
+    /// [`ReplayInputs::catalog_slices`]. This view does not load catalog data, mutate cache state,
+    /// publish messages, or define cache replay order. Cache replay continues to apply event-store
+    /// entries from [`ReplayInputs::entries`] in durable `seq` order.
+    #[must_use]
+    pub fn context_timeline(&self) -> Vec<ReplayContextTimelineItem> {
+        let catalog_record_count = self
+            .catalog_slices
+            .iter()
+            .map(|slice| slice.records.len())
+            .sum::<usize>();
+        let mut items = Vec::with_capacity(self.entries.len() + catalog_record_count);
+
+        for (entry_index, entry) in self.entries.iter().enumerate() {
+            items.push(ReplayContextTimelineItem {
+                ts_init: entry.ts_init,
+                source: ReplayContextSource::EventStoreEntry {
+                    entry_index,
+                    seq: entry.seq,
+                },
+            });
+        }
+
+        for (slice_index, slice) in self.catalog_slices.iter().enumerate() {
+            for (record_index, record) in slice.records.iter().enumerate() {
+                items.push(ReplayContextTimelineItem {
+                    ts_init: record.ts_init,
+                    source: ReplayContextSource::CatalogRecord {
+                        slice_index,
+                        record_index,
+                    },
+                });
+            }
+        }
+
+        items.sort_by_key(ReplayContextTimelineItem::sort_key);
+        items
+    }
+}
+
+/// Analysis-only reference to a loaded replay input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayContextSource {
+    /// Event-store entry at `entries[entry_index]`.
+    EventStoreEntry {
+        /// Index into [`ReplayInputs::entries`].
+        entry_index: usize,
+        /// Durable event-store sequence for the entry.
+        seq: u64,
+    },
+    /// Catalog record at `catalog_slices[slice_index].records[record_index]`.
+    CatalogRecord {
+        /// Index into [`ReplayInputs::catalog_slices`].
+        slice_index: usize,
+        /// Index into [`CatalogReplaySlice::records`].
+        record_index: usize,
+    },
+}
+
+impl ReplayContextSource {
+    const fn sort_key(self) -> (u8, usize, usize) {
+        match self {
+            Self::EventStoreEntry { entry_index, .. } => (0, entry_index, 0),
+            Self::CatalogRecord {
+                slice_index,
+                record_index,
+            } => (1, slice_index, record_index),
+        }
+    }
+}
+
+/// One item in a context timeline for decision or incident analysis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReplayContextTimelineItem {
+    /// Timestamp used to place this already-loaded input in context.
+    pub ts_init: UnixNanos,
+    /// Index reference to the loaded input.
+    pub source: ReplayContextSource,
+}
+
+impl ReplayContextTimelineItem {
+    fn sort_key(&self) -> (UnixNanos, u8, usize, usize) {
+        let (source_order, major_index, minor_index) = self.source.sort_key();
+        (self.ts_init, source_order, major_index, minor_index)
+    }
+}
+
 /// Read-only catalog source used by catalog-joined replay input loaders.
 pub trait ReplayCatalog {
     /// Catalog-specific error type.
@@ -2282,6 +2372,80 @@ mod tests {
         assert_eq!(loaded.catalog_slices.len(), 1);
         assert_eq!(loaded.catalog_slices[0].records, vec![record]);
         assert_eq!(catalog.load_plans.len(), 1);
+    }
+
+    #[rstest]
+    fn context_timeline_joins_loaded_inputs_without_mutating_replay_order() {
+        let reader = reader_with_entries(
+            "run-context-timeline",
+            &[
+                append_payload_with_ts(1, 100, "RunStarted", Bytes::from_static(b"started")),
+                append_payload_with_ts(2, 120, "OrderFilled", Bytes::from_static(b"filled")),
+            ],
+        );
+        let records = vec![
+            CatalogReplayRecord::new(
+                "quotes",
+                Some("AUD/USD.SIM".to_string()),
+                UnixNanos::from(110),
+                Bytes::from_static(b"quote-1"),
+            ),
+            CatalogReplayRecord::new(
+                "quotes",
+                Some("AUD/USD.SIM".to_string()),
+                UnixNanos::from(120),
+                Bytes::from_static(b"quote-2"),
+            ),
+        ];
+        let mut catalog = FakeReplayCatalog::new(
+            CatalogSliceCoverage::from_files(vec!["quotes/AUDUSD.SIM/100_120.parquet".into()]),
+            records,
+        );
+        let plan = plan_decision_replay_inputs(
+            &reader,
+            &mut catalog,
+            ReplaySeqRange::new(1, 2),
+            &[CatalogSliceSelector::new("quotes").with_identifier("AUD/USD.SIM")],
+        )
+        .expect("plan decision replay");
+
+        let loaded =
+            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load decision");
+        let timeline = loaded.context_timeline();
+        let replay_seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
+        let timeline_sources: Vec<_> = timeline.iter().map(|item| item.source).collect();
+
+        assert_eq!(replay_seqs, vec![1, 2]);
+        assert_eq!(
+            timeline_sources,
+            vec![
+                ReplayContextSource::EventStoreEntry {
+                    entry_index: 0,
+                    seq: 1,
+                },
+                ReplayContextSource::CatalogRecord {
+                    slice_index: 0,
+                    record_index: 0,
+                },
+                ReplayContextSource::EventStoreEntry {
+                    entry_index: 1,
+                    seq: 2,
+                },
+                ReplayContextSource::CatalogRecord {
+                    slice_index: 0,
+                    record_index: 1,
+                },
+            ],
+        );
+        assert_eq!(
+            timeline.iter().map(|item| item.ts_init).collect::<Vec<_>>(),
+            vec![
+                UnixNanos::from(100),
+                UnixNanos::from(110),
+                UnixNanos::from(120),
+                UnixNanos::from(120),
+            ],
+        );
     }
 
     #[rstest]
