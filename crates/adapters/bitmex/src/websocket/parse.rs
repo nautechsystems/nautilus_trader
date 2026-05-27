@@ -1030,9 +1030,9 @@ pub fn parse_instrument_msg(
     let mut updates = Vec::new();
     let is_index = is_index_symbol(&msg.symbol);
 
-    // BitMEX uses `fairPrice` for mark (markMethod=FairPrice on perps) and
-    // `indicativeSettlePrice` for index; `markPrice`/`indexPrice` are legacy fallbacks.
-    let effective_mark_price = msg.fair_price.or(msg.mark_price);
+    // Mark: `markPrice` (canonical, varies by `markMethod`) with `fairPrice` fallback.
+    // Index: `indicativeSettlePrice` (BitMEX's actual field); `indexPrice` legacy fallback.
+    let effective_mark_price = msg.mark_price.or(msg.fair_price);
     let effective_index_price = if is_index {
         msg.last_price
     } else {
@@ -1993,13 +1993,13 @@ mod tests {
 
         let updates = parse_instrument_msg(&msg, &instruments_cache, UnixNanos::from(1));
 
-        // Values come from preferred fields: fairPrice (95125.0) and indicativeSettlePrice (95126.0).
+        // Mark comes from `markPrice` (95125.7); index from `indicativeSettlePrice` (95126.0).
         assert_eq!(updates.len(), 2);
 
         match &updates[0] {
             Data::MarkPriceUpdate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
-                assert_eq!(update.value.as_f64(), 95125.0);
+                assert_eq!(update.value.as_f64(), 95125.7);
             }
             _ => panic!("Expected MarkPriceUpdate at index 0"),
         }
@@ -2030,7 +2030,7 @@ mod tests {
         match &updates[0] {
             Data::MarkPriceUpdate(update) => {
                 assert_eq!(update.instrument_id.to_string(), "XBTUSD.BITMEX");
-                assert_eq!(update.value.as_f64(), 95125.0);
+                assert_eq!(update.value.as_f64(), 95125.7);
             }
             _ => panic!("Expected MarkPriceUpdate"),
         }
