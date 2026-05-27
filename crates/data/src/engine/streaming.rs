@@ -302,7 +302,7 @@ impl DataEngine {
         let n_requests = n_client_requests + n_catalog_requests;
 
         if n_requests == 0 {
-            let empty = build_empty_response(&req, start_ns, end_ns, used_client_id, now_ns);
+            let empty = build_empty_response(&req, start_ns, end_ns, used_client_id, now_ns)?;
             self.response(empty);
             return Ok(());
         }
@@ -330,8 +330,19 @@ impl DataEngine {
                     log::error!(
                         "Catalog leg query failed for parent {parent_id} (catalog {catalog_name}): {e}"
                     );
-                    let empty =
-                        build_empty_response(&leg, start_ns, end_ns, used_client_id, now_ns);
+                    let empty = match build_empty_response(
+                        &leg,
+                        start_ns,
+                        end_ns,
+                        used_client_id,
+                        now_ns,
+                    ) {
+                        Ok(empty) => empty,
+                        Err(e) => {
+                            self.abort_request_pipeline(parent_id);
+                            return Err(e);
+                        }
+                    };
                     self.response(empty);
                 }
             }
@@ -884,8 +895,8 @@ fn build_empty_response(
     end: UnixNanos,
     used_client_id: Option<ClientId>,
     ts_init: UnixNanos,
-) -> DataResponse {
-    match req {
+) -> anyhow::Result<DataResponse> {
+    let response = match req {
         RequestCommand::Data(cmd) => DataResponse::Data(CustomDataResponse::new(
             cmd.request_id,
             cmd.client_id,
@@ -957,8 +968,12 @@ fn build_empty_response(
             ts_init,
             cmd.params.clone(),
         )),
-        _ => unreachable!("build_empty_response called with non-catalog-eligible variant"),
-    }
+        _ => {
+            anyhow::bail!("Cannot build empty catalog response for non-catalog-eligible request")
+        }
+    };
+
+    Ok(response)
 }
 
 fn build_quotes_catalog_response(
@@ -1201,4 +1216,38 @@ fn resolve_response_client_id(
     request_client_id
         .or(used_client_id)
         .unwrap_or_else(|| ClientId::new(CATALOG_CLIENT_ID))
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::messages::data::RequestJoin;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_build_empty_response_rejects_non_catalog_variant() {
+        let request = RequestCommand::Join(RequestJoin::new(
+            vec![UUID4::new()],
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+
+        let result = build_empty_response(
+            &request,
+            UnixNanos::from(1u64),
+            UnixNanos::from(2u64),
+            None,
+            UnixNanos::from(3u64),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Cannot build empty catalog response for non-catalog-eligible request"
+        );
+    }
 }

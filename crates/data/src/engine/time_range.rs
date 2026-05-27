@@ -652,7 +652,7 @@ fn empty_time_range_parent_response(
             ts_init,
             params,
         )?,
-        _ => unreachable!("time-range pipeline parent must be a supported date-range variant"),
+        _ => return None,
     };
 
     Some(response)
@@ -784,11 +784,15 @@ fn parse_time_range_duration(value: &Value) -> anyhow::Result<Option<u64>> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{Params, UnixNanos};
+    use nautilus_common::messages::data::{RequestCommand, RequestInstrument};
+    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_model::identifiers::{ClientId, InstrumentId};
     use rstest::rstest;
     use serde_json::json;
 
-    use super::DefaultTimeRangeGenerator;
+    use super::{
+        DefaultTimeRangeGenerator, TimeRangePipelineState, empty_time_range_parent_response,
+    };
 
     #[rstest]
     #[case(json!("invalid"), "must be an array")]
@@ -811,5 +815,36 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains(expected));
+    }
+
+    #[rstest]
+    fn test_empty_time_range_parent_response_returns_none_for_unsupported_parent() {
+        let state = TimeRangePipelineState {
+            parent: RequestCommand::Instrument(RequestInstrument::new(
+                InstrumentId::from("BTCUSDT.BINANCE"),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )),
+            generator: DefaultTimeRangeGenerator::new(
+                None,
+                UnixNanos::from(0u64),
+                UnixNanos::from(1u64),
+            )
+            .unwrap(),
+            start_ns: UnixNanos::from(0u64),
+            end_ns: UnixNanos::from(1u64),
+            response_client_id: ClientId::new("TEST"),
+            data_count: 0,
+            last_response: None,
+        };
+
+        let result =
+            empty_time_range_parent_response(UUID4::new(), &state, UnixNanos::from(2u64), None);
+
+        assert!(result.is_none());
     }
 }
