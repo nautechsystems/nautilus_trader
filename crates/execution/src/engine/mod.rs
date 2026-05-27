@@ -2218,11 +2218,15 @@ impl ExecutionEngine {
         let client_order_id = if cache.order_exists(&event_client_order_id) {
             event_client_order_id
         } else {
-            log::warn!(
-                "Order with {} not found in the cache to apply {}",
-                event.client_order_id(),
-                event
-            );
+            let is_leg_fill =
+                matches!(event, OrderEventAny::Filled(fill) if self.is_leg_fill(fill));
+            if !is_leg_fill {
+                log::warn!(
+                    "Order with {} not found in the cache to apply {}",
+                    event.client_order_id(),
+                    event
+                );
+            }
 
             // Try to find order by venue order ID if available
             let venue_order_id = if let Some(id) = event.venue_order_id() {
@@ -2239,6 +2243,19 @@ impl ExecutionEngine {
             let client_order_id = if let Some(id) = cache.client_order_id(&venue_order_id) {
                 *id
             } else {
+                if let OrderEventAny::Filled(fill) = event
+                    && is_leg_fill
+                {
+                    log::info!(
+                        "Processing leg fill without corresponding order: {} for instrument {}",
+                        fill.client_order_id,
+                        fill.instrument_id
+                    );
+                    drop(cache);
+                    self.handle_leg_fill_without_order(*fill);
+                    return;
+                }
+
                 log::error!(
                     "Cannot apply event to any order: {} and {venue_order_id} not found in the cache",
                     event.client_order_id(),
@@ -2251,6 +2268,19 @@ impl ExecutionEngine {
                 log::info!("Order with {client_order_id} was found in the cache");
                 client_order_id
             } else {
+                if let OrderEventAny::Filled(fill) = event
+                    && is_leg_fill
+                {
+                    log::info!(
+                        "Processing leg fill without corresponding order: {} for instrument {}",
+                        fill.client_order_id,
+                        fill.instrument_id
+                    );
+                    drop(cache);
+                    self.handle_leg_fill_without_order(*fill);
+                    return;
+                }
+
                 log::error!(
                     "Cannot apply event to any order: {client_order_id} and {venue_order_id} not found in cache",
                 );
@@ -2301,6 +2331,95 @@ impl ExecutionEngine {
                 }
             }
         }
+    }
+
+    fn handle_leg_fill_without_order(&mut self, mut fill: OrderFilled) {
+        let instrument =
+            if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
+                instrument.clone()
+            } else {
+                log::error!(
+                    "Cannot handle leg fill: no instrument found for {}, {fill}",
+                    fill.instrument_id,
+                );
+                return;
+            };
+
+        if self.cache.borrow().account(&fill.account_id).is_none() {
+            log::error!(
+                "Cannot handle leg fill: no account found for {}, {fill}",
+                fill.instrument_id.venue,
+            );
+            return;
+        }
+
+        let oms_type = self.determine_oms_type(&fill);
+        let position_id = self.determine_leg_fill_position_id(fill, oms_type);
+        fill.position_id = Some(position_id);
+        let duplicate_position_fill = self.position_contains_trade_id(position_id, fill.trade_id);
+
+        let event = OrderEventAny::Filled(fill);
+        let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
+        msgbus::send_order_event(portfolio_endpoint, event.clone());
+
+        let position_events = if duplicate_position_fill {
+            log::warn!(
+                "Duplicate leg fill: {} trade_id={} already applied to position {}, skipping position update",
+                fill.client_order_id,
+                fill.trade_id,
+                position_id
+            );
+            Vec::new()
+        } else {
+            self.handle_position_update(&instrument, fill, oms_type)
+        };
+        self.publish_order_event(&event);
+        self.publish_position_events(position_events);
+    }
+
+    fn determine_leg_fill_position_id(
+        &mut self,
+        fill: OrderFilled,
+        oms_type: OmsType,
+    ) -> PositionId {
+        let cache = self.cache.borrow();
+        let cached_position_id = cache.position_id(&fill.client_order_id()).copied();
+        drop(cache);
+
+        if let Some(position_id) = cached_position_id {
+            if let Some(fill_position_id) = fill.position_id
+                && fill_position_id != position_id
+            {
+                log::warn!(
+                    "Incorrect position ID assigned to leg fill: \
+                     cached={position_id}, assigned={fill_position_id}; \
+                     re-assigning from cache",
+                );
+            }
+
+            return position_id;
+        }
+
+        match oms_type {
+            OmsType::Hedging => fill
+                .position_id
+                .unwrap_or_else(|| self.pos_id_generator.generate(fill.strategy_id, false)),
+            OmsType::Netting => self.determine_netting_position_id(fill),
+            _ => self.determine_netting_position_id(fill),
+        }
+    }
+
+    fn is_leg_fill(&self, fill: &OrderFilled) -> bool {
+        if !fill.client_order_id.as_str().contains("-LEG-")
+            && !fill.venue_order_id.as_str().contains("-LEG-")
+        {
+            return false;
+        }
+
+        self.cache
+            .borrow()
+            .instrument(&fill.instrument_id)
+            .is_some_and(|instrument| !instrument.is_spread())
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {

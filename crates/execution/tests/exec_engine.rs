@@ -1446,6 +1446,178 @@ fn test_process_same_side_fill_publishes_position_changed_after_order_topic(
     assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
 }
 
+#[rstest]
+fn test_process_leg_fill_without_order_updates_position_and_publishes_order_before_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, fill, expected_position_id) =
+        prepare_leg_fill_without_order(&execution_engine);
+    let strategy_id = fill.strategy_id;
+    let client_order_id = fill.client_order_id;
+
+    let fills_topic = switchboard::get_order_fills_topic(instrument.id());
+    let order_topic = switchboard::get_event_orders_topic(strategy_id);
+    let position_topic = switchboard::get_event_positions_topic(strategy_id);
+    let received_fills = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_orders = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_positions = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+    let received_portfolio = Rc::new(RefCell::new(Vec::<(OrderEventAny, usize)>::new()));
+    let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+
+    let fills_handler = TypedHandler::from({
+        let received_fills = received_fills.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("fills");
+            received_fills.borrow_mut().push(event.clone());
+        }
+    });
+    let order_handler = TypedHandler::from({
+        let received_orders = received_orders.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("orders");
+            received_orders.borrow_mut().push(event.clone());
+        }
+    });
+    let position_handler = TypedHandler::from({
+        let received_positions = received_positions.clone();
+        let topics = topics.clone();
+        move |event: &PositionEvent| {
+            topics.borrow_mut().push("positions");
+            received_positions.borrow_mut().push(event.clone());
+        }
+    });
+    let portfolio_handler = TypedIntoHandler::from({
+        let cache = Rc::clone(execution_engine.cache());
+        let received_portfolio = received_portfolio.clone();
+        let topics = topics.clone();
+        move |event: OrderEventAny| {
+            topics.borrow_mut().push("portfolio");
+            let positions = cache
+                .borrow()
+                .positions_total_count(None, None, None, None, None);
+            received_portfolio.borrow_mut().push((event, positions));
+        }
+    });
+
+    msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::portfolio_update_order(),
+        portfolio_handler,
+    );
+
+    let event = OrderEventAny::Filled(fill);
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(fills_topic.into(), &fills_handler);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
+
+    let received_portfolio = received_portfolio.borrow();
+    let received_orders = received_orders.borrow();
+    let received_positions = received_positions.borrow();
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&expected_position_id)
+        .expect("leg fill should open a position");
+
+    assert!(received_fills.borrow().is_empty());
+    assert_eq!(received_portfolio.len(), 1);
+    let OrderEventAny::Filled(portfolio_fill) = &received_portfolio[0].0 else {
+        panic!("portfolio endpoint should receive the leg fill");
+    };
+    assert_eq!(portfolio_fill.position_id, Some(expected_position_id));
+    assert_eq!(received_portfolio[0].1, 0);
+    assert_eq!(received_orders.len(), 1);
+    assert_eq!(received_orders[0].client_order_id(), client_order_id);
+    let OrderEventAny::Filled(order_fill) = &received_orders[0] else {
+        panic!("order topic should receive the leg fill");
+    };
+    assert_eq!(order_fill.position_id, Some(expected_position_id));
+    assert_eq!(received_positions.len(), 1);
+    assert!(matches!(
+        received_positions[0],
+        PositionEvent::PositionOpened(_)
+    ));
+    assert_eq!(position.id, expected_position_id);
+    assert_eq!(position.opening_order_id, client_order_id);
+    assert_eq!(position.quantity, Quantity::from(1));
+    assert_eq!(
+        topics.borrow().as_slice(),
+        ["portfolio", "orders", "positions"]
+    );
+}
+
+#[rstest]
+fn test_process_duplicate_leg_fill_without_order_does_not_reapply_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (_instrument, fill, expected_position_id) =
+        prepare_leg_fill_without_order(&execution_engine);
+    let event = OrderEventAny::Filled(fill);
+
+    execution_engine.process(&event);
+    execution_engine.process(&event);
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&expected_position_id)
+        .expect("leg fill should open one position");
+
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 1);
+    assert_eq!(position.quantity, Quantity::from(1));
+    assert_eq!(position.trade_ids.len(), 1);
+    assert!(position.trade_ids.contains(&fill.trade_id));
+}
+
+fn prepare_leg_fill_without_order(
+    execution_engine: &ExecutionEngine,
+) -> (InstrumentAny, OrderFilled, PositionId) {
+    let account_id = AccountId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = InstrumentAny::from(futures_contract_xcme());
+    let client_order_id = ClientOrderId::from("SPREAD-LEG-1");
+    let expected_position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id()));
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let fill = build_order_filled(
+        TraderId::test_default(),
+        strategy_id,
+        instrument.id(),
+        client_order_id,
+        VenueOrderId::from("V-SPREAD-LEG-1"),
+        account_id,
+        TradeId::new("T-LEG-001"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(1),
+        Price::from_str("100.00").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        Some(Money::from("2 USD")),
+    );
+
+    (instrument, fill, expected_position_id)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PortfolioNonFillEventKind {
     Accepted,
