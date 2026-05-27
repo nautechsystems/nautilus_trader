@@ -53,7 +53,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
