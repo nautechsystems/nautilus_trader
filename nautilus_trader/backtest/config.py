@@ -352,9 +352,9 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         The execution algorithm configurations for the kernel.
     controller : ImportableControllerConfig, optional
         The trader controller for the kernel.
-    load_state : bool, default True
+    load_state : bool, default False
         If trading strategy state should be loaded from the database on start.
-    save_state : bool, default True
+    save_state : bool, default False
         If trading strategy state should be saved to the database on stop.
     bypass_logging : bool, default False
         If logging should be bypassed.

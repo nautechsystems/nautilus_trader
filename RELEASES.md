@@ -139,6 +139,7 @@ Released on TBD (UTC).
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Refined OKX integration guide with product capabilities and Nitro spread order notes
+- Fixed `NautilusKernelConfig` state flag default docs (#4144), thanks for reporting @trikafi
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 
