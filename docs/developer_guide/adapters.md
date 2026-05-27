@@ -1309,10 +1309,20 @@ venues without unbounded memory growth.
 
 #### Order command outcome policy
 
-Adapters must only emit `OrderRejected`, `OrderCancelRejected`, or `OrderModifyRejected` when
-they have positive evidence that the venue rejected the command, or when local validation fails
-before a request can reach the venue. Positive venue evidence includes structured order responses,
-per-order batch responses, or order status messages that explicitly report a rejection.
+Adapters must emit these rejection events only from venue-originating signals:
+
+- `OrderRejected`.
+- `OrderModifyRejected`.
+- `OrderCancelRejected`.
+
+Positive venue evidence includes structured order responses, per-order batch responses, or order
+status messages that explicitly report a rejection.
+
+Local validation is not a venue rejection:
+
+- Validate submit commands before `OrderSubmitted` and emit `OrderDenied` when validation fails.
+- If submit validation fails after `OrderSubmitted`, log the failure and leave the order in flight.
+- If cancel or modify validation fails locally, log a warning and do not emit a rejection event.
 
 Do not emit rejection events for errors that leave the venue outcome unknown. Unknown outcomes
 include transport errors, WebSocket send failures, request timeouts, disconnects, canceled local

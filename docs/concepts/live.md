@@ -16,33 +16,29 @@ For step-by-step setup of `TradingNodeConfig`, execution engine options, strateg
 configuration, and multi-venue wiring, see the
 [Configure a live trading node](../how_to/configure_live_trading.md) how-to guide.
 
-## Execution reconciliation
-
-Execution reconciliation aligns the venue's actual order and position state with the
-system's internal state built from events. Only the `LiveExecutionEngine` performs
-reconciliation, since backtesting controls both sides.
-
-:::note[Terminology]
-An **in-flight order** is one awaiting venue acknowledgement:
-
-- `SUBMITTED` - initial submission, awaiting accept/reject.
-- `PENDING_UPDATE` - modification requested, awaiting confirmation.
-- `PENDING_CANCEL` - cancellation requested, awaiting confirmation.
-
-These orders are monitored by the continuous reconciliation loop to detect stale or lost messages.
-:::
+## Live execution policies
 
 ### Order command outcome policy
 
-Live adapters may emit `OrderRejected`, `OrderCancelRejected`, or `OrderModifyRejected` only when
-they have one of these signals:
+Live command outcomes are one of:
 
-- Local validation fails before a request can reach the venue.
-- A structured venue response explicitly rejects the command.
-- A per-order batch response explicitly rejects that order's command.
-- A venue order status or report says the order was rejected.
+- Confirmed by the venue.
+- Explicitly rejected by the venue.
+- Denied locally by Nautilus.
+- Logged as unresolved while Nautilus checks the venue for the final state.
 
-Live adapters must treat these failures as unknown outcomes, not rejections:
+These rejection events only appear when the venue explicitly rejects the command:
+
+- `OrderRejected`.
+- `OrderModifyRejected`.
+- `OrderCancelRejected`.
+
+Local validation failures are reported differently:
+
+- Submit commands denied locally by Nautilus appear as `OrderDenied`.
+- Cancel or modify commands that fail local checks appear as warnings, not rejection events.
+
+Other failures leave the venue outcome unknown:
 
 - Transport errors.
 - WebSocket send failures.
@@ -56,26 +52,33 @@ Live adapters must treat these failures as unknown outcomes, not rejections:
 - Parse failures after a request may have reached the venue.
 - Whole-batch request failures without per-order venue results.
 
+:::note[Terminology]
+An **in-flight order** is one awaiting venue acknowledgement:
+
+- `SUBMITTED` - initial submission, awaiting accept/reject.
+- `PENDING_UPDATE` - modification requested, awaiting confirmation.
+- `PENDING_CANCEL` - cancellation requested, awaiting confirmation.
+
+These orders are monitored by WebSocket updates, open-order polling, in-flight checks, and
+startup reconciliation.
+:::
+
 When the outcome is unknown:
 
 - Log the failure.
-- Leave the order in its current in-flight state.
-- Keep submit orders `SUBMITTED`.
-- Keep modify commands `PENDING_UPDATE`.
-- Keep cancel commands `PENDING_CANCEL`.
+- Keep the order in its current in-flight state while Nautilus checks the venue.
 - Let WebSocket updates, open-order polling, in-flight checks, or startup reconciliation resolve
-  the final state.
+  the state.
 
-The `LiveExecutionEngine` in-flight check owns terminal resolution for a never-acknowledged
-submit. After it queries the venue and the order stays unconfirmed beyond
-`inflight_check_retries`, the engine, not the adapter, resolves it to `REJECTED`. See the
-Runtime checks table below.
+For never-acknowledged submits, the `LiveExecutionEngine` in-flight check queries the venue. If the
+order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to `REJECTED`. See
+the Runtime checks table below.
 
-Use `OrderDenied` for validation that fails before a submit request enters the live execution path.
-Adapters that validate after `OrderSubmitted` may emit `OrderRejected` only when they can prove no
-venue request was sent. Do not convert ambiguous command failures into rejection events, because
-that can make local state terminal or roll it back while the venue order is still live and may
-fill, cancel, or be modified at the venue.
+## Execution reconciliation
+
+Execution reconciliation aligns the venue's actual order and position state with the
+system's internal state built from events. Only the `LiveExecutionEngine` performs
+reconciliation, since backtesting controls both sides.
 
 Two scenarios:
 

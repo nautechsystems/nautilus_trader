@@ -1401,6 +1401,8 @@ the venue outcome is unknown.
   whole-request server failures do not emit `OrderCancelRejected`.
 - Modify failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
   whole-request server failures do not emit `OrderModifyRejected`.
+- Local cancel validation failures log a warning and do not emit `OrderCancelRejected`.
+- Local modify validation failures log a warning and do not emit `OrderModifyRejected`.
 - Whole-batch request failures do not emit one rejection per order when the venue did not return
   per-order results.
 - Explicit per-order venue rejections still emit the matching rejection event with the venue
