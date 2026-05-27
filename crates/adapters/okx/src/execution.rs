@@ -603,9 +603,6 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-
         self.spawn_task("cancel_order", async move {
             let result = ws_private
                 .cancel_order(
@@ -619,14 +616,9 @@ impl OKXExecutionClient {
 
             if let Err(e) = result {
                 if is_okx_ws_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected_event(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        &format!("cancel-order-error: {e}"),
-                        ts_event,
+                    log::warn!(
+                        "Cancel command failed local validation for {}: {e}",
+                        command.client_order_id
                     );
                 } else {
                     log::error!(
@@ -659,9 +651,7 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e)
-                    || is_okx_http_local_command_failure(&e)
-                {
+                if is_okx_http_structured_venue_rejection(&e) {
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         command.strategy_id,
@@ -670,6 +660,11 @@ impl OKXExecutionClient {
                         command.venue_order_id,
                         &format!("cancel-order-error: {e}"),
                         ts_event,
+                    );
+                } else if is_okx_http_local_command_failure(&e) {
+                    log::warn!(
+                        "HTTP cancel command failed local validation for {}: {e}",
+                        command.client_order_id
                     );
                 } else {
                     log::error!(
@@ -715,11 +710,15 @@ impl OKXExecutionClient {
             };
 
             let reject_reason = match &responses {
-                Err(e)
-                    if is_okx_http_structured_venue_rejection(e)
-                        || is_okx_http_local_command_failure(e) =>
-                {
+                Err(e) if is_okx_http_structured_venue_rejection(e) => {
                     Some(format!("cancel-algo-order-error: {e}"))
+                }
+                Err(e) if is_okx_http_local_command_failure(e) => {
+                    log::warn!(
+                        "Algo cancel command failed local validation for {}: {e}",
+                        command.client_order_id
+                    );
+                    None
                 }
                 Err(e) => {
                     log::error!(
@@ -876,16 +875,10 @@ impl OKXExecutionClient {
                     }
                     Err(e) => {
                         if is_okx_http_local_command_failure(&e) {
-                            let reason = format!("cancel-algo-order-error: {e}");
-
                             for ctx in &regular_contexts {
-                                emitter.emit_order_cancel_rejected_event(
-                                    ctx.strategy_id,
-                                    ctx.instrument_id,
-                                    ctx.client_order_id,
-                                    ctx.venue_order_id,
-                                    &reason,
-                                    clock.get_time_ns(),
+                                log::warn!(
+                                    "Algo batch cancel command failed local validation for {}: {e}",
+                                    ctx.client_order_id
                                 );
                             }
                         } else {
@@ -911,16 +904,10 @@ impl OKXExecutionClient {
                     }
                     Err(e) => {
                         if is_okx_http_local_command_failure(&e) {
-                            let reason = format!("cancel-algo-order-error: {e}");
-
                             for ctx in &advance_contexts {
-                                emitter.emit_order_cancel_rejected_event(
-                                    ctx.strategy_id,
-                                    ctx.instrument_id,
-                                    ctx.client_order_id,
-                                    ctx.venue_order_id,
-                                    &reason,
-                                    clock.get_time_ns(),
+                                log::warn!(
+                                    "Advance algo batch cancel command failed local validation for {}: {e}",
+                                    ctx.client_order_id
                                 );
                             }
                         } else {
@@ -2175,24 +2162,14 @@ impl ExecutionClient for OKXExecutionClient {
 
                 if !regular_payload.is_empty() {
                     let ws_private = self.ws_private.clone();
-                    let emitter = self.emitter.clone();
-                    let clock = self.clock;
 
                     self.spawn_task("batch_cancel_orders", async move {
                         if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
                             if is_okx_ws_local_command_failure(&e) {
-                                let ts = clock.get_time_ns();
-
-                                for (cid, inst_id, strat_id) in &regular_cancel_contexts {
-                                    emitter.emit_order_cancel_rejected_event(
-                                        *strat_id,
-                                        *inst_id,
-                                        *cid,
-                                        None,
-                                        &format!("batch-cancel-error: {e}"),
-                                        ts,
-                                    );
-                                }
+                                log::warn!(
+                                    "Batch cancel command failed local validation for {} orders: {e}",
+                                    regular_cancel_contexts.len()
+                                );
                             } else {
                                 log::error!(
                                     "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
@@ -2290,8 +2267,6 @@ impl ExecutionClient for OKXExecutionClient {
 
         if !regular_payload.is_empty() {
             let ws_private = self.ws_private.clone();
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
             let cancel_contexts: Vec<_> = cmd
                 .cancels
                 .iter()
@@ -2306,18 +2281,10 @@ impl ExecutionClient for OKXExecutionClient {
             self.spawn_task("batch_cancel_orders", async move {
                 if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
                     if is_okx_ws_local_command_failure(&e) {
-                        let ts = clock.get_time_ns();
-
-                        for (cid, inst_id, strat_id) in &cancel_contexts {
-                            emitter.emit_order_cancel_rejected_event(
-                                *strat_id,
-                                *inst_id,
-                                *cid,
-                                None,
-                                &format!("batch-cancel-error: {e}"),
-                                ts,
-                            );
-                        }
+                        log::warn!(
+                            "Batch cancel command failed local validation for {} orders: {e}",
+                            cancel_contexts.len()
+                        );
                     } else {
                         log::error!(
                             "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
@@ -2368,9 +2335,7 @@ impl ExecutionClient for OKXExecutionClient {
                         .cancel_order(instrument_id, Some(client_order_id), venue_order_id)
                         .await
                     {
-                        if is_okx_http_structured_venue_rejection(&e)
-                            || is_okx_http_local_command_failure(&e)
-                        {
+                        if is_okx_http_structured_venue_rejection(&e) {
                             let ts_event = clock.get_time_ns();
                             emitter.emit_order_cancel_rejected_event(
                                 strategy_id,
@@ -2379,6 +2344,10 @@ impl ExecutionClient for OKXExecutionClient {
                                 venue_order_id,
                                 &format!("cancel-http-order-error: {e}"),
                                 ts_event,
+                            );
+                        } else if is_okx_http_local_command_failure(&e) {
+                            log::warn!(
+                                "HTTP cancel command failed local validation for {client_order_id}: {e}"
                             );
                         } else {
                             log::error!(

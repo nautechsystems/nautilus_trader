@@ -374,7 +374,7 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_cancel_validation_failure_emits_order_cancel_rejected() {
+async fn test_local_cancel_validation_failure_does_not_emit_order_cancel_rejected() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
     let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
@@ -382,7 +382,7 @@ async fn test_local_cancel_validation_failure_emits_order_cancel_rejected() {
     client.start().unwrap();
     let _ = drain_events(&mut rx);
 
-    let client_order_id = ClientOrderId::new("OLOCALCANCELREJECT1");
+    let client_order_id = ClientOrderId::new("OLOCALCANCELINVALID1");
     let order = cache_limit_order(&cache, client_order_id);
     let cmd = CancelOrder {
         trader_id: TraderId::from("TESTER-001"),
@@ -400,24 +400,17 @@ async fn test_local_cancel_validation_failure_emits_order_cancel_rejected() {
 
     client.cancel_order(cmd).unwrap();
 
-    match recv_order_event_matching(&mut rx, |event| {
-        matches!(
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let events = drain_events(&mut rx);
+    assert!(
+        !contains_order_event(&events, |event| matches!(
             event,
-            OrderEventAny::CancelRejected(rejected) if rejected.client_order_id == client_order_id
-        )
-    })
-    .await
-    {
-        OrderEventAny::CancelRejected(rejected) => {
-            assert_eq!(rejected.client_order_id, client_order_id);
-            assert!(
-                rejected.reason.as_str().contains("No instIdCode cached"),
-                "reason was: {}",
-                rejected.reason
-            );
-        }
-        other => panic!("expected OrderCancelRejected event, was {other:?}"),
-    }
+            OrderEventAny::CancelRejected(rejected)
+                if rejected.client_order_id == client_order_id
+        )),
+        "local cancel validation failure should not emit OrderCancelRejected: {events:?}"
+    );
 }
 
 #[rstest]
