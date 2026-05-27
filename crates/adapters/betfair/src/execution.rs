@@ -1457,11 +1457,23 @@ impl ExecutionClient for BetfairExecutionClient {
         self.process_pending_resync();
 
         let instrument_id = cmd.instrument_id;
-        let market_id = extract_market_id(&instrument_id)?;
-
-        let venue_order_id = cmd
-            .venue_order_id
-            .ok_or_else(|| anyhow::anyhow!("Cannot cancel order without venue_order_id"))?;
+        let venue_order_id = match cmd.venue_order_id {
+            Some(venue_order_id) => venue_order_id,
+            None => {
+                log::warn!(
+                    "Cannot cancel order {}: no venue_order_id",
+                    cmd.client_order_id
+                );
+                return Ok(());
+            }
+        };
+        let market_id = match extract_market_id(&instrument_id) {
+            Ok(market_id) => market_id,
+            Err(e) => {
+                log::warn!("Cannot cancel order {}: {e}", cmd.client_order_id);
+                return Ok(());
+            }
+        };
         let bet_id: BetId = venue_order_id.to_string();
 
         let params = CancelOrdersParams {
@@ -1487,14 +1499,8 @@ impl ExecutionClient for BetfairExecutionClient {
             let report = match result {
                 Ok(r) => r,
                 Err(e) => {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        &format!("cancel-order error: {e}"),
-                        ts_event,
+                    log::warn!(
+                        "Cancel request failed for {client_order_id}, awaiting OCM reconciliation: {e}",
                     );
                     return Ok(());
                 }
@@ -1555,14 +1561,8 @@ impl ExecutionClient for BetfairExecutionClient {
                     None,
                     "unknown error",
                 );
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    Some(venue_order_id),
-                    &reason,
-                    ts_event,
+                log::warn!(
+                    "Cancel {client_order_id} failed without per-order result, awaiting OCM reconciliation: {reason}",
                 );
             }
 
@@ -1818,7 +1818,13 @@ impl ExecutionClient for BetfairExecutionClient {
         self.process_pending_resync();
 
         let instrument_id = cmd.instrument_id;
-        let market_id = extract_market_id(&instrument_id)?;
+        let market_id = match extract_market_id(&instrument_id) {
+            Ok(market_id) => market_id,
+            Err(e) => {
+                log::warn!("Cannot cancel all orders for {instrument_id}: {e}");
+                return Ok(());
+            }
+        };
 
         let params = CancelOrdersParams {
             market_id: Some(market_id),
@@ -1847,7 +1853,13 @@ impl ExecutionClient for BetfairExecutionClient {
         self.process_pending_resync();
 
         let instrument_id = cmd.instrument_id;
-        let market_id = extract_market_id(&instrument_id)?;
+        let market_id = match extract_market_id(&instrument_id) {
+            Ok(market_id) => market_id,
+            Err(e) => {
+                log::warn!("Cannot batch cancel orders for {instrument_id}: {e}");
+                return Ok(());
+            }
+        };
 
         let mut instructions = Vec::new();
         let mut valid_cancels = Vec::new();
@@ -1863,14 +1875,9 @@ impl ExecutionClient for BetfairExecutionClient {
                     valid_cancels.push(cancel);
                 }
                 None => {
-                    let ts_event = self.clock.get_time_ns();
-                    self.emitter.emit_order_cancel_rejected_event(
-                        cancel.strategy_id,
-                        cancel.instrument_id,
+                    log::warn!(
+                        "Cannot batch cancel order {}: no venue_order_id",
                         cancel.client_order_id,
-                        None,
-                        "no venue_order_id",
-                        ts_event,
                     );
                 }
             }
@@ -1909,23 +1916,25 @@ impl ExecutionClient for BetfairExecutionClient {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    let ts_event = clock.get_time_ns();
-
-                    for (strategy_id, instr_id, client_oid, venue_oid) in &cancel_data {
-                        emitter.emit_order_cancel_rejected_event(
-                            *strategy_id,
-                            *instr_id,
-                            *client_oid,
-                            *venue_oid,
-                            &format!("batch-cancel error: {e}"),
-                            ts_event,
-                        );
-                    }
+                    log::warn!(
+                        "Batch cancel request failed for {} orders, awaiting OCM reconciliation: {e}",
+                        cancel_data.len(),
+                    );
                     return Ok(());
                 }
             };
 
-            if report.status == ExecutionReportStatus::Failure {
+            if report.status == ExecutionReportStatus::Timeout {
+                log::warn!(
+                    "Batch cancel request timed out for {} orders, awaiting OCM reconciliation",
+                    cancel_data.len(),
+                );
+                return Ok(());
+            }
+
+            if report.status == ExecutionReportStatus::Failure
+                || report.status == ExecutionReportStatus::ProcessedWithErrors
+            {
                 let reason = format_betfair_reason(
                     report.error_message.as_deref(),
                     report.error_code,
@@ -1933,19 +1942,15 @@ impl ExecutionClient for BetfairExecutionClient {
                     "unknown error",
                 );
 
-                if report.instruction_reports.is_none() {
-                    let ts_event = clock.get_time_ns();
-
-                    for (strategy_id, instr_id, client_oid, venue_oid) in &cancel_data {
-                        emitter.emit_order_cancel_rejected_event(
-                            *strategy_id,
-                            *instr_id,
-                            *client_oid,
-                            *venue_oid,
-                            &reason,
-                            ts_event,
-                        );
-                    }
+                if report
+                    .instruction_reports
+                    .as_ref()
+                    .is_none_or(Vec::is_empty)
+                {
+                    log::warn!(
+                        "Batch cancel failed for {} orders without per-order results, awaiting OCM reconciliation: {reason}",
+                        cancel_data.len(),
+                    );
                     return Ok(());
                 }
             }

@@ -364,12 +364,35 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
     client.cancel_order(cmd).unwrap();
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    let event = rx.try_recv();
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
+        }
+    }
     assert!(
-        event.is_err(),
-        "BetTakenOrLapsed should not emit cancel rejected, found: {event:?}"
+        !rejected_seen,
+        "BetTakenOrLapsed should not emit cancel rejected"
     );
 
     client.disconnect().await.unwrap();
@@ -434,7 +457,7 @@ async fn test_cancel_order_instruction_failure_emits_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_cancel_order_result_failure_no_instructions_emits_rejected() {
+async fn test_cancel_order_result_failure_no_instructions_emits_no_rejected() {
     let (addr, state) = start_mock_http().await;
 
     let fixture = load_fixture("rest/betting_cancel_orders_result_failure.json");
@@ -461,22 +484,163 @@ async fn test_cancel_order_result_failure_no_instructions_emits_rejected() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003", "1");
     client.cancel_order(cmd).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("timeout waiting for cancel rejected")
-        .expect("channel closed");
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    match event {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
-            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-003"));
-            assert!(
-                rejected.reason.as_str().contains("MarketSuspended"),
-                "Expected MarketSuspended reason, found: {}",
-                rejected.reason,
-            );
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
         }
-        other => panic!("Expected CancelRejected event, found: {other:?}"),
     }
+    assert!(
+        !rejected_seen,
+        "cancel result failure without instruction reports must not emit CancelRejected",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_ambiguous_5xx_emits_no_rejected() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-5XX", "1");
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+            assert_eq!(rejected.client_order_id, ClientOrderId::from("O-003-5XX"));
+            rejected_seen = true;
+            break;
+        }
+    }
+    assert!(
+        !rejected_seen,
+        "ambiguous cancel 5xx must not emit CancelRejected",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_timeout_status_emits_no_rejected() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_success.json");
+    let mut v: Value = serde_json::from_str(&fixture).unwrap();
+    v["result"]["status"] = Value::String("TIMEOUT".to_string());
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-TIMEOUT", "1");
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+            assert_eq!(
+                rejected.client_order_id,
+                ClientOrderId::from("O-003-TIMEOUT")
+            );
+            rejected_seen = true;
+            break;
+        }
+    }
+    assert!(
+        !rejected_seen,
+        "cancel timeout status must not emit CancelRejected",
+    );
 
     client.disconnect().await.unwrap();
     let _ = server.await;
@@ -845,6 +1009,130 @@ async fn test_cancel_all_orders_sends_request() {
     assert!(
         event.is_err(),
         "Cancel all should not emit rejected events on success, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_invalid_instrument_emits_no_rejected_locally() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*BETFAIR_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from("INVALID.BETFAIR"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.cancel_all_orders(cmd).unwrap();
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
+        }
+    }
+    assert!(
+        !rejected_seen,
+        "local cancel-all validation failure must not emit CancelRejected",
+    );
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*BETFAIR_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from("1.179082386-235-0.BETFAIR"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+    client.cancel_all_orders(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
+        }
+    }
+    assert!(
+        !rejected_seen,
+        "ambiguous cancel-all 5xx must not emit CancelRejected",
     );
 
     client.disconnect().await.unwrap();
@@ -1754,7 +2042,7 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     let _ = server.await;
 }
 
-/// A batch-cancel where one leg fails must emit CancelRejected for the
+/// A mixed per-item batch result must emit CancelRejected for the explicit
 /// failing leg only, leaving the successful leg alone.
 #[rstest]
 #[tokio::test]
@@ -1819,12 +2107,153 @@ async fn test_batch_cancel_orders_partial_failure_emits_rejected_for_failing_leg
     let _ = server.await;
 }
 
-/// `batch_cancel_orders` synthesises a CancelRejected immediately for any
-/// leg missing a `venue_order_id` and skips that leg in the venue request.
 #[rstest]
 #[tokio::test]
-async fn test_batch_cancel_orders_missing_venue_id_emits_rejected_locally() {
-    let (addr, _state) = start_mock_http().await;
+async fn test_batch_cancel_orders_result_failure_without_instruction_reports_emits_no_rejections() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_result_failure.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_batch_cancel_cmd(
+        "1.179082386-235-0.BETFAIR",
+        vec![
+            (
+                ClientOrderId::from("O-BC-WHOLE-1"),
+                Some(VenueOrderId::from("1")),
+            ),
+            (
+                ClientOrderId::from("O-BC-WHOLE-2"),
+                Some(VenueOrderId::from("2")),
+            ),
+        ],
+    );
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut rejected_ids: Vec<ClientOrderId> = Vec::new();
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+            rejected_ids.push(rejected.client_order_id);
+        }
+    }
+    assert!(
+        rejected_ids.is_empty(),
+        "whole batch failure without per-order results must not reject each order, found: {rejected_ids:?}",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_batch_cancel_cmd(
+        "1.179082386-235-0.BETFAIR",
+        vec![
+            (
+                ClientOrderId::from("O-BC-5XX-1"),
+                Some(VenueOrderId::from("1")),
+            ),
+            (
+                ClientOrderId::from("O-BC-5XX-2"),
+                Some(VenueOrderId::from("2")),
+            ),
+        ],
+    );
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let methods = Arc::clone(&state.betting_methods);
+            async move {
+                methods
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m == METHOD_CANCEL_ORDERS)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let mut rejected_ids: Vec<ClientOrderId> = Vec::new();
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+            rejected_ids.push(rejected.client_order_id);
+        }
+    }
+    assert!(
+        rejected_ids.is_empty(),
+        "ambiguous batch cancel 5xx must not emit CancelRejected, found: {rejected_ids:?}",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_missing_venue_id_emits_no_rejected_locally() {
+    let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
@@ -1844,22 +2273,22 @@ async fn test_batch_cancel_orders_missing_venue_id_emits_rejected_locally() {
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-        .await
-        .expect("timeout waiting for CancelRejected")
-        .expect("channel closed");
+    let mut rejected_seen = false;
 
-    match event {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(rej)) => {
-            assert_eq!(rej.client_order_id, ClientOrderId::from("O-BC-NO-ID"));
-            assert!(
-                rej.reason.as_str().contains("no venue_order_id"),
-                "expected missing venue_order_id reason, was: {}",
-                rej.reason,
-            );
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
         }
-        other => panic!("Expected CancelRejected, was {other:?}"),
     }
+    assert!(
+        !rejected_seen,
+        "local batch cancel validation failure must not emit CancelRejected",
+    );
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.unwrap();
     let _ = server.await;
@@ -2383,14 +2812,12 @@ async fn test_ocm_market_ids_filter_skips_unrelated_markets() {
     let _ = server.await;
 }
 
-/// `cancel_order` cannot proceed without a `venue_order_id`. The command must
-/// surface a synchronous error rather than silently dropping the request.
 #[rstest]
 #[tokio::test]
-async fn test_cancel_order_without_venue_id_returns_error() {
-    let (addr, _state) = start_mock_http().await;
+async fn test_cancel_order_without_venue_id_emits_no_rejected_locally() {
+    let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
@@ -2399,6 +2826,8 @@ async fn test_cancel_order_without_venue_id_returns_error() {
     });
 
     client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
 
     let cmd = CancelOrder::new(
         TraderId::from("TESTER-001"),
@@ -2414,11 +2843,27 @@ async fn test_cancel_order_without_venue_id_returns_error() {
     );
 
     let result = client.cancel_order(cmd);
-    assert!(result.is_err(), "cancel without venue_order_id must error");
     assert!(
-        result.unwrap_err().to_string().contains("venue_order_id"),
-        "expected venue_order_id in error message"
+        result.is_ok(),
+        "cancel without venue_order_id must log and return"
     );
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
+        }
+    }
+    assert!(
+        !rejected_seen,
+        "local cancel validation failure must not emit CancelRejected",
+    );
+    assert_eq!(state.betting_request_count.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.unwrap();
     let _ = server.await;
