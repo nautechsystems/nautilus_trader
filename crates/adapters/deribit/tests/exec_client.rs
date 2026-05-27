@@ -47,7 +47,7 @@ use nautilus_common::{
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder},
+        execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder},
     },
     testing::wait_until_async,
 };
@@ -896,31 +896,58 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_cancel_validation_failure_emits_cancel_rejected() {
-    let (client, mut rx, cache, _request_count) =
+async fn test_local_cancel_validation_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
-    let client_order_id = ClientOrderId::new("local-cancel-reject-test-001");
+    let client_order_id = ClientOrderId::new("local-cancel-invalid-test-001");
     add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
 
     let result = client.cancel_order(cancel_order_command_without_venue_order_id(client_order_id));
-    assert!(result.is_err());
+    assert!(result.is_ok());
 
-    match recv_until(&mut rx, |event| {
+    assert_no_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
-                if event.client_order_id == client_order_id
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
         )
     })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
-            assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("venue_order_id required"));
-        }
-        other => panic!("Expected CancelRejected event, was {other:?}"),
-    }
+    .await;
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_batch_cancel_validation_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-batch-cancel-invalid-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.batch_cancel_orders(BatchCancelOrders::new(
+        test_trader_id(),
+        Some(*DERIBIT_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        vec![cancel_order_command_without_venue_order_id(client_order_id)],
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    assert!(result.is_ok());
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]

@@ -838,12 +838,11 @@ impl ExecutionClient for DeribitExecutionClient {
         let order_id = match cmd.venue_order_id.as_ref() {
             Some(venue_order_id) => venue_order_id.to_string(),
             None => {
-                return reject_cancel_command(
-                    &self.emitter,
-                    self.clock,
-                    &cmd,
-                    "venue_order_id required for cancel_order",
+                log::warn!(
+                    "Cannot cancel order {} - no venue_order_id",
+                    cmd.client_order_id
                 );
+                return Ok(());
             }
         };
 
@@ -993,17 +992,6 @@ impl ExecutionClient for DeribitExecutionClient {
                         "Cannot cancel order {} - no venue_order_id",
                         cancel.client_order_id
                     );
-
-                    // Emit OrderCancelRejected event for missing venue_order_id
-                    let ts_event = self.clock.get_time_ns();
-                    self.emitter.emit_order_cancel_rejected_event(
-                        cancel.strategy_id,
-                        cancel.instrument_id,
-                        cancel.client_order_id,
-                        None,
-                        "venue_order_id required for cancel",
-                        ts_event,
-                    );
                     continue;
                 }
             };
@@ -1100,24 +1088,6 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
             log::trace!("Ignoring data message in execution client");
         }
     }
-}
-
-fn reject_cancel_command(
-    emitter: &ExecutionEventEmitter,
-    clock: &AtomicTime,
-    cmd: &CancelOrder,
-    reason: &str,
-) -> anyhow::Result<()> {
-    let ts_event = clock.get_time_ns();
-    emitter.emit_order_cancel_rejected_event(
-        cmd.strategy_id,
-        cmd.instrument_id,
-        cmd.client_order_id,
-        cmd.venue_order_id,
-        reason,
-        ts_event,
-    );
-    anyhow::bail!("{reason}");
 }
 
 fn reject_modify_command(
