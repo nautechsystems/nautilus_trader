@@ -294,7 +294,13 @@ live engines, clients, startup, and venue reconciliation.
 
 The cache replay loader is state-only. It restores the cache-owned snapshot, scans the event-store
 tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
-`Cache`. It does not:
+`Cache`. Supported payloads include:
+
+- synthesized account, order, and position events
+- captured order lists
+- complete data responses for instruments, quotes, trades, funding rates, and bars
+
+It does not:
 
 - publish replayed entries to the live message bus
 - run strategy or actor code

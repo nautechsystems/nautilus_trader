@@ -23,7 +23,16 @@
 use std::{fmt::Display, path::PathBuf};
 
 use bytes::Bytes;
-use nautilus_common::cache::Cache;
+use nautilus_common::{
+    cache::Cache,
+    messages::{
+        data::{
+            BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+            QuotesResponse, TradesResponse,
+        },
+        execution::SubmitOrderList,
+    },
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OmsType,
@@ -38,17 +47,15 @@ use serde::de::DeserializeOwned;
 
 #[cfg(test)]
 use crate::capture::builtins::{
-    PAYLOAD_TYPE_BARS_RESPONSE, PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
-    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE, PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
-    PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS, PAYLOAD_TYPE_CANCEL_ORDER,
-    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE, PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
-    PAYLOAD_TYPE_FILL_REPORT, PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
-    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
-    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER, PAYLOAD_TYPE_ORDER_STATUS_REPORT,
-    PAYLOAD_TYPE_ORDER_WITH_FILLS, PAYLOAD_TYPE_POSITION_STATUS_REPORT, PAYLOAD_TYPE_QUERY_ACCOUNT,
-    PAYLOAD_TYPE_QUERY_ORDER, PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_REQUEST_COMMAND,
-    PAYLOAD_TYPE_SUBMIT_ORDER, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
-    PAYLOAD_TYPE_TIME_EVENT, PAYLOAD_TYPE_TRADES_RESPONSE, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS, PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE, PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
+    PAYLOAD_TYPE_CANCEL_ORDER, PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+    PAYLOAD_TYPE_EXECUTION_MASS_STATUS, PAYLOAD_TYPE_FILL_REPORT,
+    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    PAYLOAD_TYPE_POSITION_STATUS_REPORT, PAYLOAD_TYPE_QUERY_ACCOUNT, PAYLOAD_TYPE_QUERY_ORDER,
+    PAYLOAD_TYPE_REQUEST_COMMAND, PAYLOAD_TYPE_SUBMIT_ORDER, PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_TIME_EVENT, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
 };
 #[cfg(all(test, feature = "defi"))]
 use crate::capture::builtins::{
@@ -59,7 +66,9 @@ use crate::{
     RedbBackend,
     backend::{EventStore, ScanDirection},
     capture::builtins::{
-        PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_ORDER_ACCEPTED,
+        PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_BARS_RESPONSE,
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE, PAYLOAD_TYPE_ORDER_ACCEPTED,
         PAYLOAD_TYPE_ORDER_CANCEL_REJECTED, PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED,
         PAYLOAD_TYPE_ORDER_EMULATED, PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILLED,
         PAYLOAD_TYPE_ORDER_INITIALIZED, PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
@@ -67,6 +76,7 @@ use crate::{
         PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
         PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
         PAYLOAD_TYPE_POSITION_CHANGED, PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED,
+        PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
     },
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -97,7 +107,14 @@ pub struct EventStoreReplayReport {
 
 #[cfg(test)]
 pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
     PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+    PAYLOAD_TYPE_QUOTES_RESPONSE,
+    PAYLOAD_TYPE_TRADES_RESPONSE,
+    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+    PAYLOAD_TYPE_BARS_RESPONSE,
     PAYLOAD_TYPE_ORDER_INITIALIZED,
     PAYLOAD_TYPE_ORDER_DENIED,
     PAYLOAD_TYPE_ORDER_EMULATED,
@@ -123,7 +140,6 @@ pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
 #[cfg(test)]
 pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_SUBMIT_ORDER,
-    PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
     PAYLOAD_TYPE_MODIFY_ORDER,
     PAYLOAD_TYPE_CANCEL_ORDER,
     PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
@@ -146,16 +162,10 @@ pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     #[cfg(feature = "defi")]
     PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
     PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
-    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
-    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
     PAYLOAD_TYPE_BOOK_RESPONSE,
     PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
     PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
-    PAYLOAD_TYPE_QUOTES_RESPONSE,
-    PAYLOAD_TYPE_TRADES_RESPONSE,
-    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
     PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
-    PAYLOAD_TYPE_BARS_RESPONSE,
 ];
 
 /// Replay input scope.
@@ -1180,6 +1190,10 @@ pub fn apply_cache_replay_entry(
     cache: &mut Cache,
     entry: &EventStoreEntry,
 ) -> Result<bool, CacheReplayError> {
+    if apply_complete_cache_payload_entry(cache, entry)? {
+        return Ok(true);
+    }
+
     match entry.payload_type.as_str() {
         PAYLOAD_TYPE_ACCOUNT_STATE => {
             let state = decode_payload::<AccountState>(entry)?;
@@ -1253,6 +1267,55 @@ pub fn apply_cache_replay_entry(
         PAYLOAD_TYPE_POSITION_ADJUSTED => {
             let adjustment = decode_payload::<PositionAdjusted>(entry)?;
             apply_position_adjustment(cache, entry, adjustment)?;
+        }
+        _ => return Ok(false),
+    }
+
+    Ok(true)
+}
+
+fn apply_complete_cache_payload_entry(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+) -> Result<bool, CacheReplayError> {
+    match entry.payload_type.as_str() {
+        PAYLOAD_TYPE_SUBMIT_ORDER_LIST => {
+            let command = decode_payload::<SubmitOrderList>(entry)?;
+            apply_result(entry, cache.add_order_list(command.order_list))?;
+        }
+        PAYLOAD_TYPE_INSTRUMENT_RESPONSE => {
+            let response = decode_payload::<InstrumentResponse>(entry)?;
+            apply_result(entry, cache.add_instrument(response.data))?;
+        }
+        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE => {
+            let response = decode_payload::<InstrumentsResponse>(entry)?;
+            for instrument in response.data {
+                apply_result(entry, cache.add_instrument(instrument))?;
+            }
+        }
+        PAYLOAD_TYPE_QUOTES_RESPONSE => {
+            let response = decode_payload::<QuotesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_quotes(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_TRADES_RESPONSE => {
+            let response = decode_payload::<TradesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_trades(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE => {
+            let response = decode_payload::<FundingRatesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_funding_rates(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_BARS_RESPONSE => {
+            let response = decode_payload::<BarsResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_bars(&response.data))?;
+            }
         }
         _ => return Ok(false),
     }
@@ -1476,7 +1539,11 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         accounts::AccountAny,
-        enums::{OrderSide, OrderStatus, PositionAdjustmentType},
+        data::{Bar, BarSpecification, BarType, FundingRateUpdate, QuoteTick, TradeTick},
+        enums::{
+            AggregationSource, AggressorSide, BarAggregation, OrderSide, OrderStatus,
+            PositionAdjustmentType, PriceType,
+        },
         events::{
             PositionEvent,
             account::stubs::{cash_account_state, cash_account_state_million_usd},
@@ -1484,12 +1551,15 @@ mod tests {
                 OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec,
             },
         },
-        identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, OrderListId, PositionId, TradeId, VenueOrderId,
+        },
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
-        orders::Order,
+        orders::{Order, OrderList},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
+    use serde::Serialize;
     use tempfile::TempDir;
     use ustr::Ustr;
 
@@ -1531,6 +1601,11 @@ mod tests {
 
     fn append_payload(seq: u64, payload_type: &str, payload: Bytes) -> AppendEntry {
         append_payload_with_ts(seq, seq, payload_type, payload)
+    }
+
+    fn append_serde_payload<T: Serialize>(seq: u64, payload_type: &str, value: &T) -> AppendEntry {
+        let payload = rmp_serde::to_vec_named(value).expect("encode replay payload");
+        append_payload(seq, payload_type, Bytes::from(payload))
     }
 
     fn append_payload_with_ts(
@@ -1678,6 +1753,476 @@ mod tests {
         fn drop(&mut self) {
             msgbus::clear_bus_tap();
         }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum CacheMutationRecoveryClass {
+        SnapshotOwned,
+        EventStoreCapturedAndReplayed,
+        ForensicOnly,
+        MissingLiveRecovery,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct CacheMutationCoverage {
+        method: &'static str,
+        class: CacheMutationRecoveryClass,
+        payload_types: &'static [&'static str],
+    }
+
+    const CACHE_MUTATION_COVERAGE: &[CacheMutationCoverage] = &[
+        cache_mutation(
+            "set_database",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_general",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation("cache_all", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation(
+            "cache_currencies",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_instruments",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_synthetics",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_accounts",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_orders",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_positions",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "build_index",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_closed_orders",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_closed_positions",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_order",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_position",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_instrument",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_account_events",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "clear_index",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation("reset", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("dispose", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("flush_db", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("add", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation(
+            "add_order_book",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[PAYLOAD_TYPE_BOOK_RESPONSE],
+        ),
+        cache_mutation(
+            "add_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_mark_price",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_index_price",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_funding_rate",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_FUNDING_RATES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_funding_rates",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_FUNDING_RATES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_instrument_status",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_quote",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_QUOTES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_quotes",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_QUOTES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_trade",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_TRADES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_trades",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_TRADES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_bar",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_BARS_RESPONSE],
+        ),
+        cache_mutation(
+            "add_bars",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_BARS_RESPONSE],
+        ),
+        cache_mutation(
+            "add_greeks",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_option_greeks",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_yield_curve",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_currency",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_instrument",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+                PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+            ],
+        ),
+        cache_mutation(
+            "add_synthetic",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "add_venue_order_id",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_UPDATED],
+        ),
+        cache_mutation(
+            "add_order",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_INITIALIZED],
+        ),
+        cache_mutation(
+            "add_order_list",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_SUBMIT_ORDER_LIST],
+        ),
+        cache_mutation(
+            "add_position_id",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_FILLED,
+                PAYLOAD_TYPE_POSITION_OPENED,
+                PAYLOAD_TYPE_POSITION_CHANGED,
+                PAYLOAD_TYPE_POSITION_CLOSED,
+            ],
+        ),
+        cache_mutation(
+            "add_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
+            "update_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "take_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "cache_account_owned",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "update_account_owned",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "update_account_state",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "replace_order",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[
+                PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+                PAYLOAD_TYPE_ORDER_WITH_FILLS,
+                PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+            ],
+        ),
+        cache_mutation(
+            "update_order",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_DENIED,
+                PAYLOAD_TYPE_ORDER_EMULATED,
+                PAYLOAD_TYPE_ORDER_RELEASED,
+                PAYLOAD_TYPE_ORDER_SUBMITTED,
+                PAYLOAD_TYPE_ORDER_ACCEPTED,
+                PAYLOAD_TYPE_ORDER_REJECTED,
+                PAYLOAD_TYPE_ORDER_CANCELED,
+                PAYLOAD_TYPE_ORDER_EXPIRED,
+                PAYLOAD_TYPE_ORDER_TRIGGERED,
+                PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+                PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+                PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+                PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+                PAYLOAD_TYPE_ORDER_UPDATED,
+                PAYLOAD_TYPE_ORDER_FILLED,
+            ],
+        ),
+        cache_mutation(
+            "update_order_pending_cancel_local",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "update_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_FILLED,
+                PAYLOAD_TYPE_POSITION_OPENED,
+                PAYLOAD_TYPE_POSITION_CHANGED,
+                PAYLOAD_TYPE_POSITION_CLOSED,
+                PAYLOAD_TYPE_POSITION_ADJUSTED,
+            ],
+        ),
+        cache_mutation(
+            "snapshot_position",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "snapshot_position_state",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "load_snapshot_blob",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "restore_snapshot_blob",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "order_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "position_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "order_book_mut",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[
+                PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+                PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+            ],
+        ),
+        cache_mutation(
+            "own_order_book_mut",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "set_mark_xrate",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_mark_xrate",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_mark_xrates",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "account_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "update_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "force_remove_from_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "audit_own_order_books",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+    ];
+
+    const CACHE_MUTATION_EXCLUSIONS: &[&str] = &["check_integrity"];
+
+    const fn cache_mutation(
+        method: &'static str,
+        class: CacheMutationRecoveryClass,
+        payload_types: &'static [&'static str],
+    ) -> CacheMutationCoverage {
+        CacheMutationCoverage {
+            method,
+            class,
+            payload_types,
+        }
+    }
+
+    fn cache_public_methods() -> AHashSet<&'static str> {
+        collect_cache_public_methods(false)
+    }
+
+    fn cache_public_mutable_methods() -> AHashSet<&'static str> {
+        collect_cache_public_methods(true)
+    }
+
+    fn collect_cache_public_methods(require_mut_self: bool) -> AHashSet<&'static str> {
+        let source = include_str!("../../common/src/cache/mod.rs");
+        let mut methods = AHashSet::new();
+        let mut pending_name: Option<&'static str> = None;
+        let mut pending_signature = String::new();
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+
+            if pending_name.is_none() {
+                let Some(rest) = trimmed
+                    .strip_prefix("pub fn ")
+                    .or_else(|| trimmed.strip_prefix("pub async fn "))
+                else {
+                    continue;
+                };
+                pending_name = rest.split('(').next();
+                pending_signature.clear();
+                pending_signature.push_str(trimmed);
+            } else {
+                pending_signature.push(' ');
+                pending_signature.push_str(trimmed);
+            }
+
+            if trimmed.contains('{') {
+                if let Some(name) = pending_name.take()
+                    && (!require_mut_self || pending_signature.contains("&mut self"))
+                {
+                    methods.insert(name);
+                }
+                pending_signature.clear();
+            }
+        }
+
+        methods
+    }
+
+    fn sorted_missing_methods<'a>(
+        actual: &'a AHashSet<&'static str>,
+        classified: &'a AHashSet<&'static str>,
+    ) -> Vec<&'static str> {
+        let mut missing: Vec<_> = actual
+            .iter()
+            .copied()
+            .filter(|method| !classified.contains(method))
+            .collect();
+        missing.sort_unstable();
+        missing
+    }
+
+    fn sorted_stale_methods<'a>(
+        classified: &'a AHashSet<&'static str>,
+        actual: &'a AHashSet<&'static str>,
+    ) -> Vec<&'static str> {
+        let mut stale: Vec<_> = classified
+            .iter()
+            .copied()
+            .filter(|method| !actual.contains(method))
+            .collect();
+        stale.sort_unstable();
+        stale
     }
 
     #[rstest]
@@ -2268,6 +2813,383 @@ mod tests {
                 "forensic-only payload type must be ignored by cache replay: {payload_type}",
             );
         }
+    }
+
+    #[rstest]
+    fn cache_public_mutators_have_recovery_classification() {
+        let mut classified = AHashSet::new();
+        let mut duplicates = Vec::new();
+
+        for row in CACHE_MUTATION_COVERAGE {
+            if !classified.insert(row.method) {
+                duplicates.push(row.method);
+            }
+        }
+
+        for method in CACHE_MUTATION_EXCLUSIONS {
+            if !classified.insert(*method) {
+                duplicates.push(*method);
+            }
+        }
+
+        let public_methods = cache_public_methods();
+        let mutable_methods = cache_public_mutable_methods();
+        let missing = sorted_missing_methods(&mutable_methods, &classified);
+        let stale = sorted_stale_methods(&classified, &public_methods);
+
+        assert!(
+            duplicates.is_empty(),
+            "cache mutation recovery classifications must be unique: {duplicates:?}",
+        );
+        assert!(
+            missing.is_empty(),
+            "public Cache mutators must be classified for recovery: {missing:?}",
+        );
+        assert!(
+            stale.is_empty(),
+            "cache mutation recovery classifications reference missing methods: {stale:?}",
+        );
+    }
+
+    #[rstest]
+    fn cache_mutation_replay_classification_matches_payload_buckets() {
+        for row in CACHE_MUTATION_COVERAGE {
+            match row.class {
+                CacheMutationRecoveryClass::EventStoreCapturedAndReplayed => {
+                    assert!(
+                        !row.payload_types.is_empty(),
+                        "cache-replayed mutation must cite captured payloads: {}",
+                        row.method,
+                    );
+
+                    for payload_type in row.payload_types {
+                        assert!(
+                            CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES.contains(payload_type),
+                            "cache mutation {} cites non-replayed payload {payload_type}",
+                            row.method,
+                        );
+                    }
+                }
+                CacheMutationRecoveryClass::ForensicOnly => {
+                    assert!(
+                        !row.payload_types.is_empty(),
+                        "forensic-only mutation must cite forensic payloads: {}",
+                        row.method,
+                    );
+
+                    for payload_type in row.payload_types {
+                        assert!(
+                            FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES.contains(payload_type),
+                            "cache mutation {} cites non-forensic payload {payload_type}",
+                            row.method,
+                        );
+                    }
+                }
+                CacheMutationRecoveryClass::SnapshotOwned
+                | CacheMutationRecoveryClass::MissingLiveRecovery => {
+                    assert!(
+                        row.payload_types.is_empty(),
+                        "non-event-store cache mutation {} should not cite payloads",
+                        row.method,
+                    );
+                }
+            }
+        }
+    }
+
+    #[rstest]
+    fn submit_order_list_replay_restores_order_list() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let instrument_id = instrument.id();
+        let first_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-001"))
+            .build();
+        let second_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-002"))
+            .build();
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            instrument_id,
+            first_init.strategy_id,
+            vec![first_init.client_order_id, second_init.client_order_id],
+            UnixNanos::from(1),
+        );
+        let command = SubmitOrderList::new(
+            first_init.trader_id,
+            Some(ClientId::from("SIM")),
+            first_init.strategy_id,
+            order_list.clone(),
+            vec![first_init, second_init],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+        );
+        let entry = append_serde_payload(1, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, &command).entry;
+        let mut cache = Cache::default();
+
+        let applied = apply_cache_replay_entry(&mut cache, &entry).expect("apply order list");
+        let replayed = cache
+            .order_list(&order_list.id)
+            .expect("order list replayed");
+
+        assert!(applied);
+        assert_eq!(replayed, &order_list);
+    }
+
+    #[rstest]
+    fn data_response_replay_restores_instruments_and_market_data() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let instrument_id = instrument.id();
+        let client_id = ClientId::from("DATA");
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Quantity::from("100000"),
+            Quantity::from("100000"),
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+        );
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from("1.00005"),
+            Quantity::from("50000"),
+            AggressorSide::Buyer,
+            TradeId::from("T-DATA-001"),
+            UnixNanos::from(12),
+            UnixNanos::from(13),
+        );
+        let funding_rate = FundingRateUpdate::new(
+            instrument_id,
+            "0.0001".parse().expect("funding rate"),
+            Some(480),
+            Some(UnixNanos::from(60)),
+            UnixNanos::from(14),
+            UnixNanos::from(15),
+        );
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let bar = Bar::new(
+            bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00020"),
+            Price::from("0.99990"),
+            Price::from("1.00010"),
+            Quantity::from("150000"),
+            UnixNanos::from(16),
+            UnixNanos::from(17),
+        );
+        let reader = reader_with_entries(
+            "run-data-response-replay",
+            &[
+                append_serde_payload(
+                    1,
+                    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+                    &InstrumentResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        instrument.clone(),
+                        None,
+                        None,
+                        UnixNanos::from(1),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    2,
+                    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+                    &InstrumentsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id.venue,
+                        vec![instrument],
+                        None,
+                        None,
+                        UnixNanos::from(2),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    3,
+                    PAYLOAD_TYPE_QUOTES_RESPONSE,
+                    &QuotesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![quote],
+                        None,
+                        None,
+                        UnixNanos::from(3),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    4,
+                    PAYLOAD_TYPE_TRADES_RESPONSE,
+                    &TradesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![trade],
+                        None,
+                        None,
+                        UnixNanos::from(4),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    5,
+                    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+                    &FundingRatesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![funding_rate],
+                        None,
+                        None,
+                        UnixNanos::from(5),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    6,
+                    PAYLOAD_TYPE_BARS_RESPONSE,
+                    &BarsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        bar_type,
+                        vec![bar],
+                        None,
+                        None,
+                        UnixNanos::from(6),
+                        None,
+                    ),
+                ),
+            ],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+
+        assert_eq!(report.applied_entries, 6);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(
+            cache.instrument(&instrument_id).map(Instrument::id),
+            Some(instrument_id)
+        );
+        assert_eq!(cache.quotes(&instrument_id), Some(vec![quote]));
+        assert_eq!(cache.trades(&instrument_id), Some(vec![trade]));
+        assert_eq!(
+            cache.funding_rates(&instrument_id),
+            Some(vec![funding_rate])
+        );
+        assert_eq!(cache.bars(&bar_type), Some(vec![bar]));
+    }
+
+    #[rstest]
+    fn empty_data_response_replay_is_noop() {
+        let instrument_id = InstrumentAny::CurrencyPair(audusd_sim()).id();
+        let client_id = ClientId::from("DATA");
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let reader = reader_with_entries(
+            "run-empty-data-response-replay",
+            &[
+                append_serde_payload(
+                    1,
+                    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+                    &InstrumentsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id.venue,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(1),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    2,
+                    PAYLOAD_TYPE_QUOTES_RESPONSE,
+                    &QuotesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(2),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    3,
+                    PAYLOAD_TYPE_TRADES_RESPONSE,
+                    &TradesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(3),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    4,
+                    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+                    &FundingRatesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(4),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    5,
+                    PAYLOAD_TYPE_BARS_RESPONSE,
+                    &BarsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        bar_type,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(5),
+                        None,
+                    ),
+                ),
+            ],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+
+        assert_eq!(report.applied_entries, 5);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(cache.instrument(&instrument_id).is_none());
+        assert_eq!(cache.quotes(&instrument_id), None);
+        assert_eq!(cache.trades(&instrument_id), None);
+        assert_eq!(cache.funding_rates(&instrument_id), None);
+        assert_eq!(cache.bars(&bar_type), None);
     }
 
     #[rstest]
