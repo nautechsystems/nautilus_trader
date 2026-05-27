@@ -29,11 +29,28 @@ use std::{
 
 use nautilus_model::types::fixed::FIXED_PRECISION;
 use nautilus_plugin::{
-    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION, loader::PluginLoader,
+    NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
+    loader::{LoadError, PluginLoader},
     manifest::compiled_precision_mode,
 };
 
 const PLUGIN_TEST_PROFILE: &str = "nextest";
+const INVALID_MANIFEST_MESSAGES: &[&str] = &[
+    "plugin_name must not be empty",
+    "plugin_version has null pointer with non-zero length 1",
+    "custom_data[0].vtable must not be null",
+    "actors has null pointer with non-zero length 1",
+    "strategies[0].type_name is not valid UTF-8",
+    "strategies[0].vtable must not be null",
+];
+
+#[derive(Clone, Copy)]
+enum LoadErrorExpectation {
+    MissingSymbol,
+    NullManifest,
+    AbiMismatch { actual: u32 },
+    InvalidManifest { messages: &'static [&'static str] },
+}
 
 fn cdylib_extension() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -53,14 +70,14 @@ fn cdylib_prefix() -> &'static str {
     }
 }
 
-fn build_example_cdylib() -> PathBuf {
+fn build_example_cdylib(example_name: &str) -> PathBuf {
     let mut build_command = Command::new(env!("CARGO"));
     build_command.args([
         "build",
         "-p",
         "nautilus-plugin",
         "--example",
-        "custom_data_plugin",
+        example_name,
         "--profile",
         PLUGIN_TEST_PROFILE,
     ]);
@@ -72,6 +89,12 @@ fn build_example_cdylib() -> PathBuf {
     let status = build_command.status().expect("invoke cargo build");
     assert!(status.success(), "cargo build --example failed");
 
+    let path = example_cdylib_path(example_name);
+    assert!(path.exists(), "expected cdylib at {}", path.display());
+    path
+}
+
+fn example_cdylib_path(example_name: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.pop(); // crates/
     path.pop(); // workspace root
@@ -79,11 +102,11 @@ fn build_example_cdylib() -> PathBuf {
     path.push(PLUGIN_TEST_PROFILE);
     path.push("examples");
     path.push(format!(
-        "{}custom_data_plugin.{}",
+        "{}{}.{}",
         cdylib_prefix(),
+        example_name,
         cdylib_extension()
     ));
-    assert!(path.exists(), "expected cdylib at {}", path.display());
     path
 }
 
@@ -101,7 +124,7 @@ fn cargo_target_dir(root: &Path) -> PathBuf {
 #[rstest::rstest]
 #[ignore]
 fn loads_example_cdylib_and_walks_manifest() {
-    let path = build_example_cdylib();
+    let path = build_example_cdylib("custom_data_plugin");
     let mut loader = PluginLoader::new();
     loader.load(&path).expect("load failed");
     assert_eq!(loader.len(), 1);
@@ -153,4 +176,85 @@ fn loads_example_cdylib_and_walks_manifest() {
         unsafe { strategies[0].type_name.as_str() },
         "ExampleStrategy",
     );
+}
+
+#[rstest::rstest]
+#[case::missing_init_symbol("bad_missing_init_plugin", LoadErrorExpectation::MissingSymbol)]
+#[case::null_manifest("bad_null_manifest_plugin", LoadErrorExpectation::NullManifest)]
+#[case::wrong_abi(
+    "bad_abi_manifest_plugin",
+    LoadErrorExpectation::AbiMismatch {
+        actual: NAUTILUS_PLUGIN_ABI_VERSION + 1,
+    }
+)]
+#[case::invalid_manifest(
+    "bad_invalid_manifest_plugin",
+    LoadErrorExpectation::InvalidManifest {
+        messages: INVALID_MANIFEST_MESSAGES,
+    }
+)]
+#[case::init_panic("bad_init_panic_plugin", LoadErrorExpectation::NullManifest)]
+#[ignore]
+fn rejects_malformed_cdylib_fixture(
+    #[case] example_name: &str,
+    #[case] expectation: LoadErrorExpectation,
+) {
+    let path = build_example_cdylib(example_name);
+    let mut loader = PluginLoader::new();
+    let err = loader
+        .load(&path)
+        .expect_err("malformed fixture should fail to load");
+
+    assert_load_error(err, &path, expectation);
+    assert_eq!(loader.len(), 0);
+}
+
+fn assert_load_error(err: LoadError, path: &Path, expectation: LoadErrorExpectation) {
+    match (err, expectation) {
+        (LoadError::MissingSymbol { path: actual, .. }, LoadErrorExpectation::MissingSymbol) => {
+            assert_eq!(actual.as_path(), path);
+        }
+        (LoadError::NullManifest { path: actual }, LoadErrorExpectation::NullManifest) => {
+            assert_eq!(actual.as_path(), path);
+        }
+        (
+            LoadError::AbiMismatch {
+                path: actual_path,
+                expected,
+                actual,
+                diagnostics,
+            },
+            LoadErrorExpectation::AbiMismatch {
+                actual: expected_actual,
+            },
+        ) => {
+            assert_eq!(actual_path.as_path(), path);
+            assert_eq!(expected, NAUTILUS_PLUGIN_ABI_VERSION);
+            assert_eq!(actual, expected_actual);
+            assert_eq!(diagnostics.plugin_name.as_str(), "bad-abi-plugin");
+            assert_eq!(
+                diagnostics.plugin_version.as_str(),
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        (
+            LoadError::InvalidManifest {
+                path: actual_path,
+                errors,
+                ..
+            },
+            LoadErrorExpectation::InvalidManifest { messages },
+        ) => {
+            assert_eq!(actual_path.as_path(), path);
+            let rendered = errors.to_string();
+
+            for message in messages {
+                assert!(
+                    rendered.contains(message),
+                    "expected manifest error containing {message:?}, was: {rendered}",
+                );
+            }
+        }
+        (err, _) => panic!("unexpected load error: {err:?}"),
+    }
 }
