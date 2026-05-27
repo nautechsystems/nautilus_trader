@@ -75,6 +75,41 @@ contracts (e.g. `BTC-27MAR26-70000-P-USDT`) but omit it for USDC-settled
 contracts (e.g. `ETH-28FEB25-2800-C`). The adapter appends `-OPTION` to
 whatever symbol the API returns.
 
+## Instrument loading
+
+Bybit data and execution clients use the common `instrument_provider` config.
+Configure it to load instruments before strategies subscribe to market data or submit
+orders. Subscriptions do not request missing instrument definitions.
+
+```python
+from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+from nautilus_trader.config import InstrumentProviderConfig
+
+BybitDataClientConfig(
+    instrument_provider=InstrumentProviderConfig(load_all=True),
+    product_types=(BybitProductType.SPOT,),
+)
+```
+
+Use `load_ids` when you only need a known set of instruments:
+
+```python
+from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.model.identifiers import InstrumentId
+
+BybitDataClientConfig(
+    instrument_provider=InstrumentProviderConfig(
+        load_ids=frozenset([InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")]),
+    ),
+    product_types=(BybitProductType.SPOT,),
+)
+```
+
+The configured `product_types` must include the product suffix in each instrument ID.
+
 ## Environments
 
 Bybit provides three trading environments. Configure the appropriate
@@ -771,6 +806,7 @@ The product types for each client must be specified in the configurations.
 | `api_key`                          | `None`    | API key; loaded from the matching environment variable when omitted. |
 | `api_secret`                       | `None`    | API secret; loaded from the matching environment variable when omitted. |
 | `product_types`                    | `None`    | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
+| `instrument_provider`              | default   | Instrument loading config. Use `load_all=True` or `load_ids` before subscribing. |
 | `environment`                      | `None`    | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                    | `None`    | Override for the REST base URL. |
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
@@ -789,6 +825,7 @@ The product types for each client must be specified in the configurations.
 | `api_key`                               | `None`    | API key; loaded from the matching environment variable when omitted. |
 | `api_secret`                            | `None`    | API secret; loaded from the matching environment variable when omitted. |
 | `product_types`                         | `None`    | Sequence of `BybitProductType` values to enable (Spot cannot be mixed with derivatives for execution). |
+| `instrument_provider`                   | default   | Instrument loading config. Use `load_all=True` or `load_ids` before submitting orders. |
 | `environment`                           | `None`    | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                         | `None`    | Override for the REST base URL. |
 | `base_url_ws_private`                   | `None`    | Override for the private WebSocket base URL. |

@@ -378,6 +378,10 @@ NautilusTrader provides two distinct operations for working with bars:
 - **`request_aggregated_bars()`**: Fetches historical data for a dependency-ordered list of bar
   types, building internal bars on the fly.
 - **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
+  It expects the instrument for the `BarType` to already be loaded in the cache.
+
+The same cache precondition applies to quote, trade, order book, and other live
+subscriptions.
 
 These methods work together in a typical workflow:
 

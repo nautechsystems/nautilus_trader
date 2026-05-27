@@ -213,6 +213,9 @@ Here we can see the following:
 - Historical data being requested (to hydrate the indicators).
 - Live data being subscribed to.
 
+The cache check matters in live trading. Direct subscriptions assume the instrument was
+loaded by the instrument provider config or by an earlier instrument request.
+
 ```python
 def on_start(self) -> None:
     """

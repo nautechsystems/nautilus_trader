@@ -90,9 +90,11 @@ See the full instrument [API Reference](/docs/python-api-latest/model/instrument
 
 ## Live trading
 
-Live integration adapters have `InstrumentProvider` implementations that automatically
-cache the latest instrument definitions for the venue. Refer to a particular instrument
-by passing the matching `InstrumentId` to data and execution methods that require one.
+Live integration adapters have `InstrumentProvider` implementations that cache instrument
+definitions when configured to load them at startup. Use `InstrumentProviderConfig(load_all=True)`
+where the integration supports it, or `load_ids` to load a known set of instruments.
+Subscriptions and order methods expect the matching `InstrumentId` to already be available
+in the cache.
 
 ## Finding instruments
 
