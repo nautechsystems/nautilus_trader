@@ -23,7 +23,7 @@ use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
-    pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
+    pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -1248,10 +1248,15 @@ impl BlockchainDataClientCore {
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
                     log::info!("Comparing profiler state with on-chain state...");
-                    let valid = compare_pool_profiler(profiler, &on_chain_snapshot);
+                    let comparison = compare_pool_profiler_detailed(profiler, &on_chain_snapshot);
+                    let valid = comparison.is_valid_for_snapshot();
                     if !valid {
                         log::error!(
                             "Pool profiler state does NOT match on-chain smart contract state"
+                        );
+                    } else if !comparison.is_exact_match() {
+                        log::warn!(
+                            "Pool profiler snapshot has a sqrt ratio mismatch only; accepting snapshot"
                         );
                     }
                     (valid, on_chain_snapshot.block_position)

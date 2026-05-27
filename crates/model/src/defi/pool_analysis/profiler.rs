@@ -327,6 +327,16 @@ impl PoolProfiler {
             self.tick_map.liquidity = swap.liquidity;
         }
 
+        if swap.sqrt_price_x96 != self.state.price_sqrt_ratio_x96 {
+            log::warn!(
+                "Inconsistency in swap processing: Sqrt price mismatch: simulated {}, event {} on block {}",
+                self.state.price_sqrt_ratio_x96,
+                swap.sqrt_price_x96,
+                swap.block
+            );
+            self.state.price_sqrt_ratio_x96 = swap.sqrt_price_x96;
+        }
+
         self.last_processed_event = Some(BlockPosition::new(
             swap.block,
             swap.transaction_hash.clone(),
