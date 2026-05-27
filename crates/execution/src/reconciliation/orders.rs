@@ -63,7 +63,16 @@ pub fn generate_reconciliation_order_events(
     let mut events: Vec<OrderEventAny> = Vec::new();
 
     if should_accept_before_reconciliation(&working, report) {
-        let accepted = create_reconciliation_accepted(&working, report, ts_now);
+        let Some(accepted) = create_reconciliation_accepted(&working, report, ts_now) else {
+            log::warn!(
+                "Cannot create reconciliation acceptance for {}: missing account_id",
+                order.client_order_id(),
+            );
+            return reconcile_order_report(order, report, instrument, ts_now)
+                .into_iter()
+                .collect();
+        };
+
         if let Err(e) = working.apply(accepted.clone()) {
             log::warn!(
                 "Failed to pre-apply reconciliation acceptance for {}: {e}",
@@ -148,7 +157,7 @@ pub fn reconcile_order_report(
             {
                 return Some(create_reconciliation_updated(order, report, ts_now));
             }
-            Some(create_reconciliation_accepted(order, report, ts_now))
+            create_reconciliation_accepted(order, report, ts_now)
         }
         OrderStatus::Rejected => {
             create_reconciliation_rejected(order, report.cancel_reason.as_deref(), ts_now)
@@ -400,30 +409,26 @@ pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport
 }
 
 /// Creates an `OrderAccepted` event for reconciliation.
-///
-/// # Panics
-///
-/// Panics if the order does not have an `account_id` set.
 #[must_use]
 pub(super) fn create_reconciliation_accepted(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
-) -> OrderEventAny {
-    OrderEventAny::Accepted(OrderAccepted::new(
+) -> Option<OrderEventAny> {
+    let account_id = order.account_id()?;
+
+    Some(OrderEventAny::Accepted(OrderAccepted::new(
         order.trader_id(),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
         order.venue_order_id().unwrap_or(report.venue_order_id),
-        order
-            .account_id()
-            .expect("Order should have account_id for reconciliation"),
+        account_id,
         UUID4::new(),
         report.ts_accepted,
         ts_now,
         true, // reconciliation
-    ))
+    )))
 }
 
 /// Creates an `OrderRejected` event for reconciliation.

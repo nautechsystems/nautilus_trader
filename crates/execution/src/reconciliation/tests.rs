@@ -2530,6 +2530,60 @@ fn test_create_reconciliation_rejected_no_account_id() {
 }
 
 #[rstest]
+fn test_create_reconciliation_accepted_no_account_id() {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    let report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = create_reconciliation_accepted(&order, &report, UnixNanos::from(1_000));
+
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_report_accepted_no_account_id_returns_none() {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    let report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::from(1_000));
+
+    assert!(result.is_none());
+}
+
+#[rstest]
 fn test_create_synthetic_venue_order_id_format() {
     let fill = FillSnapshot::new(
         create_test_venue_order_id("ORDER1"),
