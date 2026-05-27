@@ -181,6 +181,26 @@ async fn handle_ws_trading_connection(mut socket: WebSocket) {
                     "rateLimits": []
                 })
             }
+            Some("order.cancel")
+                if parsed
+                    .get("params")
+                    .and_then(|params| params.get("orderId"))
+                    .is_none() =>
+            {
+                let mut order = load_fixture("order_response.json");
+                order["status"] = json!("CANCELED");
+                order["clientOrderId"] = parsed
+                    .get("params")
+                    .and_then(|params| params.get("origClientOrderId"))
+                    .cloned()
+                    .unwrap_or_else(|| json!("testOrder123"));
+                json!({
+                    "id": request_id,
+                    "status": 200,
+                    "result": order,
+                    "rateLimits": []
+                })
+            }
             Some("order.cancel") => json!({
                 "id": request_id,
                 "status": 400,
@@ -1309,6 +1329,41 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test]
+async fn test_cancel_order_http_local_venue_order_id_parse_failure_falls_back_to_client_order_id() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("cancel-http-local-invalid-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    let cancel_cmd = CancelOrder::new(
+        test_trader_id(),
+        Some(*BINANCE_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("not-a-number")),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(cancel_cmd).unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_ambiguous_modify_failure_does_not_emit_modify_rejected() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses {
@@ -1718,6 +1773,51 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_ws_local_venue_order_id_parse_failure_does_not_emit_cancel_rejected() {
+    let addr = start_exec_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let base_url_ws_trading = format!("ws://{addr}/ws-fapi/v1");
+
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        base_url_http,
+        base_url_ws,
+        base_url_ws_trading,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("cancel-ws-local-invalid-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    let cancel_cmd = CancelOrder::new(
+        test_trader_id(),
+        Some(*BINANCE_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(VenueOrderId::from("not-a-number")),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(cancel_cmd).unwrap();
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
 }
 
 #[rstest]

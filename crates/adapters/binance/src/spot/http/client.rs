@@ -1996,10 +1996,23 @@ impl BinanceSpotHttpClient {
     ) -> anyhow::Result<VenueOrderId> {
         let symbol = instrument_id.symbol.inner();
 
-        let order_id = venue_order_id
-            .map(|id| id.inner().parse::<i64>())
-            .transpose()
-            .map_err(|_| Self::command_validation_error("Invalid venue order ID"))?;
+        let order_id = match venue_order_id {
+            Some(venue_order_id) => match venue_order_id.inner().parse::<i64>() {
+                Ok(order_id) => Some(order_id),
+                Err(e) if client_order_id.is_some() => {
+                    log::warn!(
+                        "Unable to parse venue_order_id {venue_order_id} for cancel, canceling by client_order_id: {e}"
+                    );
+                    None
+                }
+                Err(e) => {
+                    return Err(Self::command_validation_error(format!(
+                        "Invalid venue order ID: {e}"
+                    )));
+                }
+            },
+            None => None,
+        };
 
         let client_id_str =
             client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_SPOT_BROKER_ID));

@@ -1473,11 +1473,11 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_cancel_failure_emits_cancel_rejected() {
-    let (client, mut rx, cache, _request_count) =
+async fn test_local_cancel_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
-    let client_order_id = ClientOrderId::new("local-cancel-reject-test-001");
+    let client_order_id = ClientOrderId::new("local-cancel-invalid-test-001");
     add_limit_order_to_cache(&cache, client_order_id);
 
     let cancel_cmd = CancelOrder::new(
@@ -1495,21 +1495,15 @@ async fn test_local_cancel_failure_emits_cancel_rejected() {
 
     client.cancel_order(cancel_cmd).unwrap();
 
-    match recv_until(&mut rx, |event| {
+    wait_for_command_requests(&request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
-                if event.client_order_id == client_order_id
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
         )
     })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
-            assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Invalid venue order ID"));
-        }
-        other => panic!("Expected CancelRejected event, was {other:?}"),
-    }
+    .await;
 }
 
 #[rstest]

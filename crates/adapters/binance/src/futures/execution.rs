@@ -654,23 +654,9 @@ impl BinanceFuturesExecutionClient {
                         cancel_builder.order_id(order_id);
                     }
                     Err(e) => {
-                        let ts_now = clock.get_time_ns();
-
-                        let rejected = OrderCancelRejected::new(
-                            trader_id,
-                            command.strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("failed to parse venue_order_id: {e}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
+                        log::warn!(
+                            "Unable to parse venue_order_id {venue_id} for cancel {client_order_id}, canceling by client_order_id: {e}"
                         );
-                        emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
-                        return;
                     }
                 }
             }
@@ -754,6 +740,10 @@ impl BinanceFuturesExecutionClient {
                         );
 
                         emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                    } else if is_local_command_failure(&e) {
+                        log::warn!(
+                            "Cancel command failed local validation for {client_order_id}: {e}"
+                        );
                     } else {
                         log::error!(
                             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
@@ -901,6 +891,18 @@ pub(crate) fn classify_submit_order_error(err: &anyhow::Error) -> bool {
 fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
     err.downcast_ref::<BinanceFuturesHttpError>()
         .is_some_and(|be| matches!(be, BinanceFuturesHttpError::BinanceError { .. }))
+}
+
+fn is_local_command_failure(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceFuturesHttpError>()
+        .is_some_and(is_local_http_command_failure)
+}
+
+fn is_local_http_command_failure(err: &BinanceFuturesHttpError) -> bool {
+    matches!(
+        err,
+        BinanceFuturesHttpError::MissingCredentials | BinanceFuturesHttpError::ValidationError(_)
+    )
 }
 
 #[async_trait(?Send)]
@@ -2152,10 +2154,17 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         }
                     }
                     Err(e) => {
-                        log::error!(
-                            "Ambiguous batch cancel request failure for {} orders, awaiting reconciliation: {e}",
-                            chunk.len()
-                        );
+                        if is_local_http_command_failure(&e) {
+                            log::warn!(
+                                "Batch cancel command failed local validation for {} orders: {e}",
+                                chunk.len()
+                            );
+                        } else {
+                            log::error!(
+                                "Ambiguous batch cancel request failure for {} orders, awaiting reconciliation: {e}",
+                                chunk.len()
+                            );
+                        }
                         return Err(e.into());
                     }
                 }

@@ -430,7 +430,7 @@ impl BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
                     }
                     Err(e) => {
-                        if is_structured_venue_rejection(&e) || is_local_command_failure(&e) {
+                        if is_structured_venue_rejection(&e) {
                             let ts_now = clock.get_time_ns();
                             let rejected_event = OrderCancelRejected::new(
                                 trader_id,
@@ -447,6 +447,11 @@ impl BinanceSpotExecutionClient {
                             );
                             event_emitter
                                 .send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                        } else if is_local_command_failure(&e) {
+                            log::warn!(
+                                "Cancel command failed local validation for {}: {e}",
+                                command.client_order_id
+                            );
                         } else {
                             log::error!(
                                 "Ambiguous cancel failure for {}, awaiting reconciliation: {e}",
@@ -1251,10 +1256,17 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         }
                     }
                     Err(e) => {
-                        log::error!(
-                            "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
-                            chunk.len()
-                        );
+                        if is_local_http_command_failure(&e) {
+                            log::warn!(
+                                "Batch cancel command failed local validation for {} orders: {e}",
+                                chunk.len()
+                            );
+                        } else {
+                            log::error!(
+                                "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
+                                chunk.len()
+                            );
+                        }
                     }
                 }
             }
@@ -1962,12 +1974,14 @@ fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
 
 fn is_local_command_failure(err: &anyhow::Error) -> bool {
     err.downcast_ref::<BinanceSpotHttpError>()
-        .is_some_and(|be| {
-            matches!(
-                be,
-                BinanceSpotHttpError::MissingCredentials | BinanceSpotHttpError::ValidationError(_)
-            )
-        })
+        .is_some_and(is_local_http_command_failure)
+}
+
+fn is_local_http_command_failure(err: &BinanceSpotHttpError) -> bool {
+    matches!(
+        err,
+        BinanceSpotHttpError::MissingCredentials | BinanceSpotHttpError::ValidationError(_)
+    )
 }
 
 #[cfg(test)]
