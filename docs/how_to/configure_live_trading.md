@@ -211,11 +211,11 @@ When retries are exhausted, the engine resolves the order as follows:
 
 **In-flight order timeout resolution** (venue does not respond after max retries):
 
-| Current status   | Resolved to | Rationale                                  |
-|------------------|-------------|--------------------------------------------|
-| `SUBMITTED`      | `REJECTED`  | No confirmation received from venue.       |
-| `PENDING_UPDATE` | `CANCELED`  | Modification remains unacknowledged.       |
-| `PENDING_CANCEL` | `CANCELED`  | Venue never confirmed the cancellation.    |
+| Current status   | Resolved to | Rationale                                      |
+|------------------|-------------|------------------------------------------------|
+| `SUBMITTED`      | `REJECTED`  | No confirmation received from venue.           |
+| `PENDING_UPDATE` | Unresolved  | Modification outcome remains unknown.          |
+| `PENDING_CANCEL` | Unresolved  | Cancellation outcome remains unknown.          |
 
 **Order consistency checks** (when cache state differs from venue state):
 

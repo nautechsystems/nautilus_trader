@@ -547,7 +547,7 @@ class TestLiveExecutionEngine:
         assert order.status == OrderStatus.REJECTED
 
     @pytest.mark.asyncio
-    async def test_resolve_inflight_order_when_pending_update(self):
+    async def test_resolve_inflight_order_when_pending_update_stays_unresolved(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -567,10 +567,10 @@ class TestLiveExecutionEngine:
         self.exec_engine._resolve_inflight_order(order)
 
         # Assert
-        assert order.status == OrderStatus.CANCELED
+        assert order.status == OrderStatus.PENDING_UPDATE
 
     @pytest.mark.asyncio
-    async def test_resolve_inflight_order_when_pending_cancel(self):
+    async def test_resolve_inflight_order_when_pending_cancel_stays_unresolved(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -590,7 +590,7 @@ class TestLiveExecutionEngine:
         self.exec_engine._resolve_inflight_order(order)
 
         # Assert
-        assert order.status == OrderStatus.CANCELED
+        assert order.status == OrderStatus.PENDING_CANCEL
 
     @pytest.mark.asyncio
     async def test_graceful_shutdown_cmd_queue_exception_enabled_calls_shutdown_system(self):

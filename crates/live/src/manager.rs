@@ -55,7 +55,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
+    events::{OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
@@ -882,20 +882,12 @@ impl ExecutionManager {
                                 }
                             }
                             OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
-                                // Generate cancellation for orders stuck in pending modify/cancel
-                                let event = OrderEventAny::Canceled(OrderCanceled::new(
-                                    order.trader_id(),
-                                    order.strategy_id(),
-                                    order.instrument_id(),
+                                log::warn!(
+                                    "Order {} exceeded max inflight retries while {}, leaving unresolved for venue reconciliation",
                                     order.client_order_id(),
-                                    UUID4::new(),
-                                    ts_now,
-                                    ts_now,
-                                    true, // reconciliation
-                                    order.venue_order_id(),
-                                    order.account_id(),
-                                ));
-                                result.events.push(event);
+                                    order.status()
+                                );
+                                continue;
                             }
                             _ => {
                                 // Order already resolved, just clear tracking

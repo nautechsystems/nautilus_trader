@@ -71,8 +71,9 @@ When the outcome is unknown:
   the state.
 
 For never-acknowledged submits, the `LiveExecutionEngine` in-flight check queries the venue. If the
-order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to `REJECTED`. See
-the Runtime checks table below.
+order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to `REJECTED`. Pending
+cancel and update outcomes remain unresolved until venue reconciliation resolves them. See the Runtime
+checks table below.
 
 ## Execution reconciliation
 
@@ -212,7 +213,8 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 | Scenario                          | Description                                             | System behavior                                                            |
 |-----------------------------------|---------------------------------------------------------|----------------------------------------------------------------------------|
 | **Ambiguous submit failure**      | Submit call fails without confirmed venue rejection.    | Logs failure, keeps order in flight, and waits for reconciliation.         |
-| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                    |
+| **In‑flight submit timeout**      | `SUBMITTED` order remains unconfirmed beyond threshold. | After `inflight_check_retries`, resolves to `REJECTED`.                    |
+| **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` remains unconfirmed beyond threshold. | Logs warning and remains unresolved for venue reconciliation. |
 | **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions.     |
 | **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.           |
 

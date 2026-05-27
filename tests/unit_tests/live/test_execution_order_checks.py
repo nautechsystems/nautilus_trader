@@ -713,6 +713,100 @@ async def test_check_inflight_orders_respects_retry_limit(
 
 
 @pytest.mark.asyncio
+async def test_check_inflight_pending_update_stays_unresolved_at_retry_limit(
+    exec_engine_inflight_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _check_inflight_orders does not synthesize a terminal event for pending updates.
+    """
+    # Arrange
+    exec_engine = exec_engine_inflight_check
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - 1_000_000_000
+    submitted_event = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    order.apply(submitted_event)
+    exec_engine.process(submitted_event)
+
+    accepted_event = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    order.apply(accepted_event)
+    exec_engine.process(accepted_event)
+
+    pending_event = TestEventStubs.order_pending_update(order, ts_event=old_ts)
+    order.apply(pending_event)
+    exec_engine.process(pending_event)
+    cache.update_order(order)
+
+    exec_engine._recon_check_retries[order.client_order_id] = 2
+
+    # Act
+    await exec_engine._check_inflight_orders()
+
+    # Assert
+    assert order.status == OrderStatus.PENDING_UPDATE
+    assert exec_engine._recon_check_retries[order.client_order_id] == 2
+
+
+@pytest.mark.asyncio
+async def test_check_inflight_pending_cancel_stays_unresolved_at_retry_limit(
+    exec_engine_inflight_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _check_inflight_orders does not synthesize a terminal event for pending cancels.
+    """
+    # Arrange
+    exec_engine = exec_engine_inflight_check
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - 1_000_000_000
+    submitted_event = TestEventStubs.order_submitted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    order.apply(submitted_event)
+    exec_engine.process(submitted_event)
+
+    accepted_event = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        ts_event=old_ts,
+    )
+    order.apply(accepted_event)
+    exec_engine.process(accepted_event)
+
+    pending_event = TestEventStubs.order_pending_cancel(order, ts_event=old_ts)
+    order.apply(pending_event)
+    exec_engine.process(pending_event)
+    cache.update_order(order)
+
+    exec_engine._recon_check_retries[order.client_order_id] = 2
+
+    # Act
+    await exec_engine._check_inflight_orders()
+
+    # Assert
+    assert order.status == OrderStatus.PENDING_CANCEL
+    assert exec_engine._recon_check_retries[order.client_order_id] == 2
+
+
+@pytest.mark.asyncio
 async def test_check_inflight_orders_increments_retry_count(
     exec_engine_inflight_check,
     cache,

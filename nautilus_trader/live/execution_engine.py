@@ -784,12 +784,12 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Generated {rejected}")
             self._handle_event_with_tracking(rejected)
         elif order.status in (OrderStatus.PENDING_UPDATE, OrderStatus.PENDING_CANCEL):
-            canceled = create_order_canceled_event(
-                order=order,
-                ts_now=ts_now,
+            self._log.warning(
+                f"Order {order.client_order_id!r} exceeded max inflight retries while "
+                f"{order.status_string()}, leaving unresolved for venue reconciliation",
+                LogColor.YELLOW,
             )
-            self._log.debug(f"Generated {canceled}")
-            self._handle_event_with_tracking(canceled)
+            return
         else:
             raise RuntimeError(f"Invalid status for in-flight order, was '{order.status_string()}'")
 

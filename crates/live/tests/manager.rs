@@ -1767,7 +1767,7 @@ fn test_inflight_increments_retry_count_before_max() {
 }
 
 #[rstest]
-fn test_inflight_pending_update_generates_canceled() {
+fn test_inflight_pending_update_stays_unresolved_at_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -1795,20 +1795,22 @@ fn test_inflight_pending_update_generates_canceled() {
 
     let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(result.events.len(), 1);
     assert!(
-        matches!(result.events[0], OrderEventAny::Canceled(_)),
-        "Expected Canceled for PendingUpdate, was {:?}",
-        result.events[0]
+        result.events.is_empty(),
+        "PendingUpdate timeout must not synthesize terminal events"
     );
-
-    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
-        assert_eq!(canceled.client_order_id, client_order_id);
-    }
+    assert!(
+        result.queries.is_empty(),
+        "No query should be generated when retry budget is exhausted"
+    );
+    assert!(
+        format!("{:?}", ctx.manager).contains(client_order_id.as_str()),
+        "Unresolved PendingUpdate should remain tracked for later reconciliation"
+    );
 }
 
 #[rstest]
-fn test_inflight_pending_cancel_generates_canceled() {
+fn test_inflight_pending_cancel_stays_unresolved_at_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -1836,16 +1838,18 @@ fn test_inflight_pending_cancel_generates_canceled() {
 
     let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(result.events.len(), 1);
     assert!(
-        matches!(result.events[0], OrderEventAny::Canceled(_)),
-        "Expected Canceled for PendingCancel, was {:?}",
-        result.events[0]
+        result.events.is_empty(),
+        "PendingCancel timeout must not synthesize terminal events"
     );
-
-    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
-        assert_eq!(canceled.client_order_id, client_order_id);
-    }
+    assert!(
+        result.queries.is_empty(),
+        "No query should be generated when retry budget is exhausted"
+    );
+    assert!(
+        format!("{:?}", ctx.manager).contains(client_order_id.as_str()),
+        "Unresolved PendingCancel should remain tracked for later reconciliation"
+    );
 }
 
 #[rstest]
