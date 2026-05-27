@@ -41,7 +41,7 @@ use crate::{
     common::enums::{PolymarketOrderSide, PolymarketOrderType},
     http::{
         clob::PolymarketClobHttpClient,
-        error::Error,
+        error::{Error, Result as HttpResult},
         models::{PolymarketOpenOrder, PolymarketOrder},
         query::{CancelResponse, OrderResponse},
     },
@@ -250,10 +250,7 @@ impl OrderSubmitter {
     }
 
     /// Cancels a single order with retry on transient failures.
-    pub(crate) async fn cancel_order(
-        &self,
-        venue_order_id: &str,
-    ) -> anyhow::Result<CancelResponse> {
+    pub(crate) async fn cancel_order(&self, venue_order_id: &str) -> HttpResult<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_id = venue_order_id.to_string();
         self.retry_manager
@@ -268,14 +265,13 @@ impl OrderSubmitter {
                 Error::transport,
             )
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     /// Cancels multiple orders with retry on transient failures.
     pub(crate) async fn cancel_orders(
         &self,
         venue_order_ids: &[&str],
-    ) -> anyhow::Result<CancelResponse> {
+    ) -> HttpResult<CancelResponse> {
         let http_client = self.http_client.clone();
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
 
@@ -294,7 +290,6 @@ impl OrderSubmitter {
                 Error::transport,
             )
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     /// Fetches a single order by its venue order ID from the CLOB REST API.
