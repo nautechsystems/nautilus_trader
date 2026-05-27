@@ -154,6 +154,11 @@ name = "mstr"
 path = "benches/mstr.rs"
 harness = false
 
+[[bench]]
+name = "logging"
+path = "benches/logging.rs"
+harness = false
+
 # Run with `cargo run -p nautilus-common --features live --example greeks_actor_example`
 [[example]]
 name = "greeks_actor_example"
