@@ -284,12 +284,14 @@ catalog records grouped under their selected slice.
 
 Rust callers can enable the off-by-default `persistence` feature and wrap a `ParquetDataCatalog`
 with `nautilus_event_store::ParquetReplayCatalog` to plan selected catalog files and
-filename-derived intervals. This bridge is read-only and planning-only: it uses catalog discovery
-APIs but **does not write to the catalog**.
+filename-derived intervals. The bridge can load `quotes`, `trades`, and `bars` into
+`CatalogReplayPayload::Data` records. Custom `ReplayCatalog` implementations can still return
+opaque bytes with `CatalogReplayRecord::opaque`.
 
 :::note
-Loading opaque `CatalogReplayRecord` payloads remains explicit until replay has a typed catalog
-decoding contract.
+The persistence bridge is read-only: it uses catalog discovery and query APIs but **does not write
+to the catalog**. Unsupported catalog classes fail loading until replay adds a typed payload
+contract for that class.
 :::
 
 `ReplayInputs::context_timeline()` builds an analysis-only timeline over those already-loaded
