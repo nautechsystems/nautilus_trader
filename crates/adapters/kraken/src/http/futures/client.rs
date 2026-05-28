@@ -882,16 +882,25 @@ impl KrakenFuturesRawHttpClient {
         &self,
         order_ids: Vec<String>,
     ) -> anyhow::Result<FuturesBatchCancelResponse, KrakenHttpError> {
+        let batch_items: Vec<KrakenFuturesBatchCancelItem> = order_ids
+            .into_iter()
+            .map(KrakenFuturesBatchCancelItem::from_order_id)
+            .collect();
+
+        self.cancel_order_items_batch(batch_items).await
+    }
+
+    /// Cancels multiple order IDs or client order IDs in a single batch request
+    /// (requires authentication).
+    pub async fn cancel_order_items_batch(
+        &self,
+        batch_items: Vec<KrakenFuturesBatchCancelItem>,
+    ) -> anyhow::Result<FuturesBatchCancelResponse, KrakenHttpError> {
         if self.credential.is_none() {
             return Err(KrakenHttpError::AuthenticationError(
                 "API credentials required for batch orders".to_string(),
             ));
         }
-
-        let batch_items: Vec<KrakenFuturesBatchCancelItem> = order_ids
-            .into_iter()
-            .map(KrakenFuturesBatchCancelItem::from_order_id)
-            .collect();
 
         let params = KrakenFuturesBatchOrderParams::new(batch_items);
         let post_data = params
