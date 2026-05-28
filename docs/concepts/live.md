@@ -26,8 +26,8 @@ configuration, and multi-venue wiring, see the
 Live command outcomes are one of:
 
 - Confirmed by the venue.
-- Explicitly rejected by the venue or refused by the venue API.
-- Denied locally by Nautilus.
+- Definitively rejected by the venue or refused by the venue API.
+- Denied locally by Nautilus before a submit leaves the system boundary.
 - Logged as unresolved while Nautilus checks the venue for the final state.
 
 Rejection events only appear for definitive command outcomes, not for ambiguous failures:
@@ -37,59 +37,60 @@ Rejection events only appear for definitive command outcomes, not for ambiguous 
 - `OrderCancelRejected`.
 
 Before an order enters `SUBMITTED`, Nautilus can deny a submit locally. These failures appear
-as `OrderDenied`, no `OrderSubmitted` event is emitted, and the reason uses a stable
-`SCREAMING_SNAKE_CASE` code.
+as `OrderDenied`, no `OrderSubmitted` event is emitted.
 
-After a submit reaches the venue API, Nautilus emits `OrderRejected` when the create-order
+After a submit reaches the venue API, Nautilus emits `OrderRejected` when the order
 response proves that the venue did not accept the order. This includes structured venue
-submit rejects and API refusals where venue semantics guarantee non-acceptance, such as
-Coinbase HTTP 400, 401, 403, and 429 create-order responses. A status code is definitive
-only when venue-specific semantics prove non-acceptance.
+submit rejects and API refusals where venue semantics guarantee non‑acceptance, such as
+HTTP 400, 401, 403, and 429 status responses. A status code is definitive
+only when venue‑specific semantics prove non‑acceptance.
 
-| Command type                         | Rejection event       | When it appears                                              |
-|--------------------------------------|-----------------------|--------------------------------------------------------------|
-| Submit and submit order list         | `OrderRejected`       | An explicit venue response proves an order was not accepted. |
-| Modify                               | `OrderModifyRejected` | The venue returns a command‑specific reject.                 |
-| Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order reject.    |
+| Command type                         | Rejection event       | When it appears                                                   |
+|--------------------------------------|-----------------------|-------------------------------------------------------------------|
+| Submit and submit order list         | `OrderRejected`       | A venue or API response proves an order was not accepted.         |
+| Modify                               | `OrderModifyRejected` | The venue returns a command‑specific modify reject.               |
+| Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order cancel reject.  |
 
-A successful REST response can still contain per-order failure fields, and those fields are
-definitive command outcomes. A whole-request failure without per-order results remains
+A successful response can still contain per‑order failure fields, and those fields are
+definitive command outcomes. A whole‑request failure without per‑order results remains
 unresolved unless the target command is proven refused.
 
 Other local validation failures are reported differently:
 
-- Cancel, modify, cancel-all, and batch-cancel commands that fail local checks:
-  - Appear as warnings.
-  - Do not produce rejection events.
+- Cancel, modify, cancel‑all, and batch‑cancel commands that fail local checks log warnings
+  and do not produce rejection events.
 
 :::note[Ambiguous outcomes]
 These failures leave the venue outcome unknown:
 
 - Transport errors, WebSocket send failures, request timeouts, and disconnects.
-- Canceled local tasks, missing acknowledgements, server errors, and retry exhaustion.
+- Canceled local tasks, missing acknowledgements, and server errors.
 - Parse failures after a request may have reached the venue.
-- Whole-batch failures without per-order venue results.
-- Rate limits, except create-order API refusals treated as definitive submit rejections.
+- Whole‑batch failures without per‑order venue results.
+- In‑flight retry exhaustion for `PENDING_UPDATE` and `PENDING_CANCEL`.
+- Rate limits, except create‑order API refusals treated as definitive submit rejections.
 
 When the outcome is unknown, Nautilus logs the failure, keeps the order in its current
-in-flight state, and waits for WebSocket updates, open-order polling, in-flight checks, or
+in‑flight state, and waits for WebSocket updates, open‑order polling, in‑flight checks, or
 startup reconciliation to resolve the state.
 :::
 
 :::note[Terminology]
-An **in-flight order** is one awaiting venue acknowledgement:
+An **in‑flight order** is one awaiting venue acknowledgement:
 
 - `SUBMITTED` - initial submission, awaiting accept/reject.
 - `PENDING_UPDATE` - modification requested, awaiting confirmation.
 - `PENDING_CANCEL` - cancellation requested, awaiting confirmation.
 
-These orders are monitored by WebSocket updates, open-order polling, in-flight checks, and
+These orders are monitored by WebSocket updates, open‑order polling, in‑flight checks, and
 startup reconciliation.
 :::
 
-For never-acknowledged submits, the `LiveExecutionEngine` in-flight check queries the venue. If the
-order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to `REJECTED`. See
-the Runtime checks table below.
+For never‑acknowledged submits, the `LiveExecutionEngine` in‑flight check queries the venue.
+If the order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to
+`REJECTED`. Pending cancel and update outcomes remain unresolved until venue reconciliation
+confirms their final state.
+See the Runtime checks table below.
 
 ## Execution reconciliation
 
@@ -204,35 +205,105 @@ If reconciliation fails, the system logs an error and does not start.
 
 ### Common reconciliation scenarios
 
-The tables below cover startup reconciliation (mass status) and runtime checks (in-flight order checks, open-order polls, own-books audits).
+The tables below cover startup reconciliation (mass status) and runtime checks
+(in‑flight order checks, open‑order polls, own‑books audits).
 
 #### Startup reconciliation
 
-| Scenario                               | Description                                                                              | System behavior                                                                 |
-|----------------------------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
-| **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).              | Updates local order to match venue state, emits missing events.                 |
-| **Missed fills**                       | Venue filled an order but the engine missed the event.                                   | Generates missing `OrderFilled` events.                                         |
-| **Multiple fills**                     | Order has partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                          |
-| **External orders**                    | Orders exist on venue but not in local cache.                                            | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.           |
-| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                           | Updates state to `CANCELED`, preserves fill history.                            |
-| **Different fill data**                | Venue reports different fill price/commission than cached.                               | Preserves cached data, logs discrepancies.                                      |
-| **Filtered orders**                    | Orders marked for filtering via config.                                                  | Skips based on `filtered_client_order_ids` or instrument filters.               |
-| **Duplicate order reports**            | Multiple orders share the same identifier.                                               | Deduplicates with warning logged.                                               |
-| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                            | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.  |
-| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                         | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`. |
-| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long).          | Generates opposite‑side LIMIT order with calculated price.                      |
-| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).           | Generates LIMIT order to close internal and open external position.             |
-| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                                        | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.          |
+| Scenario                               | Description                                                                     | System behavior                                                                 |
+|----------------------------------------|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                 |
+| **Missed fills**                       | Venue filled an order but the engine missed the event.                          | Generates missing `OrderFilled` events.                                         |
+| **Multiple fills**                     | Order has partial fills, some missed by the engine.                             | Reconstructs complete fill history from venue reports.                          |
+| **External orders**                    | Orders exist on venue but not in local cache.                                   | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.           |
+| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                  | Updates state to `CANCELED`, preserves fill history.                            |
+| **Different fill data**                | Venue reports different fill price/commission than cached.                      | Preserves cached data, logs discrepancies.                                      |
+| **Filtered orders**                    | Orders marked for filtering via config.                                         | Skips based on `filtered_client_order_ids` or instrument filters.               |
+| **Duplicate order reports**            | Multiple orders share the same identifier.                                      | Deduplicates with warning logged.                                               |
+| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.  |
+| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`. |
+| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite‑side LIMIT order with calculated price.                      |
+| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates LIMIT order to close internal and open external position.             |
+| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.          |
 
 #### Runtime checks
 
-| Scenario                          | Description                                      | System behavior                                 |
-|-----------------------------------|--------------------------------------------------|-------------------------------------------------|
-| **Explicit submit API refusal**   | API refuses create‑order before acceptance.      | Emits `OrderRejected`.                          |
-| **Ambiguous submit failure**      | Submit fails without confirmed venue refusal.    | Logs failure and waits for reconciliation.      |
-| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.      | Resolves to `REJECTED` after retry exhaustion.  |
-| **Open orders check discrepancy** | Periodic poll detects a venue state change.      | Confirms status and applies transitions.        |
-| **Own books audit mismatch**      | Own order books diverge from venue public books. | Audits and logs inconsistencies.                |
+Continuous reconciliation starts after startup reconciliation completes. It:
+
+- Monitors in‑flight orders for delays exceeding a configured threshold.
+- Reconciles open orders with the venue at configured intervals.
+- Audits internal *own* order books against the venue's public books.
+
+The loop waits for startup reconciliation to finish before starting periodic checks.
+The `reconciliation_startup_delay_secs` parameter adds a further delay *after* startup
+reconciliation completes, giving the system time to stabilize.
+
+| Scenario                            | Description                                                | System behavior                                      |
+|-------------------------------------|------------------------------------------------------------|------------------------------------------------------|
+| **Explicit submit API refusal**     | API refuses create‑order before acceptance.                | Emits `OrderRejected`.                               |
+| **Ambiguous submit failure**        | Submit fails without confirmed venue refusal.              | Logs failure and waits for reconciliation.           |
+| **In‑flight submit timeout**        | `SUBMITTED` remains unconfirmed beyond retry exhaustion.   | Resolves to `REJECTED`.                              |
+| **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries.  | Logs warning and remains unresolved.                 |
+| **Open orders check discrepancy**   | Periodic poll detects a venue state change.                | Confirms status and applies transitions.             |
+| **Own books audit mismatch**        | Own order books diverge from venue public books.           | Audits and logs inconsistencies.                     |
+
+**In‑flight order timeout resolution** (venue does not respond after max retries):
+
+| Current status   | Resolved to  | Rationale                             |
+|------------------|--------------|---------------------------------------|
+| `SUBMITTED`      | `REJECTED`   | No acceptance received from venue.    |
+| `PENDING_UPDATE` | *Unresolved* | Modification outcome remains unknown. |
+| `PENDING_CANCEL` | *Unresolved* | Cancellation outcome remains unknown. |
+
+**Order consistency checks** (when cache state differs from venue state):
+
+The *Not found* rows apply only in full‑history mode (`open_check_open_only=False`);
+open‑only mode is the default.
+
+| Cache status       | Venue status | Resolution   | Rationale                                                           |
+|--------------------|--------------|--------------|---------------------------------------------------------------------|
+| `SUBMITTED`        | *Not found*  | `REJECTED`   | Order never confirmed by venue (e.g., lost during network error).   |
+| `ACCEPTED`         | *Not found*  | `REJECTED`   | Order doesn't exist at venue, likely was never successfully placed. |
+| `ACCEPTED`         | `CANCELED`   | `CANCELED`   | Venue canceled the order (user action or venue‑initiated).          |
+| `ACCEPTED`         | `EXPIRED`    | `EXPIRED`    | Order reached GTD expiration at venue.                              |
+| `ACCEPTED`         | `REJECTED`   | `REJECTED`   | Venue rejected after initial acceptance (rare but possible).        |
+| `PENDING_UPDATE`   | *Not found*  | *Unresolved* | Modification outcome remains unknown.                               |
+| `PENDING_CANCEL`   | *Not found*  | *Unresolved* | Cancellation outcome remains unknown.                               |
+| `PARTIALLY_FILLED` | `CANCELED`   | `CANCELED`   | Order canceled at venue with fills preserved.                       |
+| `PARTIALLY_FILLED` | *Not found*  | `CANCELED`   | Order doesn't exist but had fills (reconciles fill history).        |
+
+:::note
+**Runtime reconciliation caveats:**
+
+- **Open‑only mode**: venue "open orders" endpoints exclude closed orders by design, making
+  it impossible to distinguish missing orders from recently closed ones. Pending
+  cancel/update orders remain unresolved when a missing‑order check cannot prove the final
+  venue state.
+- **Recent order protection**: the engine skips reconciliation for orders whose last event
+  falls within the `open_check_threshold_ms` window. This prevents false positives from race
+  conditions where the venue is still processing.
+- **Targeted query safeguard**: before applying a terminal "not found" resolution, the
+  engine issues a single‑order query to the venue. This catches false negatives from bulk
+  query limitations or timing delays.
+- **`FILLED` orders** that are "not found" at the venue are silently ignored. Venues commonly
+  drop completed orders from their query results.
+
+:::
+
+**Retry coordination.** The in‑flight loop and open‑order loop share a single retry counter
+(`_recon_check_retries`), bounded by `inflight_check_retries` and
+`open_check_missing_retries` respectively. The stricter limit wins for states eligible for
+terminal resolution and avoids duplicate venue queries for the same order state.
+
+When the open‑order loop exhausts retries, the engine issues one targeted
+`GenerateOrderStatusReport` probe before applying a terminal state or leaving an ambiguous
+pending cancel/update unresolved. If the venue returns the order, reconciliation proceeds and
+the retry counter resets.
+
+**Single‑order query throttling.** The engine caps single‑order queries per cycle via
+`max_single_order_queries_per_cycle`. Remaining orders are deferred to the next cycle.
+`single_order_query_delay_ms` spaces out consecutive queries to avoid rate limits. This
+handles bulk query failures across hundreds of orders without overwhelming the venue API.
 
 ### Common reconciliation issues
 
