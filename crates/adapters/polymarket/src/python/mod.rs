@@ -26,6 +26,7 @@ pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
@@ -74,15 +75,19 @@ fn py_scalar_to_string(value: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Ok(v) = value.extract::<bool>() {
         return Ok(v.to_string().to_lowercase());
     }
+
     if let Ok(v) = value.extract::<i64>() {
         return Ok(v.to_string());
     }
+
     if let Ok(v) = value.extract::<u64>() {
         return Ok(v.to_string());
     }
+
     if let Ok(v) = value.extract::<f64>() {
         return Ok(v.to_string());
     }
+
     if let Ok(v) = value.extract::<String>() {
         return Ok(v);
     }
@@ -114,7 +119,7 @@ fn extract_provider_config_from_pyobject(
         .transpose()?
         .unwrap_or(default.load_all);
     let load_ids = getattr_optional(obj, "load_ids")?
-        .map(|value| value.extract::<Vec<nautilus_model::identifiers::InstrumentId>>())
+        .map(|value| value.extract::<Vec<InstrumentId>>())
         .transpose()?;
     let filters = getattr_optional(obj, "filters")?
         .map(|value| extract_string_map(&value))
@@ -350,10 +355,11 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(all(test, feature = "python"))]
 mod tests {
     use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
 
     use super::extract_data_config_from_pyobject;
 
-    #[test]
+    #[rstest]
     fn extract_data_config_supports_python_style_namespace() {
         Python::initialize();
         Python::attach(|py| {
@@ -449,7 +455,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn extract_data_config_preserves_none_update_interval() {
         Python::initialize();
         Python::attach(|py| {

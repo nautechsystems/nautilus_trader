@@ -652,6 +652,7 @@ impl PolymarketDataClient {
         let Some(interval_mins) = self.config.update_instruments_interval_mins else {
             return;
         };
+
         if interval_mins == 0 || self.config.instrument_config.is_none() {
             return;
         }

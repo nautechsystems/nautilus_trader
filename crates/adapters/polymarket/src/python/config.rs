@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use pyo3::pymethods;
 
 use crate::{
@@ -44,7 +44,7 @@ impl PolymarketInstrumentProviderConfig {
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         load_all: Option<bool>,
-        load_ids: Option<Vec<nautilus_model::identifiers::InstrumentId>>,
+        load_ids: Option<Vec<InstrumentId>>,
         filters: Option<std::collections::HashMap<String, String>>,
         event_slugs: Option<Vec<String>>,
         market_slugs: Option<Vec<String>>,
@@ -207,6 +207,7 @@ mod tests {
         Bound, Python,
         types::{PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTuple},
     };
+    use rstest::rstest;
 
     use super::*;
 
@@ -232,7 +233,7 @@ mod tests {
             .expect("extract PolymarketDataClientConfig")
     }
 
-    #[test]
+    #[rstest]
     fn direct_pyo3_constructor_preserves_none_update_interval() {
         Python::initialize();
         Python::attach(|py| {
@@ -247,7 +248,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn direct_pyo3_constructor_uses_default_update_interval_when_omitted() {
         Python::initialize();
         Python::attach(|py| {
@@ -260,7 +261,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn direct_pyo3_constructor_preserves_none_update_interval_for_positional_args() {
         Python::initialize();
         Python::attach(|py| {

@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,7 @@ pub struct PolymarketInstrumentProviderConfig {
     #[builder(default)]
     pub load_all: bool,
     /// Optional instrument IDs to load on startup instead of a full bootstrap.
-    pub load_ids: Option<Vec<nautilus_model::identifiers::InstrumentId>>,
+    pub load_ids: Option<Vec<InstrumentId>>,
     /// Optional Gamma-style query filters encoded as string key/value pairs.
     pub filters: Option<HashMap<String, String>>,
     /// Optional static event slugs to resolve to markets during bootstrap.
