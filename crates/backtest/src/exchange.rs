@@ -935,27 +935,26 @@ impl SimulatedExchange {
         }
     }
 
-    /// Processes all pending inflight and queued trading commands up to `ts_now`.
+    /// Advances the exchange clock and processes all pending inflight and queued trading commands
+    /// up to `ts_now`.
     ///
     /// # Panics
     ///
-    /// Panics if popping an inflight command fails during processing.
+    /// Panics if the exchange clock is not a [`TestClock`] or popping an inflight command fails
+    /// during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
-        // Clock is advanced by BacktestEngine::settle_venues before entering
-        // the settlement loop, so we don't set it here.
+        self.set_clock_time(ts_now);
 
-        // Process inflight commands
         while let Some(inflight) = self.inflight_queue.peek() {
             if inflight.timestamp > ts_now {
-                // Future commands remain in the queue
                 break;
             }
-            // We get the inflight command, remove it from the queue and process it
             let inflight = self.inflight_queue.pop().unwrap();
-            self.process_trading_command(inflight.command);
+            let timestamp = inflight.timestamp;
+            self.message_queue.push_back(inflight.command);
+            self.inflight_counter.remove(&timestamp);
         }
 
-        // Process regular message queue
         while let Some(command) = self.message_queue.pop_front() {
             self.process_trading_command(command);
         }

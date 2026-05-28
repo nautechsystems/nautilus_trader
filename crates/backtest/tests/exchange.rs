@@ -792,6 +792,96 @@ fn test_inflight_commands_process_fifo_for_same_timestamp(
 }
 
 #[rstest]
+fn test_due_inflight_commands_drain_after_queued_commands(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let (handler, saving_handler) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L2_MBP,
+        None,
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+
+    let account_id = AccountId::test_default();
+    let (queued_order, queued_cmd) = create_submit_order_command(UnixNanos::from(100), "O-QUEUED");
+    let (inflight_order, inflight_cmd) =
+        create_submit_order_command(UnixNanos::from(100), "O-INFLIGHT");
+
+    exchange
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_order(queued_order.clone(), None, None, false)
+        .unwrap();
+    exchange
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::submitted(&queued_order, account_id))
+        .unwrap();
+    exchange
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .add_order(inflight_order.clone(), None, None, false)
+        .unwrap();
+    exchange
+        .borrow()
+        .cache()
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::submitted(&inflight_order, account_id))
+        .unwrap();
+
+    exchange.borrow_mut().send(queued_cmd);
+    exchange
+        .borrow_mut()
+        .set_latency_model(Box::new(StaticLatencyModel::new(
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        )));
+    exchange.borrow_mut().send(inflight_cmd);
+    exchange.borrow_mut().process(UnixNanos::from(100));
+
+    let messages = saving_handler.get_messages();
+    let accepted = messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Accepted(accepted) => Some(accepted),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        accepted
+            .iter()
+            .map(|event| event.client_order_id)
+            .collect::<Vec<_>>(),
+        vec![
+            ClientOrderId::new("O-QUEUED"),
+            ClientOrderId::new("O-INFLIGHT")
+        ]
+    );
+    assert_eq!(
+        accepted
+            .iter()
+            .map(|event| (event.ts_event, event.ts_init))
+            .collect::<Vec<_>>(),
+        vec![
+            (UnixNanos::from(100), UnixNanos::from(100)),
+            (UnixNanos::from(100), UnixNanos::from(100))
+        ]
+    );
+}
+
+#[rstest]
 fn test_max_inflight_command_ts_empty() {
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -996,6 +1086,8 @@ fn test_modify_submitted_order_generates_updated_event(crypto_perpetual_ethusdt:
     assert_eq!(updated.quantity, Quantity::from("2.000"));
     assert_eq!(updated.price, Some(Price::from("1000.00")));
     assert_eq!(updated.trigger_price, None);
+    assert_eq!(updated.ts_event, UnixNanos::from(1));
+    assert_eq!(updated.ts_init, UnixNanos::from(1));
 }
 
 #[rstest]
