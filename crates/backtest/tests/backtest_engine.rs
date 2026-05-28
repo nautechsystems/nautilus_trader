@@ -2141,6 +2141,111 @@ fn test_all_same_timestamp_timer_commands_settled(crypto_perpetual_ethusdt: Cryp
     );
 }
 
+struct SameTimestampTimerObserver {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    timer_ts: u64,
+    quote_count: std::rc::Rc<Cell<u32>>,
+    quote_count_at_timer: std::rc::Rc<Cell<u32>>,
+    timer_count: std::rc::Rc<Cell<u32>>,
+}
+
+impl SameTimestampTimerObserver {
+    fn new(
+        instrument_id: InstrumentId,
+        timer_ts: u64,
+        quote_count: std::rc::Rc<Cell<u32>>,
+        quote_count_at_timer: std::rc::Rc<Cell<u32>>,
+        timer_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SAME-TS-TIMER-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            timer_ts,
+            quote_count,
+            quote_count_at_timer,
+            timer_count,
+        }
+    }
+}
+
+nautilus_strategy!(SameTimestampTimerObserver);
+
+impl Debug for SameTimestampTimerObserver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SameTimestampTimerObserver))
+            .finish()
+    }
+}
+
+impl DataActor for SameTimestampTimerObserver {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let timer_ts = self.timer_ts;
+        self.clock()
+            .set_time_alert_ns("same_ts_timer", timer_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.quote_count.set(self.quote_count.get() + 1);
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        self.timer_count.set(self.timer_count.get() + 1);
+        self.quote_count_at_timer.set(self.quote_count.get());
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_same_timestamp_timer_fires_after_data_batch(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let quote_count = std::rc::Rc::new(Cell::new(0));
+    let quote_count_at_timer = std::rc::Rc::new(Cell::new(0));
+    let timer_count = std::rc::Rc::new(Cell::new(0));
+    let timer_ts = 1_000_000_000;
+    engine
+        .add_strategy(SameTimestampTimerObserver::new(
+            instrument_id,
+            timer_ts,
+            quote_count,
+            quote_count_at_timer.clone(),
+            timer_count.clone(),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 0),
+        quote(instrument_id, "1000.50", "1001.50", timer_ts),
+        quote(instrument_id, "1001.00", "1002.00", timer_ts),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        timer_count.get(),
+        1,
+        "same-timestamp timer should fire once",
+    );
+    assert_eq!(
+        quote_count_at_timer.get(),
+        3,
+        "timer should fire after all same-timestamp quote data is processed",
+    );
+}
+
 struct BarSubscriberStrategy {
     core: StrategyCore,
     instrument_id: InstrumentId,
