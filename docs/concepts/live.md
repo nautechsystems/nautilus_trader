@@ -4,14 +4,17 @@ NautilusTrader deploys backtested strategies to live markets with no code change
 The same actors, strategies, and execution algorithms run against both the backtest
 engine and a live trading node.
 
+:::warning
 **Live trading involves real financial risk. Before deploying to production, understand
 system configuration, node operations, execution reconciliation, and the differences
 between backtesting and live trading.**
+:::
 
 ## Configuration
 
 For how config structs handle defaults, `T` vs `Option<T>` semantics, and
 builder patterns, see the [Configuration](configuration.md) concept guide.
+
 For step-by-step setup of `TradingNodeConfig`, execution engine options, strategy
 configuration, and multi-venue wiring, see the
 [Configure a live trading node](../how_to/configure_live_trading.md) how-to guide.
@@ -23,34 +26,55 @@ configuration, and multi-venue wiring, see the
 Live command outcomes are one of:
 
 - Confirmed by the venue.
-- Explicitly rejected by the venue.
+- Explicitly rejected by the venue or refused by the venue API.
 - Denied locally by Nautilus.
 - Logged as unresolved while Nautilus checks the venue for the final state.
 
-These rejection events only appear when the venue explicitly rejects the command:
+Rejection events only appear for definitive command outcomes, not for ambiguous failures:
 
 - `OrderRejected`.
 - `OrderModifyRejected`.
 - `OrderCancelRejected`.
 
-Local validation failures are reported differently:
+Before an order enters `SUBMITTED`, Nautilus can deny a submit locally. These failures appear
+as `OrderDenied`, no `OrderSubmitted` event is emitted, and the reason uses a stable
+`SCREAMING_SNAKE_CASE` code.
 
-- Submit commands denied locally by Nautilus appear as `OrderDenied`.
-- Cancel or modify commands that fail local checks appear as warnings, not rejection events.
+After a submit reaches the venue API, Nautilus emits `OrderRejected` when the create-order
+response proves that the venue did not accept the order. This includes structured venue
+submit rejects and API refusals where venue semantics guarantee non-acceptance, such as
+Coinbase HTTP 400, 401, 403, and 429 create-order responses. A status code is definitive
+only when venue-specific semantics prove non-acceptance.
 
-Other failures leave the venue outcome unknown:
+| Command type                         | Rejection event       | When it appears                                              |
+|--------------------------------------|-----------------------|--------------------------------------------------------------|
+| Submit and submit order list         | `OrderRejected`       | An explicit venue response proves an order was not accepted. |
+| Modify                               | `OrderModifyRejected` | The venue returns a command‑specific reject.                 |
+| Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order reject.    |
 
-- Transport errors.
-- WebSocket send failures.
-- Request timeouts.
-- Disconnects.
-- Canceled local tasks.
-- Missing acknowledgements.
-- Server errors.
-- Rate limits.
-- Retry exhaustion.
+A successful REST response can still contain per-order failure fields, and those fields are
+definitive command outcomes. A whole-request failure without per-order results remains
+unresolved unless the target command is proven refused.
+
+Other local validation failures are reported differently:
+
+- Cancel, modify, cancel-all, and batch-cancel commands that fail local checks:
+  - Appear as warnings.
+  - Do not produce rejection events.
+
+:::note[Ambiguous outcomes]
+These failures leave the venue outcome unknown:
+
+- Transport errors, WebSocket send failures, request timeouts, and disconnects.
+- Canceled local tasks, missing acknowledgements, server errors, and retry exhaustion.
 - Parse failures after a request may have reached the venue.
-- Whole-batch request failures without per-order venue results.
+- Whole-batch failures without per-order venue results.
+- Rate limits, except create-order API refusals treated as definitive submit rejections.
+
+When the outcome is unknown, Nautilus logs the failure, keeps the order in its current
+in-flight state, and waits for WebSocket updates, open-order polling, in-flight checks, or
+startup reconciliation to resolve the state.
+:::
 
 :::note[Terminology]
 An **in-flight order** is one awaiting venue acknowledgement:
@@ -62,13 +86,6 @@ An **in-flight order** is one awaiting venue acknowledgement:
 These orders are monitored by WebSocket updates, open-order polling, in-flight checks, and
 startup reconciliation.
 :::
-
-When the outcome is unknown:
-
-- Log the failure.
-- Keep the order in its current in-flight state while Nautilus checks the venue.
-- Let WebSocket updates, open-order polling, in-flight checks, or startup reconciliation resolve
-  the state.
 
 For never-acknowledged submits, the `LiveExecutionEngine` in-flight check queries the venue. If the
 order stays unconfirmed beyond `inflight_check_retries`, the engine resolves it to `REJECTED`. See
@@ -209,12 +226,13 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 
 #### Runtime checks
 
-| Scenario                          | Description                                             | System behavior                                                            |
-|-----------------------------------|---------------------------------------------------------|----------------------------------------------------------------------------|
-| **Ambiguous submit failure**      | Submit call fails without confirmed venue rejection.    | Logs failure, keeps order in flight, and waits for reconciliation.         |
-| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                    |
-| **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions.     |
-| **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.           |
+| Scenario                          | Description                                      | System behavior                                 |
+|-----------------------------------|--------------------------------------------------|-------------------------------------------------|
+| **Explicit submit API refusal**   | API refuses create‑order before acceptance.      | Emits `OrderRejected`.                          |
+| **Ambiguous submit failure**      | Submit fails without confirmed venue refusal.    | Logs failure and waits for reconciliation.      |
+| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.      | Resolves to `REJECTED` after retry exhaustion.  |
+| **Open orders check discrepancy** | Periodic poll detects a venue state change.      | Confirms status and applies transitions.        |
+| **Own books audit mismatch**      | Own order books diverge from venue public books. | Audits and logs inconsistencies.                |
 
 ### Common reconciliation issues
 
