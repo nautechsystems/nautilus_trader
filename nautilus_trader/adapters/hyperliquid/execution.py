@@ -745,7 +745,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_orders = [transform_order_to_pyo3(order) for order in orders]
-            pyo3_reports = await self._client.submit_orders(pyo3_orders)
+            pyo3_reports = await self._ws_client.submit_orders(self._client, pyo3_orders)
         except Exception as e:
             if _is_transport_error(e):
                 self._log.warning(

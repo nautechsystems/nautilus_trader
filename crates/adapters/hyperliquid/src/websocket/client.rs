@@ -34,6 +34,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
+    reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use nautilus_network::{
@@ -556,11 +557,16 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.
+    ///
+    /// Returns one `OrderStatusReport` per accepted order in the same order
+    /// as `orders`. Trigger children of a `normalTpsl` bracket carry a
+    /// `pending-cloid:<client_order_id>` placeholder venue id that is
+    /// overwritten when the real oid arrives via the user-events stream.
     pub async fn submit_orders(
         &self,
         signer: &HyperliquidHttpClient,
         orders: &[&OrderAny],
-    ) -> HyperliquidResult<()> {
+    ) -> HyperliquidResult<Vec<OrderStatusReport>> {
         let mut hyperliquid_orders = Vec::with_capacity(orders.len());
         let mut client_order_ids = Vec::with_capacity(orders.len());
 
@@ -601,7 +607,7 @@ impl HyperliquidWebSocketClient {
         };
         let response = self.post_action_exec(signer, &action).await?;
 
-        ensure_ws_action_accepted(&response, "Order list submission")
+        signer.build_submit_orders_reports(orders, grouping, response)
     }
 
     /// Cancel an order through the Hyperliquid WebSocket post API.
