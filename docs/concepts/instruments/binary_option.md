@@ -50,19 +50,90 @@ Examples include prediction market outcomes and binary event contracts.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::BinaryOption;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol, Venue},
+    instruments::BinaryOption,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
 
-fn outcome_label(instrument: &BinaryOption) -> String {
-    instrument.outcome.map_or("unknown".to_string(), |value| value.to_string())
-}
+let raw_symbol = Symbol::from(
+    "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
+);
+let expiration = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+
+let yes_outcome = BinaryOption::new(
+    InstrumentId::new(raw_symbol, Venue::from("POLYMARKET")),
+    raw_symbol,
+    AssetClass::Alternative,
+    Currency::from("USDC"),
+    UnixNanos::default(),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    3,
+    2,
+    Price::from("0.001"),
+    Quantity::from("0.01"),
+    Some(Ustr::from("Yes")),
+    Some(Ustr::from("Will the outcome of this market be 'Yes'?")),
+    None,
+    Some(Quantity::from("5")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(0)),
+    Some(dec!(0)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+import pandas as pd
+
+from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
+raw_symbol = Symbol(
+    "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
+)
+price_increment = Price.from_str("0.001")
+size_increment = Quantity.from_str("0.01")
 
-def outcome_label(instrument: BinaryOption) -> str:
-    return instrument.outcome or "unknown"
+yes_outcome = BinaryOption(
+    instrument_id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
+    raw_symbol=raw_symbol,
+    asset_class=AssetClass.ALTERNATIVE,
+    currency=USDC,
+    price_precision=price_increment.precision,
+    size_precision=size_increment.precision,
+    price_increment=price_increment,
+    size_increment=size_increment,
+    activation_ns=0,
+    expiration_ns=pd.Timestamp("2024-01-01", tz="UTC").value,
+    min_quantity=Quantity.from_int(5),
+    maker_fee=Decimal(0),
+    taker_fee=Decimal(0),
+    outcome="Yes",
+    description="Will the outcome of this market be 'Yes'?",
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

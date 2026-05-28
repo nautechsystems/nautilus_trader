@@ -51,19 +51,78 @@ Examples include equity options, index options, and futures options.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::OptionContract;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::{AssetClass, OptionKind},
+    identifiers::{InstrumentId, Symbol},
+    instruments::OptionContract,
+    types::{Currency, Price, Quantity},
+};
+use ustr::Ustr;
 
-fn strike_label(instrument: &OptionContract) -> String {
-    format!("{} {}", instrument.option_kind, instrument.strike_price)
-}
+let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+
+let aapl_call = OptionContract::new(
+    InstrumentId::from("AAPL211217C00150000.OPRA"),
+    Symbol::from("AAPL211217C00150000"),
+    AssetClass::Equity,
+    Some(Ustr::from("GMNI")),
+    Ustr::from("AAPL"),
+    OptionKind::Call,
+    Price::from("150.00"),
+    Currency::from("USD"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    2,
+    Price::from("0.01"),
+    Quantity::from("100"),
+    Quantity::from("1"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def strike_label(instrument: OptionContract) -> str:
-    return f"{instrument.option_kind} {instrument.strike_price}"
+aapl_call = OptionContract(
+    instrument_id=InstrumentId.from_str("AAPL211217C00150000.OPRA"),
+    raw_symbol=Symbol("AAPL211217C00150000"),
+    asset_class=AssetClass.EQUITY,
+    exchange="GMNI",
+    underlying="AAPL",
+    option_kind=OptionKind.CALL,
+    strike_price=Price.from_str("150.00"),
+    currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.01"),
+    multiplier=Quantity.from_int(100),
+    lot_size=Quantity.from_int(1),
+    activation_ns=pd.Timestamp("2021-09-17", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2021-12-17", tz="UTC").value,
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

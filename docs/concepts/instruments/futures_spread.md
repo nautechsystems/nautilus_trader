@@ -50,19 +50,75 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::FuturesSpread;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::FuturesSpread,
+    types::{Currency, Price, Quantity},
+};
+use ustr::Ustr;
 
-fn strategy_label(instrument: &FuturesSpread) -> String {
-    format!("{} {}", instrument.underlying, instrument.strategy_type)
-}
+let activation = Utc.with_ymd_and_hms(2022, 6, 21, 13, 30, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2024, 6, 21, 13, 30, 0).unwrap();
+
+let es_spread = FuturesSpread::new(
+    InstrumentId::from("ESM4-ESU4.GLBX"),
+    Symbol::from("ESM4-ESU4"),
+    AssetClass::Index,
+    Some(Ustr::from("XCME")),
+    Ustr::from("ES"),
+    Ustr::from("EQ"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    Currency::from("USD"),
+    2,
+    Price::from("0.01"),
+    Quantity::from("1"),
+    Quantity::from("1"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import FuturesSpread
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def strategy_label(instrument: FuturesSpread) -> str:
-    return f"{instrument.underlying} {instrument.strategy_type}"
+es_spread = FuturesSpread(
+    instrument_id=InstrumentId.from_str("ESM4-ESU4.GLBX"),
+    raw_symbol=Symbol("ESM4-ESU4"),
+    asset_class=AssetClass.INDEX,
+    exchange="XCME",
+    underlying="ES",
+    strategy_type="EQ",
+    activation_ns=pd.Timestamp("2022-06-21T13:30:00", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2024-06-21T13:30:00", tz="UTC").value,
+    currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.01"),
+    multiplier=Quantity.from_int(1),
+    lot_size=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

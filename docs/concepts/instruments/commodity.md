@@ -47,19 +47,62 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::Commodity;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::Commodity,
+    types::{Currency, Price, Quantity},
+};
 
-fn quote_currency(instrument: &Commodity) -> String {
-    instrument.quote_currency.to_string()
-}
+let gold = Commodity::new(
+    InstrumentId::from("GOLD.COMEX"),
+    Symbol::from("GOLD"),
+    AssetClass::Commodity,
+    Currency::from("USD"),
+    2,
+    0,
+    Price::from("0.01"),
+    Quantity::from("1"),
+    Some(Quantity::from("1")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Commodity
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def quote_currency(instrument: Commodity) -> str:
-    return str(instrument.quote_currency)
+gold = Commodity(
+    instrument_id=InstrumentId.from_str("GOLD.COMEX"),
+    raw_symbol=Symbol("GOLD"),
+    asset_class=AssetClass.COMMODITY,
+    quote_currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.01"),
+    size_precision=0,
+    size_increment=Quantity.from_int(1),
+    lot_size=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

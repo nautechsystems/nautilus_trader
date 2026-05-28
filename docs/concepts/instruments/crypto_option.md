@@ -53,19 +53,92 @@ Examples include BTC and ETH options on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::CryptoOption;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::OptionKind,
+    identifiers::{InstrumentId, Symbol},
+    instruments::CryptoOption,
+    types::{Currency, Money, Price, Quantity},
+};
+use rust_decimal_macros::dec;
 
-fn option_label(instrument: &CryptoOption) -> String {
-    format!("{} {} {}", instrument.underlying, instrument.option_kind, instrument.strike_price)
-}
+let activation = Utc.with_ymd_and_hms(2022, 12, 22, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2023, 1, 13, 8, 0, 0).unwrap();
+
+let btc_option = CryptoOption::new(
+    InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
+    Symbol::from("BTC-13JAN23-16000-P"),
+    Currency::from("BTC"),
+    Currency::from("USD"),
+    Currency::from("BTC"),
+    false,
+    OptionKind::Put,
+    Price::from("16000.00"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    2,
+    1,
+    Price::from("0.01"),
+    Quantity::from("0.1"),
+    Some(Quantity::from("1")),
+    Some(Quantity::from("1")),
+    Some(Quantity::from("9000")),
+    Some(Quantity::from("0.1")),
+    None,
+    Some(Money::from("10.00 USD")),
+    None,
+    None,
+    Some(dec!(0)),
+    Some(dec!(0)),
+    Some(dec!(0.0003)),
+    Some(dec!(0.0003)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+import pandas as pd
+
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoOption
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def option_label(instrument: CryptoOption) -> str:
-    return f"{instrument.underlying} {instrument.option_kind} {instrument.strike_price}"
+btc_option = CryptoOption(
+    instrument_id=InstrumentId.from_str("BTC-13JAN23-16000-P.DERIBIT"),
+    raw_symbol=Symbol("BTC-13JAN23-16000-P"),
+    underlying=BTC,
+    quote_currency=USD,
+    settlement_currency=BTC,
+    is_inverse=False,
+    option_kind=OptionKind.PUT,
+    strike_price=Price.from_str("16000.00"),
+    activation_ns=pd.Timestamp("2022-12-22", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2023-01-13T08:00:00", tz="UTC").value,
+    price_precision=2,
+    size_precision=1,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("0.1"),
+    max_quantity=Quantity.from_str("9000"),
+    min_quantity=Quantity.from_str("0.1"),
+    min_notional=Money(10.00, USD),
+    margin_init=Decimal(0),
+    margin_maint=Decimal(0),
+    maker_fee=Decimal("0.0003"),
+    taker_fee=Decimal("0.0003"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

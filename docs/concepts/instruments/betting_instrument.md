@@ -62,19 +62,91 @@ and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::BettingInstrument;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::BettingInstrument,
+    types::{Currency, Money, Price, Quantity},
+};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
 
-fn market_selection(instrument: &BettingInstrument) -> String {
-    format!("{}: {}", instrument.market_name, instrument.selection_name)
-}
+let event_open = Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0).unwrap();
+let market_start = Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0).unwrap();
+
+let selection = BettingInstrument::new(
+    InstrumentId::from("1-123456789.BETFAIR"),
+    Symbol::from("1-123456789"),
+    6423,
+    Ustr::from("American Football"),
+    12_282_733,
+    Ustr::from("NFL"),
+    29_678_534,
+    Ustr::from("NFL"),
+    Ustr::from("GB"),
+    UnixNanos::from(event_open.timestamp_nanos_opt().unwrap() as u64),
+    Ustr::from("ODDS"),
+    Ustr::from("1-123456789"),
+    Ustr::from("AFC Conference Winner"),
+    Ustr::from("SPECIAL"),
+    UnixNanos::from(market_start.timestamp_nanos_opt().unwrap() as u64),
+    50214,
+    Ustr::from("Kansas City Chiefs"),
+    0.0,
+    Currency::from("GBP"),
+    2,
+    2,
+    Price::from("0.01"),
+    Quantity::from("0.01"),
+    Some(Quantity::from("1000")),
+    Some(Quantity::from("1")),
+    Some(Money::from("10000 GBP")),
+    Some(Money::from("10 GBP")),
+    Some(Price::from("100.00")),
+    Some(Price::from("1.00")),
+    Some(dec!(1)),
+    Some(dec!(1)),
+    Some(dec!(0)),
+    Some(dec!(0)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.objects import Money
 
-
-def market_selection(instrument: BettingInstrument) -> str:
-    return f"{instrument.market_name}: {instrument.selection_name}"
+selection = BettingInstrument(
+    venue_name="BETFAIR",
+    event_type_id=6423,
+    event_type_name="American Football",
+    competition_id=12282733,
+    competition_name="NFL",
+    event_id=29678534,
+    event_name="NFL",
+    event_country_code="GB",
+    event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+    betting_type="ODDS",
+    market_id="1-123456789",
+    market_name="AFC Conference Winner",
+    market_type="SPECIAL",
+    market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+    selection_id=50214,
+    selection_name="Kansas City Chiefs",
+    currency="GBP",
+    selection_handicap=0.0,
+    price_precision=2,
+    size_precision=2,
+    min_notional=Money(1, GBP),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

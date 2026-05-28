@@ -48,19 +48,72 @@ Examples include tokenized stock or ETF symbols on crypto venues.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::TokenizedAsset;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::TokenizedAsset,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
 
-fn token_pair(instrument: &TokenizedAsset) -> String {
-    format!("{}/{}", instrument.base_currency, instrument.quote_currency)
-}
+let aaplx = TokenizedAsset::new(
+    InstrumentId::from("AAPLx/USD.KRAKEN"),
+    Symbol::from("AAPLxUSD"),
+    AssetClass::Equity,
+    Currency::get_or_create_crypto("AAPLx"),
+    Currency::from("USD"),
+    None,
+    2,
+    4,
+    Price::from("0.01"),
+    Quantity::from("0.0001"),
+    None,
+    None,
+    None,
+    Some(Quantity::from("0.0001")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(-0.0002)),
+    Some(dec!(0.001)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import TokenizedAsset
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def token_pair(instrument: TokenizedAsset) -> str:
-    return f"{instrument.base_currency}/{instrument.quote_currency}"
+aaplx = TokenizedAsset(
+    instrument_id=InstrumentId.from_str("AAPLx/USD.KRAKEN"),
+    raw_symbol=Symbol("AAPLxUSD"),
+    asset_class=AssetClass.EQUITY,
+    base_currency=Currency.from_str("AAPLx"),
+    quote_currency=USD,
+    price_precision=2,
+    size_precision=4,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("0.0001"),
+    min_quantity=Quantity.from_str("0.0001"),
+    maker_fee=Decimal("-0.0002"),
+    taker_fee=Decimal("0.001"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

@@ -53,19 +53,84 @@ Examples include listed BTC or ETH option combos on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::CryptoOptionSpread;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::CryptoOptionSpread,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
 
-fn spread_summary(instrument: &CryptoOptionSpread) -> String {
-    format!("{} {}", instrument.underlying, instrument.strategy_type)
-}
+let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+
+let btc_spread = CryptoOptionSpread::new(
+    InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"),
+    Symbol::from("BTC-CS-19MAY26-70000_75000"),
+    Currency::from("BTC"),
+    Currency::from("USD"),
+    Currency::from("BTC"),
+    false,
+    Ustr::from("CS"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    4,
+    1,
+    Price::from("0.0001"),
+    Quantity::from("0.1"),
+    Some(Quantity::from("1")),
+    None,
+    None,
+    Some(Quantity::from("0.1")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(0.0003)),
+    Some(dec!(0.0003)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+import pandas as pd
+
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoOptionSpread
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def spread_summary(instrument: CryptoOptionSpread) -> str:
-    return f"{instrument.underlying} {instrument.strategy_type}"
+btc_spread = CryptoOptionSpread(
+    instrument_id=InstrumentId.from_str("BTC-CS-19MAY26-70000_75000.DERIBIT"),
+    raw_symbol=Symbol("BTC-CS-19MAY26-70000_75000"),
+    underlying=BTC,
+    quote_currency=USD,
+    settlement_currency=BTC,
+    is_inverse=False,
+    strategy_type="CS",
+    activation_ns=pd.Timestamp("2026-05-12T00:00:00", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2026-05-19T08:00:00", tz="UTC").value,
+    price_precision=4,
+    size_precision=1,
+    price_increment=Price.from_str("0.0001"),
+    size_increment=Quantity.from_str("0.1"),
+    min_quantity=Quantity.from_str("0.1"),
+    maker_fee=Decimal("0.0003"),
+    taker_fee=Decimal("0.0003"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

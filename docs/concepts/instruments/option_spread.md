@@ -50,19 +50,75 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::OptionSpread;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::OptionSpread,
+    types::{Currency, Price, Quantity},
+};
+use ustr::Ustr;
 
-fn spread_label(instrument: &OptionSpread) -> String {
-    format!("{} {}", instrument.underlying, instrument.strategy_type)
-}
+let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
+let expiration = Utc.with_ymd_and_hms(2024, 2, 23, 22, 59, 0).unwrap();
+
+let sr3_spread = OptionSpread::new(
+    InstrumentId::from("UD:U$: GN 2534559.GLBX"),
+    Symbol::from("UD:U$: GN 2534559"),
+    AssetClass::FX,
+    Some(Ustr::from("XCME")),
+    Ustr::from("SR3"),
+    Ustr::from("GN"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    Currency::from("USD"),
+    2,
+    Price::from("0.01"),
+    Quantity::from("1"),
+    Quantity::from("1"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import OptionSpread
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def spread_label(instrument: OptionSpread) -> str:
-    return f"{instrument.underlying} {instrument.strategy_type}"
+sr3_spread = OptionSpread(
+    instrument_id=InstrumentId.from_str("UD:U$: GN 2534559.GLBX"),
+    raw_symbol=Symbol("UD:U$: GN 2534559"),
+    asset_class=AssetClass.FX,
+    exchange="XCME",
+    underlying="SR3",
+    strategy_type="GN",
+    activation_ns=pd.Timestamp("2023-11-06T20:54:07", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2024-02-23T22:59:00", tz="UTC").value,
+    currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.01"),
+    multiplier=Quantity.from_int(1),
+    lot_size=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

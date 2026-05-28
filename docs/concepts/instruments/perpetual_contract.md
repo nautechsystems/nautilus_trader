@@ -52,19 +52,79 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::PerpetualContract;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::PerpetualContract,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
 
-fn settlement_label(instrument: &PerpetualContract) -> String {
-    format!("{} settles in {}", instrument.underlying, instrument.settlement_currency)
-}
+let eurusd_perp = PerpetualContract::new(
+    InstrumentId::from("EURUSD-PERP.AX"),
+    Symbol::from("EURUSD-PERP"),
+    Ustr::from("EURUSD"),
+    AssetClass::FX,
+    Some(Currency::from("EUR")),
+    Currency::from("USD"),
+    Currency::from("USD"),
+    false,
+    5,
+    0,
+    Price::from("0.00001"),
+    Quantity::from("1"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(0.03)),
+    Some(dec!(0.03)),
+    Some(dec!(0.00002)),
+    Some(dec!(0.00002)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+from nautilus_trader.model.currencies import EUR
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import PerpetualContract
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def settlement_label(instrument: PerpetualContract) -> str:
-    return f"{instrument.underlying} settles in {instrument.settlement_currency}"
+eurusd_perp = PerpetualContract(
+    instrument_id=InstrumentId.from_str("EURUSD-PERP.AX"),
+    raw_symbol=Symbol("EURUSD-PERP"),
+    underlying="EURUSD",
+    asset_class=AssetClass.FX,
+    base_currency=EUR,
+    quote_currency=USD,
+    settlement_currency=USD,
+    is_inverse=False,
+    price_precision=5,
+    size_precision=0,
+    price_increment=Price.from_str("0.00001"),
+    size_increment=Quantity.from_int(1),
+    margin_init=Decimal("0.03"),
+    margin_maint=Decimal("0.03"),
+    maker_fee=Decimal("0.00002"),
+    taker_fee=Decimal("0.00002"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

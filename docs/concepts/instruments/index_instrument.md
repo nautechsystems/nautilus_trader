@@ -34,19 +34,46 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::IndexInstrument;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::IndexInstrument,
+    types::{Currency, Price, Quantity},
+};
 
-fn index_label(instrument: &IndexInstrument) -> String {
-    format!("{} {}", instrument.raw_symbol, instrument.currency)
-}
+let spx = IndexInstrument::new(
+    InstrumentId::from("SPX.XCBO"),
+    Symbol::from("SPX"),
+    Currency::from("USD"),
+    2,
+    0,
+    Price::from("0.01"),
+    Quantity::from("1"),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import IndexInstrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def index_label(instrument: IndexInstrument) -> str:
-    return f"{instrument.raw_symbol} {instrument.currency}"
+spx = IndexInstrument(
+    instrument_id=InstrumentId.from_str("SPX.XCBO"),
+    raw_symbol=Symbol("SPX"),
+    currency=USD,
+    price_precision=2,
+    size_precision=0,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("1"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

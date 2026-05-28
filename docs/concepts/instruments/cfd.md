@@ -47,19 +47,72 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::Cfd;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::Cfd,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
 
-fn quote_currency(instrument: &Cfd) -> String {
-    instrument.quote_currency.to_string()
-}
+let audusd = Cfd::new(
+    InstrumentId::from("AUDUSD.OANDA"),
+    Symbol::from("AUD/USD"),
+    AssetClass::FX,
+    Some(Currency::from("AUD")),
+    Currency::from("USD"),
+    5,
+    0,
+    Price::from("0.00001"),
+    Quantity::from("1"),
+    Some(Quantity::from("1000")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(0.03)),
+    Some(dec!(0.03)),
+    Some(dec!(0.00002)),
+    Some(dec!(0.00002)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Cfd
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def quote_currency(instrument: Cfd) -> str:
-    return str(instrument.quote_currency)
+audusd = Cfd(
+    instrument_id=InstrumentId.from_str("AUDUSD.OANDA"),
+    raw_symbol=Symbol("AUD/USD"),
+    asset_class=AssetClass.FX,
+    base_currency=AUD,
+    quote_currency=USD,
+    price_precision=5,
+    price_increment=Price.from_str("0.00001"),
+    size_precision=0,
+    size_increment=Quantity.from_int(1),
+    lot_size=Quantity.from_int(1000),
+    margin_init=Decimal("0.03"),
+    margin_maint=Decimal("0.03"),
+    maker_fee=Decimal("0.00002"),
+    taker_fee=Decimal("0.00002"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

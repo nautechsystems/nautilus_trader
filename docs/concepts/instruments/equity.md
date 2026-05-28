@@ -43,19 +43,55 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::Equity;
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::Equity,
+    types::{Currency, Price, Quantity},
+};
+use ustr::Ustr;
 
-fn listing_summary(instrument: &Equity) -> String {
-    format!("{} trades in {}", instrument.raw_symbol, instrument.currency)
-}
+let aapl = Equity::new(
+    InstrumentId::from("AAPL.XNAS"),
+    Symbol::from("AAPL"),
+    Some(Ustr::from("US0378331005")),
+    Currency::from("USD"),
+    2,
+    Price::from("0.01"),
+    Some(Quantity::from("100")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def listing_summary(instrument: Equity) -> str:
-    return f"{instrument.raw_symbol} trades in {instrument.currency}"
+aapl = Equity(
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    raw_symbol=Symbol("AAPL"),
+    isin="US0378331005",
+    currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.01"),
+    lot_size=Quantity.from_int(100),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

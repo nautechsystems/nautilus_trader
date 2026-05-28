@@ -50,19 +50,73 @@ currency futures.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::FuturesContract;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    enums::AssetClass,
+    identifiers::{InstrumentId, Symbol},
+    instruments::FuturesContract,
+    types::{Currency, Price, Quantity},
+};
+use ustr::Ustr;
 
-fn contract_term(instrument: &FuturesContract) -> (u64, u64) {
-    (instrument.activation_ns.as_u64(), instrument.expiration_ns.as_u64())
-}
+let activation = Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+
+let esz21 = FuturesContract::new(
+    InstrumentId::from("ESZ21.GLBX"),
+    Symbol::from("ESZ21"),
+    AssetClass::Index,
+    Some(Ustr::from("XCME")),
+    Ustr::from("ES"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    Currency::from("USD"),
+    2,
+    Price::from("0.25"),
+    Quantity::from("1"),
+    Quantity::from("1"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def contract_term(instrument: FuturesContract) -> tuple[int, int]:
-    return instrument.activation_ns, instrument.expiration_ns
+esz21 = FuturesContract(
+    instrument_id=InstrumentId.from_str("ESZ21.GLBX"),
+    raw_symbol=Symbol("ESZ21"),
+    asset_class=AssetClass.INDEX,
+    exchange="XCME",
+    underlying="ES",
+    currency=USD,
+    price_precision=2,
+    price_increment=Price.from_str("0.25"),
+    multiplier=Quantity.from_int(1),
+    lot_size=Quantity.from_int(1),
+    activation_ns=pd.Timestamp("2021-09-10", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2021-12-17", tz="UTC").value,
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

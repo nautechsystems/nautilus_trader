@@ -11,9 +11,10 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 
 | Instrument type                                          | Class              | Description                                          | Typical adapters                |
 |----------------------------------------------------------|--------------------|------------------------------------------------------|---------------------------------|
-| [`CurrencyPair`](currency_pair.md)                       | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
 | [`Equity`](equity.md)                                    | Spot               | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
+| [`CurrencyPair`](currency_pair.md)                       | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
 | [`Commodity`](commodity.md)                              | Spot               | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
+| [`Cfd`](cfd.md)                                          | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
 | [`IndexInstrument`](index_instrument.md)                 | Spot reference     | Reference index, not directly tradable.              | Interactive Brokers.            |
 | [`TokenizedAsset`](tokenized_asset.md)                   | Tokenized spot     | Tokenized asset on a crypto venue.                   | Kraken.                         |
 | [`FuturesContract`](futures_contract.md)                 | Future             | Deliverable futures contract.                        | Databento, Interactive Brokers. |
@@ -27,8 +28,7 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 | [`CryptoOption`](crypto_option.md)                       | Crypto option      | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |
 | [`CryptoOptionSpread`](crypto_option_spread.md)          | Crypto spread      | Exchange defined crypto option spread.               | Deribit, OKX.                   |
 | [`BinaryOption`](binary_option.md)                       | Binary outcome     | Binary instrument that settles to 0 or 1.            | Hyperliquid, OKX, Polymarket.   |
-| [`Cfd`](cfd.md)                                          | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
-| [`BettingInstrument`](betting_instrument.md)             | Betting selection  | Sports or gaming market selection.                   | Betfair.                        |
+| [`BettingInstrument`](betting_instrument.md)             | Betting market     | Sports or gaming market selection.                   | Betfair.                        |
 | [`SyntheticInstrument`](synthetic_instrument.md)         | Local synthetic    | Formula derived local instrument.                    | Local only.                     |
 
 ## Taxonomy

@@ -52,19 +52,81 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::CryptoFuture;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::CryptoFuture,
+    types::{Currency, Money, Price, Quantity},
+};
 
-fn settlement_pair(instrument: &CryptoFuture) -> String {
-    format!("{}/{}", instrument.quote_currency, instrument.settlement_currency)
-}
+let activation = Utc.with_ymd_and_hms(2024, 1, 8, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2024, 3, 29, 0, 0, 0).unwrap();
+
+let btcusdt_future = CryptoFuture::new(
+    InstrumentId::from("BTCUSDT-240329.BINANCE"),
+    Symbol::from("BTCUSDT-240329"),
+    Currency::from("BTC"),
+    Currency::from("USDT"),
+    Currency::from("USDT"),
+    false,
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    2,
+    6,
+    Price::from("0.01"),
+    Quantity::from("0.000001"),
+    None,
+    None,
+    Some(Quantity::from("9000.0")),
+    Some(Quantity::from("0.000001")),
+    None,
+    Some(Money::from("10.00 USDT")),
+    Some(Price::from("1000000.00")),
+    Some(Price::from("0.01")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+import pandas as pd
+
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def settlement_pair(instrument: CryptoFuture) -> str:
-    return f"{instrument.quote_currency}/{instrument.settlement_currency}"
+btcusdt_future = CryptoFuture(
+    instrument_id=InstrumentId.from_str("BTCUSDT-240329.BINANCE"),
+    raw_symbol=Symbol("BTCUSDT-240329"),
+    underlying=BTC,
+    quote_currency=USDT,
+    settlement_currency=USDT,
+    is_inverse=False,
+    activation_ns=pd.Timestamp("2024-01-08", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2024-03-29", tz="UTC").value,
+    price_precision=2,
+    size_precision=6,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("0.000001"),
+    max_quantity=Quantity.from_str("9000"),
+    min_quantity=Quantity.from_str("0.000001"),
+    min_notional=Money(10.00, USDT),
+    max_price=Price.from_str("1000000.00"),
+    min_price=Price.from_str("0.01"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters

@@ -53,19 +53,86 @@ Examples include listed crypto futures calendar spreads.
 ## Example
 
 ```rust tab="Rust"
-use nautilus_model::instruments::CryptoFuturesSpread;
+use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::CryptoFuturesSpread,
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal_macros::dec;
+use ustr::Ustr;
 
-fn spread_summary(instrument: &CryptoFuturesSpread) -> String {
-    format!("{} {}", instrument.underlying, instrument.strategy_type)
-}
+let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
+let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+
+let btc_spread = CryptoFuturesSpread::new(
+    InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"),
+    Symbol::from("BTC-FS-19MAY26_PERP"),
+    Currency::from("BTC"),
+    Currency::from("USD"),
+    Currency::from("BTC"),
+    false,
+    Ustr::from("FS"),
+    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+    1,
+    0,
+    Price::from("0.5"),
+    Quantity::from("1"),
+    Some(Quantity::from("10")),
+    Some(Quantity::from("1")),
+    None,
+    Some(Quantity::from("1")),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some(dec!(0.0003)),
+    Some(dec!(0.0003)),
+    None,
+    UnixNanos::default(),
+    UnixNanos::default(),
+);
 ```
 
 ```python tab="Python"
+from decimal import Decimal
+
+import pandas as pd
+
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoFuturesSpread
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-
-def spread_summary(instrument: CryptoFuturesSpread) -> str:
-    return f"{instrument.underlying} {instrument.strategy_type}"
+btc_spread = CryptoFuturesSpread(
+    instrument_id=InstrumentId.from_str("BTC-FS-19MAY26_PERP.DERIBIT"),
+    raw_symbol=Symbol("BTC-FS-19MAY26_PERP"),
+    underlying=BTC,
+    quote_currency=USD,
+    settlement_currency=BTC,
+    is_inverse=False,
+    strategy_type="FS",
+    activation_ns=pd.Timestamp("2026-05-12T00:00:00", tz="UTC").value,
+    expiration_ns=pd.Timestamp("2026-05-19T08:00:00", tz="UTC").value,
+    price_precision=1,
+    size_precision=0,
+    price_increment=Price.from_str("0.5"),
+    size_increment=Quantity.from_int(1),
+    multiplier=Quantity.from_int(10),
+    lot_size=Quantity.from_int(1),
+    min_quantity=Quantity.from_int(1),
+    maker_fee=Decimal("0.0003"),
+    taker_fee=Decimal("0.0003"),
+    ts_event=0,
+    ts_init=0,
+)
 ```
 
 ## Adapters
