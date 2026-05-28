@@ -188,12 +188,13 @@ When conducting multiple backtest runs, it's important to understand how compone
 
 ### BacktestEngine.reset()
 
-The `.reset()` method returns all stateful fields to their **initial value**, except for data and instruments which persist.
+The `.reset()` method returns engine state and loaded component state to their **initial value**.
+It keeps loaded components, data, instruments, and venues registered.
 
 **What gets reset:**
 
 - All trading state (orders, positions, account balances).
-- Strategy instances are removed (you must re-add strategies before the next run).
+- Loaded actors, strategies, and execution algorithms are reset in place.
 - Engine counters and timestamps.
 
 **What persists:**
@@ -201,6 +202,7 @@ The `.reset()` method returns all stateful fields to their **initial value**, ex
 - Data added via `.add_data()` (use `.clear_data()` to remove).
 - Instruments (must match the persisted data).
 - Venue configurations.
+- Loaded actors, strategies, and execution algorithms.
 
 **Instrument handling:**
 
@@ -251,14 +253,14 @@ engine.add_data(data)
 engine.add_strategy(strategy1)
 engine.run()
 
-# Reset and run 2 - instruments and data persist
+# Reset and run 2 with the same loaded strategy
 engine.reset()
-engine.add_strategy(strategy2)
 engine.run()
 
-# Reset and run 3
+# Reset and run 3 with a different strategy
 engine.reset()
-engine.add_strategy(strategy3)
+engine.clear_strategies()
+engine.add_strategy(strategy2)
 engine.run()
 ```
 
@@ -269,7 +271,8 @@ Instruments and data persist across resets by default for `BacktestEngine`, maki
 :::tip[Best practices]
 
 - **For production backtesting:** Use `BacktestNode` with configuration objects.
-- **For parameter optimizations:** Use `BacktestEngine.reset()` to run multiple strategies against the same data.
+- **For parameter optimizations:** Use `BacktestEngine.reset()` to keep data and instruments,
+  then call `clear_strategies()` before adding a replacement strategy instance.
 - **For quick experiments:** Either approach works - choose based on individual use case.
 
 :::
