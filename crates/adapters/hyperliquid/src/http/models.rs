@@ -1601,14 +1601,16 @@ pub enum HyperliquidExecOrderStatus {
     Tag(HyperliquidExecOrderStatusTag),
 }
 
-/// Bare-string order status returned for trigger children of a `normalTpsl`
-/// group, parked until the entry leg fills (or the trigger fires).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// Status tags HL serializes as a bare JSON string. Trigger children of a
+/// `normalTpsl` group plus standalone trigger orders that haven't armed yet
+/// fall in this bucket — the venue defers oid assignment until activation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HyperliquidExecOrderStatusTag {
     /// Trigger child parked until the parent (entry) order fills.
+    #[serde(rename = "waitingForFill")]
     WaitingForFill,
     /// Trigger child parked until its trigger price condition is met.
+    #[serde(rename = "waitingForTrigger")]
     WaitingForTrigger,
 }
 

@@ -745,7 +745,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_orders = [transform_order_to_pyo3(order) for order in orders]
-            await self._ws_client.submit_orders(self._client, pyo3_orders)
+            pyo3_reports = await self._client.submit_orders(pyo3_orders)
         except Exception as e:
             if _is_transport_error(e):
                 self._log.warning(
@@ -767,6 +767,20 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     reason=error_str,
                     ts_event=self._clock.timestamp_ns(),
                     due_post_only=due_post_only,
+                )
+            return
+
+        # Drive each order through the same handler the WS uses so the state
+        # machine transitions SUBMITTED -> ACCEPTED|FILLED|REJECTED at submit
+        # time. Trigger children carry a `pending-cloid:` placeholder venue id
+        # that is overwritten when the userEvents stream delivers the real oid.
+        for pyo3_report in pyo3_reports or ():
+            try:
+                self._handle_order_status_report_pyo3(pyo3_report)
+            except Exception as e:
+                self._log.warning(
+                    f"Failed to process submit response report "
+                    f"({type(e).__name__}: {e}); awaiting WS reconciliation",
                 )
 
     async def _modify_order(self, command: ModifyOrder) -> None:  # noqa: C901 (sequence of guard clauses)

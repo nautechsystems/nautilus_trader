@@ -3136,13 +3136,17 @@ impl HyperliquidHttpClient {
                         HyperliquidExecOrderStatus::Tag(_) => {
                             // Trigger child of a `normalTpsl` bracket (SL/TP):
                             // venue accepted it atomically but has not assigned
-                            // an oid yet. Mark Accepted with the client order id
-                            // as a placeholder venue id — the real oid arrives
-                            // via the user-events WS stream.
+                            // an oid yet. Use a `pending-cloid:` placeholder —
+                            // the real oid arrives via the user-events WS
+                            // stream and is reconciled via the cloid mapping.
+                            let placeholder = VenueOrderId::new(format!(
+                                "pending-cloid:{}",
+                                order.client_order_id().as_str(),
+                            ));
                             self.create_order_status_report(
                                 order.instrument_id(),
                                 Some(order.client_order_id()),
-                                VenueOrderId::new(order.client_order_id().to_string()),
+                                placeholder,
                                 order.order_side(),
                                 order.order_type(),
                                 order.quantity(),
