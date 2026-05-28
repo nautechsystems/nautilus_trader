@@ -1,0 +1,16 @@
+{
+  "asks": [],
+  "bids": [
+    [
+      "0.2",
+      "45"
+    ],
+    [
+      "0.1",
+      "32.9"
+    ]
+  ],
+  "instrument_name": "ETH-USDC",
+  "publish_id": 9582,
+  "timestamp": 1779607319268
+}

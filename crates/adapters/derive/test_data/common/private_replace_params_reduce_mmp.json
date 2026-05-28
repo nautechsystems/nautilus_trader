@@ -1,0 +1,1 @@
+{"amount":"2","direction":"sell","instrument_name":"ETH-PERP","label":"client-2","limit_price":"3499.5","max_fee":"0","mmp":false,"nonce":123457,"order_id_to_cancel":"ord-stale-1","order_type":"limit","reduce_only":true,"referral_code":"nautilus","signature":"0xdef","signature_expiry_sec":1700000601,"signer":"0xsigner","subaccount_id":30769,"time_in_force":"post_only"}

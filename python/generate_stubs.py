@@ -256,6 +256,7 @@ def generate_stubs() -> bool:
         relocate_classes_from_libnautilus(root)
         inject_module_constants(root, workspace_root)
         format_stub_files(root)
+        mirror_missing_adapter_stubs(root)
 
     relative_root = dest_dir.relative_to(Path(__file__).parent)
     print(f"Type stubs written to {relative_root or Path('.')} ")
@@ -336,6 +337,25 @@ def post_process_stubs(root: Path) -> None:
 
         if content != original:
             stub_file.write_text(content)
+
+
+def mirror_missing_adapter_stubs(root: Path) -> None:
+    """
+    Mirror top-level adapter stubs into adapter wrapper packages when missing.
+    """
+    adapters_dir = root / "adapters"
+    if not adapters_dir.exists():
+        return
+
+    for init_py in sorted(adapters_dir.glob("*/__init__.py")):
+        target = init_py.with_suffix(".pyi")
+        if target.exists():
+            continue
+
+        adapter_name = init_py.parent.name
+        source = root / adapter_name / "__init__.pyi"
+        if source.exists():
+            target.write_text(source.read_text())
 
 
 IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(

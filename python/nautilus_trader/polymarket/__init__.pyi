@@ -13,32 +13,18 @@ __all__ = [
 ]
 
 @typing.final
-class PolymarketInstrumentProviderConfig:
-    def __init__(
-        self,
-        load_all: bool | None = None,
-        load_ids: typing.Sequence[model.InstrumentId] | None = None,
-        filters: dict[str, str] | None = None,
-        event_slugs: typing.Sequence[str] | None = None,
-        market_slugs: typing.Sequence[str] | None = None,
-        event_slug_builder: str | None = None,
-        log_warnings: bool | None = None,
-        use_gamma_markets: bool | None = None,
-    ) -> None: ...
-
-@typing.final
 class PolymarketDataClientConfig:
     def __init__(
         self,
-        instrument_config: PolymarketInstrumentProviderConfig | None = None,
-        base_url_http: str | None = None,
-        base_url_ws: str | None = None,
-        base_url_gamma: str | None = None,
-        base_url_data_api: str | None = None,
-        http_timeout_secs: int | None = None,
-        ws_timeout_secs: int | None = None,
-        ws_max_subscriptions: int | None = None,
-        update_instruments_interval_mins: int | None = None,
+        instrument_config: PolymarketInstrumentProviderConfig | None = ...,
+        base_url_http: str | None = ...,
+        base_url_ws: str | None = ...,
+        base_url_gamma: str | None = ...,
+        base_url_data_api: str | None = ...,
+        http_timeout_secs: int | None = ...,
+        ws_timeout_secs: int | None = ...,
+        ws_max_subscriptions: int | None = ...,
+        update_instruments_interval_mins: int | None = ...,
         subscribe_new_markets: bool | None = None,
         auto_load_missing_instruments: bool | None = None,
         auto_load_debounce_ms: int | None = None,
@@ -67,6 +53,20 @@ class PolymarketExecClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         ack_timeout_secs: int | None = None,
+    ) -> None: ...
+
+@typing.final
+class PolymarketInstrumentProviderConfig:
+    def __init__(
+        self,
+        load_all: bool | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
+        filters: typing.Mapping[str, str] | None = None,
+        event_slugs: typing.Sequence[str] | None = None,
+        market_slugs: typing.Sequence[str] | None = None,
+        event_slug_builder: str | None = None,
+        log_warnings: bool | None = None,
+        use_gamma_markets: bool | None = None,
     ) -> None: ...
 
 @typing.final

@@ -1418,13 +1418,15 @@ reconciliation pass resolves it.
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places post‑only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
-| **Pass criteria**  | Order rejected by venue; `OrderRejected` event received with reason indicating post‑only violation. |
+| **Pass criteria**  | Venue rejects order; `OrderRejected.due_post_only=true`; reason names post‑only violation. |
 | **Skip when**      | Adapter does not support post‑only flag.                               |
 
 **Considerations:**
 
 - The ExecTester's `test_reject_post_only` mode intentionally prices the order to cross.
 - Some venues may partially fill instead of rejecting; behavior is venue-specific.
+- Adapters that emit `OrderRejected` for a post-only crossing reject should set
+  `due_post_only=true` so strategies can distinguish this from other venue rejections.
 
 **Python config:**
 

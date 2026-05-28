@@ -11,6 +11,7 @@ members = [
   "crates/adapters/coinbase",
   "crates/adapters/databento",
   "crates/adapters/deribit",
+  "crates/adapters/derive",
   "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
   "crates/adapters/interactive_brokers",
@@ -103,6 +104,7 @@ nautilus-bybit = { path = "crates/adapters/bybit", version = "0.58.0", default-f
 nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.58.0", default-features = false }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.58.0", default-features = false }
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.58.0", default-features = false }
+nautilus-derive = { path = "crates/adapters/derive", version = "0.58.0", default-features = false }
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.58.0", default-features = false }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.58.0", default-features = false }
 nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.58.0" }

@@ -1,0 +1,1 @@
+{"amount":"1.25","direction":"buy","instrument_name":"ETH-PERP","label":"client-1","limit_price":"3500.01","max_fee":"0.5","nonce":123456,"order_type":"limit","referral_code":"nautilus","signature":"0xabc","signature_expiry_sec":1700000600,"signer":"0xsigner","subaccount_id":30769,"time_in_force":"gtc"}

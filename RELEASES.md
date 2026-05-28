@@ -42,6 +42,7 @@ Released on TBD (UTC).
 - Added Deribit `get_expirations` HTTP endpoint for traded option-chain expirations
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
 - Added Deribit `subscribe_combo_legs` opt-in for combo leg trade streams
+- Added Derive initial adapter (on-chain spot, perps, options)
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Hyperliquid HIP-4 outcome `BinaryOption.info` with parsed venue description and question metadata
 - Added Hyperliquid `HYPERLIQUID_ACCOUNT_ADDRESS` env var fallback for `HyperliquidExecClientConfig.account_address`
@@ -51,7 +52,6 @@ Released on TBD (UTC).
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
 - Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
-- Added `clamp_to_instrument_price_range` to `ExecTesterConfig` to keep computed prices within instrument bounds (Rust)
 
 ### Breaking Changes
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -89,6 +89,7 @@ Released on TBD (UTC).
 - Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
 - Fixed Betfair adapter overfill checks for rounded stream matched sizes (Rust)
 - Fixed Betfair adapter unsupported unsubscribe commands logging above debug (Rust)
+- Fixed BitMEX mark/index price updates on altcoin perps (#4147), thanks @filipmacek
 - Fixed Blockchain adapter caching a half-initialized `PoolProfiler` when `initialize` returns `InitialTickMismatch`
 - Fixed Coinbase book snapshot deltas missing `F_SNAPSHOT` flag in REST and WebSocket parsers
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
@@ -97,11 +98,13 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers order submit to guard on client readiness (#4100), thanks @honvl
 - Fixed Interactive Brokers order requests to guard on client readiness (Rust) (#4125), thanks @faysou
 - Fixed Interactive Brokers `request_instruments` returning cumulative cache (Rust) (#4114), thanks @faysou
+- Fixed Interactive Brokers Rust orders routing to exchange MIC venues (#4129), thanks @faysou
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
 - Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
 - Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
+- Fixed Polymarket PyO3 bootstrap to honor `instrument_config` (#4127), thanks @graceyangfan
 - Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 
 ### Internal Improvements
@@ -128,6 +131,7 @@ Released on TBD (UTC).
 - Refined OKX adapter hot paths in WebSocket frame deserializer, book10 parse, and fee currency lookup
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
+- Optimized common logging hot paths (#4150), thanks @sunlei
 - Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
 

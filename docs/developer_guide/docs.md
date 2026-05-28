@@ -84,6 +84,8 @@ API reference for field definitions rather than listing them again.
 - Use `✓` for supported features.
 - Use `-` for unsupported features (not `✗` or other symbols).
 - When adding notes for unsupported features, emphasize with italics: `*Not supported*`.
+- Make unsupported notes specific when the reason matters: use `*Not supported by <venue>*`
+  for venue gaps, or `*Not currently implemented*` for adapter gaps.
 - Leave cells empty when no content is needed.
 
 ## Code references

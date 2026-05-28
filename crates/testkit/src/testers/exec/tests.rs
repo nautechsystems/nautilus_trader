@@ -191,6 +191,7 @@ fn test_config_with_position_opening(mut config: ExecTesterConfig) {
         tester.config.open_position_on_start_qty,
         Some(Decimal::from(1))
     );
+    assert!(!tester.config.open_position_on_first_quote);
     assert_eq!(tester.config.open_position_time_in_force, TimeInForce::Ioc);
 }
 
@@ -323,6 +324,137 @@ fn test_on_quote_without_logging(mut config: ExecTesterConfig) {
 
     let result = tester.on_quote(&quote);
     assert!(result.is_ok());
+}
+
+#[rstest]
+fn test_on_quote_opens_start_position_when_configured(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    config.open_position_on_first_quote = true;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+    assert!(result.is_ok());
+    assert!(tester.open_position_submitted);
+
+    let first_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    let result = tester.on_quote(&quote);
+    let second_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    assert!(result.is_ok());
+    assert_eq!(first_count, 1);
+    assert_eq!(second_count, first_count);
+}
+
+#[rstest]
+fn test_on_quote_does_not_open_start_position_without_first_quote_flag(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+    let order_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    assert!(result.is_ok());
+    assert!(!tester.open_position_submitted);
+    assert_eq!(order_count, 0);
+}
+
+#[rstest]
+fn test_on_quote_waits_for_instrument_before_opening_start_position(mut config: ExecTesterConfig) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    config.open_position_on_first_quote = true;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+
+    assert!(result.is_ok());
+    assert!(!tester.open_position_submitted);
+}
+
+#[rstest]
+fn test_on_instrument_opens_start_position_immediately_by_default(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = tester.on_instrument(&instrument);
+
+    let cache_ref = tester.cache();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    assert!(result.is_ok());
+    assert!(tester.open_position_submitted);
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].order_type(), OrderType::Market);
+    assert_eq!(orders[0].order_side(), OrderSide::Buy);
 }
 
 #[rstest]
@@ -1119,6 +1251,7 @@ fn test_submit_bracket_order_sell_creates_order_list(
 
 #[rstest]
 fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument: InstrumentAny) {
+    let instrument_id = instrument.id();
     let cache = create_cache_with_instrument(&instrument);
     let mut tester = ExecTester::new(config);
     register_exec_tester(&mut tester, cache);
@@ -1126,7 +1259,14 @@ fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument:
 
     let result = tester.open_position(Decimal::from(1));
 
+    let cache_ref = tester.cache();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
     assert!(result.is_ok());
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].order_type(), OrderType::Market);
+    assert_eq!(orders[0].order_side(), OrderSide::Buy);
+    assert_eq!(orders[0].quantity(), Quantity::from("1.00000000"));
+    assert_eq!(orders[0].time_in_force(), TimeInForce::Gtc);
 }
 
 #[rstest]

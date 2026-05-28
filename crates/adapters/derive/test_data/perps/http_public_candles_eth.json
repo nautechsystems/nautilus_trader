@@ -1,0 +1,32 @@
+[
+  {
+    "open_price": "3500.0",
+    "high_price": "3501.5",
+    "low_price": "3499.0",
+    "close_price": "3501.0",
+    "volume_usd": "12345.6",
+    "volume_contracts": "3.527",
+    "timestamp": 1700000007,
+    "timestamp_bucket": 1700000000
+  },
+  {
+    "open_price": "3501.0",
+    "high_price": "3502.5",
+    "low_price": "3500.5",
+    "close_price": "3501.75",
+    "volume_usd": "23456.7",
+    "volume_contracts": "6.700",
+    "timestamp": 1700000907,
+    "timestamp_bucket": 1700000900
+  },
+  {
+    "open_price": "3501.75",
+    "high_price": "3503.0",
+    "low_price": "3501.0",
+    "close_price": "3502.5",
+    "volume_usd": "9876.5",
+    "volume_contracts": "2.821",
+    "timestamp": 1700001807,
+    "timestamp_bucket": 1700001800
+  }
+]

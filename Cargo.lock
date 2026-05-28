@@ -5897,6 +5897,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-derive"
+version = "0.58.0"
+dependencies = [
+ "ahash 0.8.12",
+ "alloy",
+ "alloy-primitives",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "bon",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "dotenvy",
+ "futures-util",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "nautilus-trading",
+ "pyo3",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-dydx"
 version = "0.58.0"
 dependencies = [
@@ -6216,6 +6258,7 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "nautilus-system",
+ "nautilus-testkit",
  "nautilus-trading",
  "pyo3",
  "pyo3-stub-gen",
@@ -6514,6 +6557,7 @@ dependencies = [
  "nautilus-data",
  "nautilus-databento",
  "nautilus-deribit",
+ "nautilus-derive",
  "nautilus-dydx",
  "nautilus-execution",
  "nautilus-hyperliquid",

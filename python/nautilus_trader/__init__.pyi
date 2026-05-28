@@ -16,6 +16,7 @@ from . import cryptography
 from . import data
 from . import databento
 from . import deribit
+from . import derive
 from . import dydx
 from . import execution
 from . import hyperliquid
@@ -51,6 +52,7 @@ __all__ = [
     "data",
     "databento",
     "deribit",
+    "derive",
     "dydx",
     "execution",
     "hyperliquid",
