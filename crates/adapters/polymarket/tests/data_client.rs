@@ -186,7 +186,7 @@ async fn test_request_instrument_publishes_event_and_response() {
     // logs `Unknown asset_id in order update`.
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
     let request = RequestInstrument::new(
@@ -230,7 +230,7 @@ async fn test_request_instrument_not_found_emits_no_publish() {
     // method logs an error, and no events are emitted.
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([]));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
     let request = RequestInstrument::new(
@@ -256,14 +256,32 @@ async fn test_request_instrument_not_found_emits_no_publish() {
 #[rstest]
 #[tokio::test]
 async fn test_request_instruments_emits_response() {
-    // Baseline for the bulk request path. Today this only sends a
-    // DataResponse and does NOT publish per-instrument events. The audit
-    // flagged this as a follow-up vs. `request_instrument`. Pin the
-    // current behaviour so any future change is deliberate.
+    // request_instruments should return the provider's currently loaded
+    // venue instruments rather than issuing a fresh full-universe Gamma
+    // fetch. This keeps the Rust/pyO3 path aligned with the Python
+    // adapter, where request_instruments serves provider cache contents.
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_fixture()]));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
+
+    let instrument_request = RequestInstrument::new(
+        yes_instrument_id(),
+        None,
+        None,
+        Some(*POLYMARKET_CLIENT_ID),
+        UUID4::new(),
+        nautilus_core::UnixNanos::default(),
+        None,
+    );
+    client
+        .request_instrument(instrument_request)
+        .expect("request_instrument");
+    let _ = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+
+    // If request_instruments hits Gamma again it will now see an empty list.
+    // A correct cached implementation must still return the preloaded market.
+    *state.gamma_response.lock().await = Some(serde_json::json!([]));
 
     let request = RequestInstruments::new(
         None,
@@ -297,6 +315,19 @@ async fn test_request_instruments_emits_response() {
         publish_count, 0,
         "request_instruments does not currently publish per-instrument events; \
          if it ever does, update this test deliberately",
+    );
+
+    let response_instruments = events
+        .iter()
+        .find_map(|event| match event {
+            DataEvent::Response(DataResponse::Instruments(response)) => Some(&response.data),
+            _ => None,
+        })
+        .expect("instruments response");
+    assert_eq!(
+        response_instruments.len(),
+        1,
+        "request_instruments should serve cached scoped instruments, not refetch an empty Gamma universe",
     );
 }
 

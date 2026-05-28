@@ -3,16 +3,34 @@
 import enum
 import typing
 
+from nautilus_trader import model
+
 __all__ = [
     "PolymarketDataClientConfig",
     "PolymarketExecClientConfig",
+    "PolymarketInstrumentProviderConfig",
     "SignatureType",
 ]
+
+@typing.final
+class PolymarketInstrumentProviderConfig:
+    def __init__(
+        self,
+        load_all: bool | None = None,
+        load_ids: typing.Sequence[model.InstrumentId] | None = None,
+        filters: dict[str, str] | None = None,
+        event_slugs: typing.Sequence[str] | None = None,
+        market_slugs: typing.Sequence[str] | None = None,
+        event_slug_builder: str | None = None,
+        log_warnings: bool | None = None,
+        use_gamma_markets: bool | None = None,
+    ) -> None: ...
 
 @typing.final
 class PolymarketDataClientConfig:
     def __init__(
         self,
+        instrument_config: PolymarketInstrumentProviderConfig | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
         base_url_gamma: str | None = None,

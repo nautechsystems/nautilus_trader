@@ -28,6 +28,7 @@ use ustr::Ustr;
 
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    config::PolymarketInstrumentProviderConfig,
     filters::InstrumentFilter,
     http::{gamma::PolymarketGammaHttpClient, models::GammaTag, query::GetGammaMarketsParams},
 };
@@ -44,6 +45,7 @@ pub struct PolymarketInstrumentProvider {
     http_client: PolymarketGammaHttpClient,
     token_index: AHashMap<Ustr, InstrumentId>,
     filters: Vec<Arc<dyn InstrumentFilter>>,
+    config: PolymarketInstrumentProviderConfig,
 }
 
 impl Debug for PolymarketInstrumentProvider {
@@ -53,6 +55,7 @@ impl Debug for PolymarketInstrumentProvider {
             .field("http_client", &self.http_client)
             .field("token_index_len", &self.token_index.len())
             .field("filters", &self.filters)
+            .field("config", &self.config)
             .finish()
     }
 }
@@ -60,12 +63,16 @@ impl Debug for PolymarketInstrumentProvider {
 impl PolymarketInstrumentProvider {
     /// Creates a new [`PolymarketInstrumentProvider`] with an empty store and no filters.
     #[must_use]
-    pub fn new(http_client: PolymarketGammaHttpClient) -> Self {
+    pub fn new(
+        http_client: PolymarketGammaHttpClient,
+        config: Option<PolymarketInstrumentProviderConfig>,
+    ) -> Self {
         Self {
             store: InstrumentStore::new(),
             http_client,
             token_index: AHashMap::new(),
             filters: Vec::new(),
+            config: config.unwrap_or_default(),
         }
     }
 
@@ -73,6 +80,7 @@ impl PolymarketInstrumentProvider {
     #[must_use]
     pub fn with_filters(
         http_client: PolymarketGammaHttpClient,
+        config: Option<PolymarketInstrumentProviderConfig>,
         filters: Vec<Arc<dyn InstrumentFilter>>,
     ) -> Self {
         Self {
@@ -80,6 +88,7 @@ impl PolymarketInstrumentProvider {
             http_client,
             token_index: AHashMap::new(),
             filters,
+            config: config.unwrap_or_default(),
         }
     }
 
@@ -87,6 +96,7 @@ impl PolymarketInstrumentProvider {
     #[must_use]
     pub fn with_filter(
         http_client: PolymarketGammaHttpClient,
+        config: Option<PolymarketInstrumentProviderConfig>,
         filter: Arc<dyn InstrumentFilter>,
     ) -> Self {
         Self {
@@ -94,6 +104,7 @@ impl PolymarketInstrumentProvider {
             http_client,
             token_index: AHashMap::new(),
             filters: vec![filter],
+            config: config.unwrap_or_default(),
         }
     }
 
@@ -166,6 +177,12 @@ impl PolymarketInstrumentProvider {
         &self.http_client
     }
 
+    /// Returns the configured provider config.
+    #[must_use]
+    pub fn config(&self) -> &PolymarketInstrumentProviderConfig {
+        &self.config
+    }
+
     /// Fetches available tags from the Gamma API.
     pub async fn list_tags(&self) -> anyhow::Result<Vec<GammaTag>> {
         self.http_client.request_tags().await
@@ -179,11 +196,147 @@ impl PolymarketInstrumentProvider {
         self.store.add_bulk(instruments);
     }
 
+    /// Loads instruments for the given event slugs additively into the store.
+    ///
+    /// Unlike [`Self::load_all`], this does **not** clear existing instruments or
+    /// mark the store as initialized, allowing incremental loading of
+    /// event-scoped markets alongside bulk data.
+    pub async fn load_by_event_slugs(&mut self, slugs: Vec<String>) -> anyhow::Result<()> {
+        let instruments = self
+            .http_client
+            .request_instruments_by_event_slugs(slugs)
+            .await?;
+        self.add_instruments(instruments);
+        Ok(())
+    }
+
+    /// Initializes the provider using its configured bootstrap scope.
+    pub async fn initialize(&mut self, reload: bool) -> anyhow::Result<()> {
+        if self.store.is_initialized() && !reload {
+            return Ok(());
+        }
+
+        if self.config.should_load_all() {
+            self.load_scoped_all().await?;
+            self.store.set_initialized();
+            return Ok(());
+        }
+
+        if self.config.has_load_ids() {
+            let load_ids = self.config.load_ids.clone().unwrap_or_default();
+            let filters = self.config.filters.clone();
+            self.load_ids(&load_ids, filters.as_ref()).await?;
+            self.store.set_initialized();
+            return Ok(());
+        }
+
+        if self.config.log_warnings {
+            log::warn!(
+                "No Polymarket instrument bootstrap configured: set instrument_config.load_all, instrument_config.load_ids, instrument_config.event_slugs, instrument_config.market_slugs, or instrument_config.event_slug_builder"
+            );
+        }
+        Ok(())
+    }
+
+    async fn load_scoped_all(&mut self) -> anyhow::Result<()> {
+        let has_explicit_slug_scope = self
+            .config
+            .event_slug_builder
+            .as_deref()
+            .is_some_and(|slug| !slug.trim().is_empty())
+            || self
+                .config
+                .event_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty())
+            || self
+                .config
+                .market_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty());
+        let event_slugs = self.resolve_event_slugs()?;
+        let market_slugs = self
+            .config
+            .market_slugs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|slug| !slug.trim().is_empty())
+            .collect::<Vec<_>>();
+
+        if !event_slugs.is_empty() {
+            self.load_by_event_slugs(event_slugs).await?;
+        }
+
+        if !market_slugs.is_empty() {
+            self.load_by_slugs(market_slugs).await?;
+        }
+
+        if has_explicit_slug_scope {
+            return Ok(());
+        }
+
+        let filters = self.config.filters.clone();
+        self.load_all(filters.as_ref()).await
+    }
+
+    fn resolve_event_slugs(&self) -> anyhow::Result<Vec<String>> {
+        if let Some(builder) = self.config.event_slug_builder.as_deref()
+            && !builder.trim().is_empty()
+        {
+            return resolve_python_event_slug_builder(builder);
+        }
+
+        Ok(self
+            .config
+            .event_slugs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|slug| !slug.trim().is_empty())
+            .collect())
+    }
+
     /// Loads instruments using all configured filters, combining results from
     /// each filter's methods that return `Some`.
     async fn load_filtered(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         fetch_instruments(&self.http_client, &self.filters).await
     }
+}
+
+#[cfg(feature = "python")]
+fn resolve_python_event_slug_builder(builder: &str) -> anyhow::Result<Vec<String>> {
+    use pyo3::{prelude::*, types::PyModule};
+
+    let (module_name, function_name) = builder.rsplit_once(':').ok_or_else(|| {
+        anyhow::anyhow!(
+            "Invalid event_slug_builder '{builder}': expected 'module.path:function_name'"
+        )
+    })?;
+
+    Python::attach(|py| -> anyhow::Result<Vec<String>> {
+        let module = PyModule::import(py, module_name)
+            .map_err(|e| anyhow::anyhow!("Failed to import builder module '{module_name}': {e}"))?;
+        let callable = module.getattr(function_name).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to resolve builder function '{function_name}' from '{module_name}': {e}"
+            )
+        })?;
+        let result = callable.call0().map_err(|e| {
+            anyhow::anyhow!("event_slug_builder '{builder}' raised an exception: {e}")
+        })?;
+        result.extract::<Vec<String>>().map_err(|e| {
+            anyhow::anyhow!("event_slug_builder '{builder}' must return list[str]: {e}")
+        })
+    })
+}
+
+#[cfg(not(feature = "python"))]
+fn resolve_python_event_slug_builder(builder: &str) -> anyhow::Result<Vec<String>> {
+    anyhow::bail!(
+        "event_slug_builder '{}' requires the Polymarket adapter to be built with the 'python' feature",
+        builder
+    )
 }
 
 /// Fetches instruments from the Gamma API, respecting any configured filters.
@@ -245,6 +398,114 @@ pub async fn fetch_instruments(
     instruments.retain(|inst| seen.insert(inst.id()));
     instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
 
+    Ok(instruments)
+}
+
+/// Fetches instruments using the configured provider bootstrap scope without
+/// mutating any provider state.
+pub async fn fetch_configured_instruments(
+    http_client: &PolymarketGammaHttpClient,
+    config: &PolymarketInstrumentProviderConfig,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<Vec<InstrumentAny>> {
+    let mut instruments = Vec::new();
+
+    if config.should_load_all() {
+        let has_explicit_slug_scope = config
+            .event_slug_builder
+            .as_deref()
+            .is_some_and(|slug| !slug.trim().is_empty())
+            || config
+                .event_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty())
+            || config
+                .market_slugs
+                .as_ref()
+                .is_some_and(|slugs| !slugs.is_empty());
+        let event_slugs = if let Some(builder) = config.event_slug_builder.as_deref()
+            && !builder.trim().is_empty()
+        {
+            resolve_python_event_slug_builder(builder)?
+        } else {
+            config
+                .event_slugs
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|slug| !slug.trim().is_empty())
+                .collect::<Vec<_>>()
+        };
+
+        let market_slugs = config
+            .market_slugs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|slug| !slug.trim().is_empty())
+            .collect::<Vec<_>>();
+
+        if !event_slugs.is_empty() {
+            instruments.extend(
+                http_client
+                    .request_instruments_by_event_slugs(event_slugs)
+                    .await?,
+            );
+        }
+
+        if !market_slugs.is_empty() {
+            instruments.extend(
+                http_client
+                    .request_instruments_by_slugs(market_slugs)
+                    .await?,
+            );
+        }
+
+        if has_explicit_slug_scope {
+            // Explicit slug scoping should never broaden into a full-universe fetch.
+        } else if filters.is_empty() {
+            if let Some(map) = config.filters.as_ref() {
+                if map.is_empty() {
+                    instruments.extend(http_client.request_instruments().await?);
+                } else {
+                    let params = build_gamma_params_from_hashmap(map);
+                    instruments.extend(http_client.request_instruments_by_params(params).await?);
+                }
+            } else {
+                instruments.extend(http_client.request_instruments().await?);
+            }
+        } else {
+            instruments.extend(fetch_instruments(http_client, filters).await?);
+        }
+    } else if config.has_load_ids() {
+        let base_params = config
+            .filters
+            .as_ref()
+            .map(build_gamma_params_from_hashmap)
+            .unwrap_or_default();
+
+        let condition_ids = config
+            .load_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| extract_condition_id(&id).ok())
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
+            let params = GetGammaMarketsParams {
+                condition_ids: Some(chunk.join(",")),
+                ..base_params.clone()
+            };
+            instruments.extend(http_client.request_instruments_by_params(params).await?);
+        }
+    }
+
+    let mut seen = AHashSet::new();
+    instruments.retain(|inst| seen.insert(inst.id()));
+    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
     Ok(instruments)
 }
 
