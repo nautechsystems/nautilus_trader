@@ -258,35 +258,27 @@ sealed run without mutating it and reports `quarantine=not-performed`.
 
 ## Replay modes
 
-The event store supports three replay scopes:
-
-- Forensics replay: scan the event store by `seq` or order identifier.
-- Decision replay: join event-store entries with selected data catalog topics.
-- Full incident replay: replay the event-store stream with all relevant data catalog slices.
-
-Replay follows one ordering rule: apply entries in `seq` order. `ts_init` and `ts_publish` explain
-when messages happened, but `seq` is the durable replay order.
+Replay follows one ordering rule: apply event-store entries in `seq` order. `ts_init` and
+`ts_publish` explain when messages happened, but `seq` is the durable replay order.
 
 The Rust replay-input API keeps planning separate from execution:
 
 - `plan_forensics_replay_inputs` and `load_forensics_replay_inputs` return event-store entries
   only.
-- `plan_decision_replay_inputs` and `load_decision_replay_inputs` join entries with
-  caller-selected catalog slices for decision analysis.
-- `plan_full_incident_replay_inputs` and `load_full_incident_replay_inputs` join entries with all
-  caller-selected slices for an incident window.
+- `plan_catalog_replay_inputs` and `load_catalog_replay_inputs` join entries with caller-selected
+  catalog slices for context analysis.
 
-Decision and full incident planners take explicit `CatalogSliceSelector` values and a read-only
-`ReplayCatalog`. Planning resolves catalog time bounds from the event-store scan unless the
-selector supplies explicit bounds, reports missing catalog slices, and preserves `seq` as the
-entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
-catalog records grouped under their selected slice.
+Catalog planners take explicit `CatalogSliceSelector` values and a read-only `ReplayCatalog`.
+Planning resolves catalog time bounds from the event-store scan unless the selector supplies
+explicit bounds, reports missing catalog slices, and preserves `seq` as the entry ordering
+authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus catalog records
+grouped under their selected slice. This crate's API does not expose decision-replay or
+full-incident scope names; those workflows choose catalog selectors outside this crate.
 
 Rust callers can enable the off-by-default `persistence` feature and wrap a `ParquetDataCatalog`
 with `nautilus_event_store::ParquetReplayCatalog` to plan selected catalog files and
 filename-derived intervals. The bridge can load `quotes`, `trades`, and `bars` into
-`CatalogReplayPayload::Data` records. Custom `ReplayCatalog` implementations can still return
-opaque bytes with `CatalogReplayRecord::opaque`.
+typed `CatalogReplayRecord` values.
 
 :::note
 The persistence bridge is read-only: it uses catalog discovery and query APIs but **does not write
@@ -294,11 +286,58 @@ to the catalog**. Unsupported catalog classes fail loading until replay adds a t
 contract for that class.
 :::
 
-`ReplayInputs::context_timeline()` builds an analysis-only timeline over those already-loaded
-inputs. It returns indices into the loaded event-store entries and catalog records, sorted by
-`ts_init` for context inspection. It does not load more data, publish messages, run engine logic,
-or define the order used by cache replay. Replay drivers continue to use the loaded event-store
-entries in durable `seq` order.
+## Data sequence sidecar design
+
+:::note
+This section is a design target. Nautilus does not yet implement the sidecar writer, reader, or
+config flag.
+:::
+
+Exact data delivery order is not inferred from catalog timestamps. The compact sidecar design
+records data markers observed at the message-bus dispatch boundary, beside the event-store run,
+without writing full market-data payloads into `EventStoreEntry` rows.
+
+The sidecar can support one forensic claim: when marker capture is enabled, Nautilus observed data
+delivery markers in `marker_seq` order at the bus boundary for that run, and each marker contains
+enough identity to join back to candidate catalog rows. It cannot prove that catalog timestamps
+alone define bus order, reconstruct a data point when the catalog row is absent or changed, prove
+venue send order before Nautilus observed the message, or say anything about runs where marker
+capture was disabled.
+
+Markers do not consume event-store `seq` values and do not create gaps in the entry table. Each
+marker has its own monotonically increasing `marker_seq` plus `event_seq_before`, the largest
+event-store `seq` assigned before the marker was observed. A sealed-run analyzer can derive the
+next event-store entry after a marker from `event_seq_before + 1`; markers that share the same
+`event_seq_before` are ordered by `marker_seq`. Event-store `seq` remains the replay-order
+authority for state-affecting entries.
+
+The minimal marker fields are:
+
+- `marker_seq`: run-local marker order.
+- `event_seq_before`: nearest prior event-store entry.
+- `topic`: bus topic observed by the tap.
+- `data_cls`: catalog class, such as `quotes`, `trades`, or `bars`.
+- `identifier`: instrument ID for quotes and trades, or bar type for bars.
+- `ts_event` and `ts_init`: catalog row timestamp keys.
+- `same_ts_ordinal`: observed ordinal among markers with the same `data_cls`, `identifier`, and
+  `ts_init`.
+- `record_fingerprint`: fixed-size hash over the canonical typed row fields.
+
+`same_ts_ordinal` and `record_fingerprint` disambiguate duplicate same-timestamp data without
+storing prices, quantities, sizes, or MessagePack payloads. If two catalog rows are byte-identical
+for the same key and timestamp, the sidecar can prove that Nautilus observed two deliveries in a
+specific marker order; it cannot name a unique physical catalog row after catalog compaction
+rewrites row order.
+
+The stable contract is the marker schema, opt-in capture and reader primitives, gap-free marker
+verification, and catalog join rules. Incident analysis can build on that contract to select
+windows, interpret venue-specific data, rank or cluster markers, present reports, and package run
+bundles.
+
+The sidecar stays off by default when implemented. A separate config flag enables marker capture,
+and the disabled path installs no data marker writer. Cache replay and live restart do not read
+this sidecar: snapshot-tail replay still applies event-store entries in `seq` order, and live
+restart still boots from cache-owned state plus the event-store parent link.
 
 These APIs **do not**:
 

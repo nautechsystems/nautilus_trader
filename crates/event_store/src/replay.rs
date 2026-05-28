@@ -22,7 +22,6 @@
 
 use std::{fmt::Display, path::PathBuf};
 
-use bytes::Bytes;
 use nautilus_common::{
     cache::Cache,
     messages::{
@@ -170,27 +169,6 @@ pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
     PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
 ];
-
-/// Replay input scope.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayScope {
-    /// Event-store entries only.
-    Forensics,
-    /// Event-store entries plus selected data catalog slices for decision analysis.
-    Decision,
-    /// Event-store entries plus all selected catalog slices for an incident window.
-    FullIncident,
-}
-
-impl Display for ReplayScope {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Forensics => f.write_str("forensics"),
-            Self::Decision => f.write_str("decision"),
-            Self::FullIncident => f.write_str("full_incident"),
-        }
-    }
-}
 
 /// Inclusive event-store `seq` bounds for replay input scans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,15 +319,6 @@ impl CatalogSliceCoverage {
     }
 }
 
-/// Planned catalog slice availability.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CatalogSliceStatus {
-    /// The catalog reported files for this slice.
-    Available,
-    /// The catalog reported no files for this slice.
-    Missing,
-}
-
 /// Planned catalog slice joined to a replay input scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogSlicePlan {
@@ -357,30 +326,13 @@ pub struct CatalogSlicePlan {
     pub query: CatalogSliceQuery,
     /// Catalog coverage reported during planning.
     pub coverage: CatalogSliceCoverage,
-    /// Slice availability status.
-    pub status: CatalogSliceStatus,
 }
 
 impl CatalogSlicePlan {
     /// Returns whether the catalog reported no files for this slice.
     #[must_use]
-    pub const fn is_missing(&self) -> bool {
-        matches!(self.status, CatalogSliceStatus::Missing)
-    }
-}
-
-/// Catalog replay payload loaded for contextual analysis.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CatalogReplayPayload {
-    /// Caller-supplied opaque bytes.
-    Opaque(Bytes),
-    /// Typed market data loaded from the catalog.
-    Data(Box<CatalogReplayData>),
-}
-
-impl From<Bytes> for CatalogReplayPayload {
-    fn from(value: Bytes) -> Self {
-        Self::Opaque(value)
+    pub fn is_missing(&self) -> bool {
+        self.coverage.is_missing()
     }
 }
 
@@ -454,36 +406,11 @@ pub struct CatalogReplayRecord {
     pub identifier: Option<String>,
     /// Record timestamp used for contextual joins.
     pub ts_init: UnixNanos,
-    /// Catalog replay payload.
-    pub payload: CatalogReplayPayload,
+    /// Typed catalog data loaded for contextual analysis.
+    pub data: CatalogReplayData,
 }
 
 impl CatalogReplayRecord {
-    /// Builds an opaque catalog replay record.
-    pub fn new(
-        data_cls: impl Into<String>,
-        identifier: Option<String>,
-        ts_init: UnixNanos,
-        payload: Bytes,
-    ) -> Self {
-        Self::opaque(data_cls, identifier, ts_init, payload)
-    }
-
-    /// Builds an opaque catalog replay record.
-    pub fn opaque(
-        data_cls: impl Into<String>,
-        identifier: Option<String>,
-        ts_init: UnixNanos,
-        payload: Bytes,
-    ) -> Self {
-        Self {
-            data_cls: data_cls.into(),
-            identifier,
-            ts_init,
-            payload: CatalogReplayPayload::Opaque(payload),
-        }
-    }
-
     /// Builds a typed catalog replay record.
     #[must_use]
     pub fn from_data(data: CatalogReplayData) -> Self {
@@ -491,7 +418,7 @@ impl CatalogReplayRecord {
             data_cls: data.data_cls().to_string(),
             identifier: Some(data.identifier()),
             ts_init: data.ts_init(),
-            payload: CatalogReplayPayload::Data(Box::new(data)),
+            data,
         }
     }
 }
@@ -505,11 +432,9 @@ pub struct CatalogReplaySlice {
     pub records: Vec<CatalogReplayRecord>,
 }
 
-/// Planned replay inputs for a forensics, decision, or full incident replay.
+/// Planned replay inputs for an event-store scan with optional catalog context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplayInputPlan {
-    /// Explicit replay scope.
-    pub scope: ReplayScope,
     /// Requested event-store `seq` bounds.
     pub requested_range: ReplaySeqRange,
     /// Actual event-store range found inside the requested bounds.
@@ -533,105 +458,13 @@ impl ReplayInputPlan {
     }
 }
 
-/// Loaded replay inputs.
+/// Loaded replay inputs with event-store entries and optional catalog context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplayInputs {
-    /// Explicit replay scope.
-    pub scope: ReplayScope,
     /// Event-store entries in durable `seq` order.
     pub entries: Vec<EventStoreEntry>,
     /// Catalog slices loaded as contextual input.
     pub catalog_slices: Vec<CatalogReplaySlice>,
-}
-
-impl ReplayInputs {
-    /// Builds an analysis-only context timeline over loaded event entries and catalog records.
-    ///
-    /// The returned items are indices into [`ReplayInputs::entries`] and
-    /// [`ReplayInputs::catalog_slices`]. This view does not load catalog data, mutate cache state,
-    /// publish messages, or define cache replay order. Cache replay continues to apply event-store
-    /// entries from [`ReplayInputs::entries`] in durable `seq` order.
-    #[must_use]
-    pub fn context_timeline(&self) -> Vec<ReplayContextTimelineItem> {
-        let catalog_record_count = self
-            .catalog_slices
-            .iter()
-            .map(|slice| slice.records.len())
-            .sum::<usize>();
-        let mut items = Vec::with_capacity(self.entries.len() + catalog_record_count);
-
-        for (entry_index, entry) in self.entries.iter().enumerate() {
-            items.push(ReplayContextTimelineItem {
-                ts_init: entry.ts_init,
-                source: ReplayContextSource::EventStoreEntry {
-                    entry_index,
-                    seq: entry.seq,
-                },
-            });
-        }
-
-        for (slice_index, slice) in self.catalog_slices.iter().enumerate() {
-            for (record_index, record) in slice.records.iter().enumerate() {
-                items.push(ReplayContextTimelineItem {
-                    ts_init: record.ts_init,
-                    source: ReplayContextSource::CatalogRecord {
-                        slice_index,
-                        record_index,
-                    },
-                });
-            }
-        }
-
-        items.sort_by_key(ReplayContextTimelineItem::sort_key);
-        items
-    }
-}
-
-/// Analysis-only reference to a loaded replay input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayContextSource {
-    /// Event-store entry at `entries[entry_index]`.
-    EventStoreEntry {
-        /// Index into [`ReplayInputs::entries`].
-        entry_index: usize,
-        /// Durable event-store sequence for the entry.
-        seq: u64,
-    },
-    /// Catalog record at `catalog_slices[slice_index].records[record_index]`.
-    CatalogRecord {
-        /// Index into [`ReplayInputs::catalog_slices`].
-        slice_index: usize,
-        /// Index into [`CatalogReplaySlice::records`].
-        record_index: usize,
-    },
-}
-
-impl ReplayContextSource {
-    const fn sort_key(self) -> (u8, usize, usize) {
-        match self {
-            Self::EventStoreEntry { entry_index, .. } => (0, entry_index, 0),
-            Self::CatalogRecord {
-                slice_index,
-                record_index,
-            } => (1, slice_index, record_index),
-        }
-    }
-}
-
-/// One item in a context timeline for decision or incident analysis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReplayContextTimelineItem {
-    /// Timestamp used to place this already-loaded input in context.
-    pub ts_init: UnixNanos,
-    /// Index reference to the loaded input.
-    pub source: ReplayContextSource,
-}
-
-impl ReplayContextTimelineItem {
-    fn sort_key(&self) -> (UnixNanos, u8, usize, usize) {
-        let (source_order, major_index, minor_index) = self.source.sort_key();
-        (self.ts_init, source_order, major_index, minor_index)
-    }
 }
 
 /// Read-only catalog source used by catalog-joined replay input loaders.
@@ -778,20 +611,9 @@ pub enum ReplayInputError {
         /// Validation failure.
         message: String,
     },
-    /// A catalog-joined replay scope had no selected catalog slices.
-    #[error("{scope} replay requires at least one selected catalog slice")]
-    EmptyCatalogSelection {
-        /// Replay scope.
-        scope: ReplayScope,
-    },
-    /// A replay input plan was loaded through the wrong scope-specific API.
-    #[error("replay input plan scope {actual} does not match expected scope {expected}")]
-    ScopeMismatch {
-        /// Expected replay scope.
-        expected: ReplayScope,
-        /// Actual replay scope.
-        actual: ReplayScope,
-    },
+    /// A catalog-joined replay plan had no selected catalog slices.
+    #[error("catalog replay requires at least one selected catalog slice")]
+    EmptyCatalogSelection,
     /// A catalog slice needs time bounds, but neither selector nor event-store scan supplied them.
     #[error(
         "catalog slice {data_cls} requires explicit time bounds because the replay scan is empty"
@@ -975,7 +797,6 @@ where
 {
     let span = collect_replay_entry_span(reader, range)?;
     Ok(ReplayInputPlan {
-        scope: ReplayScope::Forensics,
         requested_range: range,
         event_range: span.event_range,
         event_count: span.event_count,
@@ -991,8 +812,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a forensics plan and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns [`ReplayInputError::EventStore`] when the reader scan fails.
 pub fn load_forensics_replay_inputs<B>(
     reader: &EventStoreReader<B>,
     plan: &ReplayInputPlan,
@@ -1000,16 +820,14 @@ pub fn load_forensics_replay_inputs<B>(
 where
     B: EventStore,
 {
-    ensure_plan_scope(plan, ReplayScope::Forensics)?;
     let entries = load_replay_entries(reader, plan.requested_range)?;
     Ok(ReplayInputs {
-        scope: ReplayScope::Forensics,
         entries,
         catalog_slices: Vec::new(),
     })
 }
 
-/// Plans decision replay inputs by joining event-store entries with selected catalog slices.
+/// Plans replay inputs by joining event-store entries with selected catalog slices.
 ///
 /// The event-store range supplies durable replay order. Catalog slices are contextual input
 /// selected by the caller; their timestamps bound data lookup but never replace `seq` ordering.
@@ -1022,7 +840,7 @@ where
 /// bounds from an empty event-store scan, [`ReplayInputError::InvalidCatalogTimeRange`] when a
 /// resolved slice has `start > end`, [`ReplayInputError::Catalog`] when catalog planning fails,
 /// and [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn plan_decision_replay_inputs<B, C>(
+pub fn plan_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     range: ReplaySeqRange,
@@ -1032,16 +850,10 @@ where
     B: EventStore,
     C: ReplayCatalog,
 {
-    plan_catalog_joined_replay_inputs(
-        reader,
-        catalog,
-        ReplayScope::Decision,
-        range,
-        catalog_slices,
-    )
+    plan_catalog_joined_replay_inputs(reader, catalog, range, catalog_slices)
 }
 
-/// Loads decision replay inputs from an existing plan.
+/// Loads catalog replay inputs from an existing plan.
 ///
 /// Event-store entries are returned in durable `seq` order. Catalog records are loaded through
 /// the caller-provided catalog source only; this function does not query live venues or run engine
@@ -1049,11 +861,10 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a decision plan,
-/// [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
+/// Returns [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
 /// [`ReplayInputError::Catalog`] when catalog loading fails, and
 /// [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn load_decision_replay_inputs<B, C>(
+pub fn load_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     plan: &ReplayInputPlan,
@@ -1062,63 +873,7 @@ where
     B: EventStore,
     C: ReplayCatalog,
 {
-    load_catalog_joined_replay_inputs(reader, catalog, plan, ReplayScope::Decision)
-}
-
-/// Plans full incident replay inputs by joining event-store entries with selected catalog slices.
-///
-/// Callers should select every catalog slice relevant to the incident window. The event-store
-/// range remains the only ordering authority; catalog slices provide read-only context.
-///
-/// # Errors
-///
-/// Returns [`ReplayInputError::EmptyCatalogSelection`] when no catalog slices are selected,
-/// [`ReplayInputError::InvalidSeqRange`] when `range` is invalid,
-/// [`ReplayInputError::MissingCatalogTimeBounds`] when an unbounded selector cannot inherit
-/// bounds from an empty event-store scan, [`ReplayInputError::InvalidCatalogTimeRange`] when a
-/// resolved slice has `start > end`, [`ReplayInputError::Catalog`] when catalog planning fails,
-/// and [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn plan_full_incident_replay_inputs<B, C>(
-    reader: &EventStoreReader<B>,
-    catalog: &mut C,
-    range: ReplaySeqRange,
-    catalog_slices: &[CatalogSliceSelector],
-) -> Result<ReplayInputPlan, ReplayInputError>
-where
-    B: EventStore,
-    C: ReplayCatalog,
-{
-    plan_catalog_joined_replay_inputs(
-        reader,
-        catalog,
-        ReplayScope::FullIncident,
-        range,
-        catalog_slices,
-    )
-}
-
-/// Loads full incident replay inputs from an existing plan.
-///
-/// Event-store entries are returned in durable `seq` order. Catalog records are loaded through
-/// the caller-provided catalog source only; this function does not query live venues or run engine
-/// logic.
-///
-/// # Errors
-///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a full incident plan,
-/// [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
-/// [`ReplayInputError::Catalog`] when catalog loading fails, and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn load_full_incident_replay_inputs<B, C>(
-    reader: &EventStoreReader<B>,
-    catalog: &mut C,
-    plan: &ReplayInputPlan,
-) -> Result<ReplayInputs, ReplayInputError>
-where
-    B: EventStore,
-    C: ReplayCatalog,
-{
-    load_catalog_joined_replay_inputs(reader, catalog, plan, ReplayScope::FullIncident)
+    load_catalog_joined_replay_inputs(reader, catalog, plan)
 }
 
 /// Restores cache state from a sealed run without publishing to the bus or touching live venues.
@@ -1193,7 +948,6 @@ struct ReplayEntrySpan {
 fn plan_catalog_joined_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
-    scope: ReplayScope,
     range: ReplaySeqRange,
     catalog_slices: &[CatalogSliceSelector],
 ) -> Result<ReplayInputPlan, ReplayInputError>
@@ -1202,14 +956,13 @@ where
     C: ReplayCatalog,
 {
     if catalog_slices.is_empty() {
-        return Err(ReplayInputError::EmptyCatalogSelection { scope });
+        return Err(ReplayInputError::EmptyCatalogSelection);
     }
 
     let span = collect_replay_entry_span(reader, range)?;
     let catalog_slices = plan_catalog_slices(catalog, catalog_slices, span.time_range)?;
 
     Ok(ReplayInputPlan {
-        scope,
         requested_range: range,
         event_range: span.event_range,
         event_count: span.event_count,
@@ -1222,18 +975,15 @@ fn load_catalog_joined_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     plan: &ReplayInputPlan,
-    expected_scope: ReplayScope,
 ) -> Result<ReplayInputs, ReplayInputError>
 where
     B: EventStore,
     C: ReplayCatalog,
 {
-    ensure_plan_scope(plan, expected_scope)?;
     let entries = load_replay_entries(reader, plan.requested_range)?;
     let catalog_slices = load_catalog_slices(catalog, &plan.catalog_slices)?;
 
     Ok(ReplayInputs {
-        scope: expected_scope,
         entries,
         catalog_slices,
     })
@@ -1310,16 +1060,7 @@ where
                 data_cls: query.data_cls.clone(),
                 message: e.to_string(),
             })?;
-        let status = if coverage.is_missing() {
-            CatalogSliceStatus::Missing
-        } else {
-            CatalogSliceStatus::Available
-        };
-        plans.push(CatalogSlicePlan {
-            query,
-            coverage,
-            status,
-        });
+        plans.push(CatalogSlicePlan { query, coverage });
     }
 
     Ok(plans)
@@ -1398,20 +1139,6 @@ fn resolve_catalog_slice_query(
         end,
         required: selector.required,
     })
-}
-
-fn ensure_plan_scope(
-    plan: &ReplayInputPlan,
-    expected: ReplayScope,
-) -> Result<(), ReplayInputError> {
-    if plan.scope != expected {
-        return Err(ReplayInputError::ScopeMismatch {
-            expected,
-            actual: plan.scope,
-        });
-    }
-
-    Ok(())
 }
 
 fn validate_seq_range(range: ReplaySeqRange) -> Result<(), ReplayInputError> {
@@ -1834,8 +1561,6 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_common::msgbus::{self, BusTap, Endpoint, MStr, Topic as BusTopic};
     use nautilus_core::{UUID4, UnixNanos};
-    #[cfg(feature = "persistence")]
-    use nautilus_model::identifiers::InstrumentId;
     use nautilus_model::{
         accounts::AccountAny,
         data::{Bar, BarSpecification, BarType, FundingRateUpdate, QuoteTick, TradeTick},
@@ -1851,7 +1576,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, OrderListId, PositionId, TradeId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
+            VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{Order, OrderList},
@@ -1982,6 +1708,32 @@ mod tests {
             .record_snapshot_anchor(SnapshotAnchor::new(anchor_seq, "cache://account", "hash"))
             .expect("record anchor");
         (EventStoreReader::new(backend), replayed)
+    }
+
+    fn catalog_quote_record(ts_init: u64) -> CatalogReplayRecord {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        CatalogReplayRecord::from_data(CatalogReplayData::Quote(QuoteTick::new(
+            instrument_id,
+            Price::from("1.0001"),
+            Price::from("1.0002"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        )))
+    }
+
+    fn catalog_trade_record(ts_init: u64) -> CatalogReplayRecord {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        CatalogReplayRecord::from_data(CatalogReplayData::Trade(TradeTick::new(
+            instrument_id,
+            Price::from("1.0001"),
+            Quantity::from("100"),
+            AggressorSide::Buyer,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        )))
     }
 
     #[derive(Debug)]
@@ -2318,7 +2070,6 @@ mod tests {
             coverage: CatalogSliceCoverage::from_files(vec![
                 "data/order_book_deltas/AUDUSD.SIM/1000_2000.parquet".to_string(),
             ]),
-            status: CatalogSliceStatus::Available,
         };
 
         let err = ParquetReplayCatalog::new(&mut catalog)
@@ -2336,17 +2087,7 @@ mod tests {
         query: CatalogSliceQuery,
         coverage: CatalogSliceCoverage,
     ) -> CatalogSlicePlan {
-        let status = if coverage.is_missing() {
-            CatalogSliceStatus::Missing
-        } else {
-            CatalogSliceStatus::Available
-        };
-
-        CatalogSlicePlan {
-            query,
-            coverage,
-            status,
-        }
+        CatalogSlicePlan { query, coverage }
     }
 
     #[cfg(feature = "persistence")]
@@ -2843,34 +2584,28 @@ mod tests {
     }
 
     #[rstest]
-    fn decision_replay_inputs_join_event_entries_with_selected_catalog_slice() {
+    fn catalog_replay_inputs_join_event_entries_with_selected_catalog_slice() {
         let reader = reader_with_entries(
-            "run-decision",
+            "run-catalog",
             &[
                 append_payload_with_ts(1, 120, "RunStarted", Bytes::from_static(b"started")),
                 append_payload_with_ts(2, 100, "SubmitOrder", Bytes::from_static(b"submit")),
             ],
         );
-        let record = CatalogReplayRecord::new(
-            "quotes",
-            Some("AUD/USD.SIM".to_string()),
-            UnixNanos::from(110),
-            Bytes::from_static(b"quote"),
-        );
+        let record = catalog_quote_record(110);
         let mut catalog = FakeReplayCatalog::new(
             CatalogSliceCoverage::from_files(vec!["quotes/AUDUSD.SIM/100_120.parquet".into()]),
             vec![record.clone()],
         );
 
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 2),
             &[CatalogSliceSelector::new("quotes").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan decision replay");
+        .expect("plan catalog replay");
 
-        assert_eq!(plan.scope, ReplayScope::Decision);
         assert_eq!(plan.event_range, Some(ReplaySeqRange::new(1, 2)));
         assert_eq!(plan.event_count, 2);
         assert_eq!(
@@ -2880,7 +2615,7 @@ mod tests {
                 UnixNanos::from(120),
             )),
         );
-        assert_eq!(plan.catalog_slices[0].status, CatalogSliceStatus::Available);
+        assert!(!plan.catalog_slices[0].is_missing());
         assert_eq!(catalog.plan_queries.len(), 1);
         assert_eq!(catalog.plan_queries[0].data_cls, "quotes");
         assert_eq!(
@@ -2891,10 +2626,9 @@ mod tests {
         assert_eq!(catalog.plan_queries[0].end, UnixNanos::from(120));
 
         let loaded =
-            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load decision");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load catalog");
         let seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
 
-        assert_eq!(loaded.scope, ReplayScope::Decision);
         assert_eq!(seqs, vec![1, 2]);
         assert_eq!(loaded.catalog_slices.len(), 1);
         assert_eq!(loaded.catalog_slices[0].records, vec![record]);
@@ -2902,83 +2636,9 @@ mod tests {
     }
 
     #[rstest]
-    fn context_timeline_joins_loaded_inputs_without_mutating_replay_order() {
+    fn catalog_plan_marks_missing_catalog_slice() {
         let reader = reader_with_entries(
-            "run-context-timeline",
-            &[
-                append_payload_with_ts(1, 100, "RunStarted", Bytes::from_static(b"started")),
-                append_payload_with_ts(2, 120, "OrderFilled", Bytes::from_static(b"filled")),
-            ],
-        );
-        let records = vec![
-            CatalogReplayRecord::new(
-                "quotes",
-                Some("AUD/USD.SIM".to_string()),
-                UnixNanos::from(110),
-                Bytes::from_static(b"quote-1"),
-            ),
-            CatalogReplayRecord::new(
-                "quotes",
-                Some("AUD/USD.SIM".to_string()),
-                UnixNanos::from(120),
-                Bytes::from_static(b"quote-2"),
-            ),
-        ];
-        let mut catalog = FakeReplayCatalog::new(
-            CatalogSliceCoverage::from_files(vec!["quotes/AUDUSD.SIM/100_120.parquet".into()]),
-            records,
-        );
-        let plan = plan_decision_replay_inputs(
-            &reader,
-            &mut catalog,
-            ReplaySeqRange::new(1, 2),
-            &[CatalogSliceSelector::new("quotes").with_identifier("AUD/USD.SIM")],
-        )
-        .expect("plan decision replay");
-
-        let loaded =
-            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load decision");
-        let timeline = loaded.context_timeline();
-        let replay_seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
-        let timeline_sources: Vec<_> = timeline.iter().map(|item| item.source).collect();
-
-        assert_eq!(replay_seqs, vec![1, 2]);
-        assert_eq!(
-            timeline_sources,
-            vec![
-                ReplayContextSource::EventStoreEntry {
-                    entry_index: 0,
-                    seq: 1,
-                },
-                ReplayContextSource::CatalogRecord {
-                    slice_index: 0,
-                    record_index: 0,
-                },
-                ReplayContextSource::EventStoreEntry {
-                    entry_index: 1,
-                    seq: 2,
-                },
-                ReplayContextSource::CatalogRecord {
-                    slice_index: 0,
-                    record_index: 1,
-                },
-            ],
-        );
-        assert_eq!(
-            timeline.iter().map(|item| item.ts_init).collect::<Vec<_>>(),
-            vec![
-                UnixNanos::from(100),
-                UnixNanos::from(110),
-                UnixNanos::from(120),
-                UnixNanos::from(120),
-            ],
-        );
-    }
-
-    #[rstest]
-    fn full_incident_plan_marks_missing_catalog_slice() {
-        let reader = reader_with_entries(
-            "run-incident",
+            "run-missing-catalog",
             &[append_payload_with_ts(
                 1,
                 1_000,
@@ -2988,16 +2648,15 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let plan = plan_full_incident_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
             &[CatalogSliceSelector::new("trades").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan full incident");
+        .expect("plan catalog replay");
         let missing = plan.missing_catalog_slices();
 
-        assert_eq!(plan.scope, ReplayScope::FullIncident);
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].query.data_cls, "trades");
         assert_eq!(
@@ -3020,7 +2679,7 @@ mod tests {
             )],
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -3030,7 +2689,7 @@ mod tests {
         )
         .expect("plan missing slice");
 
-        let err = load_decision_replay_inputs(&reader, &mut catalog, &plan)
+        let err = load_catalog_replay_inputs(&reader, &mut catalog, &plan)
             .expect_err("required missing slice must fail");
 
         match err {
@@ -3057,7 +2716,7 @@ mod tests {
             )],
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -3066,7 +2725,7 @@ mod tests {
         .expect("plan optional missing slice");
 
         let loaded =
-            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load optional");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load optional");
 
         assert_eq!(loaded.catalog_slices.len(), 1);
         assert!(loaded.catalog_slices[0].plan.is_missing());
@@ -3075,9 +2734,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::decision(ReplayScope::Decision)]
-    #[case::full_incident(ReplayScope::FullIncident)]
-    fn catalog_joined_planners_reject_empty_catalog_selection(#[case] scope: ReplayScope) {
+    fn catalog_joined_planner_rejects_empty_catalog_selection() {
         let reader = reader_with_entries(
             "run-empty-selection",
             &[append_payload_with_ts(
@@ -3089,24 +2746,11 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = match scope {
-            ReplayScope::Decision => {
-                plan_decision_replay_inputs(&reader, &mut catalog, ReplaySeqRange::new(1, 1), &[])
-            }
-            ReplayScope::FullIncident => plan_full_incident_replay_inputs(
-                &reader,
-                &mut catalog,
-                ReplaySeqRange::new(1, 1),
-                &[],
-            ),
-            ReplayScope::Forensics => unreachable!("forensics has no catalog selection"),
-        }
-        .expect_err("empty catalog selection must fail");
+        let err = plan_catalog_replay_inputs(&reader, &mut catalog, ReplaySeqRange::new(1, 1), &[])
+            .expect_err("empty catalog selection must fail");
 
         match err {
-            ReplayInputError::EmptyCatalogSelection { scope: actual } => {
-                assert_eq!(actual, scope);
-            }
+            ReplayInputError::EmptyCatalogSelection => {}
             other => panic!("expected EmptyCatalogSelection, was {other:?}"),
         }
         assert!(catalog.plan_queries.is_empty());
@@ -3128,7 +2772,7 @@ mod tests {
             Vec::new(),
         );
 
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -3145,31 +2789,26 @@ mod tests {
     }
 
     #[rstest]
-    fn full_incident_replay_inputs_load_catalog_records() {
+    fn catalog_replay_inputs_load_catalog_records() {
         let reader = reader_with_entries(
-            "run-full-load",
+            "run-catalog-load",
             &[
                 append_payload_with_ts(1, 100, "RunStarted", Bytes::from_static(b"started")),
                 append_payload_with_ts(2, 110, "OrderFilled", Bytes::from_static(b"filled")),
             ],
         );
-        let record = CatalogReplayRecord::new(
-            "trades",
-            Some("AUD/USD.SIM".to_string()),
-            UnixNanos::from(105),
-            Bytes::from_static(b"trade"),
-        );
+        let record = catalog_trade_record(105);
         let mut catalog = FakeReplayCatalog::new(
             CatalogSliceCoverage::from_files(vec!["trades/AUDUSD.SIM/100_110.parquet".into()]),
             vec![record.clone()],
         );
-        let plan = plan_full_incident_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 2),
             &[CatalogSliceSelector::new("trades").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan full incident");
+        .expect("plan catalog replay");
 
         assert_eq!(
             plan.catalog_slices[0].query.identifiers_option(),
@@ -3177,10 +2816,9 @@ mod tests {
         );
 
         let loaded =
-            load_full_incident_replay_inputs(&reader, &mut catalog, &plan).expect("load full");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load catalog");
         let seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
 
-        assert_eq!(loaded.scope, ReplayScope::FullIncident);
         assert_eq!(seqs, vec![1, 2]);
         assert_eq!(loaded.catalog_slices[0].records, vec![record]);
         assert_eq!(catalog.load_plans.len(), 1);
@@ -3191,7 +2829,7 @@ mod tests {
         let reader = reader_with_entries("run-empty", &[]);
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = plan_decision_replay_inputs(
+        let err = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 10),
@@ -3220,7 +2858,7 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = plan_decision_replay_inputs(
+        let err = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -3260,38 +2898,9 @@ mod tests {
             .expect("plan forensics");
         let loaded = load_forensics_replay_inputs(&reader, &plan).expect("load forensics");
 
-        assert_eq!(plan.scope, ReplayScope::Forensics);
         assert!(plan.catalog_slices.is_empty());
         assert_eq!(loaded.entries.len(), 1);
         assert!(loaded.catalog_slices.is_empty());
-    }
-
-    #[rstest]
-    fn scope_specific_loader_rejects_mismatched_plan() {
-        let reader = reader_with_entries(
-            "run-scope-mismatch",
-            &[append_payload_with_ts(
-                1,
-                500,
-                "RunStarted",
-                Bytes::from_static(b"started"),
-            )],
-        );
-        let plan = plan_forensics_replay_inputs(&reader, ReplaySeqRange::new(1, 1))
-            .expect("plan forensics");
-        let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-
-        let err = load_decision_replay_inputs(&reader, &mut catalog, &plan)
-            .expect_err("decision loader must reject forensics plan");
-
-        match err {
-            ReplayInputError::ScopeMismatch { expected, actual } => {
-                assert_eq!(expected, ReplayScope::Decision);
-                assert_eq!(actual, ReplayScope::Forensics);
-            }
-            other => panic!("expected ScopeMismatch, was {other:?}"),
-        }
-        assert!(catalog.load_plans.is_empty());
     }
 
     #[rstest]

@@ -86,14 +86,12 @@ pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotR
 #[cfg(feature = "persistence")]
 pub use replay::ParquetReplayCatalog;
 pub use replay::{
-    CacheReplayError, CacheReplayReport, CatalogReplayData, CatalogReplayPayload,
-    CatalogReplayRecord, CatalogReplaySlice, CatalogSliceCoverage, CatalogSlicePlan,
-    CatalogSliceQuery, CatalogSliceSelector, CatalogSliceStatus, EventStoreReplayReport,
-    ReplayCatalog, ReplayContextSource, ReplayContextTimelineItem, ReplayInputError,
-    ReplayInputPlan, ReplayInputs, ReplayScope, ReplaySeqRange, ReplayTimeRange,
-    apply_cache_replay_entry, load_decision_replay_inputs, load_forensics_replay_inputs,
-    load_full_incident_replay_inputs, open_event_store_replay_source, plan_decision_replay_inputs,
-    plan_forensics_replay_inputs, plan_full_incident_replay_inputs, replay_cache_snapshot_tail,
+    CacheReplayError, CacheReplayReport, CatalogReplayData, CatalogReplayRecord,
+    CatalogReplaySlice, CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery,
+    CatalogSliceSelector, EventStoreReplayReport, ReplayCatalog, ReplayInputError, ReplayInputPlan,
+    ReplayInputs, ReplaySeqRange, ReplayTimeRange, apply_cache_replay_entry,
+    load_catalog_replay_inputs, load_forensics_replay_inputs, open_event_store_replay_source,
+    plan_catalog_replay_inputs, plan_forensics_replay_inputs, replay_cache_snapshot_tail,
     restore_cache_from_sealed_run, restore_cache_snapshot_and_replay_tail,
     restore_cache_snapshot_blob, validate_event_store_replay_source,
 };
