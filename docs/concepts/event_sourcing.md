@@ -28,9 +28,9 @@ venue queries, or the live cache to explain past state.
 The event store provides Nautilus with a durable basis to:
 
 - Prove whether a sealed run is clean before replay or archive.
-- Inspect the exact command, report, and event sequence behind an order or agent intent.
+- Inspect the exact command, report, and event sequence behind an order or component intent.
 - Rebuild cache state from captured history, including a snapshot anchor plus the run tail.
-- Compare an agent decision with the engine-side messages that followed from it.
+- Trace an intent through the engine-side messages that followed from it.
 - Seal stale run files before the next run starts after a process exit or writer halt.
 
 ## Terms
@@ -50,7 +50,7 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 **Captured entries include**:
 
 - Execution commands such as submit, modify, and cancel.
-- Data subscription commands that define the actor, strategy, or agent observation window.
+- Data subscription commands that define the actor or strategy observation window.
 - Fired time events and generated order, position, and account events.
 - Raw venue execution reports before reconciliation synthesizes derived events.
 - Reconciliation outputs produced from those raw reports.
@@ -79,7 +79,7 @@ that the event store has already accepted.
 
 ```mermaid
 flowchart LR
-    Producer["Engine, adapter, strategy, or agent"] --> Bus["MessageBus publish/send"]
+    Producer["Engine, adapter, strategy, or component"] --> Bus["MessageBus publish/send"]
     Bus --> Tap["Capture tap"]
     Tap --> Adapter["BusCaptureAdapter"]
     Adapter --> Writer["EventStoreWriter"]
@@ -134,22 +134,22 @@ Each event-store entry is one captured message plus metadata:
 `seq` orders replay. Timestamps help explain the run, but they do not override `seq`.
 
 The current secondary indices support lookup by `client_order_id` and `venue_order_id`. A
-`correlation_id` index can be added when a concrete forensics caller needs that lookup pattern;
+`correlation_id` index can be added when a concrete inspection caller needs that lookup pattern;
 until then, correlation scans can walk the captured stream.
 
 ## Correlation model
 
-Nautilus records three identity levels so forensics can answer scope, lineage, and message identity
+Nautilus records three identity levels so readers can answer scope, lineage, and message identity
 questions.
 
-- `correlation_id`: the logical workflow or chain. An agent `intent_id` is recorded in this field
+- `correlation_id`: the logical workflow or chain. A component `intent_id` is recorded in this field
   at the dispatch boundary.
 - `causation_id`: the direct parent message that caused this message.
 - `command_id`, `event_id`, or `report_id`: the identity of this specific message.
 
 ```mermaid
 flowchart TD
-    Intent["Agent intent_id"] --> Correlation["correlation_id"]
+    Intent["Component intent_id"] --> Correlation["correlation_id"]
     Command["SubmitOrder command_id"] --> Event["OrderAccepted event_id"]
     Event --> Fill["OrderFilled event_id"]
     Correlation --> Command
@@ -263,17 +263,14 @@ Replay follows one ordering rule: apply event-store entries in `seq` order. `ts_
 
 The Rust replay-input API keeps planning separate from execution:
 
-- `plan_forensics_replay_inputs` and `load_forensics_replay_inputs` return event-store entries
-  only.
-- `plan_catalog_replay_inputs` and `load_catalog_replay_inputs` join entries with caller-selected
-  catalog slices for context analysis.
+- Event-store-only replay inputs return entries only.
+- Catalog-joined replay inputs add caller-selected catalog slices for context analysis.
 
 Catalog planners take explicit `CatalogSliceSelector` values and a read-only `ReplayCatalog`.
 Planning resolves catalog time bounds from the event-store scan unless the selector supplies
 explicit bounds, reports missing catalog slices, and preserves `seq` as the entry ordering
 authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus catalog records
-grouped under their selected slice. This crate's API does not expose decision-replay or
-full-incident scope names; those workflows choose catalog selectors outside this crate.
+grouped under their selected slice.
 
 Rust callers can enable the off-by-default `persistence` feature and wrap a `ParquetDataCatalog`
 with `nautilus_event_store::ParquetReplayCatalog` to plan selected catalog files and
@@ -297,7 +294,7 @@ Exact data delivery order is not inferred from catalog timestamps. The compact s
 records data markers observed at the message-bus dispatch boundary, beside the event-store run,
 without writing full market-data payloads into `EventStoreEntry` rows.
 
-The sidecar can support one forensic claim: when marker capture is enabled, Nautilus observed data
+The sidecar can support one audit claim: when marker capture is enabled, Nautilus observed data
 delivery markers in `marker_seq` order at the bus boundary for that run, and each marker contains
 enough identity to join back to candidate catalog rows. It cannot prove that catalog timestamps
 alone define bus order, reconstruct a data point when the catalog row is absent or changed, prove
@@ -330,9 +327,8 @@ specific marker order; it cannot name a unique physical catalog row after catalo
 rewrites row order.
 
 The stable contract is the marker schema, opt-in capture and reader primitives, gap-free marker
-verification, and catalog join rules. Incident analysis can build on that contract to select
-windows, interpret venue-specific data, rank or cluster markers, present reports, and package run
-bundles.
+verification, and catalog join rules. Analysis tools can build on that contract to select windows,
+interpret venue-specific data, rank or cluster markers, present reports, and package run bundles.
 
 The sidecar stays off by default when implemented. A separate config flag enables marker capture,
 and the disabled path installs no data marker writer. Cache replay and live restart do not read
@@ -368,7 +364,7 @@ It **does not**:
 - Derive identifiers again
 - Re-arm clocks
 
-Fired `TimeEvent`s and raw venue reports are forensic records on this path; replay applies the
+Fired `TimeEvent`s and raw venue reports are inspection records on this path; replay applies the
 synthesized order, position, and account events captured later in the run.
 
 ## Snapshot-anchored recovery
@@ -440,8 +436,8 @@ surface:
 - Process-isolated verification reports truncated or zero-tailed run files as corrupt.
 - Cache replay reconstructs the same observed account, order, and position state as a live cache
   for generated captured event streams.
-- Catalog-joined replay input planning covers selected slices, missing slices, time bounds,
-  scope-specific loaders, and event-store `seq` ordering.
+- Catalog-joined replay input planning covers selected slices, missing slices, time bounds, and
+  event-store `seq` ordering.
 - Crash recovery seals `Running` predecessors as `Ended`, `CrashedRecovered`, or `Quarantined`
   based on the durable tail, and only `CrashedRecovered` runs become parents.
 

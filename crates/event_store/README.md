@@ -43,8 +43,10 @@ The event store is the durable boundary for deterministic engine history.
 - `Verifier`: the library surface for integrity checks over a single run.
 - `verify`: the standalone binary for process-isolated verification of sealed run files.
 - `plan_redb_retention`: a non-destructive planner for sealed run-file reclaim candidates.
-- `plan_*_replay_inputs`: first, plan read-only inputs for forensics, decision, and incidents.
-- `load_*_replay_inputs`: then, load replay inputs and selected catalog slices from a plan.
+- `ReplayInputPlan`: planned event-store entries in `seq` order, optionally with typed catalog
+  slice plans.
+- `ReplayInputs`: loaded replay entries in `seq` order, optionally with catalog records grouped
+  under selected slices.
 
 The crate does not replace the data catalog, provide OLAP queries, or aggregate multiple trader
 instances into a consensus log.

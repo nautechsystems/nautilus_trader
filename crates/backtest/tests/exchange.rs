@@ -18,6 +18,12 @@ use std::{
     rc::Rc,
 };
 
+use nautilus_backtest::{
+    config::SimulatedVenueConfig,
+    exchange::SimulatedExchange,
+    execution_client::BacktestExecutionClient,
+    modules::{ExchangeContext, SimulationModule},
+};
 use nautilus_common::{
     cache::Cache,
     clock::TestClock,
@@ -51,13 +57,6 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
-
-use nautilus_backtest::{
-    config::SimulatedVenueConfig,
-    exchange::SimulatedExchange,
-    execution_client::BacktestExecutionClient,
-    modules::{ExchangeContext, SimulationModule},
-};
 
 fn get_exchange(
     venue: Venue,

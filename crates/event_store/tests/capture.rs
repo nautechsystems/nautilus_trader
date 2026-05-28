@@ -22,6 +22,7 @@
 
 use std::{
     any::Any,
+    cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
     time::Duration,
@@ -30,7 +31,10 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
-    messages::execution::{SubmitOrder, TradingCommand},
+    messages::{
+        data::{DataResponse, QuotesResponse},
+        execution::{SubmitOrder, TradingCommand},
+    },
     msgbus::{
         self, BusTap, Endpoint, MStr, MessageBus, MessagingSwitchboard, ShareableMessageHandler,
     },
@@ -637,6 +641,17 @@ impl BusTap for HeadersAwareAdapterTap {
             .adapter
             .capture_any(topic, message, headers, UnixNanos::from(0));
     }
+
+    fn on_response(&self, _correlation_id: &UUID4, message: &dyn Any) {
+        let headers = self
+            .registry
+            .headers_for_any(message)
+            .unwrap_or_else(Headers::empty);
+        let topic = MessagingSwitchboard::data_response_topic();
+        let _ = self
+            .adapter
+            .capture_any(topic, message, headers, UnixNanos::from(0));
+    }
 }
 
 #[rstest]
@@ -675,6 +690,73 @@ fn tap_path_writes_headers_from_command_fields() {
     let entry = backend.scan_seq(1).expect("scan").expect("present");
     assert_eq!(entry.headers.correlation_id, Some(correlation));
     assert_eq!(entry.headers.causation_id, Some(caused));
+
+    drop(backend);
+    msgbus::clear_bus_tap();
+    drop(adapter);
+    let writer = Arc::try_unwrap(writer).expect("sole writer reference");
+    let _ = writer.close(run_ended_draft()).expect("close writer");
+}
+
+#[rstest]
+fn tap_path_writes_headers_from_data_response_correlation_handler() {
+    // Data responses dispatch through the bus correlation-response path rather than a
+    // publish topic or endpoint. The tap still captures the DataResponse envelope and
+    // forwards its correlation_id into event-store headers.
+    let bus = MessageBus::new(TraderId::from("TRADER-001"), UUID4::new(), None, None);
+    let _bus_rc = bus.register_message_bus();
+
+    let (writer, backend_arc) = writer_with_open_run("run-tap-data-response-headers", noop_halt());
+    let registry = Arc::new(default_registry());
+    let adapter = Arc::new(BusCaptureAdapter::new(
+        Arc::clone(&writer),
+        Arc::clone(&registry),
+        noop_halt(),
+    ));
+    let tap: Rc<dyn BusTap> = Rc::new(HeadersAwareAdapterTap {
+        adapter: Arc::clone(&adapter),
+        registry: Arc::clone(&registry),
+    });
+    msgbus::set_bus_tap(tap);
+
+    let correlation = UUID4::new();
+    let handler_called = Rc::new(RefCell::new(false));
+    let handler_called_clone = Rc::clone(&handler_called);
+    msgbus::register_response_handler(
+        &correlation,
+        ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+            *handler_called_clone.borrow_mut() = true;
+        }),
+    );
+
+    let response = QuotesResponse::new(
+        correlation,
+        ClientId::from("BINANCE"),
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Vec::new(),
+        None,
+        None,
+        UnixNanos::from(30),
+        None,
+    );
+    msgbus::send_response(&correlation, &DataResponse::Quotes(response.clone()));
+
+    drain(&writer, 1);
+
+    assert!(*handler_called.borrow());
+    let backend = backend_arc.lock().expect("backend");
+    let entry = backend.scan_seq(1).expect("scan").expect("present");
+    assert_eq!(entry.headers.correlation_id, Some(correlation));
+    assert_eq!(entry.headers.causation_id, None);
+    assert_eq!(entry.payload_type.as_str(), "QuotesResponse");
+    assert_eq!(entry.topic, MessagingSwitchboard::data_response_topic());
+
+    let decoded: QuotesResponse =
+        rmp_serde::from_slice(&entry.payload).expect("decode QuotesResponse");
+    assert_eq!(decoded.correlation_id, response.correlation_id);
+    assert_eq!(decoded.client_id, response.client_id);
+    assert_eq!(decoded.instrument_id, response.instrument_id);
+    assert!(decoded.data.is_empty());
 
     drop(backend);
     msgbus::clear_bus_tap();
