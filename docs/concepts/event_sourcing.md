@@ -190,18 +190,18 @@ The manifest records the run identity and reproducibility inputs:
   - `binary_hash`
   - `crate_versions`
   - `feature_flags`
-  - adapter versions
+  - Adapter versions
 
 - Configuration identity:
   - `config_hash`
-  - registered components
-  - optional seed
+  - Registered components
+  - Optional seed
 
 - Lifecycle state:
   - `start_ts_init`
   - `end_ts_init`
   - `high_watermark`
-  - status
+  - Status
 
 Run status is one of `Running`, `Ended`, `CrashedRecovered`, or `Quarantined`.
 
@@ -282,19 +282,29 @@ selector supplies explicit bounds, reports missing catalog slices, and preserves
 entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
 catalog records grouped under their selected slice.
 
+Rust callers can enable the off-by-default `persistence` feature and wrap a `ParquetDataCatalog`
+with `nautilus_event_store::ParquetReplayCatalog` to plan selected catalog files and
+filename-derived intervals. This bridge is read-only and planning-only: it uses catalog discovery
+APIs but **does not write to the catalog**.
+
+:::note
+Loading opaque `CatalogReplayRecord` payloads remains explicit until replay has a typed catalog
+decoding contract.
+:::
+
 `ReplayInputs::context_timeline()` builds an analysis-only timeline over those already-loaded
 inputs. It returns indices into the loaded event-store entries and catalog records, sorted by
 `ts_init` for context inspection. It does not load more data, publish messages, run engine logic,
 or define the order used by cache replay. Replay drivers continue to use the loaded event-store
 entries in durable `seq` order.
 
-These APIs do not:
+These APIs **do not**:
 
-- open live venue clients
-- run strategies or actors
-- re-run reconciliation
-- delete files
-- replay the clock registration/cancel lifecycle
+- Open live venue clients
+- Run strategies or actors
+- Re-run reconciliation
+- Delete files
+- Replay the clock registration/cancel lifecycle
 
 Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores
 cache state from the sealed run, records that run as the parent of the fresh child run, and skips
@@ -304,18 +314,18 @@ The cache replay loader is state-only. It restores the cache-owned snapshot, sca
 tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
 `Cache`. Supported payloads include:
 
-- synthesized account, order, and position events
-- captured order lists
-- complete data responses for instruments, quotes, trades, funding rates, and bars
+- Synthesized account, order, and position events
+- Captured order lists
+- Complete data responses for instruments, quotes, trades, funding rates, and bars
 
-It does not:
+It **does not**:
 
-- publish replayed entries to the live message bus
-- run strategy or actor code
-- query venues
-- run reconciliation
-- derive identifiers again
-- re-arm clocks
+- Publish replayed entries to the live message bus
+- Run strategy or actor code
+- Query venues
+- Run reconciliation
+- Derive identifiers again
+- Re-arm clocks
 
 Fired `TimeEvent`s and raw venue reports are forensic records on this path; replay applies the
 synthesized order, position, and account events captured later in the run.
@@ -338,7 +348,7 @@ sequenceDiagram
     Replay->>Replay: Apply tail in seq order
 ```
 
-Recovery uses four cases:
+Recovery cases are ordered by how far the message progressed:
 
 - Before enqueue: the message never reached the writer, so producer retry policy applies.
 - After enqueue, before commit: the in-flight batch is not durable, so the high-watermark does

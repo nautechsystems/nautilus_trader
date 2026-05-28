@@ -83,6 +83,8 @@ pub use nautilus_system::{
     event_store::{EventStoreConfig, RetentionMode, RunIdentity},
 };
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
+#[cfg(feature = "persistence")]
+pub use replay::ParquetReplayCatalog;
 pub use replay::{
     CacheReplayError, CacheReplayReport, CatalogReplayRecord, CatalogReplaySlice,
     CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery, CatalogSliceSelector,

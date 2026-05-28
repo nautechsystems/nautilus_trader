@@ -5961,6 +5961,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-execution",
  "nautilus-model",
+ "nautilus-persistence",
  "nautilus-system",
  "proptest",
  "redb",

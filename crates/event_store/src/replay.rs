@@ -43,6 +43,8 @@ use nautilus_model::{
     orders::OrderAny,
     position::Position,
 };
+#[cfg(feature = "persistence")]
+use nautilus_persistence::backend::catalog::{ParquetDataCatalog, parse_filename_timestamps};
 use serde::de::DeserializeOwned;
 
 #[cfg(test)]
@@ -558,6 +560,59 @@ pub trait ReplayCatalog {
         &mut self,
         plan: &CatalogSlicePlan,
     ) -> Result<Vec<CatalogReplayRecord>, Self::Error>;
+}
+
+/// Read-only, plan-only replay catalog adapter backed by [`ParquetDataCatalog`].
+#[cfg(feature = "persistence")]
+#[derive(Debug)]
+pub struct ParquetReplayCatalog<'a> {
+    catalog: &'a mut ParquetDataCatalog,
+}
+
+#[cfg(feature = "persistence")]
+impl<'a> ParquetReplayCatalog<'a> {
+    /// Creates a replay catalog adapter over an existing Parquet catalog.
+    pub const fn new(catalog: &'a mut ParquetDataCatalog) -> Self {
+        Self { catalog }
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl ReplayCatalog for ParquetReplayCatalog<'_> {
+    type Error = anyhow::Error;
+
+    fn plan_slice(
+        &mut self,
+        query: &CatalogSliceQuery,
+    ) -> Result<CatalogSliceCoverage, Self::Error> {
+        let mut files = self.catalog.query_files(
+            &query.data_cls,
+            query.identifiers_option(),
+            Some(query.start),
+            Some(query.end),
+        )?;
+        files.sort();
+
+        let intervals = files
+            .iter()
+            .filter_map(|file| {
+                parse_filename_timestamps(file).map(|(start, end)| {
+                    ReplayTimeRange::new(UnixNanos::from(start), UnixNanos::from(end))
+                })
+            })
+            .collect();
+
+        Ok(CatalogSliceCoverage { files, intervals })
+    }
+
+    fn load_slice(
+        &mut self,
+        _: &CatalogSlicePlan,
+    ) -> Result<Vec<CatalogReplayRecord>, Self::Error> {
+        anyhow::bail!(
+            "opaque catalog replay record loading requires a typed catalog decoding contract"
+        )
+    }
 }
 
 /// Errors surfaced while planning or loading replay inputs.
@@ -1621,6 +1676,11 @@ fn reject_quarantined_replay_source(
 #[cfg(test)]
 mod tests {
     use std::{any::Any, cell::Cell, rc::Rc};
+    #[cfg(feature = "persistence")]
+    use std::{
+        fs::{self, File},
+        path::Path,
+    };
 
     use ahash::AHashSet;
     use bytes::Bytes;
@@ -1648,6 +1708,8 @@ mod tests {
         orders::{Order, OrderList},
         types::{Currency, Money, Price, Quantity},
     };
+    #[cfg(feature = "persistence")]
+    use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
     use rstest::rstest;
     use serde::Serialize;
     use tempfile::TempDir;
@@ -1835,6 +1897,87 @@ mod tests {
             self.load_plans.push(plan.clone());
             Ok(self.records.clone())
         }
+    }
+
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_plans_selected_slice_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 1_000, 2_000);
+        create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 10_000, 11_000);
+        create_catalog_file(temp_dir.path(), "quotes", "ETHUSDT.BINANCE", 5_000, 6_000);
+
+        let query = CatalogSliceQuery {
+            data_cls: "quotes".to_string(),
+            identifiers: vec!["AUD/USD.SIM".to_string()],
+            start: UnixNanos::from(1_500),
+            end: UnixNanos::from(2_500),
+            required: true,
+        };
+        let coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&query)
+            .unwrap();
+
+        assert_eq!(coverage.files.len(), 1);
+        assert!(
+            coverage.files[0].contains("data/quotes/AUDUSD.SIM/"),
+            "planned file should come from AUD/USD.SIM partition, was {}",
+            coverage.files[0],
+        );
+        assert_eq!(
+            coverage.intervals,
+            vec![ReplayTimeRange::new(
+                UnixNanos::from(1_000),
+                UnixNanos::from(2_000)
+            )]
+        );
+
+        let full_window_query = CatalogSliceQuery {
+            start: UnixNanos::from(0),
+            end: UnixNanos::from(12_000),
+            ..query.clone()
+        };
+        let full_window_coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&full_window_query)
+            .unwrap();
+
+        assert_eq!(full_window_coverage.files.len(), 2);
+        assert_eq!(
+            full_window_coverage.intervals,
+            vec![
+                ReplayTimeRange::new(UnixNanos::from(1_000), UnixNanos::from(2_000)),
+                ReplayTimeRange::new(UnixNanos::from(10_000), UnixNanos::from(11_000)),
+            ]
+        );
+
+        let missing_query = CatalogSliceQuery {
+            start: UnixNanos::from(20_000),
+            end: UnixNanos::from(21_000),
+            ..query
+        };
+        let missing_coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&missing_query)
+            .unwrap();
+
+        assert!(missing_coverage.is_missing());
+        assert!(missing_coverage.intervals.is_empty());
+    }
+
+    #[cfg(feature = "persistence")]
+    fn create_catalog_file(
+        base_path: &Path,
+        data_cls: &str,
+        identifier: &str,
+        start: u64,
+        end: u64,
+    ) {
+        let directory = base_path.join("data").join(data_cls).join(identifier);
+        fs::create_dir_all(&directory).unwrap();
+
+        let filename = timestamps_to_filename(UnixNanos::from(start), UnixNanos::from(end));
+        File::create(directory.join(filename)).unwrap();
     }
 
     struct BusTapGuard;
