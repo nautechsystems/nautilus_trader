@@ -52,7 +52,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Data, OrderBookDeltas, OrderBookDeltas_API, QuoteTick},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -60,7 +60,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::KRAKEN_VENUE,
+    common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
     config::KrakenDataClientConfig,
     http::{
         KrakenFuturesHttpClient, futures::client::KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
@@ -237,14 +237,6 @@ impl KrakenFuturesDataClient {
         Ok(())
     }
 
-    fn lookup_instrument(
-        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        product_id: &str,
-    ) -> Option<InstrumentAny> {
-        let instrument_id = InstrumentId::new(Symbol::new(product_id), *KRAKEN_VENUE);
-        instruments.load().get(&instrument_id).cloned()
-    }
-
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: KrakenFuturesWsMessage,
@@ -261,40 +253,42 @@ impl KrakenFuturesDataClient {
 
         match msg {
             KrakenFuturesWsMessage::Ticker(ticker) => {
+                let instruments = instruments.load();
                 let Some(instrument) =
-                    Self::lookup_instrument(instruments, ticker.product_id.as_str())
+                    lookup_instrument_in_snapshot(&instruments, ticker.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", ticker.product_id);
                     return;
                 };
 
-                if let Some(mark) = parse_futures_ws_mark_price(&ticker, &instrument, ts_init)
+                if let Some(mark) = parse_futures_ws_mark_price(&ticker, instrument, ts_init)
                     && let Err(e) = sender.send(DataEvent::Data(Data::MarkPriceUpdate(mark)))
                 {
                     log::error!("Failed to send mark price: {e}");
                 }
 
-                if let Some(index) = parse_futures_ws_index_price(&ticker, &instrument, ts_init)
+                if let Some(index) = parse_futures_ws_index_price(&ticker, instrument, ts_init)
                     && let Err(e) = sender.send(DataEvent::Data(Data::IndexPriceUpdate(index)))
                 {
                     log::error!("Failed to send index price: {e}");
                 }
 
-                if let Some(funding) = parse_futures_ws_funding_rate(&ticker, &instrument, ts_init)
+                if let Some(funding) = parse_futures_ws_funding_rate(&ticker, instrument, ts_init)
                     && let Err(e) = sender.send(DataEvent::FundingRate(funding))
                 {
                     log::error!("Failed to send funding rate: {e}");
                 }
             }
             KrakenFuturesWsMessage::Trade(trade) => {
+                let instruments = instruments.load();
                 let Some(instrument) =
-                    Self::lookup_instrument(instruments, trade.product_id.as_str())
+                    lookup_instrument_in_snapshot(&instruments, trade.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", trade.product_id);
                     return;
                 };
 
-                match parse_futures_ws_trade_tick(&trade, &instrument, ts_init) {
+                match parse_futures_ws_trade_tick(&trade, instrument, ts_init) {
                     Ok(tick) => {
                         if let Err(e) = sender.send(DataEvent::Data(Data::Trade(tick))) {
                             log::error!("Failed to send trade: {e}");
@@ -304,8 +298,9 @@ impl KrakenFuturesDataClient {
                 }
             }
             KrakenFuturesWsMessage::BookSnapshot(snapshot) => {
+                let instruments = instruments.load();
                 let Some(instrument) =
-                    Self::lookup_instrument(instruments, snapshot.product_id.as_str())
+                    lookup_instrument_in_snapshot(&instruments, snapshot.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", snapshot.product_id);
                     return;
@@ -314,10 +309,7 @@ impl KrakenFuturesDataClient {
                 let sequence = book_sequence.load(Ordering::Relaxed);
 
                 match parse_futures_ws_book_snapshot_deltas(
-                    &snapshot,
-                    &instrument,
-                    sequence,
-                    ts_init,
+                    &snapshot, instrument, sequence, ts_init,
                 ) {
                     Ok(delta_vec) => {
                         if delta_vec.is_empty() {
@@ -359,15 +351,16 @@ impl KrakenFuturesDataClient {
                 }
             }
             KrakenFuturesWsMessage::BookDelta(delta) => {
+                let instruments = instruments.load();
                 let Some(instrument) =
-                    Self::lookup_instrument(instruments, delta.product_id.as_str())
+                    lookup_instrument_in_snapshot(&instruments, delta.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", delta.product_id);
                     return;
                 };
                 let instrument_id = instrument.id();
                 let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
-                match parse_futures_ws_book_delta(&delta, &instrument, sequence, ts_init) {
+                match parse_futures_ws_book_delta(&delta, instrument, sequence, ts_init) {
                     Ok(book_delta) => {
                         let deltas = OrderBookDeltas::new(instrument_id, vec![book_delta]);
 

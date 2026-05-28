@@ -29,7 +29,7 @@ use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_model::{
     data::{OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
-    identifiers::{InstrumentId, Symbol},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
 
@@ -38,7 +38,7 @@ use super::{
     checksum::{build_checksum_string, compute_checksum},
     parse::{CachedL3Order, parse_l3_snapshot, parse_l3_update},
 };
-use crate::common::consts::KRAKEN_VENUE;
+use crate::common::lookup_instrument_in_snapshot;
 
 /// Per-symbol L3 state tracked between WebSocket messages.
 #[derive(Debug)]
@@ -80,14 +80,6 @@ pub(crate) fn subscription_depth(depths: &Arc<Mutex<AHashMap<String, u32>>>, sym
         .map_or(1000, |depths| depths.get(symbol).copied().unwrap_or(1000))
 }
 
-fn lookup_instrument(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    symbol: &str,
-) -> Option<InstrumentAny> {
-    let instrument_id = InstrumentId::new(Symbol::new(symbol), *KRAKEN_VENUE);
-    instruments.load().get(&instrument_id).cloned()
-}
-
 /// Emits a `Clear` delta (with `F_LAST`) after detecting a checksum mismatch.
 pub(crate) fn emit_l3_clear<S: L3Sink>(
     sink: &mut S,
@@ -124,7 +116,8 @@ pub(crate) fn process_l3_message<S: L3Sink>(
 ) -> Option<L3ResyncRequest> {
     match msg {
         KrakenL3WsMessage::Snapshot(snap) => {
-            let Some(instrument) = lookup_instrument(instruments, &snap.symbol) else {
+            let instruments = instruments.load();
+            let Some(instrument) = lookup_instrument_in_snapshot(&instruments, &snap.symbol) else {
                 log::warn!("L3 snapshot: no instrument for symbol={}", snap.symbol);
                 return None;
             };
@@ -142,7 +135,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
 
             match parse_l3_snapshot(
                 &snap,
-                &instrument,
+                instrument,
                 hasher,
                 &mut state.sequence,
                 ts_init,
@@ -212,7 +205,9 @@ pub(crate) fn process_l3_message<S: L3Sink>(
             }
         }
         KrakenL3WsMessage::Update(update) => {
-            let Some(instrument) = lookup_instrument(instruments, &update.symbol) else {
+            let instruments = instruments.load();
+            let Some(instrument) = lookup_instrument_in_snapshot(&instruments, &update.symbol)
+            else {
                 log::warn!("L3 update: no instrument for symbol={}", update.symbol);
                 return None;
             };
@@ -237,7 +232,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
 
             match parse_l3_update(
                 &update,
-                &instrument,
+                instrument,
                 hasher,
                 &mut state.sequence,
                 ts_init,
@@ -313,6 +308,7 @@ mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         enums::BookAction,
+        identifiers::Symbol,
         instruments::currency_pair::CurrencyPair,
         types::{Currency, Price, Quantity},
     };

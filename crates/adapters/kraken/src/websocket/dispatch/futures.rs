@@ -21,6 +21,7 @@
 
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -34,8 +35,9 @@ use nautilus_model::{
 
 use super::{
     DeltaSnapshot, OrderIdentity, WsDispatchState, ensure_accepted_emitted,
-    fill_report_to_order_filled, lookup_instrument, resolve_client_order_id,
+    fill_report_to_order_filled, resolve_client_order_id,
 };
+use crate::common::lookup_instrument_in_snapshot;
 use crate::websocket::futures::{
     messages::{
         KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
@@ -73,7 +75,8 @@ pub fn open_orders_delta(
     }
 
     let product_id = delta.order.instrument.as_str();
-    let Some(instrument) = lookup_instrument(instruments, product_id) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, product_id) else {
         log::warn!("No instrument for product_id: {product_id}");
         return;
     };
@@ -113,7 +116,7 @@ pub fn open_orders_delta(
                 delta,
                 client_order_id,
                 &identity,
-                &instrument,
+                instrument,
                 state,
                 emitter,
                 account_id,
@@ -128,7 +131,7 @@ pub fn open_orders_delta(
         &delta.order,
         delta.is_cancel,
         delta.reason.as_deref(),
-        &instrument,
+        instrument,
         account_id,
         ts_init,
     ) {
@@ -372,14 +375,17 @@ pub fn fills_delta(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
+    let instruments = instruments.load();
+    let venue_clients = venue_client_map.load();
+
     for fill in &fills_delta.fills {
         single_fill(
             fill,
             state,
             emitter,
-            instruments,
+            &instruments,
             truncated_id_map,
-            venue_client_map,
+            &venue_clients,
             account_id,
             ts_init,
         );
@@ -391,9 +397,9 @@ fn single_fill(
     fill: &KrakenFuturesFill,
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instruments: &AHashMap<InstrumentId, InstrumentAny>,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
-    venue_client_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    venue_client_map: &AHashMap<String, ClientOrderId>,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
@@ -405,12 +411,12 @@ fn single_fill(
         }
     };
 
-    let Some(instrument) = lookup_instrument(instruments, product_id) else {
+    let Some(instrument) = lookup_instrument_in_snapshot(instruments, product_id) else {
         log::warn!("No instrument for product_id: {product_id}");
         return;
     };
 
-    let mut report = match parse_futures_ws_fill_report(fill, &instrument, account_id, ts_init) {
+    let mut report = match parse_futures_ws_fill_report(fill, instrument, account_id, ts_init) {
         Ok(report) => report,
         Err(e) => {
             log::error!("Failed to parse futures fill report: {e}");
@@ -423,7 +429,7 @@ fn single_fill(
         .as_deref()
         .filter(|s| !s.is_empty())
         .map(|id| resolve_client_order_id(id, truncated_id_map))
-        .or_else(|| venue_client_map.load().get(&fill.order_id).copied());
+        .or_else(|| venue_client_map.get(&fill.order_id).copied());
 
     if let Some(cid) = resolved_id
         && state.filled_orders.contains(&cid)

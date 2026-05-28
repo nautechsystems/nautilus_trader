@@ -304,11 +304,6 @@ impl BybitWebSocketClient {
                 let mut funding_cache: AHashMap<Ustr, (Option<String>, Option<String>)> =
                     AHashMap::new();
                 let _client = client;
-                let _resolve = |raw_symbol: &Ustr| -> Option<InstrumentAny> {
-                    let key =
-                        product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-                    instruments.get_cloned(&key)
-                };
 
                 tokio::pin!(stream);
 
@@ -1365,13 +1360,13 @@ fn register_batch_pending(
     }
 }
 
-fn resolve_instrument(
+fn resolve_instrument_from_snapshot<'a>(
     raw_symbol: &Ustr,
     product_type: Option<BybitProductType>,
-    instruments: &AtomicMap<Ustr, InstrumentAny>,
-) -> Option<InstrumentAny> {
+    instruments: &'a AHashMap<Ustr, InstrumentAny>,
+) -> Option<&'a InstrumentAny> {
     let key = product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-    instruments.get_cloned(&key)
+    instruments.get(&key)
 }
 
 fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
@@ -1402,12 +1397,15 @@ fn handle_orderbook(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = resolve_instrument(&msg.data.s, product_type, instruments) else {
+    let instruments_snapshot = instruments.load();
+    let Some(instrument) =
+        resolve_instrument_from_snapshot(&msg.data.s, product_type, &instruments_snapshot)
+    else {
         return;
     };
     let ts_init = clock.get_time_ns();
 
-    match parse_orderbook_deltas(msg, &instrument, ts_init) {
+    match parse_orderbook_deltas(msg, instrument, ts_init) {
         Ok(deltas) => {
             send_data_to_python(
                 Data::Deltas(OrderBookDeltas_API::new(deltas)),
@@ -1421,7 +1419,7 @@ fn handle_orderbook(
     let instrument_id = instrument.id();
     let last_quote = quote_cache.get(&instrument_id);
 
-    match parse_orderbook_quote(msg, &instrument, last_quote, ts_init) {
+    match parse_orderbook_quote(msg, instrument, last_quote, ts_init) {
         Ok(quote) => {
             quote_cache.insert(instrument_id, quote);
             send_data_to_python(Data::Quote(quote), call_soon, callback);
@@ -1440,9 +1438,12 @@ fn handle_trade(
     callback: &Py<PyAny>,
 ) {
     let ts_init = clock.get_time_ns();
+    let instruments_snapshot = instruments.load();
 
     for trade in &msg.data {
-        let Some(instrument) = resolve_instrument(&trade.s, product_type, instruments) else {
+        let Some(instrument) =
+            resolve_instrument_from_snapshot(&trade.s, product_type, &instruments_snapshot)
+        else {
             continue;
         };
 
@@ -1453,7 +1454,7 @@ fn handle_trade(
             continue;
         }
 
-        match parse_ws_trade_tick(trade, &instrument, ts_init) {
+        match parse_ws_trade_tick(trade, instrument, ts_init) {
             Ok(tick) => send_data_to_python(Data::Trade(tick), call_soon, callback),
             Err(e) => log::error!("Failed to parse trade tick: {e}"),
         }
@@ -1475,7 +1476,10 @@ fn handle_kline(
         return;
     };
     let ustr_symbol = Ustr::from(raw_symbol);
-    let Some(instrument) = resolve_instrument(&ustr_symbol, product_type, instruments) else {
+    let instruments_snapshot = instruments.load();
+    let Some(instrument) =
+        resolve_instrument_from_snapshot(&ustr_symbol, product_type, &instruments_snapshot)
+    else {
         return;
     };
     let Some(bar_type) = bar_types_cache.load().get(msg.topic.as_str()).copied() else {
@@ -1491,7 +1495,7 @@ fn handle_kline(
 
         match parse_ws_kline_bar(
             kline,
-            &instrument,
+            instrument,
             bar_type,
             bars_timestamp_on_close,
             ts_init,
@@ -1513,14 +1517,17 @@ fn handle_ticker_linear(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = resolve_instrument(&msg.data.symbol, product_type, instruments) else {
+    let instruments_snapshot = instruments.load();
+    let Some(instrument) =
+        resolve_instrument_from_snapshot(&msg.data.symbol, product_type, &instruments_snapshot)
+    else {
         return;
     };
     let instrument_id = instrument.id();
     let ts_init = clock.get_time_ns();
 
     if msg.data.bid1_price.is_some() {
-        match parse_ticker_linear_quote(msg, &instrument, ts_init) {
+        match parse_ticker_linear_quote(msg, instrument, ts_init) {
             Ok(quote) => {
                 let last = quote_cache.get(&instrument_id);
 
@@ -1566,14 +1573,14 @@ fn handle_ticker_linear(
     }
 
     if msg.data.mark_price.is_some() {
-        match parse_ticker_linear_mark_price(&msg.data, &instrument, ts_event, ts_init) {
+        match parse_ticker_linear_mark_price(&msg.data, instrument, ts_event, ts_init) {
             Ok(update) => send_to_python(update, call_soon, callback),
             Err(e) => log::debug!("Skipping mark price update: {e}"),
         }
     }
 
     if msg.data.index_price.is_some() {
-        match parse_ticker_linear_index_price(&msg.data, &instrument, ts_event, ts_init) {
+        match parse_ticker_linear_index_price(&msg.data, instrument, ts_event, ts_init) {
             Ok(update) => send_to_python(update, call_soon, callback),
             Err(e) => log::debug!("Skipping index price update: {e}"),
         }
@@ -1591,13 +1598,16 @@ fn handle_ticker_option(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = resolve_instrument(&msg.data.symbol, product_type, instruments) else {
+    let instruments_snapshot = instruments.load();
+    let Some(instrument) =
+        resolve_instrument_from_snapshot(&msg.data.symbol, product_type, &instruments_snapshot)
+    else {
         return;
     };
     let instrument_id = instrument.id();
     let ts_init = clock.get_time_ns();
 
-    match parse_ticker_option_quote(msg, &instrument, ts_init) {
+    match parse_ticker_option_quote(msg, instrument, ts_init) {
         Ok(quote) => {
             let last = quote_cache.get(&instrument_id);
 
@@ -1609,18 +1619,18 @@ fn handle_ticker_option(
         Err(e) => log::error!("Failed to parse ticker option quote: {e}"),
     }
 
-    match parse_ticker_option_mark_price(msg, &instrument, ts_init) {
+    match parse_ticker_option_mark_price(msg, instrument, ts_init) {
         Ok(update) => send_to_python(update, call_soon, callback),
         Err(e) => log::error!("Failed to parse ticker option mark price: {e}"),
     }
 
-    match parse_ticker_option_index_price(msg, &instrument, ts_init) {
+    match parse_ticker_option_index_price(msg, instrument, ts_init) {
         Ok(update) => send_to_python(update, call_soon, callback),
         Err(e) => log::error!("Failed to parse ticker option index price: {e}"),
     }
 
     if option_greeks_subs.contains(&instrument_id) {
-        match parse_ticker_option_greeks(msg, &instrument, ts_init) {
+        match parse_ticker_option_greeks(msg, instrument, ts_init) {
             Ok(greeks) => send_to_python(greeks, call_soon, callback),
             Err(e) => log::error!("Failed to parse option greeks: {e}"),
         }
@@ -1636,10 +1646,11 @@ fn handle_account_order(
     callback: &Py<PyAny>,
 ) {
     let ts_init = clock.get_time_ns();
+    let instruments_snapshot = instruments.load();
 
     for order in &msg.data {
         let symbol = make_bybit_symbol(order.symbol, order.category);
-        let Some(instrument) = instruments.get_cloned(&symbol) else {
+        let Some(instrument) = instruments_snapshot.get(&symbol) else {
             log::warn!("No instrument for order update: {symbol}");
             continue;
         };
@@ -1647,7 +1658,7 @@ fn handle_account_order(
             continue;
         };
 
-        match parse_ws_order_status_report(order, &instrument, account_id, ts_init) {
+        match parse_ws_order_status_report(order, instrument, account_id, ts_init) {
             Ok(report) => send_to_python(report, call_soon, callback),
             Err(e) => log::error!("Failed to parse order status report: {e}"),
         }
@@ -1663,10 +1674,11 @@ fn handle_account_execution(
     callback: &Py<PyAny>,
 ) {
     let ts_init = clock.get_time_ns();
+    let instruments_snapshot = instruments.load();
 
     for exec in &msg.data {
         let symbol = make_bybit_symbol(exec.symbol, exec.category);
-        let Some(instrument) = instruments.get_cloned(&symbol) else {
+        let Some(instrument) = instruments_snapshot.get(&symbol) else {
             log::warn!("No instrument for execution update: {symbol}");
             continue;
         };
@@ -1674,7 +1686,7 @@ fn handle_account_execution(
             continue;
         };
 
-        match parse_ws_fill_report(exec, account_id, &instrument, ts_init) {
+        match parse_ws_fill_report(exec, account_id, instrument, ts_init) {
             Ok(report) => send_to_python(report, call_soon, callback),
             Err(e) => log::error!("Failed to parse fill report: {e}"),
         }
@@ -1690,10 +1702,11 @@ fn handle_account_execution_fast(
     callback: &Py<PyAny>,
 ) {
     let ts_init = clock.get_time_ns();
+    let instruments_snapshot = instruments.load();
 
     for exec in &msg.data {
         let symbol = make_bybit_symbol(exec.symbol, exec.category);
-        let Some(instrument) = instruments.get_cloned(&symbol) else {
+        let Some(instrument) = instruments_snapshot.get(&symbol) else {
             log::warn!("No instrument for fast-execution update: {symbol}");
             continue;
         };
@@ -1701,7 +1714,7 @@ fn handle_account_execution_fast(
             continue;
         };
 
-        match parse_ws_fill_report_fast(exec, account_id, &instrument, None, ts_init) {
+        match parse_ws_fill_report_fast(exec, account_id, instrument, None, ts_init) {
             Ok(report) => send_to_python(report, call_soon, callback),
             Err(e) => log::error!("Failed to parse fast fill report: {e}"),
         }
@@ -1738,10 +1751,11 @@ fn handle_account_position(
     callback: &Py<PyAny>,
 ) {
     let ts_init = clock.get_time_ns();
+    let instruments_snapshot = instruments.load();
 
     for position in &msg.data {
         let symbol = make_bybit_symbol(position.symbol, position.category);
-        let Some(instrument) = instruments.get_cloned(&symbol) else {
+        let Some(instrument) = instruments_snapshot.get(&symbol) else {
             log::warn!("No instrument for position update: {symbol}");
             continue;
         };
@@ -1749,7 +1763,7 @@ fn handle_account_position(
             continue;
         };
 
-        match parse_ws_position_status_report(position, account_id, &instrument, ts_init) {
+        match parse_ws_position_status_report(position, account_id, instrument, ts_init) {
             Ok(report) => send_to_python(report, call_soon, callback),
             Err(e) => log::error!("Failed to parse position status report: {e}"),
         }
