@@ -1041,6 +1041,35 @@ mod tests {
             })
         );
     }
+
+    #[rstest]
+    fn test_order_response_normal_tpsl_with_waiting_children() {
+        // `normalTpsl` bracket: entry rests with an oid, SL/TP children come
+        // back as bare strings until the parent fills / trigger fires.
+        let json = r#"{
+            "statuses": [
+                {"resting": {"oid": 446050656712}},
+                "waitingForFill",
+                "waitingForTrigger"
+            ]
+        }"#;
+
+        let data: HyperliquidExecOrderResponseData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.statuses.len(), 3);
+
+        assert!(matches!(
+            data.statuses[0],
+            HyperliquidExecOrderStatus::Resting { ref resting } if resting.oid == 446050656712
+        ));
+        assert!(matches!(
+            data.statuses[1],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForFill)
+        ));
+        assert!(matches!(
+            data.statuses[2],
+            HyperliquidExecOrderStatus::Tag(HyperliquidExecOrderStatusTag::WaitingForTrigger)
+        ));
+    }
 }
 
 /// Time-in-force for limit orders in exchange endpoint.
@@ -1566,6 +1595,21 @@ pub enum HyperliquidExecOrderStatus {
         /// Error message.
         error: String,
     },
+    /// Bare status string. Used for trigger children of a `normalTpsl` group
+    /// (SL/TP), which Hyperliquid serializes as a JSON string rather than an
+    /// object — e.g. `"waitingForFill"` or `"waitingForTrigger"`.
+    Tag(HyperliquidExecOrderStatusTag),
+}
+
+/// Bare-string order status returned for trigger children of a `normalTpsl`
+/// group, parked until the entry leg fills (or the trigger fires).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HyperliquidExecOrderStatusTag {
+    /// Trigger child parked until the parent (entry) order fills.
+    WaitingForFill,
+    /// Trigger child parked until its trigger price condition is met.
+    WaitingForTrigger,
 }
 
 /// Information about a resting order via exchange endpoint.

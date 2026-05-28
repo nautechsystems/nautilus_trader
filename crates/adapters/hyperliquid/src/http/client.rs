@@ -2891,6 +2891,9 @@ impl HyperliquidHttpClient {
                     HyperliquidExecOrderStatus::Error { error } => {
                         Err(Error::bad_request(format!("Order rejected: {error}")))
                     }
+                    HyperliquidExecOrderStatus::Tag(tag) => Err(Error::bad_request(format!(
+                        "Unexpected bare status {tag:?} for single-order submission"
+                    ))),
                 }
             }
             HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
@@ -3129,6 +3132,29 @@ impl HyperliquidHttpClient {
                                 "Order {} rejected: {error}",
                                 order.client_order_id()
                             )));
+                        }
+                        HyperliquidExecOrderStatus::Tag(_) => {
+                            // Trigger child of a `normalTpsl` bracket (SL/TP):
+                            // venue accepted it atomically but has not assigned
+                            // an oid yet. Mark Accepted with the client order id
+                            // as a placeholder venue id — the real oid arrives
+                            // via the user-events WS stream.
+                            self.create_order_status_report(
+                                order.instrument_id(),
+                                Some(order.client_order_id()),
+                                VenueOrderId::new(order.client_order_id().to_string()),
+                                order.order_side(),
+                                order.order_type(),
+                                order.quantity(),
+                                order.time_in_force(),
+                                order.price(),
+                                order.trigger_price(),
+                                OrderStatus::Accepted,
+                                Quantity::new(0.0, instrument.size_precision()),
+                                &instrument,
+                                account_id,
+                                ts_init,
+                            )
                         }
                     };
 
