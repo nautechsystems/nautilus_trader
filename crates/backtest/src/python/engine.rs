@@ -86,6 +86,18 @@ impl PyBacktestEngine {
     }
 
     /// Adds a simulated exchange with the given parameters to the engine.
+    ///
+    /// # Liquidation parameters
+    ///
+    /// - `liquidation_enabled` (bool, default `False`): if margin liquidation should be
+    ///   triggered when the account's equity falls to or below the maintenance
+    ///   margin threshold scaled by `liquidation_trigger_ratio`.
+    /// - `liquidation_trigger_ratio` (float, optional, default `1.0`): the ratio of
+    ///   maintenance margin used as the liquidation threshold. A value of `1.0`
+    ///   liquidates when equity <= maintenance margin; higher values trigger earlier.
+    /// - `liquidation_cancel_open_orders` (bool, default `True`): if open resting
+    ///   orders for the venue should be cancelled before synthetic close-out fills
+    ///   are emitted for open positions.
     #[pyo3(
         name = "add_venue",
         signature = (
@@ -121,6 +133,9 @@ impl PyBacktestEngine {
             oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
             settlement_prices = None,
+            liquidation_enabled = false,
+            liquidation_trigger_ratio = None,
+            liquidation_cancel_open_orders = true,
         )
     )]
     #[expect(clippy::too_many_arguments)]
@@ -158,6 +173,9 @@ impl PyBacktestEngine {
         oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, Price>>,
+        liquidation_enabled: bool,
+        liquidation_trigger_ratio: Option<f64>,
+        liquidation_cancel_open_orders: bool,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
@@ -226,6 +244,9 @@ impl PyBacktestEngine {
             .queue_position(queue_position)
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
+            .liquidation_enabled(liquidation_enabled)
+            .liquidation_trigger_ratio(liquidation_trigger_ratio.unwrap_or(1.0))
+            .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build();
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;

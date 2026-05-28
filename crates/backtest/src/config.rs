@@ -312,6 +312,16 @@ pub struct SimulatedVenueConfig {
     pub oto_full_trigger: bool,
     #[builder(default = 0)]
     pub price_protection_points: u32,
+    /// If liquidation of positions should be triggered when maintenance margin is breached.
+    #[builder(default = false)]
+    pub liquidation_enabled: bool,
+    /// The ratio of equity to maintenance margin at which liquidation is triggered.
+    /// A value of 1.0 means liquidation triggers when equity <= maintenance_margin.
+    #[builder(default = 1.0)]
+    pub liquidation_trigger_ratio: f64,
+    /// If open orders should be canceled before closing positions during liquidation.
+    #[builder(default = true)]
+    pub liquidation_cancel_open_orders: bool,
 }
 
 /// Represents a venue configuration for one specific backtest engine.
@@ -419,6 +429,16 @@ pub struct BacktestVenueConfig {
     price_protection_points: u32,
     /// Settlement prices for expiring instruments keyed by instrument ID.
     settlement_prices: Option<AHashMap<InstrumentId, f64>>,
+    /// If liquidation of positions should be triggered when maintenance margin is breached.
+    #[builder(default)]
+    liquidation_enabled: bool,
+    /// The ratio of equity to maintenance margin at which liquidation is triggered.
+    /// A value of 1.0 means liquidation triggers when equity <= maintenance_margin.
+    #[builder(default = 1.0)]
+    liquidation_trigger_ratio: f64,
+    /// If open orders should be canceled before closing positions during liquidation.
+    #[builder(default = true)]
+    liquidation_cancel_open_orders: bool,
 }
 
 impl BacktestVenueConfig {
@@ -575,6 +595,21 @@ impl BacktestVenueConfig {
     #[must_use]
     pub fn settlement_prices(&self) -> Option<&AHashMap<InstrumentId, f64>> {
         self.settlement_prices.as_ref()
+    }
+
+    #[must_use]
+    pub fn liquidation_enabled(&self) -> bool {
+        self.liquidation_enabled
+    }
+
+    #[must_use]
+    pub fn liquidation_trigger_ratio(&self) -> f64 {
+        self.liquidation_trigger_ratio
+    }
+
+    #[must_use]
+    pub fn liquidation_cancel_open_orders(&self) -> bool {
+        self.liquidation_cancel_open_orders
     }
 }
 

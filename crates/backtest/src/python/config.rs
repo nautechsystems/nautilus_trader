@@ -227,6 +227,9 @@ impl BacktestVenueConfig {
         fee_model = None,
         price_protection_points = None,
         settlement_prices = None,
+        liquidation_enabled = None,
+        liquidation_trigger_ratio = None,
+        liquidation_cancel_open_orders = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -261,6 +264,9 @@ impl BacktestVenueConfig {
         fee_model: Option<Py<PyAny>>,
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, f64>>,
+        liquidation_enabled: Option<bool>,
+        liquidation_trigger_ratio: Option<f64>,
+        liquidation_cancel_open_orders: Option<bool>,
     ) -> pyo3::PyResult<Self> {
         let margin_model = margin_model
             .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
@@ -317,6 +323,9 @@ impl BacktestVenueConfig {
             .maybe_fee_model(fee_model)
             .maybe_price_protection_points(price_protection_points)
             .maybe_settlement_prices(settlement_prices.map(|m| m.into_iter().collect()))
+            .maybe_liquidation_enabled(liquidation_enabled)
+            .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
+            .maybe_liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build())
     }
 
@@ -360,6 +369,24 @@ impl BacktestVenueConfig {
     #[pyo3(name = "trade_execution")]
     fn py_trade_execution(&self) -> bool {
         self.trade_execution()
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidation_enabled")]
+    fn py_liquidation_enabled(&self) -> bool {
+        self.liquidation_enabled()
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidation_trigger_ratio")]
+    fn py_liquidation_trigger_ratio(&self) -> f64 {
+        self.liquidation_trigger_ratio()
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidation_cancel_open_orders")]
+    fn py_liquidation_cancel_open_orders(&self) -> bool {
+        self.liquidation_cancel_open_orders()
     }
 
     fn __repr__(&self) -> String {

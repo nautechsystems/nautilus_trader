@@ -43,7 +43,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-        OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
+        OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
@@ -2485,6 +2486,138 @@ impl OrderMatchingEngine {
             None,
             Some(Money::new(0.0, underlying_instrument.quote_currency())),
         )
+    }
+
+    /// Liquidates all open positions for this instrument.
+    ///
+    /// Cancels open orders if `cancel_open_orders` is true, then closes every open
+    /// position at best bid/ask or the settlement price, emitting accepted and filled
+    /// events for each synthetic close order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the venue order ID generator cannot produce an ID for the synthetic
+    /// liquidation order (internal state inconsistency).
+    ///
+    /// Only positions whose instrument settles in `settlement_currency` are closed.
+    /// Matching engines for other settlement currencies are skipped, scoping
+    /// liquidation to the currency whose margin account breached the threshold.
+    pub fn liquidate_open_positions(
+        &mut self,
+        ts_now: UnixNanos,
+        cancel_open_orders: bool,
+        settlement_currency: Currency,
+    ) {
+        // Only liquidate positions settled in the breached currency.
+        if self.instrument.settlement_currency() != settlement_currency {
+            return;
+        }
+
+        if cancel_open_orders {
+            let open_orders: Vec<RestingOrder> = self.get_open_orders();
+            for order_info in &open_orders {
+                let order = {
+                    let cache = self.cache.borrow();
+                    cache.order_owned(&order_info.client_order_id)
+                };
+
+                if let Some(order) = order {
+                    self.cancel_order(&order, None);
+                }
+            }
+        }
+
+        let instrument_id = self.instrument.id();
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|pos| {
+                    (
+                        pos.trader_id,
+                        pos.strategy_id,
+                        pos.account_id,
+                        pos.id,
+                        OrderCore::closing_side(pos.side),
+                        pos.quantity,
+                    )
+                })
+                .collect()
+        };
+
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
+            // Pre-check: ensure a price source is available before emitting events.
+            let has_price = if closing_side == OrderSide::Sell {
+                self.best_bid_price().is_some() || self.settlement_price.is_some()
+            } else {
+                self.best_ask_price().is_some() || self.settlement_price.is_some()
+            };
+
+            if !has_price {
+                log::warn!(
+                    "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
+                );
+                continue;
+            }
+
+            let client_order_id = ClientOrderId::from(
+                format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
+            );
+            let order = OrderAny::Market(MarketOrder::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                closing_side,
+                quantity,
+                TimeInForce::Ioc,
+                UUID4::new(),
+                ts_now,
+                true, // reduce_only
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![Ustr::from(&format!(
+                    "LIQUIDATION_{}_CLOSE",
+                    self.venue
+                ))]),
+            ));
+
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            {
+                let mut cache = self.cache.borrow_mut();
+                if let Err(e) = cache.add_order(order.clone(), Some(position_id), None, false) {
+                    log::debug!("Liquidation order already in cache: {e}");
+                } else {
+                    drop(cache);
+                    self.publish_order_initialized(&order);
+                    self.cache
+                        .borrow_mut()
+                        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+                        .ok();
+                }
+            }
+
+            // Route through the normal market-order fill machinery (fill model,
+            // book depth consumption, slippage) instead of apply_fills directly.
+            self.account_ids.insert(trader_id, account_id);
+            self.generate_order_submitted(&order, account_id);
+            self.generate_order_accepted(&order, venue_order_id);
+            self.fill_market_order(client_order_id);
+        }
     }
 
     /// Processes a new order submission.
@@ -5513,6 +5646,21 @@ impl OrderMatchingEngine {
                 }
             }
         }
+    }
+
+    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ));
+        self.dispatch_order_event(event);
     }
 
     fn create_order_rejected(&self, order: &OrderAny, reason: Ustr) -> OrderEventAny {

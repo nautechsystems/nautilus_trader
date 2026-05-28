@@ -104,6 +104,7 @@ pub struct BacktestEngine {
     force_stop: bool,
     last_ns: UnixNanos,
     last_module_ns: Option<UnixNanos>,
+    last_liquidation_ns: Option<UnixNanos>,
     end_ns: UnixNanos,
     run_started: Option<UnixNanos>,
     run_finished: Option<UnixNanos>,
@@ -155,6 +156,7 @@ impl BacktestEngine {
             force_stop: false,
             last_ns: UnixNanos::default(),
             last_module_ns: None,
+            last_liquidation_ns: None,
             end_ns: UnixNanos::default(),
             run_started: None,
             run_finished: None,
@@ -765,6 +767,7 @@ impl BacktestEngine {
             if data.is_none() || data.as_ref().unwrap().ts_init() > prev_last_ns {
                 self.flush_accumulator_events(&clocks, prev_last_ns);
                 self.run_venue_modules(prev_last_ns);
+                self.run_venue_liquidations(prev_last_ns);
             }
 
             self.iteration += 1;
@@ -774,6 +777,7 @@ impl BacktestEngine {
         let ts_now = self.kernel.clock.borrow().timestamp_ns();
         self.settle_venues(ts_now);
         self.run_venue_modules(ts_now);
+        self.run_venue_liquidations(ts_now);
 
         // Cap at last_ns when streaming or after shutdown to avoid firing
         // timers past the current batch or the graceful stop
@@ -886,6 +890,7 @@ impl BacktestEngine {
         self.force_stop = false;
         self.last_ns = UnixNanos::default();
         self.last_module_ns = None;
+        self.last_liquidation_ns = None;
         self.end_ns = UnixNanos::default();
 
         self.accumulator.clear();
@@ -1103,6 +1108,7 @@ impl BacktestEngine {
             {
                 self.settle_venues(ts);
                 self.run_venue_modules(ts);
+                self.run_venue_liquidations(ts);
             }
 
             ts_last = Some(ts_event);
@@ -1130,6 +1136,7 @@ impl BacktestEngine {
         if let Some(ts) = ts_last {
             self.settle_venues(ts);
             self.run_venue_modules(ts);
+            self.run_venue_liquidations(ts);
         }
 
         // On a mid-drain shutdown, anchor state at the firing timer's ts so
@@ -1164,6 +1171,7 @@ impl BacktestEngine {
             {
                 self.settle_venues(ts);
                 self.run_venue_modules(ts);
+                self.run_venue_liquidations(ts);
             }
 
             ts_last = Some(ts_event);
@@ -1190,6 +1198,7 @@ impl BacktestEngine {
         if let Some(ts) = ts_last {
             self.settle_venues(ts);
             self.run_venue_modules(ts);
+            self.run_venue_liquidations(ts);
         }
     }
 
@@ -1347,6 +1356,20 @@ impl BacktestEngine {
         }
 
         // Post-settle any commands emitted by modules
+        self.drain_command_queues();
+        self.settle_venues(ts_now);
+    }
+
+    fn run_venue_liquidations(&mut self, ts_now: UnixNanos) {
+        if self.last_liquidation_ns == Some(ts_now) {
+            return;
+        }
+        self.last_liquidation_ns = Some(ts_now);
+
+        for exchange in self.venues.values() {
+            exchange.borrow_mut().process_liquidations(ts_now);
+        }
+
         self.drain_command_queues();
         self.settle_venues(ts_now);
     }

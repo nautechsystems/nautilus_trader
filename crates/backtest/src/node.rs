@@ -149,6 +149,9 @@ impl BacktestNode {
                     .queue_position(venue_config.queue_position())
                     .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
                     .price_protection_points(venue_config.price_protection_points())
+                    .liquidation_enabled(venue_config.liquidation_enabled())
+                    .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
+                    .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
                     .build();
                 engine.add_venue(sim_config)?;
             }
