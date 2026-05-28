@@ -49,10 +49,7 @@ Examples include prediction market outcomes and binary event contracts.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::BinaryOption;
 
 fn outcome_label(instrument: &BinaryOption) -> String {
@@ -60,19 +57,13 @@ fn outcome_label(instrument: &BinaryOption) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import BinaryOption
 
 
 def outcome_label(instrument: BinaryOption) -> str:
     return instrument.outcome or "unknown"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

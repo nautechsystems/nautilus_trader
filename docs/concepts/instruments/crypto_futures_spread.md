@@ -52,10 +52,7 @@ Examples include listed crypto futures calendar spreads.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::CryptoFuturesSpread;
 
 fn spread_summary(instrument: &CryptoFuturesSpread) -> String {
@@ -63,19 +60,13 @@ fn spread_summary(instrument: &CryptoFuturesSpread) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import CryptoFuturesSpread
 
 
 def spread_summary(instrument: CryptoFuturesSpread) -> str:
     return f"{instrument.underlying} {instrument.strategy_type}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

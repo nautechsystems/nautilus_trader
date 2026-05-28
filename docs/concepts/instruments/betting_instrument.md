@@ -61,10 +61,7 @@ and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::BettingInstrument;
 
 fn market_selection(instrument: &BettingInstrument) -> String {
@@ -72,19 +69,13 @@ fn market_selection(instrument: &BettingInstrument) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import BettingInstrument
 
 
 def market_selection(instrument: BettingInstrument) -> str:
     return f"{instrument.market_name}: {instrument.selection_name}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

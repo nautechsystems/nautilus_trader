@@ -51,10 +51,7 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::PerpetualContract;
 
 fn settlement_label(instrument: &PerpetualContract) -> String {
@@ -62,19 +59,13 @@ fn settlement_label(instrument: &PerpetualContract) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import PerpetualContract
 
 
 def settlement_label(instrument: PerpetualContract) -> str:
     return f"{instrument.underlying} settles in {instrument.settlement_currency}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

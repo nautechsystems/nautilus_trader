@@ -52,10 +52,7 @@ Examples include BTC and ETH options on crypto derivatives venues.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::CryptoOption;
 
 fn option_label(instrument: &CryptoOption) -> String {
@@ -63,19 +60,13 @@ fn option_label(instrument: &CryptoOption) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import CryptoOption
 
 
 def option_label(instrument: CryptoOption) -> str:
     return f"{instrument.underlying} {instrument.option_kind} {instrument.strike_price}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

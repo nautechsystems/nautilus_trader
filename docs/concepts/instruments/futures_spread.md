@@ -49,10 +49,7 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::FuturesSpread;
 
 fn strategy_label(instrument: &FuturesSpread) -> String {
@@ -60,19 +57,13 @@ fn strategy_label(instrument: &FuturesSpread) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import FuturesSpread
 
 
 def strategy_label(instrument: FuturesSpread) -> str:
     return f"{instrument.underlying} {instrument.strategy_type}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

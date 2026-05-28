@@ -46,10 +46,7 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::Commodity;
 
 fn quote_currency(instrument: &Commodity) -> String {
@@ -57,19 +54,13 @@ fn quote_currency(instrument: &Commodity) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import Commodity
 
 
 def quote_currency(instrument: Commodity) -> str:
     return str(instrument.quote_currency)
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

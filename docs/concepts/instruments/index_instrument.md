@@ -33,10 +33,7 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::IndexInstrument;
 
 fn index_label(instrument: &IndexInstrument) -> String {
@@ -44,19 +41,13 @@ fn index_label(instrument: &IndexInstrument) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import IndexInstrument
 
 
 def index_label(instrument: IndexInstrument) -> str:
     return f"{instrument.raw_symbol} {instrument.currency}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

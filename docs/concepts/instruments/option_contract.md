@@ -50,10 +50,7 @@ Examples include equity options, index options, and futures options.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::OptionContract;
 
 fn strike_label(instrument: &OptionContract) -> String {
@@ -61,19 +58,13 @@ fn strike_label(instrument: &OptionContract) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import OptionContract
 
 
 def strike_label(instrument: OptionContract) -> str:
     return f"{instrument.option_kind} {instrument.strike_price}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

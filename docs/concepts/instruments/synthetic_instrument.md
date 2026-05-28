@@ -33,10 +33,7 @@ stores the same value as `id`.*
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -56,10 +53,7 @@ let synthetic = SyntheticInstrument::new(
 );
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import SyntheticInstrument
@@ -76,9 +70,6 @@ synthetic = SyntheticInstrument(
     ts_init=0,
 )
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

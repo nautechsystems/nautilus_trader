@@ -156,28 +156,19 @@ Subscriptions and order methods expect matching instruments to already exist in 
 
 Strategies and actors retrieve instruments from the central cache:
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::identifiers::InstrumentId;
 
 let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
 let instrument = cache.instrument(&instrument_id);
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
 ```
-
-</Tab>
-</Tabs>
 
 It is also possible to subscribe to one instrument or all instruments for a venue:
 

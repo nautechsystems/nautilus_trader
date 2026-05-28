@@ -46,10 +46,7 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::Cfd;
 
 fn quote_currency(instrument: &Cfd) -> String {
@@ -57,19 +54,13 @@ fn quote_currency(instrument: &Cfd) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import Cfd
 
 
 def quote_currency(instrument: Cfd) -> str:
     return str(instrument.quote_currency)
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

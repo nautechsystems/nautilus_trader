@@ -51,10 +51,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::CryptoFuture;
 
 fn settlement_pair(instrument: &CryptoFuture) -> String {
@@ -62,19 +59,13 @@ fn settlement_pair(instrument: &CryptoFuture) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import CryptoFuture
 
 
 def settlement_pair(instrument: CryptoFuture) -> str:
     return f"{instrument.quote_currency}/{instrument.settlement_currency}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

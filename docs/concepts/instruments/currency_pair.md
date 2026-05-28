@@ -52,10 +52,7 @@ expiration, and notional calculations match the venue.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -93,10 +90,7 @@ let btcusdt = CurrencyPair::new(
 let instrument = InstrumentAny::CurrencyPair(btcusdt);
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from decimal import Decimal
 
 from nautilus_trader.model.currencies import BTC
@@ -129,9 +123,6 @@ btcusdt = CurrencyPair(
     taker_fee=Decimal("0.001"),
 )
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

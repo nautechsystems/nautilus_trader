@@ -52,10 +52,7 @@ Examples include listed BTC or ETH option combos on crypto derivatives venues.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::CryptoOptionSpread;
 
 fn spread_summary(instrument: &CryptoOptionSpread) -> String {
@@ -63,19 +60,13 @@ fn spread_summary(instrument: &CryptoOptionSpread) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import CryptoOptionSpread
 
 
 def spread_summary(instrument: CryptoOptionSpread) -> str:
     return f"{instrument.underlying} {instrument.strategy_type}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

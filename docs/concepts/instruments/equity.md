@@ -42,10 +42,7 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::Equity;
 
 fn listing_summary(instrument: &Equity) -> String {
@@ -53,19 +50,13 @@ fn listing_summary(instrument: &Equity) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import Equity
 
 
 def listing_summary(instrument: Equity) -> str:
     return f"{instrument.raw_symbol} trades in {instrument.currency}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

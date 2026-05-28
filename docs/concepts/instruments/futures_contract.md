@@ -49,10 +49,7 @@ currency futures.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::FuturesContract;
 
 fn contract_term(instrument: &FuturesContract) -> (u64, u64) {
@@ -60,19 +57,13 @@ fn contract_term(instrument: &FuturesContract) -> (u64, u64) {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import FuturesContract
 
 
 def contract_term(instrument: FuturesContract) -> tuple[int, int]:
     return instrument.activation_ns, instrument.expiration_ns
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

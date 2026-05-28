@@ -49,10 +49,7 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::OptionSpread;
 
 fn spread_label(instrument: &OptionSpread) -> String {
@@ -60,19 +57,13 @@ fn spread_label(instrument: &OptionSpread) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import OptionSpread
 
 
 def spread_label(instrument: OptionSpread) -> str:
     return f"{instrument.underlying} {instrument.strategy_type}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

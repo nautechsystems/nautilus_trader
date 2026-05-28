@@ -56,10 +56,7 @@ Funding payments are not fields on the instrument. They arrive as data, such as
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -99,10 +96,7 @@ let ethusdt_perp = CryptoPerpetual::new(
 let instrument = InstrumentAny::CryptoPerpetual(ethusdt_perp);
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from decimal import Decimal
 
 from nautilus_trader.model.currencies import ETH
@@ -138,9 +132,6 @@ ethusdt_perp = CryptoPerpetual(
     taker_fee=Decimal("0.0004"),
 )
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 

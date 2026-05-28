@@ -47,10 +47,7 @@ Examples include tokenized stock or ETF symbols on crypto venues.
 
 ## Example
 
-<Tabs items={['Rust', 'Python']}>
-<Tab value="Rust">
-
-```rust
+```rust tab="Rust"
 use nautilus_model::instruments::TokenizedAsset;
 
 fn token_pair(instrument: &TokenizedAsset) -> String {
@@ -58,19 +55,13 @@ fn token_pair(instrument: &TokenizedAsset) -> String {
 }
 ```
 
-</Tab>
-<Tab value="Python">
-
-```python
+```python tab="Python"
 from nautilus_trader.model.instruments import TokenizedAsset
 
 
 def token_pair(instrument: TokenizedAsset) -> str:
     return f"{instrument.base_currency}/{instrument.quote_currency}"
 ```
-
-</Tab>
-</Tabs>
 
 ## Adapters
 
