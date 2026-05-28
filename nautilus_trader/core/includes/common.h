@@ -664,7 +664,11 @@ struct LogGuard_API logging_init(TraderId_t trader_id,
  *
  * # Safety
  *
- * Has the same pointer validity requirements as `logging_init`.
+ * Has the same pointer validity requirements as [`logging_init`].
+ *
+ * # Panics
+ *
+ * Panics if the component-level JSON cannot be parsed or the logger cannot be initialized.
  */
 struct LogGuard_API logging_init_with_options(TraderId_t trader_id,
                                               UUID4_t instance_id,

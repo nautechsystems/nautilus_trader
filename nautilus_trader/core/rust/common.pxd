@@ -491,6 +491,15 @@ cdef extern from "../includes/common.h":
                               uint64_t max_file_size,
                               uint32_t max_backup_count);
 
+    # Initializes logging with explicit logging I/O policy options.
+    #
+    # # Safety
+    #
+    # Has the same pointer validity requirements as [`logging_init`].
+    #
+    # # Panics
+    #
+    # Panics if the component-level JSON cannot be parsed or the logger cannot be initialized.
     LogGuard_API logging_init_with_options(TraderId_t trader_id,
                                            UUID4_t instance_id,
                                            LogLevel level_stdout,

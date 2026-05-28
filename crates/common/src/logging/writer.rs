@@ -61,9 +61,9 @@ impl StdoutWriter {
         };
 
         Self {
-            level,
             is_colored,
             io,
+            level,
         }
     }
 }
@@ -407,16 +407,28 @@ impl FileWriter {
     }
 
     /// Flushes the userspace file buffer to the OS.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying file buffer cannot be flushed.
     pub fn flush_buffer(&mut self) -> io::Result<()> {
         self.buf.flush()
     }
 
     /// Requests that flushed file data is synchronized to durable storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operating system cannot sync the file to disk.
     pub fn sync_to_disk(&mut self) -> io::Result<()> {
         self.buf.get_ref().sync_all()
     }
 
     /// Flushes buffered file data and then syncs it to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either flushing the file buffer or syncing the file to disk fails.
     pub fn flush_and_sync(&mut self) -> io::Result<()> {
         let flush_result = self.flush_buffer();
         let sync_result = self.sync_to_disk();

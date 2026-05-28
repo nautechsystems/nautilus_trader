@@ -130,6 +130,10 @@ pub unsafe extern "C" fn logging_init(
 /// # Safety
 ///
 /// Has the same pointer validity requirements as [`logging_init`].
+///
+/// # Panics
+///
+/// Panics if the component-level JSON cannot be parsed or the logger cannot be initialized.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_init_with_options(
     trader_id: TraderId,

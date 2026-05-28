@@ -28,18 +28,18 @@
 //!
 //! ## Supported Keys
 //!
-//! | Key                   | Type      | Description                                  |
-//! |-----------------------|-----------|----------------------------------------------|
-//! | `stdout`              | Log level | Maximum level for stdout output.             |
-//! | `fileout`             | Log level | Maximum level for file output.               |
-//! | `is_colored`          | Boolean   | Enable ANSI colors (default: true).          |
-//! | `print_config`        | Boolean   | Print config to stdout at startup.           |
-//! | `log_components_only` | Boolean   | Only log components with explicit filters.   |
-//! | `use_tracing`         | Boolean   | Enable tracing subscriber for external libs. |
-//! | `fileout_sync_on_flush` | Boolean | Sync file logs on every flush (default: true). |
-//! | `buffered_stdout`     | Boolean   | Buffer stdout output (default: false).       |
-//! | `<component>`         | Log level | Component-specific log level (exact match).  |
-//! | `<module::path>`      | Log level | Module-specific log level (prefix match).    |
+//! | Key                     | Type      | Description                                  |
+//! |-------------------------|-----------|----------------------------------------------|
+//! | `stdout`                | Log level | Maximum level for stdout output.             |
+//! | `fileout`               | Log level | Maximum level for file output.               |
+//! | `is_colored`            | Boolean   | Enable ANSI colors (default: true).          |
+//! | `print_config`          | Boolean   | Print config to stdout at startup.           |
+//! | `log_components_only`   | Boolean   | Only log components with explicit filters.   |
+//! | `use_tracing`           | Boolean   | Enable tracing subscriber for external libs. |
+//! | `fileout_sync_on_flush` | Boolean   | Sync file logs on every flush (default: true). |
+//! | `buffered_stdout`       | Boolean   | Buffer stdout output (default: false).       |
+//! | `<component>`           | Log level | Component-specific log level (exact match).  |
+//! | `<module::path>`        | Log level | Module-specific log level (prefix match).    |
 //!
 //! ## Log Levels
 //!
