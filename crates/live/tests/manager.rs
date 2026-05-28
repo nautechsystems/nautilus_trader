@@ -3473,8 +3473,16 @@ async fn test_reconcile_mass_status_skips_position_report_when_fills_exist() {
     let venue_order_id = VenueOrderId::from("V-001");
 
     ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    let mut order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
     ctx.add_order(order);
+    ctx.cache
+        .borrow_mut()
+        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+        .unwrap();
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4485,8 +4493,8 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(500_000),
-        UnixNanos::from(500_000),
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
         None,
     );
     mass_status.add_fill_reports(vec![fill]);
@@ -4622,8 +4630,8 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(1_000),
-        UnixNanos::from(1_000),
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
         None,
     );
 
@@ -5173,8 +5181,8 @@ async fn test_partial_window_adjustment_skips_hedge_mode_instruments() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(1_000),
-        UnixNanos::from(1_000),
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
         None,
     );
     mass_status.add_fill_reports(vec![fill]);
@@ -5277,8 +5285,8 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(1_000),
-        UnixNanos::from(1_000),
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
         None,
     );
     let fill1b = FillReport::new(
@@ -5293,8 +5301,8 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(2_000),
-        UnixNanos::from(2_000),
+        UnixNanos::from(1_000_002),
+        UnixNanos::from(1_000_002),
         None,
     );
 
@@ -5343,8 +5351,8 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(1_500),
-        UnixNanos::from(1_500),
+        UnixNanos::from(1_000_003),
+        UnixNanos::from(1_000_003),
         None,
     );
     let fill2b = FillReport::new(
@@ -5359,8 +5367,8 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
         LiquiditySide::Taker,
         None,
         None,
-        UnixNanos::from(2_500),
-        UnixNanos::from(2_500),
+        UnixNanos::from(1_000_004),
+        UnixNanos::from(1_000_004),
         None,
     );
 

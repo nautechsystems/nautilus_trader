@@ -1546,6 +1546,89 @@ fn test_process_non_fill_event_resolved_by_venue_order_id_rewrites_client_order_
 }
 
 #[rstest]
+fn test_process_stale_cancel_after_fill_does_not_publish_order_event(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-001"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+    execution_engine.process(&fill);
+
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let cancels_topic = switchboard::get_order_cancels_topic(order.instrument_id());
+    let received_orders = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_cancels = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let received_portfolio = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let order_handler = TypedHandler::from({
+        let received_orders = received_orders.clone();
+        move |event: &OrderEventAny| {
+            received_orders.borrow_mut().push(event.clone());
+        }
+    });
+    let cancels_handler = TypedHandler::from({
+        let received_cancels = received_cancels.clone();
+        move |event: &OrderEventAny| {
+            received_cancels.borrow_mut().push(event.clone());
+        }
+    });
+    let portfolio_handler = TypedIntoHandler::from({
+        let received_portfolio = received_portfolio.clone();
+        move |event: OrderEventAny| {
+            received_portfolio.borrow_mut().push(event);
+        }
+    });
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_order_events(cancels_topic.into(), cancels_handler.clone(), None);
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::portfolio_update_order(),
+        portfolio_handler,
+    );
+
+    let stale_cancel = OrderEventAny::Canceled(build_order_canceled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("V-001")),
+        Some(AccountId::test_default()),
+    ));
+
+    execution_engine.process(&stale_cancel);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_order_events(cancels_topic.into(), &cancels_handler);
+
+    let cache = execution_engine.cache().borrow();
+    let order_after = cache
+        .order(&order.client_order_id())
+        .expect("cached order should remain available after stale cancel");
+    let received_orders = received_orders.borrow();
+    let received_cancels = received_cancels.borrow();
+    let received_portfolio = received_portfolio.borrow();
+
+    assert_eq!(order_after.status(), OrderStatus::Filled);
+    assert!(received_orders.is_empty());
+    assert!(received_cancels.is_empty());
+    assert!(received_portfolio.is_empty());
+}
+
+#[rstest]
 fn test_process_same_side_fill_publishes_position_changed_after_order_topic(
     mut execution_engine: ExecutionEngine,
 ) {

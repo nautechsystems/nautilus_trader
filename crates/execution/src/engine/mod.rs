@@ -2681,11 +2681,7 @@ impl ExecutionEngine {
                     Some(OrderError::InvalidStateTransition)
                 ) {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
-                    return self
-                        .cache
-                        .borrow()
-                        .order(&client_order_id)
-                        .map(|o| o.clone());
+                    return None;
                 }
 
                 if let Some(OrderError::DuplicateFill(trade_id)) = e.downcast_ref::<OrderError>() {
