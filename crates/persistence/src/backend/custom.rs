@@ -28,8 +28,9 @@ use datafusion::arrow::{
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
-    Bar, CustomData, CustomDataTrait, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
-    OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+    Bar, CustomData, CustomDataTrait, Data, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks,
+    OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+    encode_custom_to_arrow,
 };
 use nautilus_serialization::arrow::DecodeDataFromRecordBatch;
 #[cfg(feature = "python")]
@@ -197,6 +198,7 @@ pub fn decode_batch_to_data(
         "IndexPriceUpdate" | "index_price_updates" => {
             Ok(IndexPriceUpdate::decode_data_batch(metadata, batch)?)
         }
+        "OptionGreeks" | "option_greeks" => Ok(OptionGreeks::decode_data_batch(metadata, batch)?),
         "InstrumentClose" | "instrument_closes" => {
             Ok(InstrumentClose::decode_data_batch(metadata, batch)?)
         }

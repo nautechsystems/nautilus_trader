@@ -30,6 +30,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.custom import customdataclass
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
@@ -1280,6 +1281,63 @@ class TestArrowSerializer:
         assert roundtripped.is_trading is True
         assert roundtripped.is_quoting is True
         assert roundtripped.is_short_sell_restricted is False
+
+    def test_serialize_and_deserialize_pyo3_option_greeks(self):
+        from nautilus_trader.core import nautilus_pyo3
+
+        instrument_id = nautilus_pyo3.InstrumentId.from_str("BTC-20260529-100000-C.OKX")
+        greeks = nautilus_pyo3.OptionGreeks(
+            instrument_id,
+            0.55,
+            0.012,
+            3.4,
+            -1.2,
+            0.01,
+            0.64,
+            None,
+            0.66,
+            100_000.0,
+            None,
+            1_000_000_000,
+            1_000_000_001,
+            nautilus_pyo3.GreeksConvention.PRICE_ADJUSTED,
+        )
+
+        batch = ArrowSerializer.serialize_batch(
+            [greeks],
+            data_cls=nautilus_pyo3.OptionGreeks,
+        )
+        assert isinstance(batch, pa.Table)
+        assert batch.num_rows == 1
+
+        deserialized = ArrowSerializer.deserialize(
+            data_cls=nautilus_pyo3.OptionGreeks,
+            batch=batch,
+        )
+        assert len(deserialized) == 1
+        roundtripped = deserialized[0]
+        assert roundtripped.instrument_id == instrument_id
+        assert roundtripped.delta == 0.55
+        assert roundtripped.gamma == 0.012
+        assert roundtripped.vega == 3.4
+        assert roundtripped.theta == -1.2
+        assert roundtripped.rho == 0.01
+        assert roundtripped.mark_iv == 0.64
+        assert roundtripped.bid_iv is None
+        assert roundtripped.ask_iv == 0.66
+        assert roundtripped.underlying_price == 100_000.0
+        assert roundtripped.open_interest is None
+        assert roundtripped.ts_event == 1_000_000_000
+        assert roundtripped.ts_init == 1_000_000_001
+        assert roundtripped.convention == nautilus_pyo3.GreeksConvention.PRICE_ADJUSTED
+
+        self.catalog.write_data([OptionGreeks.from_pyo3(greeks)])
+        queried = self.catalog.query(data_cls=OptionGreeks, as_dataframe=False)
+        assert len(queried) == 1
+        assert str(queried[0].instrument_id) == str(instrument_id)
+        assert queried[0].bid_iv is None
+        assert queried[0].open_interest is None
+        assert queried[0].convention == nautilus_pyo3.GreeksConvention.PRICE_ADJUSTED
 
     @pytest.mark.parametrize("obj", nautilus_objects())
     def test_serialize_and_deserialize_all(self, obj):

@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use nautilus_core::{UnixNanos, python::to_pytype_err};
 use nautilus_model::{
     data::{
-        Bar, Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
+        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
     },
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
@@ -39,6 +39,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
+        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
         Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
     }
@@ -963,6 +964,20 @@ impl PyParquetDataCatalog {
                     .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
                 statuses.into_iter().map(Data::from).collect()
             }
+            "option_greeks" => {
+                let greeks = self
+                    .inner
+                    .query_typed_data::<OptionGreeks>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                greeks.into_iter().map(Data::from).collect()
+            }
             "instrument_closes" => {
                 let closes = self
                     .inner
@@ -1248,6 +1263,30 @@ impl PyParquetDataCatalog {
                 where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
+            )
+            .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
+    }
+
+    /// Query option greeks data from Parquet files.
+    #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
+    pub fn query_option_greeks(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<OptionGreeks>> {
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        self.inner
+            .query_typed_data::<OptionGreeks>(
+                instrument_ids,
+                start_nanos,
+                end_nanos,
+                where_clause,
+                None,
+                true,
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }

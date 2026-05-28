@@ -89,7 +89,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose, is_monotonically_increasing_by_init, to_variant,
     },
     events::{
@@ -385,6 +385,7 @@ impl ParquetDataCatalog {
         let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
         let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
         let mut statuses: Vec<InstrumentStatus> = Vec::new();
+        let mut option_greeks: Vec<OptionGreeks> = Vec::new();
         let mut closes: Vec<InstrumentClose> = Vec::new();
         // Group custom data by full DataType identity (type_name + identifier + metadata)
         // so each batch is written to the correct path with consistent schema/metadata.
@@ -425,6 +426,9 @@ impl ParquetDataCatalog {
                 Data::InstrumentStatus(s) => {
                     statuses.push(s);
                 }
+                Data::OptionGreeks(g) => {
+                    option_greeks.push(g);
+                }
                 Data::InstrumentClose(c) => {
                     closes.push(c);
                 }
@@ -444,6 +448,7 @@ impl ParquetDataCatalog {
         self.write_to_parquet(mark_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(index_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(statuses, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(option_greeks, start, end, skip_disjoint_check)?;
         self.write_to_parquet(closes, start, end, skip_disjoint_check)?;
 
         for (_, items) in custom_data {
@@ -2141,6 +2146,16 @@ impl ParquetDataCatalog {
         self.query_typed_data::<InstrumentClose>(instrument_ids, start, end, None, None, true)
     }
 
+    /// Queries option greeks data for the specified instrument(s) and time range.
+    pub fn option_greeks(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<OptionGreeks>> {
+        self.query_typed_data::<OptionGreeks>(instrument_ids, start, end, None, None, true)
+    }
+
     /// Queries any instrument data for the specified instrument(s) and time range.
     pub fn instruments(
         &self,
@@ -3399,6 +3414,11 @@ impl ParquetDataCatalog {
                             self.convert_record_batches_to_data(batches, false)?;
                         prices.into_iter().map(Data::from).collect()
                     }
+                    "option_greeks" => {
+                        let greeks: Vec<OptionGreeks> =
+                            self.convert_record_batches_to_data(batches, false)?;
+                        greeks.into_iter().map(Data::from).collect()
+                    }
                     "instrument_status" => {
                         let statuses: Vec<InstrumentStatus> =
                             self.convert_record_batches_to_data(batches, false)?;
@@ -4034,6 +4054,7 @@ impl ParquetDataCatalog {
                     | "bars"
                     | "index_prices"
                     | "mark_prices"
+                    | "option_greeks"
                     | "instrument_status"
                     | "instrument_closes"
                     | "funding_rate_update"
@@ -4125,6 +4146,7 @@ impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
 impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
 impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
+impl_catalog_path_prefix!(OptionGreeks, "option_greeks");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 impl_catalog_path_prefix!(InstrumentAny, "instruments");
 impl_catalog_path_prefix!(AccountState, "account_state");

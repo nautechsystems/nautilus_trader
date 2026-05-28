@@ -1672,6 +1672,12 @@ impl DataEngine {
                 self.handle_instrument_status(status);
                 self.drain_deferred_commands();
             }
+            Data::OptionGreeks(greeks) => {
+                self.cache.borrow_mut().add_option_greeks(greeks);
+                let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
+                msgbus::publish_option_greeks(topic, &greeks);
+                self.drain_deferred_commands();
+            }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
         }
@@ -1696,6 +1702,7 @@ impl DataEngine {
             Data::MarkPriceUpdate(mark_price) => self.handle_mark_price_pipeline(mark_price),
             Data::IndexPriceUpdate(index_price) => self.handle_index_price_pipeline(index_price),
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
+            Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
         }
@@ -2740,6 +2747,15 @@ impl DataEngine {
 
         let topic = switchboard::get_pipeline_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
+    }
+
+    fn handle_option_greeks_pipeline(&self, greeks: OptionGreeks) {
+        if self.pipeline_cache_writes_allowed() {
+            self.cache.borrow_mut().add_option_greeks(greeks);
+        }
+
+        let topic = switchboard::get_pipeline_option_greeks_topic(greeks.instrument_id);
+        msgbus::publish_option_greeks(topic, &greeks);
     }
 
     fn handle_instrument_close_pipeline(&self, close: InstrumentClose) {

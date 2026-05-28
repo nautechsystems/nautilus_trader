@@ -34,6 +34,7 @@ from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -67,6 +68,7 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.Bar,
     nautilus_pyo3.MarkPriceUpdate,
     nautilus_pyo3.IndexPriceUpdate,
+    nautilus_pyo3.OptionGreeks,
     nautilus_pyo3.InstrumentClose,
 ]
 
@@ -161,6 +163,8 @@ class ArrowSerializer:
                 batch_bytes = nautilus_pyo3.trades_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.Bar:
                 batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(data)
+            case nautilus_pyo3.OptionGreeks:
+                batch_bytes = nautilus_pyo3.option_greeks_to_arrow_record_batch_bytes(data)
             case _:
                 if data_cls in (OrderBookDelta, OrderBookDeltas):
                     pyo3_deltas = OrderBookDelta.to_pyo3_list(data)
@@ -194,6 +198,11 @@ class ArrowSerializer:
                     pyo3_instrument_closes = InstrumentClose.to_pyo3_list(data)
                     batch_bytes = nautilus_pyo3.instrument_closes_to_arrow_record_batch_bytes(
                         pyo3_instrument_closes,
+                    )
+                elif data_cls == OptionGreeks:
+                    pyo3_option_greeks = [item.to_pyo3() for item in data]
+                    batch_bytes = nautilus_pyo3.option_greeks_to_arrow_record_batch_bytes(
+                        pyo3_option_greeks,
                     )
                 elif data_cls == OrderBookDepth10:
                     data = [
@@ -326,8 +335,13 @@ class ArrowSerializer:
             Bar: BarDataWranglerV2,
             MarkPriceUpdate: None,
             IndexPriceUpdate: None,
+            OptionGreeks: None,
             InstrumentClose: None,
         }[data_cls]
+
+        if data_cls == OptionGreeks:
+            pyo3_greeks = _option_greeks_decoder(table)
+            return [OptionGreeks.from_pyo3(item) for item in pyo3_greeks]
 
         if Wrangler is None:
             raise NotImplementedError
@@ -381,6 +395,7 @@ RUST_SERIALIZERS = {
     Bar,
     MarkPriceUpdate,
     IndexPriceUpdate,
+    OptionGreeks,
     # InstrumentClose,  # TODO: Not implemented yet
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
@@ -553,4 +568,37 @@ register_arrow(
     encoder=_instrument_status_encoder,
     decoder=_instrument_status_decoder,
     batch_encoder=_instrument_status_encoder,
+)
+
+
+_OPTION_GREEKS_PYO3_SCHEMA = NAUTILUS_ARROW_SCHEMA[OptionGreeks]
+
+
+def _option_greeks_encoder(data: list) -> pa.RecordBatch:
+    if not isinstance(data, list):
+        data = [data]
+    batch_bytes = nautilus_pyo3.option_greeks_to_arrow_record_batch_bytes(data)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
+    table = reader.read_all()
+    return table.to_batches()[0]
+
+
+def _option_greeks_decoder(table) -> list:
+    if isinstance(table, pa.RecordBatch):
+        table = pa.Table.from_batches([table])
+    sink = pa.BufferOutputStream()
+    writer = pa.ipc.new_stream(sink, table.schema)
+    for batch in table.to_batches():
+        writer.write_batch(batch)
+    writer.close()
+    ipc_bytes = sink.getvalue().to_pybytes()
+    return nautilus_pyo3.option_greeks_from_arrow_record_batch_bytes(ipc_bytes)
+
+
+register_arrow(
+    nautilus_pyo3.OptionGreeks,
+    schema=_OPTION_GREEKS_PYO3_SCHEMA,
+    encoder=_option_greeks_encoder,
+    decoder=_option_greeks_decoder,
+    batch_encoder=_option_greeks_encoder,
 )
