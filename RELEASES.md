@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added opt-in logging I/O controls for faster file flushes and buffered stdout
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind

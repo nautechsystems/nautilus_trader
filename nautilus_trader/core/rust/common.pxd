@@ -491,6 +491,23 @@ cdef extern from "../includes/common.h":
                               uint64_t max_file_size,
                               uint32_t max_backup_count);
 
+    LogGuard_API logging_init_with_options(TraderId_t trader_id,
+                                           UUID4_t instance_id,
+                                           LogLevel level_stdout,
+                                           LogLevel level_file,
+                                           const char *directory_ptr,
+                                           const char *file_name_ptr,
+                                           const char *file_format_ptr,
+                                           const char *component_levels_ptr,
+                                           uint8_t is_colored,
+                                           uint8_t is_bypassed,
+                                           uint8_t print_config,
+                                           uint8_t log_components_only,
+                                           uint64_t max_file_size,
+                                           uint32_t max_backup_count,
+                                           uint8_t fileout_sync_on_flush,
+                                           uint8_t buffered_stdout);
+
     # Creates a new log event.
     #
     # # Safety
@@ -524,6 +541,9 @@ cdef extern from "../includes/common.h":
 
     # Flushes global logger buffers of any records.
     void logger_flush();
+
+    # Flushes and syncs file logs to disk.
+    uint8_t logging_sync_to_disk();
 
     # Flushes global logger buffers of any records and then drops the logger.
     void logger_drop(LogGuard_API log_guard);

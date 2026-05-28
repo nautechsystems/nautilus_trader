@@ -105,6 +105,10 @@ fn make_log_line_with_two_fields() -> LogLine {
 }
 
 fn make_file_writer(name: &str) -> (TempDir, FileWriter) {
+    make_file_writer_with_sync(name, true)
+}
+
+fn make_file_writer_with_sync(name: &str, sync_on_flush: bool) -> (TempDir, FileWriter) {
     let dir = tempdir().expect("failed to create temporary benchmark directory");
     let config = FileWriterConfig::new(
         Some(dir.path().to_string_lossy().into_owned()),
@@ -119,6 +123,7 @@ fn make_file_writer(name: &str) -> (TempDir, FileWriter) {
         config,
         LevelFilter::Debug,
         true,
+        sync_on_flush,
     )
     .expect("failed to create benchmark file writer");
 
@@ -421,6 +426,32 @@ fn bench_file_flush(c: &mut Criterion) {
         b.iter(|| {
             writer.write(black_box(CLEAN_FILE_LINE));
             writer.flush();
+        });
+    });
+
+    // Measures the opt-in production `FileWriter::flush` path without per-flush sync_all.
+    // This is the expected fast path when `fileout_sync_on_flush=false`.
+    group.bench_function("file_writer_flush_no_sync_after_write", |b| {
+        let (_dir, mut writer) = make_file_writer_with_sync("flush-no-sync-after-write", false);
+
+        b.iter(|| {
+            writer.write(black_box(CLEAN_FILE_LINE));
+            writer.flush();
+        });
+    });
+
+    // Measures the explicit sync API's writer-side cost.
+    // This should stay in the same range as flush + sync_all because it requests durability.
+    group.bench_function("file_writer_sync_to_disk_after_write", |b| {
+        let (_dir, mut writer) = make_file_writer_with_sync("sync-to-disk-after-write", false);
+
+        b.iter(|| {
+            writer.write(black_box(CLEAN_FILE_LINE));
+            black_box(
+                writer
+                    .flush_and_sync()
+                    .expect("file flush and sync should not fail"),
+            );
         });
     });
 

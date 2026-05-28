@@ -621,6 +621,10 @@ class LoggingConfig(NautilusConfig, frozen=True):
     clear_log_file : bool, default False
         If the log file name should be cleared before being used (e.g. for testing).
         Only applies if `log_file_name` is not ``None``.
+    fileout_sync_on_flush : bool, default True
+        If file log flushes should also sync data to disk.
+    buffered_stdout : bool, default False
+        If stdout writes should be buffered until flush or buffer capacity.
 
     """
 
@@ -639,6 +643,8 @@ class LoggingConfig(NautilusConfig, frozen=True):
     use_tracing: bool = False
     use_pyo3: bool = False
     clear_log_file: bool = False
+    fileout_sync_on_flush: bool = True
+    buffered_stdout: bool = False
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):

@@ -166,6 +166,8 @@ pub enum LogEvent {
     Log(LogLine),
     /// A command to flush all logger buffers.
     Flush,
+    /// A command to flush and sync file logs to disk, then acknowledge completion.
+    Sync(std::sync::mpsc::Sender<anyhow::Result<()>>),
     /// A command to close the logger.
     Close,
 }
@@ -836,12 +838,14 @@ impl Logger {
             bypass_logging: _,
             file_config: _,
             clear_log_file,
+            fileout_sync_on_flush,
+            buffered_stdout,
         } = config;
 
         let trader_id_cache = Ustr::from(&trader_id);
 
         // Set up std I/O buffers
-        let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored);
+        let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored, buffered_stdout);
         let mut stderr_writer = StderrWriter::new(is_colored);
 
         // Conditionally create file writer based on fileout_level
@@ -854,6 +858,7 @@ impl Logger {
                 file_config,
                 fileout_level,
                 clear_log_file,
+                fileout_sync_on_flush,
             )
         };
 
@@ -899,6 +904,15 @@ impl Logger {
                         file_writer.flush();
                     }
                 }
+                LogEvent::Sync(done) => {
+                    let result = if let Some(file_writer) = file_writer_opt {
+                        file_writer.flush_and_sync().map_err(anyhow::Error::from)
+                    } else {
+                        Ok(())
+                    };
+
+                    let _ = done.send(result);
+                }
                 LogEvent::Close => {
                     // Close handled in the main loop; ignore here.
                 }
@@ -908,7 +922,7 @@ impl Logger {
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             match event {
-                LogEvent::Log(_) | LogEvent::Flush => process_event(
+                LogEvent::Log(_) | LogEvent::Flush | LogEvent::Sync(_) => process_event(
                     event,
                     &mut stdout_writer,
                     &mut stderr_writer,
@@ -942,7 +956,7 @@ impl Logger {
                     stderr_writer.flush();
 
                     if let Some(ref mut file_writer) = file_writer_opt {
-                        file_writer.flush();
+                        file_writer.flush_and_sync_logged();
                     }
 
                     break;
@@ -1034,6 +1048,31 @@ pub(crate) fn shutdown_graceful() {
     }
 
     LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
+}
+
+/// Flushes and syncs file logs to disk through the logging thread.
+///
+/// This is a no-op when logging is not initialized or file logging is disabled.
+///
+/// # Errors
+///
+/// Returns an error if the sync request cannot be delivered or acknowledged.
+pub fn sync_to_disk() -> anyhow::Result<()> {
+    if !LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let Some(tx) = LOGGER_TX.get() else {
+        return Ok(());
+    };
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    tx.send(LogEvent::Sync(done_tx))
+        .map_err(|e| anyhow::anyhow!("failed to request logging sync: {e}"))?;
+
+    done_rx
+        .recv()
+        .map_err(|e| anyhow::anyhow!("failed to receive logging sync acknowledgement: {e}"))?
 }
 
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
@@ -1729,7 +1768,7 @@ mod tests {
         use crate::{
             logging::{
                 LOGGING_BYPASSED, logging_clock_set_static_mode, logging_clock_set_static_time,
-                logging_is_initialized, logging_set_bypass,
+                logging_is_initialized, logging_set_bypass, logging_sync_to_disk,
             },
             testing::wait_until,
         };
@@ -1795,6 +1834,52 @@ mod tests {
                 log_contents,
                 "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test\n"
             );
+        }
+
+        #[rstest]
+        fn test_logging_sync_to_disk_flushes_fast_flush_policy() {
+            let config = LoggerConfig {
+                fileout_level: LevelFilter::Debug,
+                fileout_sync_on_flush: false,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-SYNC"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "RiskEngine";
+                "sync me"
+            );
+
+            logging_sync_to_disk().expect("sync-to-disk should succeed");
+
+            let log_file_path = std::fs::read_dir(&temp_dir)
+                .expect("Failed to read directory")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("No files found in directory")
+                .path();
+            let log_contents =
+                std::fs::read_to_string(log_file_path).expect("Error while reading log file");
+
+            assert!(log_contents.contains("sync me"));
+
+            drop(log_guard);
         }
 
         #[rstest]
