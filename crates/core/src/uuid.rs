@@ -47,7 +47,7 @@ fn format_uuid4_bytes(bytes: [u8; 16]) -> [u8; UUID4_LEN] {
         pos += 2;
     }
 
-    value[36] = 0; // Add the null terminator.
+    value[36] = 0; // Add the null terminator
 
     debug_assert_eq!(pos, 36, "Invariant: UUID text must be 36 bytes");
     debug_assert!(
