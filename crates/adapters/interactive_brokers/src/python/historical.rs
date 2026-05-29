@@ -15,8 +15,6 @@
 
 //! Python bindings for the Interactive Brokers historical data client.
 
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
 use ibapi::contracts::Contract;
 use nautilus_common::live::get_runtime;
@@ -42,19 +40,9 @@ impl HistoricalInteractiveBrokersClient {
         instrument_provider: crate::providers::instruments::InteractiveBrokersInstrumentProvider,
         config: crate::config::InteractiveBrokersDataClientConfig,
     ) -> PyResult<Self> {
-        let shared_client = get_runtime()
-            .block_on(crate::common::shared_client::get_or_connect(
-                &config.host,
-                config.port,
-                config.client_id,
-                config.connection_timeout,
-            ))
-            .map_err(to_pyruntime_err)?;
-
-        Ok(Self::new(
-            Arc::clone(shared_client.as_arc()),
-            Arc::new(instrument_provider),
-        ))
+        get_runtime()
+            .block_on(Self::connect_with_provider(instrument_provider, config))
+            .map_err(to_pyruntime_err)
     }
 
     fn __repr__(&self) -> String {

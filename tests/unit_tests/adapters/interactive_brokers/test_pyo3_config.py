@@ -86,9 +86,11 @@ def test_adapter_config_and_status_enums_are_python_accessible() -> None:
 
     provider_config = ib.InteractiveBrokersInstrumentProviderConfig(
         symbology_method=ib.SymbologyMethod.RAW,
+        filter_callable="package.module.filter_instrument",
     )
 
     assert provider_config.symbology_method == ib.SymbologyMethod.RAW
+    assert provider_config.filter_callable == "package.module.filter_instrument"
     assert ib.ContainerStatus.READY == ib.ContainerStatus.READY
     assert ib.ErrorCategory.CONNECTIVITY_ERROR.as_str() == "ConnectivityError"
     assert ib.InteractiveBrokersErrorKind.IB_API.as_str() == "IbApi"
