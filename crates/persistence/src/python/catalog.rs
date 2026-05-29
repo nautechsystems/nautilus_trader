@@ -136,7 +136,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -165,7 +164,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -194,7 +192,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -223,7 +220,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -252,7 +248,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -281,7 +276,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -310,7 +304,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -318,6 +311,34 @@ impl PyParquetDataCatalog {
             .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
             .map(|path| path.to_string_lossy().to_string())
             .map_err(|e| PyIOError::new_err(format!("Failed to write index price updates: {e}")))
+    }
+
+    /// Write option greeks data to Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: Vector of option greeks to write
+    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
+    ///
+    /// # Returns
+    ///
+    /// Returns the path of the created file as a string.
+    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
+    pub fn write_option_greeks(
+        &self,
+        data: Vec<OptionGreeks>,
+        start: Option<u64>,
+        end: Option<u64>,
+        skip_disjoint_check: bool,
+    ) -> PyResult<String> {
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        self.inner
+            .write_to_parquet(data, start_nanos, end_nanos, Some(skip_disjoint_check))
+            .map(|path| path.to_string_lossy().to_string())
+            .map_err(|e| PyIOError::new_err(format!("Failed to write option greeks: {e}")))
     }
 
     /// Write instruments to Parquet files in the catalog.
@@ -406,7 +427,6 @@ impl PyParquetDataCatalog {
         start: u64,
         end: u64,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = UnixNanos::from(start);
         let end_nanos = UnixNanos::from(end);
 
@@ -431,7 +451,6 @@ impl PyParquetDataCatalog {
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -461,7 +480,6 @@ impl PyParquetDataCatalog {
         ensure_contiguous_files: Option<bool>,
         deduplicate: Option<bool>,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -499,7 +517,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -541,7 +558,6 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -605,7 +621,6 @@ impl PyParquetDataCatalog {
     /// - Empty directories are not automatically removed after deletion
     #[pyo3(signature = (start=None, end=None))]
     pub fn delete_catalog_range(&mut self, start: Option<u64>, end: Option<u64>) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -644,7 +659,6 @@ impl PyParquetDataCatalog {
         start: Option<u64>,
         end: Option<u64>,
     ) -> PyResult<()> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
@@ -733,7 +747,6 @@ impl PyParquetDataCatalog {
         start: Option<u64>,
         end: Option<u64>,
     ) -> PyResult<Vec<String>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 

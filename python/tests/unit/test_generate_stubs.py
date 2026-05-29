@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -21,6 +22,67 @@ def _load_generate_stubs_module():
 
 
 generate_stubs = _load_generate_stubs_module()
+
+
+@pytest.mark.parametrize(
+    ("platform", "shared", "libdir", "existing", "expected_var", "expected_value"),
+    [
+        ("linux", 1, "/uv/lib", None, "LD_LIBRARY_PATH", "/uv/lib"),
+        ("linux", 1, "/uv/lib", "/existing", "LD_LIBRARY_PATH", f"/uv/lib{os.pathsep}/existing"),
+        ("darwin", 1, "/uv/lib", None, "DYLD_LIBRARY_PATH", "/uv/lib"),
+        ("win32", 1, "/uv/lib", None, None, None),
+        ("linux", 0, "/uv/lib", None, None, None),
+        ("linux", 1, None, None, None, None),
+    ],
+)
+def test_python_libdir_env_sets_loader_path(
+    monkeypatch,
+    platform,
+    shared,
+    libdir,
+    existing,
+    expected_var,
+    expected_value,
+):
+    # Arrange
+    monkeypatch.setattr(generate_stubs.sys, "platform", platform)
+    monkeypatch.setattr(
+        generate_stubs.sysconfig,
+        "get_config_var",
+        {"Py_ENABLE_SHARED": shared, "LIBDIR": libdir}.get,
+    )
+    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+    monkeypatch.delenv("DYLD_LIBRARY_PATH", raising=False)
+    if existing is not None:
+        monkeypatch.setenv(expected_var, existing)
+
+    # Act
+    env = generate_stubs.python_libdir_env()
+
+    # Assert
+    if expected_var is None:
+        assert "LD_LIBRARY_PATH" not in env
+        assert "DYLD_LIBRARY_PATH" not in env
+    else:
+        assert env[expected_var] == expected_value
+
+
+def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch):
+    # Arrange
+    monkeypatch.setattr(generate_stubs.sys, "platform", "linux")
+    monkeypatch.setattr(
+        generate_stubs.sysconfig,
+        "get_config_var",
+        {"Py_ENABLE_SHARED": 1, "LIBDIR": "/uv/lib"}.get,
+    )
+    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+
+    # Act
+    env = generate_stubs.python_libdir_env()
+
+    # Assert
+    assert env["LD_LIBRARY_PATH"] == "/uv/lib"
+    assert "LD_LIBRARY_PATH" not in os.environ
 
 
 def test_collect_rust_class_fixups_reads_pymethods_and_identifier_macros(tmp_path):

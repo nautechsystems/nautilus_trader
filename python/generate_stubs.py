@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import argparse
 import keyword
+import os
 import re
 import subprocess
 import sys
+import sysconfig
 import tomllib
 from dataclasses import dataclass
 from dataclasses import field
@@ -162,6 +164,7 @@ def run_command(
     cwd: Path | None = None,
     check: bool = True,
     stream_output: bool = False,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """
     Run a command and return the result.
@@ -172,9 +175,9 @@ def run_command(
         print(f"  in: {cwd}")
 
     if stream_output:
-        result = subprocess.run(cmd, cwd=cwd, text=True, check=False)
+        result = subprocess.run(cmd, cwd=cwd, text=True, check=False, env=env)
     else:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
 
     if check and result.returncode != 0:
         if not stream_output:
@@ -182,6 +185,31 @@ def run_command(
         raise subprocess.CalledProcessError(result.returncode, cmd)
 
     return result
+
+
+def python_libdir_env() -> dict[str, str]:
+    """
+    Return an environment that lets binaries linked against the interpreter's shared
+    ``libpython`` locate it at runtime.
+
+    uv-managed CPython is a shared build whose ``libpython`` lives under its own ``lib``
+    directory, which is not on the system loader path. The standalone ``python-stub-gen``
+    binary has no rpath, so without this it cannot load ``libpython`` at runtime.
+
+    """
+    env = os.environ.copy()
+
+    if sys.platform == "win32" or not sysconfig.get_config_var("Py_ENABLE_SHARED"):
+        return env
+
+    libdir = sysconfig.get_config_var("LIBDIR")
+    if not libdir:
+        return env
+
+    var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    existing = env.get(var)
+    env[var] = f"{libdir}{os.pathsep}{existing}" if existing else libdir
+    return env
 
 
 def load_pyproject() -> dict:
@@ -235,7 +263,7 @@ def generate_stubs() -> bool:
     if cargo_features:
         cmd.extend(["--features", ",".join(cargo_features)])
 
-    result = run_command(cmd, cwd=crates_dir, stream_output=True)
+    result = run_command(cmd, cwd=crates_dir, stream_output=True, env=python_libdir_env())
 
     print("Stubs generated successfully")
 

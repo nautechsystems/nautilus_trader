@@ -172,6 +172,12 @@ class BacktestVenueConfig:
     def bar_execution(self) -> bool: ...
     @property
     def trade_execution(self) -> bool: ...
+    @property
+    def liquidation_enabled(self) -> bool: ...
+    @property
+    def liquidation_trigger_ratio(self) -> float: ...
+    @property
+    def liquidation_cancel_open_orders(self) -> bool: ...
     def __new__(
         cls,
         name: str,
@@ -205,6 +211,9 @@ class BacktestVenueConfig:
         fee_model: typing.Any | None = None,
         price_protection_points: int | None = None,
         settlement_prices: typing.Mapping[model.InstrumentId, float] | None = None,
+        liquidation_enabled: bool | None = None,
+        liquidation_trigger_ratio: float | None = None,
+        liquidation_cancel_open_orders: bool | None = None,
     ) -> BacktestVenueConfig: ...
 
 @typing.final
@@ -274,6 +283,9 @@ class BacktestEngine:
         oto_trigger_mode: model.OtoTriggerMode = model.OtoTriggerMode.PARTIAL,
         price_protection_points: int | None = None,
         settlement_prices: typing.Mapping[model.InstrumentId, model.Price] | None = None,
+        liquidation_enabled: bool = False,
+        liquidation_trigger_ratio: float | None = None,
+        liquidation_cancel_open_orders: bool = True,
     ) -> None: ...
     def change_fill_model(self, venue: model.Venue, fill_model: typing.Any) -> None: ...
     def add_data(

@@ -1627,7 +1627,9 @@ impl DataEngine {
     /// custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         self.data_count += 1;
-        // TODO: Eventually these can be added to the `Data` enum (C/Cython blocking), process here for now
+        // Dynamically-typed entry point: `InstrumentStatus`, `OptionGreeks`, and custom data are
+        // also `Data` enum variants handled in `process_data`, but can arrive here as typed data,
+        // whereas `InstrumentAny` and `FundingRateUpdate` are not `Data` variants.
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {

@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added deny guard for mixed-instrument order lists submitted with a `position_id`
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
+- Added native `OptionGreeks` persistence and backtest replay support (#4132), thanks @Jonah-Chan
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
 - Added Binance Futures open interest request custom data (Rust) (#4109), thanks @graceyangfan
 - Added pending-resolution settlement pipeline for binary options (Rust) (#4101), thanks @graceyangfan
@@ -77,6 +78,7 @@ Released on TBD (UTC).
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed HEDGING margin scaling with fill count instead of net exposure (#4110), thanks for reporting @qaxayuan
+- Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
 - Fixed `DefiDataEngine` exposing zero-state pool profiler during snapshot bootstrap
@@ -84,6 +86,7 @@ Released on TBD (UTC).
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 - Fixed Python v2 order-book wranglers writing raw fixed-point bytes in big-endian (needed little-endian) (#4111), thanks for reporting @fabz1
+- Fixed Python v2 type stub generation failing to locate `libpython` under uv-managed interpreters
 - Fixed Betfair adapter snapshot book deltas emitting zero-volume `Add` entries (Rust)
 - Fixed Betfair adapter traded volume cache to handle bet voids and non-runner adjustments (Rust)
 - Fixed Betfair adapter RCM custom data `ts_init` parity between live and historical streams (Rust)
@@ -105,7 +108,6 @@ Released on TBD (UTC).
 - Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
 - Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
 - Fixed Polymarket PyO3 bootstrap to honor `instrument_config` (#4127), thanks @graceyangfan
-- Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
