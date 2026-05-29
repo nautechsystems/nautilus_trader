@@ -2570,6 +2570,51 @@ mod tests {
         )
     }
 
+    fn is_resolve_response(event: &DataEvent) -> bool {
+        matches!(event, DataEvent::Response(DataResponse::Data(_)))
+    }
+
+    fn count_instrument_close_events(events: &[DataEvent]) -> usize {
+        events
+            .iter()
+            .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
+            .count()
+    }
+
+    async fn collect_events_until<F>(
+        data_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        timeout: StdDuration,
+        mut done: F,
+    ) -> Vec<DataEvent>
+    where
+        F: FnMut(&[DataEvent]) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut events = Vec::new();
+
+        loop {
+            while let Ok(event) = data_rx.try_recv() {
+                events.push(event);
+            }
+
+            if done(&events) || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+
+            let wait_for = remaining.min(StdDuration::from_millis(100));
+            if let Ok(Some(event)) = tokio::time::timeout(wait_for, data_rx.recv()).await {
+                events.push(event);
+            }
+        }
+
+        events
+    }
+
     fn instrument_id() -> InstrumentId {
         InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET")
     }
@@ -3643,45 +3688,23 @@ mod tests {
         );
         client.request_data(request).expect("request_data");
 
-        let mut events = Vec::new();
-        let deadline = tokio::time::Instant::now() + StdDuration::from_secs(1);
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
 
-            let Some(event) = tokio::time::timeout(remaining, data_rx.recv())
-                .await
-                .expect("timed out waiting for resolve events")
-            else {
-                break;
-            };
-            let saw_response = matches!(event, DataEvent::Response(DataResponse::Data(_)));
-            events.push(event);
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
 
-            while let Ok(queued) = data_rx.try_recv() {
-                let queued_is_response =
-                    matches!(queued, DataEvent::Response(DataResponse::Data(_)));
-                events.push(queued);
-
-                if queued_is_response {
-                    break;
-                }
-            }
-
-            if saw_response
-                || events
-                    .iter()
-                    .any(|event| matches!(event, DataEvent::Response(DataResponse::Data(_))))
-            {
-                break;
-            }
-        }
         assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, DataEvent::Response(DataResponse::Data(_)))),
+            events.iter().any(is_resolve_response),
             "expected custom data response, received: {events:?}"
         );
         let response = events
@@ -3706,10 +3729,7 @@ mod tests {
             summary.emitted_condition_ids,
             vec!["0xCOND-REQ".to_string()]
         );
-        let closes = events
-            .iter()
-            .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
-            .count();
+        let closes = count_instrument_close_events(&events);
         assert_eq!(closes, 2);
     }
 
@@ -3806,29 +3826,23 @@ mod tests {
         );
         client.request_data(request).expect("request_data");
 
-        let mut events = Vec::new();
-        let deadline = tokio::time::Instant::now() + StdDuration::from_secs(1);
-        while tokio::time::Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let Some(event) = tokio::time::timeout(remaining, data_rx.recv())
-                .await
-                .expect("timed out waiting for resolve events")
-            else {
-                break;
-            };
-            events.push(event);
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-A".to_string())
+                    && !client
+                        .resolve_poll_watchlist
+                        .contains_key(&"0xCOND-B".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
 
-            let close_count = events
-                .iter()
-                .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
-                .count();
-            let saw_response = events
-                .iter()
-                .any(|event| matches!(event, DataEvent::Response(DataResponse::Data(_))));
-            if saw_response && close_count >= 4 {
-                break;
-            }
-        }
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 4
+        })
+        .await;
 
         let response = events
             .iter()
@@ -3857,10 +3871,7 @@ mod tests {
             vec!["0xCOND-A".to_string(), "0xCOND-B".to_string()]
         );
 
-        let closes = events
-            .iter()
-            .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))))
-            .count();
+        let closes = count_instrument_close_events(&events);
         assert_eq!(closes, 4);
     }
 
@@ -3934,12 +3945,11 @@ mod tests {
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
             .await;
 
-        let mut closes = 0usize;
-        while let Ok(event) = data_rx.try_recv() {
-            if matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))) {
-                closes += 1;
-            }
-        }
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(1), |events| {
+            count_instrument_close_events(events) >= 2
+        })
+        .await;
+        let closes = count_instrument_close_events(&events);
 
         assert_eq!(closes, 2);
         assert!(
