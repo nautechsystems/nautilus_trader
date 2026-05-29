@@ -321,7 +321,15 @@ fn kernel_start_installs_snapshot_anchorer_for_execution_snapshots() {
     let _guard = lock_kernel_test();
     let tmp = TempDir::new().expect("tempdir");
     let instance_id = UUID4::new();
-    let config = config_with(tmp.path().to_path_buf());
+    let mut config = config_with(tmp.path().to_path_buf());
+
+    // This test drives the async writer through a synchronous anchor round-trip mid-run
+    // and then asserts the run sealed. On a loaded CI box the writer thread can be
+    // scheduled late, so the default 2s ceilings would misread a slow writer as a
+    // fail-stop, skip the seal, and fail the durability assertions. Generous-but-finite
+    // ceilings tolerate scheduling jitter while still surfacing a genuinely stuck writer.
+    config.halt_threshold = Duration::from_secs(30);
+    config.run_started_timeout = Duration::from_secs(30);
     let instrument = audusd_sim();
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
