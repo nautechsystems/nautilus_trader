@@ -165,21 +165,17 @@ No imports are needed.
 
 ### Tabs
 
-Use `Tabs` and `Tab` for language-specific or variant code examples.
+Add `tab="..."` to consecutive fenced code blocks for language-specific or variant code examples.
+List Rust before Python so Rust is the default (left-most) tab.
 
 ```markdown
-<Tabs items={['Python', 'Rust']}>
-<Tab value="Python">
-\`\`\`python
-strategy.submit_order(order, params={"close_position": True})
-\`\`\`
-</Tab>
-<Tab value="Rust">
-\`\`\`rust
+\`\`\`rust tab="Rust"
 let params = Params::from([("close_position", true.into())]);
 \`\`\`
-</Tab>
-</Tabs>
+
+\`\`\`python tab="Python"
+strategy.submit_order(order, params={"close_position": True})
+\`\`\`
 ```
 
 ### Steps

@@ -155,20 +155,20 @@ Deribit exposes active traded expirations through the `public/get_expirations` H
 Option-chain loaders can use the high-level HTTP client to refresh active option series without
 scanning every instrument.
 
-```python tab="Python"
-from nautilus_trader.deribit import DeribitCurrency
-from nautilus_trader.deribit import DeribitHttpClient
-
-client = DeribitHttpClient()
-expirations = await client.request_option_expirations(DeribitCurrency.BTC)
-```
-
 ```rust tab="Rust"
 use nautilus_deribit::http::models::DeribitCurrency;
 
 let expirations = client
     .request_option_expirations(DeribitCurrency::BTC)
     .await?;
+```
+
+```python tab="Python"
+from nautilus_trader.deribit import DeribitCurrency
+from nautilus_trader.deribit import DeribitHttpClient
+
+client = DeribitHttpClient()
+expirations = await client.request_option_expirations(DeribitCurrency.BTC)
 ```
 
 The high-level method returns option expirations only. For lower-level Rust requests, call

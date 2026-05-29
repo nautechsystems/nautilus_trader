@@ -325,13 +325,13 @@ auto-cancels the order when the position is closed by other means.
 Pass `close_position` via the `params` dictionary on `StopMarket` or `MarketIfTouched` orders.
 Cannot be combined with `reduce_only`.
 
-```python tab="Python"
-strategy.submit_order(order, params={"close_position": True})
-```
-
 ```rust tab="Rust"
 let params = Params::from([("close_position", true.into())]);
 let cmd = SubmitOrder::new(order).with_params(params);
+```
+
+```python tab="Python"
+strategy.submit_order(order, params={"close_position": True})
 ```
 
 :::info

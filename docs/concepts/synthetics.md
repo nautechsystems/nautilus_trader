@@ -234,4 +234,4 @@ for input requirements and exceptions.
 
 - [Instruments](instruments/) - Instrument definitions and venue-specific instrument types.
 - [Data](data.md) - Market data types that reference instruments.
-- [Orders](orders.md) - Orders can use synthetic instrument IDs for emulation triggers.
+- [Orders](orders/) - Orders can use synthetic instrument IDs for emulation triggers.

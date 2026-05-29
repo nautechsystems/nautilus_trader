@@ -236,7 +236,7 @@ unified Nautilus instrument API.
 ## Related guides
 
 - [Data](../data.md) covers market data types that reference instruments.
-- [Orders](../orders.md) covers order fields that reference instruments.
+- [Orders](../orders/) covers order fields that reference instruments.
 - [Synthetics](../synthetics.md) covers local formula-derived instruments.
 - [Python API Reference](/docs/python-api-latest/model/instruments.html) lists Python
   constructors and members.

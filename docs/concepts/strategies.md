@@ -389,7 +389,7 @@ The component a `SubmitOrder` or `SubmitOrderList` command will flow to for exec
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`.
 - Otherwise, the command will *firstly* be sent to the `RiskEngine`.
 
-This example submits a `LIMIT` BUY order for emulation (see [Emulated Orders](orders.md#emulated-orders)):
+This example submits a `LIMIT` BUY order for emulation (see [Emulated Orders](orders/emulated.md)):
 
 ```python
 from nautilus_trader.model.enums import OrderSide
@@ -713,5 +713,5 @@ See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.h
 
 - [Actors](actors.md) - Base class that strategies extend.
 - [Events](events.md) - Event types and handler dispatch.
-- [Orders](orders.md) - Order types and management from strategies.
+- [Orders](orders/) - Order types and management from strategies.
 - [Backtesting](backtesting.md) - Test strategies with historical data.
