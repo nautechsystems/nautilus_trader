@@ -82,6 +82,15 @@ pub enum LoadError {
         #[source]
         errors: PluginManifestValidationErrors,
     },
+
+    #[error(
+        "plug-in '{path}' redeclares custom-data type '{type_name}' already provided by '{existing_path}'"
+    )]
+    DuplicateCustomDataType {
+        path: PathBuf,
+        type_name: String,
+        existing_path: PathBuf,
+    },
 }
 
 /// Owned manifest diagnostics captured before a rejected plug-in is unloaded.
@@ -343,6 +352,33 @@ impl PluginLoader {
         };
 
         let manifest = validate_manifest_ptr(manifest_ptr, &path_buf)?;
+
+        let collision = {
+            let new_types: Vec<&str> = manifest.custom_data().map(|e| e.type_name()).collect();
+            let existing: Vec<(&str, &Path)> = self
+                .loaded
+                .iter()
+                .flat_map(|loaded| {
+                    let loaded_path = loaded.path();
+                    loaded
+                        .validated_manifest()
+                        .custom_data()
+                        .map(move |entry| (entry.type_name(), loaded_path))
+                })
+                .collect();
+            first_duplicate_custom_data_type(&new_types, &existing).map(
+                |(type_name, existing_path)| (type_name.to_string(), existing_path.to_path_buf()),
+            )
+        };
+
+        if let Some((type_name, existing_path)) = collision {
+            return Err(LoadError::DuplicateCustomDataType {
+                path: path_buf,
+                type_name,
+                existing_path,
+            });
+        }
+
         let manifest_ref = manifest.manifest();
         let abi = manifest_ref.abi_version;
         let custom_data_count = manifest.custom_data().len();
@@ -419,6 +455,29 @@ fn validate_manifest_ptr(
             errors,
         }),
     }
+}
+
+/// Returns the first custom-data type name in `new_types` that a previously
+/// loaded plug-in (`existing`) already declares, paired with the path that
+/// declared it first.
+///
+/// Host JSON-deserializer registration is keyed by type name and keeps the
+/// first registration, so a second plug-in declaring an already-registered
+/// type name would have its decoder silently ignored. The loader rejects the
+/// collision instead of letting it pass unnoticed. The intra-plug-in case
+/// (one manifest declaring a name twice) is already caught by manifest
+/// validation; this guards the cross-plug-in case the single-manifest check
+/// cannot see.
+fn first_duplicate_custom_data_type<'a>(
+    new_types: &[&'a str],
+    existing: &[(&'a str, &'a Path)],
+) -> Option<(&'a str, &'a Path)> {
+    new_types.iter().find_map(|&new_type| {
+        existing
+            .iter()
+            .find(|(existing_type, _)| *existing_type == new_type)
+            .map(|&(_, path)| (new_type, path))
+    })
 }
 
 /// Returns the process-wide static `HostVTable` exposed to plug-ins.
@@ -861,6 +920,43 @@ mod tests {
         assert!(loader.is_empty());
         assert_eq!(loader.len(), 0);
         assert!(loader.loaded().is_empty());
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_finds_cross_plugin_collision() {
+        let path_a = Path::new("/plugins/a.so");
+        let path_b = Path::new("/plugins/b.so");
+        let existing = [
+            ("AlphaTick", path_a),
+            ("BetaTick", path_a),
+            ("GammaTick", path_b),
+        ];
+        let new_types = ["DeltaTick", "BetaTick"];
+
+        let hit = first_duplicate_custom_data_type(&new_types, &existing);
+
+        assert_eq!(hit, Some(("BetaTick", path_a)));
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_returns_none_when_disjoint() {
+        let path_a = Path::new("/plugins/a.so");
+        let existing = [("AlphaTick", path_a)];
+        let new_types = ["BetaTick", "GammaTick"];
+
+        assert_eq!(
+            first_duplicate_custom_data_type(&new_types, &existing),
+            None
+        );
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_handles_empty_inputs() {
+        let path_a = Path::new("/plugins/a.so");
+        let existing = [("AlphaTick", path_a)];
+
+        assert_eq!(first_duplicate_custom_data_type(&[], &existing), None);
+        assert_eq!(first_duplicate_custom_data_type(&["AlphaTick"], &[]), None);
     }
 
     #[rstest]

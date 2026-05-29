@@ -694,7 +694,7 @@ cargo-test-plugin-cdylib-smoke:  #-- Run Linux plug-in cdylib smoke tests
 		--features host \
 		--test load_example_cdylib \
 		--run-ignored only \
-		-E 'test(=loads_example_cdylib_and_walks_manifest) | test(~rejects_malformed_cdylib_fixture)' \
+		-E 'test(=loads_example_cdylib_and_walks_manifest) | test(=rejects_second_plugin_with_duplicate_custom_data_type) | test(~rejects_malformed_cdylib_fixture)' \
 		$(FAIL_FAST_FLAG) \
 		--profile $(NEXTEST_PROFILE) \
 		--cargo-profile $(CARGO_CI_PROFILE) \

@@ -179,6 +179,37 @@ fn loads_example_cdylib_and_walks_manifest() {
 }
 
 #[rstest::rstest]
+#[ignore]
+fn rejects_second_plugin_with_duplicate_custom_data_type() {
+    // Loading the same cdylib twice reproduces a cross-plug-in custom-data
+    // type-name collision: both manifests declare "ExampleTick", and host
+    // JSON-deserializer registration keeps only the first, so the loader
+    // rejects the second load to surface the conflict instead of silently
+    // dropping the second decoder.
+    let path = build_example_cdylib("custom_data_plugin");
+    let mut loader = PluginLoader::new();
+    loader.load(&path).expect("first load succeeds");
+
+    let err = loader
+        .load(&path)
+        .expect_err("second load with a duplicate custom-data type should fail");
+
+    match err {
+        LoadError::DuplicateCustomDataType {
+            path: actual,
+            type_name,
+            existing_path,
+        } => {
+            assert_eq!(actual.as_path(), path.as_path());
+            assert_eq!(type_name, "ExampleTick");
+            assert_eq!(existing_path.as_path(), path.as_path());
+        }
+        other => panic!("expected DuplicateCustomDataType, was {other:?}"),
+    }
+    assert_eq!(loader.len(), 1);
+}
+
+#[rstest::rstest]
 #[case::missing_init_symbol("bad_missing_init_plugin", LoadErrorExpectation::MissingSymbol)]
 #[case::null_manifest("bad_null_manifest_plugin", LoadErrorExpectation::NullManifest)]
 #[case::wrong_abi(
