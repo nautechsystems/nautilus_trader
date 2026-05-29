@@ -30,9 +30,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Data, OrderBookDeltas, OrderBookDeltas_API, QuoteTick},
     enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
@@ -44,9 +42,9 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::{
-        consts::KRAKEN_VENUE,
         credential::KrakenCredential,
         enums::{KrakenEnvironment, KrakenProductType},
+        lookup_instrument_in_snapshot,
         urls::get_kraken_ws_public_url,
     },
     websocket::futures::{
@@ -696,14 +694,6 @@ impl KrakenFuturesWebSocketClient {
     }
 }
 
-fn lookup_instrument(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    product_id: &str,
-) -> Option<InstrumentAny> {
-    let instrument_id = InstrumentId::new(Symbol::new(product_id), *KRAKEN_VENUE);
-    instruments.load().get(&instrument_id).cloned()
-}
-
 fn resolve_client_order_id(
     truncated: &str,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
@@ -759,7 +749,8 @@ fn handle_open_orders_delta(
 
     let product_id = delta.order.instrument.as_str();
 
-    let Some(instrument) = lookup_instrument(instruments, product_id) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, product_id) else {
         log::warn!("No instrument for product_id: {product_id}");
         return;
     };
@@ -778,7 +769,7 @@ fn handle_open_orders_delta(
         &delta.order,
         delta.is_cancel,
         delta.reason.as_deref(),
-        &instrument,
+        instrument,
         acct_id,
         ts_init,
     ) {
@@ -891,6 +882,8 @@ fn handle_fills_delta(
         return;
     };
 
+    let instruments = instruments.load();
+
     for fill in &fills_delta.fills {
         let product_id = match &fill.instrument {
             Some(id) => id.as_str(),
@@ -900,12 +893,12 @@ fn handle_fills_delta(
             }
         };
 
-        let Some(instrument) = lookup_instrument(instruments, product_id) else {
+        let Some(instrument) = lookup_instrument_in_snapshot(&instruments, product_id) else {
             log::warn!("No instrument for product_id: {product_id}");
             continue;
         };
 
-        match parse_futures_ws_fill_report(fill, &instrument, acct_id, ts_init) {
+        match parse_futures_ws_fill_report(fill, instrument, acct_id, ts_init) {
             Ok(mut report) => {
                 if let Some(ref cl_ord_id) = fill.cli_ord_id {
                     let full_id = resolve_client_order_id(cl_ord_id, truncated_id_map);
@@ -925,25 +918,27 @@ fn handle_ticker(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = lookup_instrument(instruments, ticker.product_id.as_str()) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, ticker.product_id.as_str())
+    else {
         return;
     };
 
-    if let Some(mark_price) = parse_futures_ws_mark_price(ticker, &instrument, ts_init) {
+    if let Some(mark_price) = parse_futures_ws_mark_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
             let py_obj = data_to_pycapsule(py, Data::MarkPriceUpdate(mark_price));
             call_python_threadsafe(py, call_soon, callback, py_obj);
         });
     }
 
-    if let Some(index_price) = parse_futures_ws_index_price(ticker, &instrument, ts_init) {
+    if let Some(index_price) = parse_futures_ws_index_price(ticker, instrument, ts_init) {
         Python::attach(|py| {
             let py_obj = data_to_pycapsule(py, Data::IndexPriceUpdate(index_price));
             call_python_threadsafe(py, call_soon, callback, py_obj);
         });
     }
 
-    if let Some(funding_rate) = parse_futures_ws_funding_rate(ticker, &instrument, ts_init) {
+    if let Some(funding_rate) = parse_futures_ws_funding_rate(ticker, instrument, ts_init) {
         Python::attach(|py| match funding_rate.into_py_any(py) {
             Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
             Err(e) => log::error!("Failed to convert FundingRateUpdate to Python: {e}"),
@@ -958,11 +953,13 @@ fn handle_trade(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = lookup_instrument(instruments, trade.product_id.as_str()) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, trade.product_id.as_str())
+    else {
         return;
     };
 
-    match parse_futures_ws_trade_tick(trade, &instrument, ts_init) {
+    match parse_futures_ws_trade_tick(trade, instrument, ts_init) {
         Ok(tick) => {
             Python::attach(|py| {
                 let py_obj = data_to_pycapsule(py, Data::Trade(tick));
@@ -985,7 +982,10 @@ fn handle_book_snapshot(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = lookup_instrument(instruments, snapshot.product_id.as_str()) else {
+    let instruments = instruments.load();
+    let Some(instrument) =
+        lookup_instrument_in_snapshot(&instruments, snapshot.product_id.as_str())
+    else {
         return;
     };
     let instrument_id = instrument.id();
@@ -995,7 +995,7 @@ fn handle_book_snapshot(
         Ordering::Relaxed,
     );
 
-    match parse_futures_ws_book_snapshot_deltas(snapshot, &instrument, sequence, ts_init) {
+    match parse_futures_ws_book_snapshot_deltas(snapshot, instrument, sequence, ts_init) {
         Ok(delta_vec) => {
             if delta_vec.is_empty() {
                 return;
@@ -1047,14 +1047,16 @@ fn handle_book_delta(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let Some(instrument) = lookup_instrument(instruments, delta.product_id.as_str()) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, delta.product_id.as_str())
+    else {
         return;
     };
     let instrument_id = instrument.id();
 
     let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
 
-    match parse_futures_ws_book_delta(delta, &instrument, sequence, ts_init) {
+    match parse_futures_ws_book_delta(delta, instrument, sequence, ts_init) {
         Ok(book_delta) => {
             let deltas = OrderBookDeltas::new(instrument_id, vec![book_delta]);
 

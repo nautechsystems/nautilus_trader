@@ -552,10 +552,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let http_client = self.http_client.clone();
-        let symbol = order.instrument_id().symbol.to_string();
+        let symbol = order.instrument_id().symbol.inner();
 
         // Validate asset index exists before marking as submitted
-        let asset = match http_client.get_asset_index(&symbol) {
+        let asset = match http_client.get_asset_index_for_symbol(symbol) {
             Some(a) => a,
             None => {
                 self.emitter
@@ -565,7 +565,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         // Validate order conversion before marking as submitted
-        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+        let price_decimals = http_client
+            .get_price_precision_for_symbol(symbol)
+            .unwrap_or(2);
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
         let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset_and_cloid(
             &order,
@@ -706,8 +708,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 continue;
             }
 
-            let symbol = order.instrument_id().symbol.to_string();
-            let asset = match http_client.get_asset_index(&symbol) {
+            let symbol = order.instrument_id().symbol.inner();
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
                     self.emitter
@@ -716,7 +718,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             };
 
-            let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+            let price_decimals = http_client
+                .get_price_precision_for_symbol(symbol)
+                .unwrap_or(2);
 
             match order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
@@ -921,7 +925,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         let http_client = self.http_client.clone();
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let should_normalize = self.config.normalize_prices;
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
 
@@ -945,8 +949,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let quantity = target_total_qty - filled_qty;
-        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
-        let asset = match http_client.get_asset_index(&symbol) {
+        let price_decimals = http_client
+            .get_price_precision_for_symbol(symbol)
+            .unwrap_or(2);
+        let asset = match http_client.get_asset_index_for_symbol(symbol) {
             Some(a) => a,
             None => {
                 log::warn!(
@@ -1077,11 +1083,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_order", async move {
-            let asset = match http_client.get_asset_index(&symbol) {
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
                     log::warn!(
@@ -1174,7 +1180,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let instrument_id = cmd.instrument_id;
         let strategy_id = cmd.strategy_id;
         let entries: Vec<CancelEntry> = open_orders
@@ -1184,7 +1190,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 instrument_id,
                 client_order_id: o.client_order_id(),
                 venue_order_id: o.venue_order_id(),
-                symbol: symbol.clone(),
+                symbol,
             })
             .collect();
 
@@ -1194,7 +1200,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_all_orders", async move {
-            let asset = match http_client.get_asset_index(&symbol) {
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
                     log::warn!(
@@ -1246,7 +1252,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 instrument_id: c.instrument_id,
                 client_order_id: c.client_order_id,
                 venue_order_id: c.venue_order_id,
-                symbol: c.instrument_id.symbol.to_string(),
+                symbol: c.instrument_id.symbol.inner(),
             })
             .collect();
 
@@ -1259,7 +1265,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
-                let asset = match http_client.get_asset_index(&entry.symbol) {
+                let asset = match http_client.get_asset_index_for_symbol(entry.symbol) {
                     Some(a) => a,
                     None => {
                         log::warn!(
@@ -1797,7 +1803,7 @@ struct CancelEntry {
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
-    symbol: String,
+    symbol: Ustr,
 }
 
 struct CancelDispatch {

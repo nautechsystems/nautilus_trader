@@ -260,15 +260,16 @@ impl KrakenSpotWebSocketClient {
 
                     match msg {
                         KrakenSpotWsMessage::Ticker(tickers) => {
+                            let instruments = instruments_map.load();
+
                             for ticker in &tickers {
                                 let instrument_id = InstrumentId::new(
                                     Symbol::new(ticker.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
+                                let instrument = instruments.get(&instrument_id);
 
-                                if let Some(ref inst) = instrument {
+                                if let Some(inst) = instrument {
                                     match parse_quote_tick(ticker, inst, ts_init) {
                                         Ok(quote) => {
                                             Python::attach(|py| {
@@ -287,15 +288,16 @@ impl KrakenSpotWebSocketClient {
                             }
                         }
                         KrakenSpotWsMessage::Trade(trades) => {
+                            let instruments = instruments_map.load();
+
                             for trade in &trades {
                                 let instrument_id = InstrumentId::new(
                                     Symbol::new(trade.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
+                                let instrument = instruments.get(&instrument_id);
 
-                                if let Some(ref inst) = instrument {
+                                if let Some(inst) = instrument {
                                     match parse_trade_tick(trade, inst, ts_init) {
                                         Ok(tick) => {
                                             Python::attach(|py| {
@@ -317,15 +319,16 @@ impl KrakenSpotWebSocketClient {
                             data,
                             is_snapshot: _,
                         } => {
+                            let instruments = instruments_map.load();
+
                             for book in &data {
                                 let instrument_id = InstrumentId::new(
                                     Symbol::new(book.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
+                                let instrument = instruments.get(&instrument_id);
 
-                                if let Some(ref inst) = instrument {
+                                if let Some(inst) = instrument {
                                     let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
                                     match parse_book_deltas(book, inst, sequence, ts_init) {
                                         Ok(delta_vec) => {
@@ -351,15 +354,16 @@ impl KrakenSpotWebSocketClient {
                             }
                         }
                         KrakenSpotWsMessage::Ohlc(ohlc_data) => {
+                            let instruments = instruments_map.load();
+
                             for ohlc in &ohlc_data {
                                 let instrument_id = InstrumentId::new(
                                     Symbol::new(ohlc.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
+                                let instrument = instruments.get(&instrument_id);
 
-                                if let Some(ref inst) = instrument {
+                                if let Some(inst) = instrument {
                                     match parse_ws_bar(ohlc, inst, ts_init) {
                                         Ok(bar) => {
                                             Python::attach(|py| {
@@ -385,14 +389,15 @@ impl KrakenSpotWebSocketClient {
                                 continue;
                             };
 
+                            let instruments = instruments_map.load();
+
                             for exec in &executions {
                                 let inst = if let Some(ref symbol) = exec.symbol {
                                     let instrument_id = InstrumentId::new(
                                         Symbol::new(symbol.as_str()),
                                         *KRAKEN_VENUE,
                                     );
-                                    let Some(inst) =
-                                        instruments_map.load().get(&instrument_id).cloned()
+                                    let Some(inst) = instruments.get(&instrument_id).cloned()
                                     else {
                                         log::warn!("No instrument for symbol: {symbol}");
                                         continue;

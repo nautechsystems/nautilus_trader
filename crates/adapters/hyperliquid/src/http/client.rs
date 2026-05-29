@@ -1488,14 +1488,26 @@ impl HyperliquidHttpClient {
     ///
     /// Returns `None` if the symbol is not found in the map.
     pub fn get_asset_index(&self, symbol: &str) -> Option<u32> {
-        self.asset_indices.load().get(&Ustr::from(symbol)).copied()
+        self.get_asset_index_for_symbol(Ustr::from(symbol))
+    }
+
+    /// Get asset index for an already-interned symbol from the cached map.
+    ///
+    /// Returns `None` if the symbol is not found in the map.
+    pub(crate) fn get_asset_index_for_symbol(&self, symbol: Ustr) -> Option<u32> {
+        self.asset_indices.load().get(&symbol).copied()
     }
 
     /// Get the price precision for a cached instrument by symbol.
     pub fn get_price_precision(&self, symbol: &str) -> Option<u8> {
+        self.get_price_precision_for_symbol(Ustr::from(symbol))
+    }
+
+    /// Get the price precision for a cached instrument by interned symbol.
+    pub(crate) fn get_price_precision_for_symbol(&self, symbol: Ustr) -> Option<u8> {
         self.instruments
             .load()
-            .get(&Ustr::from(symbol))
+            .get(&symbol)
             .map(|inst| inst.price_precision())
     }
 
@@ -1664,8 +1676,8 @@ impl HyperliquidHttpClient {
         venue_order_id: Option<VenueOrderId>,
     ) -> Result<()> {
         // Get asset ID from cached indices map
-        let symbol = instrument_id.symbol.as_str();
-        let asset_id = self.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset_id = self.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             Error::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
@@ -1758,8 +1770,8 @@ impl HyperliquidHttpClient {
         time_in_force: TimeInForce,
         client_order_id: Option<ClientOrderId>,
     ) -> Result<()> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset_id = self.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset_id = self.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             Error::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
@@ -1771,7 +1783,7 @@ impl HyperliquidHttpClient {
             .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
 
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let decimals = self.get_price_precision(symbol).unwrap_or(2);
+        let decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
 
         let normalized_price = if self.normalize_prices {
             normalize_price(price.as_decimal(), decimals).normalize()
@@ -2675,15 +2687,15 @@ impl HyperliquidHttpClient {
         post_only: bool,
         reduce_only: bool,
     ) -> Result<OrderStatusReport> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset = self.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset = self.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             Error::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
 
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_precision = self.get_price_precision(symbol).unwrap_or(2);
+        let price_precision = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
 
         let price_decimal = match price {
             Some(px) if self.normalize_prices => {
@@ -2984,13 +2996,13 @@ impl HyperliquidHttpClient {
 
         for order in orders {
             let instrument_id = order.instrument_id();
-            let symbol = instrument_id.symbol.as_str();
-            let asset = self.get_asset_index(symbol).ok_or_else(|| {
+            let symbol = instrument_id.symbol.inner();
+            let asset = self.get_asset_index_for_symbol(symbol).ok_or_else(|| {
                 Error::bad_request(format!(
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let price_decimals = self.get_price_precision(symbol).unwrap_or(2);
+            let price_decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
             let request = order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
                 asset,

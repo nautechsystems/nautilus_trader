@@ -37,8 +37,9 @@ use nautilus_model::{
 
 use super::{
     OrderIdentity, WsDispatchState, ensure_accepted_emitted, fill_report_to_order_filled,
-    lookup_instrument, resolve_client_order_id,
+    resolve_client_order_id,
 };
+use crate::common::lookup_instrument_in_snapshot;
 use crate::websocket::spot_v2::{
     enums::KrakenExecType,
     messages::KrakenWsExecutionData,
@@ -115,7 +116,8 @@ fn execution_inner(
             }
         },
     };
-    let Some(instrument) = lookup_instrument(instruments, symbol) else {
+    let instruments = instruments.load();
+    let Some(instrument) = lookup_instrument_in_snapshot(&instruments, symbol) else {
         log::warn!("No instrument for symbol: {symbol}");
         return;
     };
@@ -160,7 +162,7 @@ fn execution_inner(
     let identity = resolved_id.and_then(|cid| state.lookup_identity(&cid));
 
     // Status update.
-    match parse_ws_order_status_report(exec, &instrument, account_id, cached_qty, ts_init) {
+    match parse_ws_order_status_report(exec, instrument, account_id, cached_qty, ts_init) {
         Ok(mut report) => {
             if let Some(cid) = resolved_id {
                 report = report.with_client_order_id(cid);
@@ -187,7 +189,7 @@ fn execution_inner(
 
     // Fill (when present).
     if exec.exec_id.is_some() {
-        match parse_ws_fill_report(exec, &instrument, account_id, ts_init) {
+        match parse_ws_fill_report(exec, instrument, account_id, ts_init) {
             Ok(mut report) => {
                 if let Some(cid) = resolved_id {
                     report.client_order_id = Some(cid);
@@ -198,7 +200,7 @@ fn execution_inner(
                         &report,
                         client_order_id,
                         identity,
-                        &instrument,
+                        instrument,
                         state,
                         emitter,
                         account_id,

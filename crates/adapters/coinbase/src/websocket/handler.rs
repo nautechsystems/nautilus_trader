@@ -48,9 +48,17 @@ fn instrument_id_from_product(product_id: &Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::new(*product_id), *COINBASE_VENUE)
 }
 
-fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {
-    let resolved = aliases.get_cloned(product_id).unwrap_or(*product_id);
+fn resolve_instrument_id_from_aliases(
+    aliases: &AHashMap<Ustr, Ustr>,
+    product_id: &Ustr,
+) -> InstrumentId {
+    let resolved = aliases.get(product_id).copied().unwrap_or(*product_id);
     instrument_id_from_product(&resolved)
+}
+
+fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {
+    let aliases = aliases.load();
+    resolve_instrument_id_from_aliases(&aliases, product_id)
 }
 
 /// Commands sent from [`super::client::CoinbaseWebSocketClient`] to the feed handler.
@@ -351,9 +359,10 @@ impl FeedHandler {
         };
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
-            let instrument_id = self.resolve_instrument_id(&event.product_id);
+            let instrument_id = resolve_instrument_id_from_aliases(&aliases, &event.product_id);
 
             let instrument = match self.instruments.get(&instrument_id) {
                 Some(inst) => inst,
@@ -393,9 +402,11 @@ impl FeedHandler {
         events: &[crate::websocket::messages::WsMarketTradesEvent],
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
+        let aliases = self.subscription_aliases.load();
+
         for event in events {
             for trade in &event.trades {
-                let instrument_id = self.resolve_instrument_id(&trade.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -427,6 +438,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
     ) {
         let mut found_current = false;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             let is_current_event = std::ptr::eq(event, current_event);
@@ -439,7 +451,7 @@ impl FeedHandler {
                     continue;
                 }
 
-                let instrument_id = self.resolve_instrument_id(&trade.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
                 if let Some(instrument) = self.instruments.get(&instrument_id)
                     && let Ok(tick) = parse_ws_trade(trade, instrument, ts_init)
@@ -459,10 +471,12 @@ impl FeedHandler {
         let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for ticker in &event.tickers {
-                let instrument_id = self.resolve_instrument_id(&ticker.product_id);
+                let instrument_id =
+                    resolve_instrument_id_from_aliases(&aliases, &ticker.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -515,12 +529,13 @@ impl FeedHandler {
         };
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             let is_snapshot = matches!(event.event_type, WsEventType::Snapshot);
 
             for order in &event.orders {
-                let instrument_id = self.resolve_instrument_id(&order.product_id);
+                let instrument_id = resolve_instrument_id_from_aliases(&aliases, &order.product_id);
                 let instrument = match self.instruments.get(&instrument_id).cloned() {
                     Some(inst) => inst,
                     None => {
@@ -646,6 +661,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for candle in &event.candles {
@@ -659,7 +675,8 @@ impl FeedHandler {
                     }
                 };
 
-                let instrument_id = self.resolve_instrument_id(&candle.product_id);
+                let instrument_id =
+                    resolve_instrument_id_from_aliases(&aliases, &candle.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,

@@ -30,7 +30,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -414,6 +414,13 @@ impl PolymarketExecutionClient {
         self.neg_risk_index
             .get_cloned(instrument_id)
             .unwrap_or(false)
+    }
+
+    fn get_neg_risk_from_snapshot(
+        neg_risk_index: &AHashMap<InstrumentId, bool>,
+        instrument_id: &InstrumentId,
+    ) -> bool {
+        neg_risk_index.get(instrument_id).copied().unwrap_or(false)
     }
 
     fn load_instruments_from_cache(&self) {
@@ -1066,6 +1073,7 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
+        let neg_risk_index = self.neg_risk_index.load();
 
         for order_init in &cmd.order_inits {
             let Some(order) = self
@@ -1124,7 +1132,10 @@ impl ExecutionClient for PolymarketExecutionClient {
                     quantity: order.quantity(),
                     time_in_force: order.time_in_force(),
                     post_only: order.is_post_only(),
-                    neg_risk: self.get_neg_risk(&order.instrument_id()),
+                    neg_risk: Self::get_neg_risk_from_snapshot(
+                        &neg_risk_index,
+                        &order.instrument_id(),
+                    ),
                     expire_time: order.expire_time(),
                     tick_decimals: instrument.price_precision() as u32,
                 },

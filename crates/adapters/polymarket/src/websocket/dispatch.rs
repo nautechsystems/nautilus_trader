@@ -100,7 +100,8 @@ fn dispatch_order_update(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
-    let instrument = match ctx.token_instruments.get_cloned(&order.asset_id) {
+    let instruments = ctx.token_instruments.load();
+    let instrument = match instruments.get(&order.asset_id) {
         Some(i) => i,
         None => {
             log::warn!("Unknown asset_id in order update: {}", order.asset_id);
@@ -113,7 +114,7 @@ fn dispatch_order_update(
 
     let ts_init = ctx.clock.get_time_ns();
     let mut report =
-        build_ws_order_status_report(order, &instrument, ctx.account_id, ts_event, ts_init);
+        build_ws_order_status_report(order, instrument, ctx.account_id, ts_event, ts_init);
     let local_client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
@@ -278,9 +279,11 @@ fn dispatch_maker_fills(
         return;
     }
 
+    let instruments = ctx.token_instruments.load();
+
     for mo in user_orders {
         let asset_id = Ustr::from(mo.asset_id.as_str());
-        let instrument = match ctx.token_instruments.get_cloned(&asset_id) {
+        let instrument = match instruments.get(&asset_id) {
             Some(i) => i,
             None => {
                 log::warn!("Unknown asset_id in maker order: {asset_id}");
@@ -340,7 +343,8 @@ fn dispatch_taker_fill(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    let instrument = match ctx.token_instruments.get_cloned(&trade.asset_id) {
+    let instruments = ctx.token_instruments.load();
+    let instrument = match instruments.get(&trade.asset_id) {
         Some(i) => i,
         None => {
             log::warn!("Unknown asset_id in trade: {}", trade.asset_id);
@@ -352,7 +356,7 @@ fn dispatch_taker_fill(
 
     let mut report = build_ws_taker_fill_report(
         trade,
-        &instrument,
+        instrument,
         ctx.account_id,
         liquidity_side,
         ts_event,

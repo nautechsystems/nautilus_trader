@@ -55,7 +55,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dashmap::DashMap;
 use nautilus_core::AtomicMap;
 
@@ -63,6 +63,7 @@ const MAP_SIZES: [usize; 2] = [100, 1_000];
 const THREAD_COUNTS: [usize; 4] = [1, 4, 8, 16];
 const READS_PER_THREAD: usize = 10_000;
 const WRITES_PER_CYCLE: usize = 10;
+const ATOMIC_MAP_LOOKUPS_PER_ITER: usize = 256;
 const CONCURRENT_MEASUREMENT_TIME: Duration = Duration::from_secs(10);
 
 fn make_keys(n: usize) -> Vec<String> {
@@ -468,11 +469,66 @@ fn bench_write_once_read_many(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_atomic_map_read_patterns(c: &mut Criterion) {
+    let mut group = c.benchmark_group("atomic_map_read_patterns");
+    let keys = make_keys(1_000);
+    let atomic = populated_atomic_map(&keys);
+
+    group.throughput(Throughput::Elements(ATOMIC_MAP_LOOKUPS_PER_ITER as u64));
+
+    group.bench_function("get_cloned_each_lookup", |b| {
+        let mut idx = 0usize;
+        b.iter(|| {
+            let mut sum = 0u64;
+
+            for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
+                let key = &keys[idx % keys.len()];
+                sum = sum.wrapping_add(atomic.get_cloned(key).unwrap_or_default());
+                idx = idx.wrapping_add(1);
+            }
+            black_box(sum)
+        });
+    });
+
+    group.bench_function("load_each_lookup", |b| {
+        let mut idx = 0usize;
+        b.iter(|| {
+            let mut sum = 0u64;
+
+            for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
+                let key = &keys[idx % keys.len()];
+                let guard = atomic.load();
+                sum = sum.wrapping_add(guard.get(key).copied().unwrap_or_default());
+                idx = idx.wrapping_add(1);
+            }
+            black_box(sum)
+        });
+    });
+
+    group.bench_function("load_once_guard", |b| {
+        let mut idx = 0usize;
+        b.iter(|| {
+            let guard = atomic.load();
+            let mut sum = 0u64;
+
+            for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
+                let key = &keys[idx % keys.len()];
+                sum = sum.wrapping_add(guard.get(key).copied().unwrap_or_default());
+                idx = idx.wrapping_add(1);
+            }
+            black_box(sum)
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_single_thread_read,
     bench_concurrent_reads,
     bench_read_heavy_mixed,
     bench_write_once_read_many,
+    bench_atomic_map_read_patterns,
 );
 criterion_main!(benches);
