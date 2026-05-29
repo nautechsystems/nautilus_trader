@@ -44,7 +44,6 @@ use proc_macro::TokenStream;
 /// named `new`; Python `__init__` forwards to it.
 /// Use `#[custom_data(pyo3, no_display)]` to skip generating `repr()` and `Display` so you can implement them manually.
 /// Use `#[custom_data(pyo3, no_arrow)]` for live-only custom data that does not need Arrow or catalog persistence.
-/// Use `#[custom_data(no_new)]` to skip generating the all-fields Rust `new` constructor.
 /// Use `stub_module = "nautilus_trader.<module>"` with `pyo3` to emit pyo3-stub-gen metadata.
 #[proc_macro_attribute]
 pub fn custom_data(attr: TokenStream, item: TokenStream) -> TokenStream {

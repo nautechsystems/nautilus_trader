@@ -45,8 +45,6 @@
 //! - `no_display`: Do not generate `repr()` or `Display`; the user may implement them manually.
 //! - `no_arrow`: Do not generate Arrow schema or record batch encode/decode methods. Use this for
 //!   live-only custom data that does not need catalog persistence.
-//! - `no_new`: Do not generate the all-fields Rust `new` constructor; use this when the type
-//!   already has a domain-specific constructor.
 //! - `stub_module = "nautilus_trader.<module>"`: Generate pyo3-stub-gen metadata for the
 //!   given module. Requires `pyo3`.
 //! - `#[custom_data_field(serde)]` on a field: Stores the field as a Serde JSON-backed
@@ -588,7 +586,6 @@ struct CustomDataOptions {
     pyo3: bool,
     no_display: bool,
     no_arrow: bool,
-    no_new: bool,
     stub_module: Option<LitStr>,
 }
 
@@ -618,9 +615,8 @@ fn parse_custom_data_option(
         ("pyo3" | "python", None) => options.pyo3 = true,
         ("no_display", None) => options.no_display = true,
         ("no_arrow", None) => options.no_arrow = true,
-        ("no_new", None) => options.no_new = true,
         ("stub_module", Some(module)) => options.stub_module = Some(module.clone()),
-        ("pyo3" | "python" | "no_display" | "no_arrow" | "no_new", Some(_)) => {
+        ("pyo3" | "python" | "no_display" | "no_arrow", Some(_)) => {
             return Err(syn::Error::new_spanned(
                 ident,
                 "option does not accept a value",
@@ -635,7 +631,7 @@ fn parse_custom_data_option(
         _ => {
             return Err(syn::Error::new_spanned(
                 ident,
-                "expected `pyo3`, `python`, `no_display`, `no_arrow`, `no_new`, or `stub_module`; unknown option",
+                "expected `pyo3`, `python`, `no_display`, `no_arrow`, or `stub_module`; unknown option",
             ));
         }
     }
@@ -689,7 +685,6 @@ fn parse_options(attr: &TokenStream) -> Result<CustomDataOptions, syn::Error> {
         pyo3: false,
         no_display: false,
         no_arrow: false,
-        no_new: false,
         stub_module: None,
     };
     let attr_str = attr.to_string();
@@ -809,10 +804,6 @@ struct ExpansionContext<'a> {
 }
 
 fn gen_new_fn(ctx: &ExpansionContext<'_>) -> TokenStream {
-    if ctx.options.no_new {
-        return quote! {};
-    }
-
     let name = ctx.name;
     let generics = ctx.generics;
     let vis = ctx.vis;
@@ -1591,7 +1582,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "expected `pyo3`, `python`, `no_display`, `no_arrow`, `no_new`, or `stub_module`; unknown option",
+            "expected `pyo3`, `python`, `no_display`, `no_arrow`, or `stub_module`; unknown option",
         );
     }
 
