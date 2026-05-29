@@ -755,6 +755,7 @@ pub fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos>
 )]
 mod tests {
     use chrono::{DateTime, SecondsFormat, TimeDelta, TimeZone, Timelike, Utc};
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -1006,6 +1007,37 @@ mod tests {
     fn test_unix_nanos_to_iso8601_millis_falls_back_when_chrono_range_exceeded(#[case] nanos: u64) {
         let result = unix_nanos_to_iso8601_millis(UnixNanos::from(nanos));
         assert_eq!(result, nanos.to_string());
+    }
+
+    // Sweep the full representable range against chrono, complementing the fixed-point oracle
+    // cases above; any divergence in the integer date math surfaces as a mismatch here.
+    proptest! {
+        #[rstest]
+        fn prop_unix_nanos_to_iso8601_matches_chrono(nanos in 0u64..=i64::MAX as u64) {
+            let nanos_i64 = i64::try_from(nanos).expect("nanos within i64 range");
+            let expected = DateTime::from_timestamp_nanos(nanos_i64)
+                .to_rfc3339_opts(SecondsFormat::Nanos, true);
+            let actual = unix_nanos_to_iso8601(UnixNanos::from(nanos));
+            prop_assert_eq!(actual, expected);
+        }
+
+        #[rstest]
+        fn prop_unix_nanos_to_iso8601_millis_matches_chrono(nanos in 0u64..=i64::MAX as u64) {
+            let nanos_i64 = i64::try_from(nanos).expect("nanos within i64 range");
+            let expected = DateTime::from_timestamp_nanos(nanos_i64)
+                .to_rfc3339_opts(SecondsFormat::Millis, true);
+            let actual = unix_nanos_to_iso8601_millis(UnixNanos::from(nanos));
+            prop_assert_eq!(actual, expected);
+        }
+
+        #[rstest]
+        fn prop_unix_nanos_to_iso8601_falls_back_above_chrono_range(
+            nanos in (i64::MAX as u64 + 1)..=u64::MAX,
+        ) {
+            let raw = nanos.to_string();
+            prop_assert_eq!(unix_nanos_to_iso8601(UnixNanos::from(nanos)), raw.as_str());
+            prop_assert_eq!(unix_nanos_to_iso8601_millis(UnixNanos::from(nanos)), raw.as_str());
+        }
     }
 
     #[rstest]
