@@ -26,6 +26,7 @@ from nautilus_trader.live import LiveExecEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import PluginConfig
+from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import TraderId
 
 
@@ -48,18 +49,18 @@ def _build_plugin_example(name: str) -> Path:
     if shutil.which(cargo) is None:
         pytest.skip("cargo is required for the Rust-native plug-in smoke test")
 
-    subprocess.run(
-        [
-            cargo,
-            "build",
-            "-p",
-            "nautilus-plugin",
-            "--example",
-            name,
-        ],
-        cwd=root,
-        check=True,
-    )
+    args = [
+        "build",
+        "-p",
+        "nautilus-plugin",
+        "--example",
+        name,
+    ]
+
+    if HIGH_PRECISION:
+        args.extend(["--features", "nautilus-model/high-precision"])
+
+    subprocess.run([cargo, *args], cwd=root, check=True)
     artifact = _cargo_target_dir(root) / "debug" / "examples" / _cdylib_filename(name)
     assert artifact.exists()
     return artifact

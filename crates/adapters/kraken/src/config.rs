@@ -197,8 +197,10 @@ pub struct KrakenExecClientConfig {
     #[builder(default = true)]
     pub use_ws_trade: bool,
 
-    /// Timeout in seconds for WebSocket order responses before emitting a
-    /// rejection event.
+    /// Timeout in seconds for WebSocket order responses.
+    ///
+    /// Submit, amend, and batch-add timeouts emit rejection events. Cancel
+    /// timeouts log and await reconciliation.
     #[builder(default = 5)]
     pub ws_request_timeout_secs: u64,
 }

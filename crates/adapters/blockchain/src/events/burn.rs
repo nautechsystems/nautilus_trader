@@ -91,7 +91,7 @@ impl BurnEvent {
         dex: SharedDex,
         instrument_id: InstrumentId,
         pool_identifier: PoolIdentifier,
-        timestamp: Option<UnixNanos>,
+        timestamp: UnixNanos,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
             chain,
@@ -110,7 +110,8 @@ impl BurnEvent {
             self.amount1,
             self.tick_lower,
             self.tick_upper,
-            timestamp,
+            timestamp, // ts_event
+            timestamp, // ts_init (same block timestamp)
         )
     }
 }

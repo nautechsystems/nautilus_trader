@@ -25,8 +25,8 @@ use nautilus_model::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny,
-        OrderList, StopLimitOrder, StopMarketOrder, TrailingStopLimitOrder,
+        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, MarketToLimitOrder,
+        Order, OrderAny, OrderList, StopLimitOrder, StopMarketOrder, TrailingStopLimitOrder,
         TrailingStopMarketOrder,
     },
     types::{Price, Quantity},
@@ -331,6 +331,56 @@ impl OrderFactory {
         OrderAny::StopLimit(order)
     }
 
+    /// Creates a new market-to-limit order.
+    #[expect(clippy::too_many_arguments)]
+    pub fn market_to_limit(
+        &mut self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        expire_time: Option<nautilus_core::UnixNanos>,
+        reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
+        display_qty: Option<Quantity>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        tags: Option<Vec<Ustr>>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> OrderAny {
+        let client_order_id = client_order_id.unwrap_or_else(|| self.generate_client_order_id());
+        let exec_spawn_id: Option<ClientOrderId> = if exec_algorithm_id.is_none() {
+            None
+        } else {
+            Some(client_order_id)
+        };
+        let order = MarketToLimitOrder::new(
+            self.trader_id,
+            self.strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            time_in_force.unwrap_or(TimeInForce::Gtc),
+            expire_time,
+            false, // post_only
+            reduce_only.unwrap_or(false),
+            quote_quantity.unwrap_or(false),
+            display_qty,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+        );
+        OrderAny::MarketToLimit(order)
+    }
+
     /// Creates a new market-if-touched order.
     #[expect(clippy::too_many_arguments)]
     pub fn market_if_touched(
@@ -524,6 +574,94 @@ impl OrderFactory {
             (activation_price, &mut order)
         {
             tsm.activation_price = Some(activation_price);
+        }
+
+        order
+    }
+
+    /// Creates a new trailing-stop-limit order.
+    ///
+    /// # Panics
+    ///
+    /// If neither `trigger_price` nor `activation_price` is provided.
+    #[expect(clippy::too_many_arguments)]
+    pub fn trailing_stop_limit(
+        &mut self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
+        trailing_offset_type: Option<TrailingOffsetType>,
+        activation_price: Option<Price>,
+        trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        time_in_force: Option<TimeInForce>,
+        expire_time: Option<nautilus_core::UnixNanos>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        tags: Option<Vec<Ustr>>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> OrderAny {
+        let client_order_id = client_order_id.unwrap_or_else(|| self.generate_client_order_id());
+        let exec_spawn_id: Option<ClientOrderId> = if exec_algorithm_id.is_none() {
+            None
+        } else {
+            Some(client_order_id)
+        };
+
+        // Trailing stops need an initial trigger level: prefer explicit trigger_price,
+        // fall back to activation_price which serves as the initial trigger on OKX
+        let trigger_price = trigger_price
+            .or(activation_price)
+            .expect("TrailingStopLimit requires either trigger_price or activation_price");
+
+        let order = TrailingStopLimitOrder::new(
+            self.trader_id,
+            self.strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type.unwrap_or(TriggerType::Default),
+            limit_offset,
+            trailing_offset,
+            trailing_offset_type.unwrap_or(TrailingOffsetType::Price),
+            time_in_force.unwrap_or(TimeInForce::Gtc),
+            expire_time,
+            post_only.unwrap_or(false),
+            reduce_only.unwrap_or(false),
+            quote_quantity.unwrap_or(false),
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+        );
+
+        let mut order = OrderAny::TrailingStopLimit(order);
+
+        if let (Some(activation_price), OrderAny::TrailingStopLimit(tsl)) =
+            (activation_price, &mut order)
+        {
+            tsl.activation_price = Some(activation_price);
         }
 
         order
@@ -1475,6 +1613,71 @@ pub mod tests {
         assert_eq!(lit_order.price(), Some(Price::from("48100.00")));
         assert_eq!(lit_order.trigger_price(), Some(Price::from("48000.00")));
         assert_eq!(lit_order.trigger_type(), Some(TriggerType::LastPrice));
+    }
+
+    #[rstest]
+    fn test_market_to_limit_order(mut order_factory: OrderFactory) {
+        let mtl_order = order_factory.market_to_limit(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            100.into(),
+            Some(TimeInForce::Gtc),
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(mtl_order.instrument_id(), "BTCUSDT.BINANCE".into());
+        assert_eq!(mtl_order.order_side(), OrderSide::Buy);
+        assert_eq!(mtl_order.quantity(), 100.into());
+        assert_eq!(mtl_order.order_type(), OrderType::MarketToLimit);
+        assert_eq!(
+            mtl_order.client_order_id(),
+            ClientOrderId::new("O-19700101-000000-001-001-1")
+        );
+    }
+
+    #[rstest]
+    fn test_trailing_stop_limit_order(mut order_factory: OrderFactory) {
+        let tsl_order = order_factory.trailing_stop_limit(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Sell,
+            100.into(),
+            Price::from("45100.00"), // limit price
+            Decimal::new(10, 2),     // limit_offset
+            Decimal::new(50, 2),     // trailing_offset
+            Some(TrailingOffsetType::Price),
+            Some(Price::from("45000.00")), // activation_price
+            Some(Price::from("45000.00")), // trigger_price
+            Some(TriggerType::LastPrice),
+            Some(TimeInForce::Gtc),
+            None,
+            Some(false), // post_only
+            Some(true),  // reduce_only
+            Some(false), // quote_quantity
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(tsl_order.instrument_id(), "BTCUSDT.BINANCE".into());
+        assert_eq!(tsl_order.order_side(), OrderSide::Sell);
+        assert_eq!(tsl_order.order_type(), OrderType::TrailingStopLimit);
+        assert_eq!(tsl_order.price(), Some(Price::from("45100.00")));
+        assert_eq!(tsl_order.trigger_price(), Some(Price::from("45000.00")));
+        assert_eq!(tsl_order.activation_price(), Some(Price::from("45000.00")));
+        assert_eq!(tsl_order.trigger_type(), Some(TriggerType::LastPrice));
+        assert_eq!(tsl_order.trailing_offset(), Some(Decimal::new(50, 2)));
+        assert_eq!(tsl_order.limit_offset(), Some(Decimal::new(10, 2)));
     }
 
     #[rstest]

@@ -17,6 +17,7 @@ use std::pin::Pin;
 
 use alloy::primitives::{Address, U256};
 use futures_util::{Stream, StreamExt};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{
         Block, Chain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain,
@@ -1688,7 +1689,8 @@ impl BlockchainCacheDatabase {
                 total_amount0_collected::TEXT, total_amount1_collected::TEXT,
                 total_swaps, total_mints, total_burns, total_fee_collects, total_flashes,
                 liquidity_utilization_rate,
-                (SELECT dex_name FROM pool WHERE chain_id = $1 AND address = $2) as dex_name
+                (SELECT dex_name FROM pool WHERE chain_id = $1 AND address = $2) as dex_name,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_snapshot.chain_id AND block.number = pool_snapshot.block) as block_timestamp
             FROM pool_snapshot
             WHERE chain_id = $1 AND pool_identifier = $2 AND is_valid = TRUE
             ORDER BY block DESC, transaction_index DESC, log_index DESC
@@ -1707,6 +1709,7 @@ impl BlockchainCacheDatabase {
             let transaction_index: i32 = row.get("transaction_index");
             let log_index: i32 = row.get("log_index");
             let transaction_hash: String = row.get("transaction_hash");
+            let timestamp = UnixNanos::from(row.get::<String, _>("block_timestamp"));
 
             let block_position = BlockPosition::new(
                 block as u64,
@@ -1782,6 +1785,8 @@ impl BlockchainCacheDatabase {
                 ticks,
                 analytics,
                 block_position,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
             )))
         } else {
             Ok(None)
@@ -1977,6 +1982,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_swap_event.chain_id AND block.number = pool_swap_event.block) as block_timestamp,
                 sender,
                 recipient,
                 NULL::TEXT as owner,
@@ -2006,6 +2012,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_liquidity_event.chain_id AND block.number = pool_liquidity_event.block) as block_timestamp,
                 sender,
                 NULL::TEXT as recipient,
                 owner,
@@ -2035,6 +2042,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_collect_event.chain_id AND block.number = pool_collect_event.block) as block_timestamp,
                 NULL::TEXT as sender,
                 NULL::TEXT as recipient,
                 owner,
@@ -2064,6 +2072,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_flash_event.chain_id AND block.number = pool_flash_event.block) as block_timestamp,
                 sender,
                 recipient,
                 NULL::TEXT as owner,
@@ -2096,6 +2105,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_swap_event.chain_id AND block.number = pool_swap_event.block) as block_timestamp,
                 sender,
                 recipient,
                 NULL::TEXT as owner,
@@ -2126,6 +2136,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_liquidity_event.chain_id AND block.number = pool_liquidity_event.block) as block_timestamp,
                 sender,
                 NULL::TEXT as recipient,
                 owner,
@@ -2156,6 +2167,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_collect_event.chain_id AND block.number = pool_collect_event.block) as block_timestamp,
                 NULL::TEXT as sender,
                 NULL::TEXT as recipient,
                 owner,
@@ -2186,6 +2198,7 @@ impl BlockchainCacheDatabase {
                 transaction_hash,
                 transaction_index,
                 log_index,
+                (SELECT timestamp::TEXT FROM block WHERE block.chain_id = pool_flash_event.chain_id AND block.number = pool_flash_event.block) as block_timestamp,
                 sender,
                 recipient,
                 NULL::TEXT as owner,

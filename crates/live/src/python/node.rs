@@ -493,6 +493,7 @@ impl LiveNode {
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_strategy")]
     fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        use nautilus_testkit::{ExecTester, ExecTesterConfig};
         use nautilus_trading::examples::strategies::{
             CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
             DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
@@ -514,6 +515,9 @@ impl LiveNode {
         } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
             self.add_strategy(HurstVpinDirectional::new(config))
                 .map_err(to_pyruntime_err)
+        } else if let Ok(config) = config.extract::<ExecTesterConfig>() {
+            self.add_strategy(ExecTester::new(config))
+                .map_err(to_pyruntime_err)
         } else {
             let type_name = config.get_type().name()?;
             Err(to_pytype_err(format!(
@@ -529,10 +533,14 @@ impl LiveNode {
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_actor")]
     fn py_add_native_actor(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        use nautilus_testkit::{DataTester, DataTesterConfig};
         use nautilus_trading::examples::actors::{BookImbalanceActor, BookImbalanceActorConfig};
 
         if let Ok(config) = config.extract::<BookImbalanceActorConfig>() {
             self.add_actor(BookImbalanceActor::from_config(config))
+                .map_err(to_pyruntime_err)
+        } else if let Ok(config) = config.extract::<DataTesterConfig>() {
+            self.add_actor(DataTester::new(config))
                 .map_err(to_pyruntime_err)
         } else {
             let type_name = config.get_type().name()?;

@@ -48,6 +48,7 @@ __all__ = [
     "logging_clock_set_realtime_mode",
     "logging_clock_set_static_mode",
     "logging_clock_set_static_time",
+    "logging_sync_to_disk",
     "tracing_is_initialized",
 ]
 
@@ -201,6 +202,8 @@ class LoggerConfig:
         log_components_only: bool | None = None,
         file_config: FileWriterConfig | None = None,
         clear_log_file: bool | None = None,
+        fileout_sync_on_flush: bool | None = None,
+        buffered_stdout: bool | None = None,
     ) -> None: ...
     @staticmethod
     def from_spec(spec: str) -> LoggerConfig: ...
@@ -1337,6 +1340,8 @@ def init_logging(
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
     log_components_only: bool | None = None,
+    fileout_sync_on_flush: bool | None = None,
+    buffered_stdout: bool | None = None,
 ) -> LogGuard: ...
 def init_tracing() -> None: ...
 def log_header(
@@ -1348,4 +1353,5 @@ def logger_log(level: LogLevel, color: LogColor, component: str, message: str) -
 def logging_clock_set_realtime_mode() -> None: ...
 def logging_clock_set_static_mode() -> None: ...
 def logging_clock_set_static_time(time_ns: int) -> None: ...
+def logging_sync_to_disk() -> bool: ...
 def tracing_is_initialized() -> bool: ...

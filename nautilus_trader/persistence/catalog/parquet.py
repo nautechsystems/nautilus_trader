@@ -55,6 +55,7 @@ from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -78,6 +79,7 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.QuoteTick,
     nautilus_pyo3.TradeTick,
     nautilus_pyo3.Bar,
+    nautilus_pyo3.OptionGreeks,
 ]
 
 
@@ -1633,6 +1635,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 TradeTick,
                 Bar,
                 MarkPriceUpdate,
+                OptionGreeks,
             )
             or self._is_rust_custom_data(data_cls)
         ) and files is None:
@@ -1701,6 +1704,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         for chunk in result:
             if isinstance(chunk, list):
                 for item in chunk:
+                    if data_cls == OptionGreeks:
+                        data.append(OptionGreeks.from_pyo3(item))
+                        continue
+
                     inner = item.data if hasattr(item, "data") else item
                     data.append(data_cls.from_dict(inner.to_dict()))  # type: ignore[attr-defined]
             else:
@@ -2000,6 +2007,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             return NautilusDataType.MarkPriceUpdate
         elif data_cls == InstrumentStatus:
             return NautilusDataType.InstrumentStatus
+        elif data_cls == OptionGreeks:
+            return NautilusDataType.OptionGreeks
         else:
             return None
 

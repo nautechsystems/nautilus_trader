@@ -1,0 +1,16 @@
+{
+  "funding_rate_history": [
+    {
+      "funding_rate": "0.00012",
+      "timestamp": 1700000000000
+    },
+    {
+      "funding_rate": "0.00009",
+      "timestamp": 1700003600000
+    },
+    {
+      "funding_rate": "0.00011",
+      "timestamp": 1700007200000
+    }
+  ]
+}

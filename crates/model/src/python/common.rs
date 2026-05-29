@@ -98,13 +98,10 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 
 /// Converts a JSON `Value` into a corresponding Python object.
 ///
-/// # Panics
-///
-/// Panics if parsing numbers (`as_i64`, `as_f64`) or creating the Python list (`PyList::new().expect`) fails.
-///
 /// # Errors
 ///
 /// Returns a `PyErr` if:
+/// - numeric extraction fails.
 /// - encountering an unsupported JSON number type.
 /// - conversion of nested arrays or objects fails.
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
@@ -114,18 +111,23 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         Value::String(s) => s.into_py_any(py),
         Value::Number(n) => {
             if n.is_i64() {
-                n.as_i64().unwrap().into_py_any(py)
+                n.as_i64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as i64"))?
+                    .into_py_any(py)
             } else if n.is_u64() {
-                n.as_u64().unwrap().into_py_any(py)
+                n.as_u64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as u64"))?
+                    .into_py_any(py)
             } else if n.is_f64() {
-                n.as_f64().unwrap().into_py_any(py)
+                n.as_f64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as f64"))?
+                    .into_py_any(py)
             } else {
                 Err(to_pyvalue_err("Unsupported JSON number type"))
             }
         }
         Value::Array(arr) => {
-            let py_list =
-                PyList::new(py, &[] as &[Py<PyAny>]).expect("Invalid `ExactSizeIterator`");
+            let py_list = PyList::new(py, &[] as &[Py<PyAny>])?;
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
@@ -144,10 +146,6 @@ pub use nautilus_core::{
 
 /// Converts a list of `Money` values into a Python list of strings, or `None` if empty.
 ///
-/// # Panics
-///
-/// Panics if creating the Python list fails or during the conversion unwrap.
-///
 /// # Errors
 ///
 /// Returns a `PyErr` if Python list creation or conversion fails.
@@ -162,9 +160,7 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
         Ok(PyNone::get(py).to_owned().into_any())
     } else {
         values.sort();
-        Ok(PyList::new(py, &values)
-            .expect("ExactSizeIterator")
-            .into_any())
+        Ok(PyList::new(py, &values)?.into_any())
     }
 }
 
@@ -187,9 +183,16 @@ mod tests {
         types::{PyBool, PyInt, PyString},
     };
     use rstest::rstest;
-    use serde_json::Value;
+    use serde_json::{Value, json};
 
     use super::*;
+
+    #[derive(Debug, Clone, Copy)]
+    enum ExpectedNumber {
+        I64(i64),
+        U64(u64),
+        F64(f64),
+    }
 
     #[rstest]
     fn test_value_to_pydict() {
@@ -239,6 +242,33 @@ mod tests {
     }
 
     #[rstest]
+    #[case(json!(-100_i64), ExpectedNumber::I64(-100))]
+    #[case(json!(42_u64), ExpectedNumber::U64(42))]
+    #[case(json!(2.5_f64), ExpectedNumber::F64(2.5))]
+    fn test_value_to_pyobject_number_branches(
+        #[case] value: Value,
+        #[case] expected: ExpectedNumber,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let py_obj = value_to_pyobject(py, &value).unwrap();
+
+            match expected {
+                ExpectedNumber::I64(expected) => {
+                    assert_eq!(py_obj.extract::<i64>(py).unwrap(), expected);
+                }
+                ExpectedNumber::U64(expected) => {
+                    assert_eq!(py_obj.extract::<u64>(py).unwrap(), expected);
+                }
+                ExpectedNumber::F64(expected) => {
+                    let actual = py_obj.extract::<f64>(py).unwrap();
+                    assert!((actual - expected).abs() < f64::EPSILON);
+                }
+            }
+        });
+    }
+
+    #[rstest]
     fn test_value_to_pyobject_string() {
         Python::initialize();
         Python::attach(|py| {
@@ -279,6 +309,37 @@ mod tests {
             assert_eq!(
                 py_list.get_item(1).unwrap().extract::<&str>().unwrap(),
                 "item2"
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_commissions_from_vec_empty_returns_none() {
+        Python::initialize();
+        Python::attach(|py| {
+            let value = commissions_from_vec(py, vec![]).unwrap();
+
+            assert!(value.is_none());
+        });
+    }
+
+    #[rstest]
+    fn test_commissions_from_vec_returns_sorted_list() {
+        Python::initialize();
+        Python::attach(|py| {
+            let value =
+                commissions_from_vec(py, vec![Money::from("2.00 USD"), Money::from("1.00 USD")])
+                    .unwrap();
+            let py_list: &Bound<'_, PyList> = value.cast::<PyList>().unwrap();
+
+            assert_eq!(py_list.len(), 2);
+            assert_eq!(
+                py_list.get_item(0).unwrap().extract::<&str>().unwrap(),
+                "1.00 USD"
+            );
+            assert_eq!(
+                py_list.get_item(1).unwrap().extract::<&str>().unwrap(),
+                "2.00 USD"
             );
         });
     }

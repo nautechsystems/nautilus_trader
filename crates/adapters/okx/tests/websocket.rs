@@ -2740,3 +2740,110 @@ async fn test_index_price_refcount_cleared_on_close() {
 
     client.close().await.expect("close failed");
 }
+
+/// Spread market-data subscriptions must target the `sprd-*` channels and key
+/// the instrument as `sprdId` (not `instId`); unsubscribes must mirror this.
+#[tokio::test]
+async fn test_spread_market_data_subscriptions_use_sprd_id() {
+    const SPREAD: &str = "ETH-USD-260925_ETH-USD-261225";
+    const CHANNELS: [&str; 3] = ["sprd-bbo-tbt", "sprd-books5", "sprd-public-trades"];
+
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let spread = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");
+    client
+        .subscribe_spread_quotes(spread)
+        .await
+        .expect("subscribe spread quotes failed");
+    client
+        .subscribe_spread_book(spread)
+        .await
+        .expect("subscribe spread book failed");
+    client
+        .subscribe_spread_trades(spread)
+        .await
+        .expect("subscribe spread trades failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let subs = state.subscriptions.lock().await;
+                CHANNELS
+                    .iter()
+                    .all(|ch| subs.iter().any(|v| value_matches_channel(v, ch)))
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    {
+        let subs = state.subscriptions.lock().await;
+        for ch in CHANNELS {
+            let arg = subs
+                .iter()
+                .find(|v| value_matches_channel(v, ch))
+                .unwrap_or_else(|| panic!("missing subscription for {ch}"));
+            assert_eq!(
+                arg.get("sprdId").and_then(|v| v.as_str()),
+                Some(SPREAD),
+                "{ch} must carry sprdId",
+            );
+            assert!(arg.get("instId").is_none(), "{ch} must not carry instId");
+        }
+    }
+
+    client
+        .unsubscribe_spread_quotes(spread)
+        .await
+        .expect("unsubscribe spread quotes failed");
+    client
+        .unsubscribe_spread_book(spread)
+        .await
+        .expect("unsubscribe spread book failed");
+    client
+        .unsubscribe_spread_trades(spread)
+        .await
+        .expect("unsubscribe spread trades failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let unsubs = state.unsubscriptions.lock().await;
+                CHANNELS
+                    .iter()
+                    .all(|ch| unsubs.iter().any(|v| value_matches_channel(v, ch)))
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    {
+        let unsubs = state.unsubscriptions.lock().await;
+        for ch in CHANNELS {
+            let arg = unsubs
+                .iter()
+                .find(|v| value_matches_channel(v, ch))
+                .unwrap_or_else(|| panic!("missing unsubscription for {ch}"));
+            assert_eq!(
+                arg.get("sprdId").and_then(|v| v.as_str()),
+                Some(SPREAD),
+                "{ch} unsubscribe must carry sprdId",
+            );
+        }
+    }
+
+    client.close().await.expect("close failed");
+}

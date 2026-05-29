@@ -29,7 +29,11 @@ arrow = [
   "nautilus-serialization/arrow",
 ]
 cython-compat = []
-defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
+defi = [
+  "dep:nautilus-blockchain",
+  "nautilus-backtest/defi",
+  "nautilus-blockchain/python",
+]
 extension-module = [
   "nautilus-analysis/extension-module",
   "nautilus-architect-ax/extension-module",
@@ -45,6 +49,7 @@ extension-module = [
   "nautilus-data/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-deribit/extension-module",
+  "nautilus-derive/extension-module",
   "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-hyperliquid/extension-module",
@@ -81,6 +86,7 @@ high-precision = [
   "nautilus-bybit/high-precision",
   "nautilus-databento/high-precision",
   "nautilus-deribit/high-precision",
+  "nautilus-derive/high-precision",
   "nautilus-dydx/high-precision",
   "nautilus-hyperliquid/high-precision",
   "nautilus-kraken/high-precision",
@@ -136,6 +142,7 @@ nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python", "live"] }
 nautilus-deribit = { workspace = true, features = ["python"] }
+nautilus-derive = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-interactive-brokers = { workspace = true, features = ["python"] }

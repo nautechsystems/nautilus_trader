@@ -267,6 +267,7 @@ Setting `symbology_method` to `IB_RAW` enforces stricter parsing rules that alig
 
 - `IBUS30=CFD.IBCFD`
 - `XAUUSD=CMDTY.IBCMDTY`
+- `EUR.USD=CASH.IDEALPRO`
 - `AAPL=STK.SMART`
 
 This configuration ensures explicit instrument identification and supports instruments from any region, especially those with non-standard symbology where simplified parsing may fail.
@@ -381,9 +382,17 @@ To search for contract information, use the [IB Contract Information Center](htt
 
 There are two primary methods for loading instruments:
 
+Interactive Brokers does not support loading the full IB instrument universe with
+`load_all=True`. Configure `load_ids` or `load_contracts` for the instruments a node
+needs at startup, or request an instrument explicitly before subscribing to its market
+data.
+
 #### 1. Using `load_ids` (recommended)
 
 Use `symbology_method=SymbologyMethod.IB_SIMPLIFIED` (default) with `load_ids` for clean, intuitive instrument identification:
+
+For FX instruments, use slash-separated symbols such as `EUR/USD.IDEALPRO`. The dotted
+local symbol form belongs to raw symbology, for example `EUR.USD=CASH.IDEALPRO`.
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig

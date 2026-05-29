@@ -20,7 +20,7 @@ use alloy::{
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
-use nautilus_core::hex;
+use nautilus_core::{UnixNanos, hex};
 use nautilus_model::{
     defi::{
         data::block::BlockPosition,
@@ -422,6 +422,7 @@ impl UniswapV3PoolContract {
     /// # Errors
     ///
     /// Returns error if any RPC calls fail or data cannot be decoded.
+    #[expect(clippy::too_many_arguments)]
     pub async fn fetch_snapshot(
         &self,
         pool_address: &Address,
@@ -429,6 +430,8 @@ impl UniswapV3PoolContract {
         tick_values: &[i32],
         position_keys: &[(Address, i32, i32)],
         block_position: BlockPosition,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<PoolSnapshot, UniswapV3PoolError> {
         // Fetch all data at the specified block
         let block = Some(block_position.number);
@@ -447,6 +450,8 @@ impl UniswapV3PoolContract {
             ticks_map.into_values().collect(),
             PoolAnalytics::default(),
             block_position,
+            ts_event,
+            ts_init,
         ))
     }
 }

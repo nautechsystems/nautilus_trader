@@ -24,6 +24,7 @@ crate-type = ["rlib"]
 default = []
 defi = ["nautilus-common/defi", "nautilus-model/defi"]
 live = ["nautilus-common/live"]
+persistence = ["dep:nautilus-persistence"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -35,6 +36,8 @@ nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-system = { workspace = true }
+
+nautilus-persistence = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 bincode = { workspace = true }

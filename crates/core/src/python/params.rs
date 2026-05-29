@@ -43,19 +43,14 @@ pub fn pydict_to_params(py: Python<'_>, dict: &Py<PyDict>) -> PyResult<Option<Pa
     from_pyobject_pyo3(py, dict_bound.as_any()).map(Some)
 }
 
-/// Helper function to convert a `serde_json::Value` to a Python object.
+/// Converts a `serde_json::Value` to a Python object.
 ///
 /// This is a common conversion pattern used when converting `Params` to Python dicts.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the value type is unsupported or conversion fails.
-///
-/// # Panics
-///
-/// Panics if a numeric value claims to be `i64`/`u64`/`f64` via the predicate
-/// methods but the corresponding accessor returns `None` (should not happen for
-/// well-formed [`serde_json::Number`] values).
+/// Returns a `PyErr` if the value type is unsupported, numeric extraction fails,
+/// or conversion fails.
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     match val {
         Value::Null => Ok(py.None()),
@@ -63,11 +58,17 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         Value::String(s) => s.into_py_any(py),
         Value::Number(n) => {
             if n.is_i64() {
-                n.as_i64().unwrap().into_py_any(py)
+                n.as_i64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as i64"))?
+                    .into_py_any(py)
             } else if n.is_u64() {
-                n.as_u64().unwrap().into_py_any(py)
+                n.as_u64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as u64"))?
+                    .into_py_any(py)
             } else if n.is_f64() {
-                n.as_f64().unwrap().into_py_any(py)
+                n.as_f64()
+                    .ok_or_else(|| to_pyvalue_err("JSON number could not be read as f64"))?
+                    .into_py_any(py)
             } else {
                 Err(to_pyvalue_err("Unsupported JSON number type"))
             }
@@ -103,4 +104,46 @@ pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>>
         dict.set_item(key, py_value)?;
     }
     Ok(dict.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[derive(Debug, Clone, Copy)]
+    enum ExpectedNumber {
+        I64(i64),
+        U64(u64),
+        F64(f64),
+    }
+
+    #[rstest]
+    #[case(json!(-100_i64), ExpectedNumber::I64(-100))]
+    #[case(json!(42_u64), ExpectedNumber::U64(42))]
+    #[case(json!(2.5_f64), ExpectedNumber::F64(2.5))]
+    fn test_value_to_pyobject_number_branches(
+        #[case] value: Value,
+        #[case] expected: ExpectedNumber,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let py_obj = value_to_pyobject(py, &value).unwrap();
+
+            match expected {
+                ExpectedNumber::I64(expected) => {
+                    assert_eq!(py_obj.extract::<i64>(py).unwrap(), expected);
+                }
+                ExpectedNumber::U64(expected) => {
+                    assert_eq!(py_obj.extract::<u64>(py).unwrap(), expected);
+                }
+                ExpectedNumber::F64(expected) => {
+                    let actual = py_obj.extract::<f64>(py).unwrap();
+                    assert!((actual - expected).abs() < f64::EPSILON);
+                }
+            }
+        });
+    }
 }

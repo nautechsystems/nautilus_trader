@@ -1,0 +1,18 @@
+{
+  "id": "probe-1",
+  "result": {
+    "current_subscriptions": [
+      "ticker_slim.ETH-USDC.1000",
+      "orderbook.ETH-USDC.1.10",
+      "trades.erc20.ETH",
+      "trades.ETH-USDC"
+    ],
+    "status": {
+      "orderbook.ETH-USDC.1.10": "ok",
+      "ticker_slim.ETH-USDC.1000": "ok",
+      "trades.ETH-USDC": "ok",
+      "trades.erc20.ETH": "ok",
+      "trades.spot.ETH": "{'instrument_type': ['Invalid enum value spot']}"
+    }
+  }
+}

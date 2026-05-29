@@ -36,12 +36,14 @@ use nautilus_execution::models::{
     },
     latency::{LatencyModelAny, StaticLatencyModel},
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
         Bar, Data, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, StrategyId, TraderId, Venue},
@@ -76,6 +78,26 @@ use crate::{
 #[derive(Debug)]
 pub struct PyBacktestEngine(BacktestEngine);
 
+// DeFi methods live in their own fully gated `#[pymethods]` block (multiple-pymethods is enabled)
+// so the `gen_stub`/pyo3 expansion never references `DefiData` in non-DeFi builds.
+#[cfg(feature = "defi")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyBacktestEngine {
+    /// Adds DeFi data to the engine.
+    #[pyo3(name = "add_defi_data", signature = (data, client_id=None, sort=true))]
+    fn py_add_defi_data(
+        &mut self,
+        data: Vec<DefiData>,
+        client_id: Option<ClientId>,
+        sort: bool,
+    ) -> PyResult<()> {
+        self.0
+            .add_defi_data(data, client_id, sort)
+            .map_err(to_pyruntime_err)
+    }
+}
+
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyBacktestEngine {
@@ -86,6 +108,18 @@ impl PyBacktestEngine {
     }
 
     /// Adds a simulated exchange with the given parameters to the engine.
+    ///
+    /// # Liquidation parameters
+    ///
+    /// - `liquidation_enabled` (bool, default `False`): if margin liquidation should be
+    ///   triggered when the account's equity falls to or below the maintenance
+    ///   margin threshold scaled by `liquidation_trigger_ratio`.
+    /// - `liquidation_trigger_ratio` (float, optional, default `1.0`): the ratio of
+    ///   maintenance margin used as the liquidation threshold. A value of `1.0`
+    ///   liquidates when equity <= maintenance margin; higher values trigger earlier.
+    /// - `liquidation_cancel_open_orders` (bool, default `True`): if open resting
+    ///   orders for the venue should be cancelled before synthetic close-out fills
+    ///   are emitted for open positions.
     #[pyo3(
         name = "add_venue",
         signature = (
@@ -121,6 +155,9 @@ impl PyBacktestEngine {
             oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
             settlement_prices = None,
+            liquidation_enabled = false,
+            liquidation_trigger_ratio = None,
+            liquidation_cancel_open_orders = true,
         )
     )]
     #[expect(clippy::too_many_arguments)]
@@ -158,6 +195,9 @@ impl PyBacktestEngine {
         oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
         settlement_prices: Option<HashMap<InstrumentId, Price>>,
+        liquidation_enabled: bool,
+        liquidation_trigger_ratio: Option<f64>,
+        liquidation_cancel_open_orders: bool,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
@@ -226,6 +266,9 @@ impl PyBacktestEngine {
             .queue_position(queue_position)
             .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
             .maybe_price_protection_points(price_protection_points)
+            .liquidation_enabled(liquidation_enabled)
+            .liquidation_trigger_ratio(liquidation_trigger_ratio.unwrap_or(1.0))
+            .liquidation_cancel_open_orders(liquidation_cancel_open_orders)
             .build();
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
@@ -999,8 +1042,17 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::InstrumentStatus(status));
     }
 
+    if let Ok(greeks) = obj.extract::<OptionGreeks>() {
+        return Ok(Data::OptionGreeks(greeks));
+    }
+
     if let Ok(close) = obj.extract::<InstrumentClose>() {
         return Ok(Data::InstrumentClose(close));
+    }
+
+    #[cfg(feature = "defi")]
+    if let Ok(defi) = obj.extract::<DefiData>() {
+        return Ok(Data::Defi(Box::new(defi)));
     }
 
     // Fall back to from_pyobject methods for Cython objects
@@ -1030,6 +1082,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 
     if let Ok(status) = InstrumentStatus::from_pyobject(obj) {
         return Ok(Data::InstrumentStatus(status));
+    }
+
+    if let Ok(greeks) = OptionGreeks::from_pyobject(obj) {
+        return Ok(Data::OptionGreeks(greeks));
     }
 
     if let Ok(close) = InstrumentClose::from_pyobject(obj) {

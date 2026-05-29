@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fmt::Display,
+    cell::RefCell,
+    fmt::{Display, Write as _},
     sync::{Mutex, OnceLock, atomic::Ordering, mpsc::SendError},
 };
 
@@ -31,7 +32,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
 };
 use nautilus_model::identifiers::TraderId;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 use smallvec::SmallVec;
 use ustr::Ustr;
 
@@ -48,10 +49,51 @@ use crate::{
 const LOGGING: &str = "logging";
 const KV_COLOR: &str = "color";
 const KV_COMPONENT: &str = "component";
-const LOG_FIELDS_INLINE_CAP: usize = 4;
+const LOG_FIELDS_INLINE_CAP: usize = 0;
+const MAX_LEVEL_DISPLAY_LEN: usize = "ERROR".len();
+const ANSI_BOLD_LEN: usize = "\x1b[1m".len();
+const ANSI_RESET_LEN: usize = "\x1b[0m".len();
+const PLAIN_FORMAT_OVERHEAD: usize = " [".len() + "] ".len() + ".".len() + ": ".len() + "\n".len();
+const COLORED_FORMAT_OVERHEAD: usize = ANSI_BOLD_LEN
+    + ANSI_RESET_LEN
+    + " ".len()
+    + "[".len()
+    + "] ".len()
+    + ".".len()
+    + ": ".len()
+    + ANSI_RESET_LEN
+    + "\n".len();
+const REPEATED_USTR_CACHE_CAP: usize = 8;
 
-/// Inline-optimized storage for structured log fields.
-/// Up to 4 key-value pairs are stored on the stack; beyond that, spills to heap.
+thread_local! {
+    static REPEATED_USTR_CACHE: RefCell<RepeatedUstrCache> =
+        const { RefCell::new(RepeatedUstrCache::new()) };
+}
+
+#[derive(Clone, Copy)]
+struct RepeatedUstrCacheEntry {
+    ptr: usize,
+    len: usize,
+    value: Ustr,
+}
+
+#[derive(Clone, Copy)]
+struct RepeatedUstrCache {
+    entries: [Option<RepeatedUstrCacheEntry>; REPEATED_USTR_CACHE_CAP],
+    next: usize,
+}
+
+impl RepeatedUstrCache {
+    const fn new() -> Self {
+        Self {
+            entries: [None; REPEATED_USTR_CACHE_CAP],
+            next: 0,
+        }
+    }
+}
+
+/// Storage for structured log fields.
+/// Inline capacity is intentionally zero to keep the producer-side `LogLine` payload small.
 pub type LogFields = SmallVec<[(Ustr, String); LOG_FIELDS_INLINE_CAP]>;
 
 /// Global log sender which allows multiple log guards per process.
@@ -60,6 +102,45 @@ static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 /// Global handle to the logging thread - only one thread exists per process.
 static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
+/// Producer-side filtering policy derived from [`LoggerConfig`].
+#[derive(Debug, Clone)]
+struct FilterPolicy {
+    /// Module filters pre-sorted by descending path length for longest-prefix lookup.
+    modules_by_longest_prefix: Vec<(Ustr, LevelFilter)>,
+    /// Per-component log level overrides.
+    components: AHashMap<Ustr, LevelFilter>,
+    /// Whether logs without an explicit component/module filter should be skipped.
+    components_only: bool,
+}
+
+impl FilterPolicy {
+    fn from_config(config: &LoggerConfig) -> Option<Self> {
+        let modules_by_longest_prefix = sorted_module_filters_from_map(&config.module_level);
+        if !config.log_components_only
+            && modules_by_longest_prefix.is_empty()
+            && config.component_level.is_empty()
+        {
+            return None;
+        }
+
+        Some(Self {
+            modules_by_longest_prefix,
+            components: config.component_level.clone(),
+            components_only: config.log_components_only,
+        })
+    }
+
+    fn should_skip(&self, component: &Ustr, level: Level) -> bool {
+        should_filter_log_inner(
+            component,
+            level,
+            &self.modules_by_longest_prefix,
+            &self.components,
+            self.components_only,
+        )
+    }
+}
+
 /// A high-performance logger utilizing a MPSC channel under the hood.
 ///
 /// A logger is initialized with a [`LoggerConfig`] to set up different logging levels for
@@ -67,8 +148,13 @@ static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(No
 /// sent via an MPSC channel.
 #[derive(Debug)]
 pub struct Logger {
-    /// Configuration for logging levels and behavior.
+    /// Initialization snapshot for logging levels and behavior.
+    ///
+    /// Producer filters are derived into `filter_policy` at initialization; mutating this field
+    /// after registration does not reload component/module filters.
     pub config: LoggerConfig,
+    /// Producer-side component/module filtering policy.
+    filter_policy: Option<FilterPolicy>,
     /// Transmitter for sending log events to the 'logging' thread.
     tx: std::sync::mpsc::Sender<LogEvent>,
 }
@@ -80,6 +166,8 @@ pub enum LogEvent {
     Log(LogLine),
     /// A command to flush all logger buffers.
     Flush,
+    /// A command to flush and sync file logs to disk, then acknowledge completion.
+    Sync(std::sync::mpsc::Sender<anyhow::Result<()>>),
     /// A command to close the logger.
     Close,
 }
@@ -148,14 +236,23 @@ impl LogLineWrapper {
     /// same log message needs to be printed multiple times.
     pub fn get_string(&mut self) -> &str {
         self.cache.get_or_insert_with(|| {
-            let mut s = format!(
+            let timestamp = unix_nanos_to_iso8601(self.line.timestamp);
+            let mut s = String::with_capacity(plain_log_line_capacity(
+                &timestamp,
+                self.trader_id,
+                &self.line,
+            ));
+
+            write!(
+                s,
                 "{} [{}] {}.{}: {}",
-                unix_nanos_to_iso8601(self.line.timestamp),
+                timestamp,
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
                 &self.line.message,
-            );
+            )
+            .expect("writing to String should not fail");
 
             for (k, v) in &self.line.fields {
                 s.push(' ');
@@ -175,15 +272,26 @@ impl LogLineWrapper {
     /// logger is configured to use colors.
     pub fn get_colored(&mut self) -> &str {
         self.colored.get_or_insert_with(|| {
-            let mut s = format!(
+            let timestamp = unix_nanos_to_iso8601(self.line.timestamp);
+            let color_ansi = self.line.color.as_ansi();
+            let mut s = String::with_capacity(colored_log_line_capacity(
+                &timestamp,
+                color_ansi,
+                self.trader_id,
+                &self.line,
+            ));
+
+            write!(
+                s,
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}",
-                unix_nanos_to_iso8601(self.line.timestamp),
-                &self.line.color.as_ansi(),
+                timestamp,
+                color_ansi,
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
                 &self.line.message,
-            );
+            )
+            .expect("writing to String should not fail");
 
             for (k, v) in &self.line.fields {
                 s.push(' ');
@@ -206,10 +314,51 @@ impl LogLineWrapper {
     /// Panics if serialization of the log event to JSON fails.
     #[must_use]
     pub fn get_json(&self) -> String {
-        let json_string =
+        let mut json_string =
             serde_json::to_string(&self).expect("Error serializing log event to string");
-        format!("{json_string}\n")
+        json_string.push('\n');
+        json_string
     }
+}
+
+fn formatted_fields_len(fields: &LogFields) -> usize {
+    fields.iter().map(|(k, v)| 2 + k.len() + v.len()).sum()
+}
+
+fn log_line_capacity(
+    timestamp: &str,
+    trader_id: Ustr,
+    line: &LogLine,
+    overhead: usize,
+    ansi_extra_len: usize,
+) -> usize {
+    timestamp.len()
+        + overhead
+        + ansi_extra_len
+        + MAX_LEVEL_DISPLAY_LEN
+        + trader_id.len()
+        + line.component.len()
+        + line.message.len()
+        + formatted_fields_len(&line.fields)
+}
+
+fn plain_log_line_capacity(timestamp: &str, trader_id: Ustr, line: &LogLine) -> usize {
+    log_line_capacity(timestamp, trader_id, line, PLAIN_FORMAT_OVERHEAD, 0)
+}
+
+fn colored_log_line_capacity(
+    timestamp: &str,
+    color_ansi: &str,
+    trader_id: Ustr,
+    line: &LogLine,
+) -> usize {
+    log_line_capacity(
+        timestamp,
+        trader_id,
+        line,
+        COLORED_FORMAT_OVERHEAD,
+        color_ansi.len(),
+    )
 }
 
 impl Serialize for LogLineWrapper {
@@ -217,25 +366,206 @@ impl Serialize for LogLineWrapper {
     where
         S: Serializer,
     {
-        let mut json_obj = IndexMap::new();
+        if has_duplicate_json_field(&self.line.fields) {
+            return serialize_log_line_with_indexmap(self, serializer);
+        }
+
         let timestamp = unix_nanos_to_iso8601(self.line.timestamp);
-        json_obj.insert("timestamp".to_string(), timestamp);
-        json_obj.insert("trader_id".to_string(), self.trader_id.to_string());
-        json_obj.insert("level".to_string(), self.line.level.to_string());
-        json_obj.insert("color".to_string(), self.line.color.to_string());
-        json_obj.insert("component".to_string(), self.line.component.to_string());
-        json_obj.insert("message".to_string(), self.line.message.clone());
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("timestamp", &timestamp)?;
+        map.serialize_entry("trader_id", self.trader_id.as_str())?;
+        map.serialize_entry("level", &DisplayAsString(&self.line.level))?;
+        map.serialize_entry("color", &DisplayAsString(&self.line.color))?;
+        map.serialize_entry("component", self.line.component.as_str())?;
+        map.serialize_entry("message", &self.line.message)?;
+
         for (k, v) in &self.line.fields {
             let key = k.as_str();
-            if !matches!(
-                key,
-                "timestamp" | "trader_id" | "level" | "color" | "component" | "message"
-            ) {
-                json_obj.insert(k.to_string(), v.clone());
+            if !is_reserved_json_key(key) {
+                map.serialize_entry(key, v)?;
             }
         }
 
-        json_obj.serialize(serializer)
+        map.end()
+    }
+}
+
+struct DisplayAsString<'a, T: ?Sized>(&'a T);
+
+impl<T> Serialize for DisplayAsString<'_, T>
+where
+    T: Display + ?Sized,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self.0)
+    }
+}
+
+fn is_reserved_json_key(key: &str) -> bool {
+    matches!(
+        key,
+        "timestamp" | "trader_id" | "level" | "color" | "component" | "message"
+    )
+}
+
+fn has_duplicate_json_field(fields: &LogFields) -> bool {
+    if fields.is_empty() {
+        return false;
+    }
+
+    for (idx, (key, _)) in fields.iter().enumerate() {
+        let key = key.as_str();
+        if is_reserved_json_key(key) {
+            continue;
+        }
+
+        if fields
+            .iter()
+            .take(idx)
+            .any(|(prev, _)| !is_reserved_json_key(prev.as_str()) && prev.as_str() == key)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn serialize_log_line_with_indexmap<S>(
+    wrapper: &LogLineWrapper,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut json_obj = IndexMap::new();
+    let timestamp = unix_nanos_to_iso8601(wrapper.line.timestamp);
+    json_obj.insert("timestamp".to_string(), timestamp);
+    json_obj.insert("trader_id".to_string(), wrapper.trader_id.to_string());
+    json_obj.insert("level".to_string(), wrapper.line.level.to_string());
+    json_obj.insert("color".to_string(), wrapper.line.color.to_string());
+    json_obj.insert("component".to_string(), wrapper.line.component.to_string());
+    json_obj.insert("message".to_string(), wrapper.line.message.clone());
+    for (k, v) in &wrapper.line.fields {
+        let key = k.as_str();
+        if !is_reserved_json_key(key) {
+            json_obj.insert(k.to_string(), v.clone());
+        }
+    }
+
+    json_obj.serialize(serializer)
+}
+
+fn sorted_module_filters_from_map(
+    module_level: &AHashMap<Ustr, LevelFilter>,
+) -> Vec<(Ustr, LevelFilter)> {
+    let mut filters: Vec<_> = module_level
+        .iter()
+        .map(|(path, level)| (*path, *level))
+        .collect();
+    filters.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
+    filters
+}
+
+fn current_log_timestamp() -> UnixNanos {
+    if LOGGING_REALTIME.load(Ordering::Relaxed) {
+        get_atomic_clock_realtime().get_time_ns()
+    } else {
+        get_atomic_clock_static().get_time_ns()
+    }
+}
+
+fn intern_repeated(value: &str) -> Ustr {
+    REPEATED_USTR_CACHE.with(|cache| {
+        let mut cache_state = cache.borrow_mut();
+        let ptr = value.as_ptr() as usize;
+        let len = value.len();
+
+        // Targets and components are usually repeated static strings; the content check keeps
+        // dynamic RecordBuilder targets correct if an allocator reuses the same pointer.
+        for entry in cache_state.entries.iter().flatten() {
+            if entry.ptr == ptr && entry.len == len && entry.value.as_str() == value {
+                return entry.value;
+            }
+        }
+
+        let interned = Ustr::from(value);
+        let insert_idx = cache_state.next;
+        cache_state.entries[insert_idx] = Some(RepeatedUstrCacheEntry {
+            ptr,
+            len,
+            value: interned,
+        });
+        cache_state.next = (insert_idx + 1) % REPEATED_USTR_CACHE_CAP;
+        interned
+    })
+}
+
+fn intern_component_value(value: &log::kv::Value<'_>) -> Ustr {
+    match value.to_borrowed_str() {
+        Some(component) => intern_repeated(component),
+        None => Ustr::from(&value.to_string()),
+    }
+}
+
+struct ComponentProbe {
+    component: Option<Ustr>,
+}
+
+impl ComponentProbe {
+    const fn new() -> Self {
+        Self { component: None }
+    }
+}
+
+impl<'kvs> log::kv::VisitSource<'kvs> for ComponentProbe {
+    fn visit_pair(
+        &mut self,
+        key: log::kv::Key<'kvs>,
+        value: log::kv::Value<'kvs>,
+    ) -> Result<(), log::kv::Error> {
+        if key.as_str() == KV_COMPONENT {
+            self.component = Some(intern_component_value(&value));
+        }
+        Ok(())
+    }
+}
+
+struct PayloadCollector {
+    color: Option<LogColor>,
+    fields: LogFields,
+}
+
+impl PayloadCollector {
+    fn new() -> Self {
+        Self {
+            color: None,
+            fields: SmallVec::new(),
+        }
+    }
+}
+
+impl<'kvs> log::kv::VisitSource<'kvs> for PayloadCollector {
+    fn visit_pair(
+        &mut self,
+        key: log::kv::Key<'kvs>,
+        value: log::kv::Value<'kvs>,
+    ) -> Result<(), log::kv::Error> {
+        match key.as_str() {
+            KV_COLOR => {
+                self.color = value.to_u64().map(|v| (v as u8).into());
+            }
+            KV_COMPONENT => {}
+            _ => {
+                self.fields
+                    .push((Ustr::from(key.as_str()), value.to_string()));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -266,7 +596,7 @@ impl<'kvs> log::kv::VisitSource<'kvs> for FieldCollector {
                 self.color = value.to_u64().map(|v| (v as u8).into());
             }
             KV_COMPONENT => {
-                self.component = Some(Ustr::from(&value.to_string()));
+                self.component = Some(intern_component_value(&value));
             }
             _ => {
                 self.fields
@@ -287,20 +617,45 @@ impl Log for Logger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
-            let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
-                get_atomic_clock_realtime().get_time_ns()
-            } else {
-                get_atomic_clock_static().get_time_ns()
-            };
             let level = record.level();
 
+            if let Some(filter_policy) = &self.filter_policy {
+                // Probe only the component before filtering. Skipped logs should not pay for
+                // timestamps, message formatting, or non-reserved structured-field strings.
+                let mut probe = ComponentProbe::new();
+                let _ = record.key_values().visit(&mut probe);
+                let component = probe
+                    .component
+                    .unwrap_or_else(|| intern_repeated(record.metadata().target()));
+
+                if filter_policy.should_skip(&component, level) {
+                    return;
+                }
+
+                let timestamp = current_log_timestamp();
+                let mut collector = PayloadCollector::new();
+                let _ = record.key_values().visit(&mut collector);
+                let color = collector.color.unwrap_or_else(|| level.into());
+
+                self.send_log_line(LogLine {
+                    timestamp,
+                    level,
+                    color,
+                    component,
+                    message: format!("{}", record.args()),
+                    fields: collector.fields,
+                });
+                return;
+            }
+
+            // With no component/module filters configured, keep the producer path to one KV visit.
+            let timestamp = current_log_timestamp();
             let mut collector = FieldCollector::new();
             let _ = record.key_values().visit(&mut collector);
-
             let color = collector.color.unwrap_or_else(|| level.into());
             let component = collector
                 .component
-                .unwrap_or_else(|| Ustr::from(record.metadata().target()));
+                .unwrap_or_else(|| intern_repeated(record.metadata().target()));
 
             let line = LogLine {
                 timestamp,
@@ -311,9 +666,7 @@ impl Log for Logger {
                 fields: collector.fields,
             };
 
-            if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-                eprintln!("Error sending log event (receiver closed): {line}");
-            }
+            self.send_log_line(line);
         }
     }
 
@@ -330,6 +683,28 @@ impl Log for Logger {
 }
 
 impl Logger {
+    /// Creates a logger instance for direct benchmark harnesses.
+    ///
+    /// This bypasses the global `log::set_logger` singleton so benchmark code can compare
+    /// multiple logger configurations in one process. It does not spawn a writer thread.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn new_for_benchmark(config: LoggerConfig, tx: std::sync::mpsc::Sender<LogEvent>) -> Self {
+        let filter_policy = FilterPolicy::from_config(&config);
+
+        Self {
+            config,
+            filter_policy,
+            tx,
+        }
+    }
+
+    fn send_log_line(&self, line: LogLine) {
+        if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
+            eprintln!("Error sending log event (receiver closed): {line}");
+        }
+    }
+
     /// Initializes the logger based on the `NAUTILUS_LOG` environment variable.
     ///
     /// # Errors
@@ -357,16 +732,19 @@ impl Logger {
     ) -> anyhow::Result<LogGuard> {
         // Fast path: already initialized
         if super::LOGGING_INITIALIZED.load(Ordering::SeqCst) {
-            return LogGuard::new()
-                .ok_or_else(|| anyhow::anyhow!("Logging already initialized but sender missing"));
+            return LogGuard::new().ok_or_else(|| {
+                anyhow::anyhow!("Logging already initialized but new guard could not be created")
+            });
         }
 
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
+        let filter_policy = FilterPolicy::from_config(&config);
 
         let logger_tx = tx.clone();
         let logger = Self {
-            tx: logger_tx,
             config: config.clone(),
+            filter_policy,
+            tx: logger_tx,
         };
 
         set_boxed_logger(Box::new(logger))?;
@@ -451,26 +829,23 @@ impl Logger {
         let LoggerConfig {
             stdout_level,
             fileout_level,
-            component_level,
-            module_level,
-            log_components_only,
+            component_level: _,
+            module_level: _,
+            log_components_only: _,
             is_colored,
             print_config: _,
             use_tracing: _,
             bypass_logging: _,
             file_config: _,
             clear_log_file,
+            fileout_sync_on_flush,
+            buffered_stdout,
         } = config;
-
-        // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
-        let mut module_filters_sorted: Vec<(Ustr, LevelFilter)> =
-            module_level.into_iter().collect();
-        module_filters_sorted.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
 
         let trader_id_cache = Ustr::from(&trader_id);
 
         // Set up std I/O buffers
-        let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored);
+        let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored, buffered_stdout);
         let mut stderr_writer = StderrWriter::new(is_colored);
 
         // Conditionally create file writer based on fileout_level
@@ -483,6 +858,7 @@ impl Logger {
                 file_config,
                 fileout_level,
                 clear_log_file,
+                fileout_sync_on_flush,
             )
         };
 
@@ -492,16 +868,6 @@ impl Logger {
                              file_writer_opt: &mut Option<FileWriter>| {
             match event {
                 LogEvent::Log(line) => {
-                    if should_filter_log(
-                        &line.component,
-                        line.level,
-                        &module_filters_sorted,
-                        &component_level,
-                        log_components_only,
-                    ) {
-                        return;
-                    }
-
                     let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
 
                     if stderr_writer.enabled(&wrapper.line) {
@@ -538,6 +904,15 @@ impl Logger {
                         file_writer.flush();
                     }
                 }
+                LogEvent::Sync(done) => {
+                    let result = if let Some(file_writer) = file_writer_opt {
+                        file_writer.flush_and_sync().map_err(anyhow::Error::from)
+                    } else {
+                        Ok(())
+                    };
+
+                    let _ = done.send(result);
+                }
                 LogEvent::Close => {
                     // Close handled in the main loop; ignore here.
                 }
@@ -547,7 +922,7 @@ impl Logger {
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             match event {
-                LogEvent::Log(_) | LogEvent::Flush => process_event(
+                LogEvent::Log(_) | LogEvent::Flush | LogEvent::Sync(_) => process_event(
                     event,
                     &mut stdout_writer,
                     &mut stderr_writer,
@@ -581,7 +956,7 @@ impl Logger {
                     stderr_writer.flush();
 
                     if let Some(ref mut file_writer) = file_writer_opt {
-                        file_writer.flush();
+                        file_writer.flush_and_sync_logged();
                     }
 
                     break;
@@ -599,6 +974,22 @@ impl Logger {
 /// first `starts_with` match is the longest prefix.
 #[must_use]
 pub fn should_filter_log(
+    component: &Ustr,
+    line_level: log::Level,
+    module_filters_sorted: &[(Ustr, LevelFilter)],
+    component_level: &AHashMap<Ustr, LevelFilter>,
+    log_components_only: bool,
+) -> bool {
+    should_filter_log_inner(
+        component,
+        line_level,
+        module_filters_sorted,
+        component_level,
+        log_components_only,
+    )
+}
+
+fn should_filter_log_inner(
     component: &Ustr,
     line_level: log::Level,
     module_filters_sorted: &[(Ustr, LevelFilter)],
@@ -657,6 +1048,31 @@ pub(crate) fn shutdown_graceful() {
     }
 
     LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
+}
+
+/// Flushes and syncs file logs to disk through the logging thread.
+///
+/// This is a no-op when logging is not initialized or file logging is disabled.
+///
+/// # Errors
+///
+/// Returns an error if the sync request cannot be delivered or acknowledged.
+pub fn sync_to_disk() -> anyhow::Result<()> {
+    if !LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let Some(tx) = LOGGER_TX.get() else {
+        return Ok(());
+    };
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    tx.send(LogEvent::Sync(done_tx))
+        .map_err(|e| anyhow::anyhow!("failed to request logging sync: {e}"))?;
+
+    done_rx
+        .recv()
+        .map_err(|e| anyhow::anyhow!("failed to receive logging sync acknowledgement: {e}"))?
 }
 
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
@@ -724,26 +1140,22 @@ pub struct LogGuard {
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance from the global logger.
     ///
-    /// Returns `None` if logging has not been initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number of active `LogGuard`s would exceed 255.
+    /// Returns `None` if logging has not been initialized or the active `LogGuard`
+    /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
-        LOGGER_TX.get().map(|tx| {
-            LOGGING_GUARDS_ACTIVE
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                    if count == u8::MAX {
-                        None // Reject the update if we're at the limit
-                    } else {
-                        Some(count + 1)
-                    }
-                })
-                .expect("Maximum number of active LogGuards (255) exceeded");
+        let tx = LOGGER_TX.get()?;
+        LOGGING_GUARDS_ACTIVE
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                if count == u8::MAX {
+                    None
+                } else {
+                    Some(count + 1)
+                }
+            })
+            .ok()?;
 
-            Self { tx: tx.clone() }
-        })
+        Some(Self { tx: tx.clone() })
     }
 }
 
@@ -1105,6 +1517,28 @@ mod tests {
         assert_eq!(parsed["venue"], "BINANCE");
     }
 
+    #[rstest]
+    fn test_log_line_wrapper_json_duplicate_extra_fields_last_value_wins() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("Test"),
+            message: "Duplicate field".to_string(),
+            fields: smallvec::smallvec![
+                (Ustr::from("venue"), "BINANCE".to_string()),
+                (Ustr::from("venue"), "OKX".to_string()),
+            ],
+        };
+
+        let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let json = wrapper.get_json();
+        let parsed: Value = serde_json::from_str(json.trim()).unwrap();
+
+        assert_eq!(json.matches("\"venue\"").count(), 1);
+        assert_eq!(parsed["venue"], "OKX");
+    }
+
     /// Helper to convert module level map to sorted vec (descending by path length)
     fn sorted_module_filters(map: AHashMap<Ustr, LevelFilter>) -> Vec<(Ustr, LevelFilter)> {
         let mut v: Vec<_> = map.into_iter().collect();
@@ -1334,7 +1768,7 @@ mod tests {
         use crate::{
             logging::{
                 LOGGING_BYPASSED, logging_clock_set_static_mode, logging_clock_set_static_time,
-                logging_is_initialized, logging_set_bypass,
+                logging_is_initialized, logging_set_bypass, logging_sync_to_disk,
             },
             testing::wait_until,
         };
@@ -1400,6 +1834,52 @@ mod tests {
                 log_contents,
                 "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test\n"
             );
+        }
+
+        #[rstest]
+        fn test_logging_sync_to_disk_flushes_fast_flush_policy() {
+            let config = LoggerConfig {
+                fileout_level: LevelFilter::Debug,
+                fileout_sync_on_flush: false,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-SYNC"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "RiskEngine";
+                "sync me"
+            );
+
+            logging_sync_to_disk().expect("sync-to-disk should succeed");
+
+            let log_file_path = std::fs::read_dir(&temp_dir)
+                .expect("Failed to read directory")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("No files found in directory")
+                .path();
+            let log_contents =
+                std::fs::read_to_string(log_file_path).expect("Error while reading log file");
+
+            assert!(log_contents.contains("sync me"));
+
+            drop(log_guard);
         }
 
         #[rstest]
@@ -1595,6 +2075,32 @@ mod tests {
 
             drop(guard);
             assert!(!logging_is_initialized());
+        }
+
+        #[rstest]
+        fn test_init_returns_error_when_log_guard_limit_reached() {
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            )
+            .expect("Failed to initialize logger");
+
+            LOGGING_GUARDS_ACTIVE.store(u8::MAX, Ordering::SeqCst);
+            let result = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            );
+            LOGGING_GUARDS_ACTIVE.store(1, Ordering::SeqCst);
+            drop(guard);
+
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "Logging already initialized but new guard could not be created"
+            );
         }
 
         #[rstest]

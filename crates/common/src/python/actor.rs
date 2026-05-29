@@ -51,11 +51,11 @@ use crate::{
     actor::{
         Actor, DataActor,
         data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig},
-        registry::{get_actor_registry, try_get_actor_unchecked},
+        registry::{try_get_actor_unchecked, with_actor_registry},
     },
     cache::Cache,
     clock::Clock,
-    component::{Component, get_component_registry},
+    component::{Component, with_component_registry},
     enums::ComponentState,
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
@@ -701,10 +701,10 @@ impl PyDataActor {
         let inner_ref: Rc<UnsafeCell<PyDataActorInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        get_component_registry().insert(component_id, component_trait_ref);
+        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
-        get_actor_registry().insert(actor_id, actor_trait_ref);
+        with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
     }
 }
 
@@ -3123,7 +3123,8 @@ class CapturingActor:
             "0xabc123".to_string(),
             0,
             0,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
@@ -3164,7 +3165,8 @@ class CapturingActor:
             U256::from(2_000u64),
             -10,
             10,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -3187,7 +3189,8 @@ class CapturingActor:
             200,
             -10,
             10,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -3203,7 +3206,8 @@ class CapturingActor:
             "0xabc123".to_string(),
             0,
             0,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),

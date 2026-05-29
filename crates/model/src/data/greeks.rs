@@ -22,6 +22,7 @@ use std::{
 
 use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     data::{
@@ -40,7 +41,7 @@ const VEGA_PERCENT_FACTOR: f64 = 0.01;
 /// Core option Greek sensitivity values (the 5 standard sensitivities).
 /// Designed as a composable building block embedded in all Greeks-carrying types.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)

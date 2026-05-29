@@ -672,6 +672,48 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
 	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 
+PLUGIN_CDYLIB_SMOKE_LIVE_FILTER := \
+    test(=loader_loads_example_cdylib) \
+    | test(=custom_data_registration_round_trips_via_registry) \
+    | test(=live_node_loads_configured_plugin_actor_strategy_and_custom_data) \
+    | test(=live_node_start_invokes_configured_plugin_actor) \
+    | (test(~cdylib_actor_) & test(~normalizes_identifiers_for_plugin)) \
+    | (test(~cdylib_strategy_) & test(~normalizes_identifiers))
+
+.PHONY: cargo-test-plugin-cdylib-smoke
+cargo-test-plugin-cdylib-smoke: export RUST_BACKTRACE=1
+cargo-test-plugin-cdylib-smoke: check-nextest-installed
+cargo-test-plugin-cdylib-smoke:  #-- Run Linux plug-in cdylib smoke tests
+	@if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "cargo-test-plugin-cdylib-smoke requires Linux"; \
+		exit 1; \
+	fi
+	$(info $(M) Running nautilus-plugin loader cdylib smoke test...)
+	cargo nextest run \
+		-p nautilus-plugin \
+		--features host \
+		--test load_example_cdylib \
+		--run-ignored only \
+		-E 'test(=loads_example_cdylib_and_walks_manifest) | test(=rejects_second_plugin_with_duplicate_custom_data_type) | test(~rejects_malformed_cdylib_fixture)' \
+		$(FAIL_FAST_FLAG) \
+		--profile $(NEXTEST_PROFILE) \
+		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
+		--status-level fail \
+		--final-status-level flaky
+	$(info $(M) Running nautilus-live plug-in cdylib smoke tests...)
+	cargo nextest run \
+		-p nautilus-live \
+		--features plugin \
+		--test plugin \
+		-E '$(PLUGIN_CDYLIB_SMOKE_LIVE_FILTER)' \
+		$(FAIL_FAST_FLAG) \
+		--profile $(NEXTEST_PROFILE) \
+		--cargo-profile $(CARGO_CI_PROFILE) \
+		--test-threads 1 \
+		--status-level fail \
+		--final-status-level flaky
+
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1
 cargo-test-core-debug: check-nextest-installed
@@ -746,10 +788,10 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 # -----------------------------------------------------------------------------
 # Miri (UB detection)
 # -----------------------------------------------------------------------------
-# Runs library tests under Miri to detect undefined behaviour: invalid pointer
-# operations, aliasing violations (Stacked/Tree Borrows), uninitialised reads,
-# and unsound `unsafe` impls. Requires a nightly toolchain with the `miri`
-# component installed.
+# Runs library and selected integration tests under Miri to detect undefined
+# behaviour: invalid pointer operations, aliasing violations (Stacked/Tree
+# Borrows), uninitialised reads, and unsound `unsafe` impls. Requires a nightly
+# toolchain with the `miri` component installed.
 #
 # Features: `ffi`, `python`, `extension-module`, and `defi` are intentionally
 # disabled. Miri cannot execute Python interpreter calls or most foreign FFI,
@@ -767,9 +809,15 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #   make cargo-miri-core MIRI_TOOLCHAIN=nightly-2026-04-16
 #   make cargo-miri-core MIRI_CORE_FILTER=...
 #   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_MANIFEST_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_CUSTOM_DATA_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_PANIC_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_HOOK_FILTER=...
 MIRI_TOOLCHAIN ?= nightly
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
 MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
+MIRI_PLUGIN_MANIFEST_FLAGS ?= $(MIRI_FLAGS) -Zmiri-ignore-leaks
 MIRI_PROPTEST_CASES ?= 4
 
 # Default test filters target modules with `unsafe` blocks or hand-rolled
@@ -786,6 +834,20 @@ MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
 # them here while keeping the rest of `orderbook::` in scope.
 MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
+# Keep the plug-in Miri lane focused on the ABI boundary, raw handle ownership,
+# panic guards, and command handles. Manifest fixtures model static cdylib
+# storage with `Box::leak`, so that slice runs with leak detection disabled
+# while the ownership-focused tests stay strict. Integration slices avoid the
+# host feature and dynamic loading: `custom_data_dispatch` covers clone, drop,
+# equality, and decoded handle arrays; `panic_propagation` covers fallible thunk
+# panic/error mapping; `hook_dispatch` covers no-host actor/strategy lifecycle
+# and custom-data dispatch. Broader hook/event slices stay available by
+# overriding `MIRI_PLUGIN_HOOK_FILTER`.
+MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|host|panic|surfaces::commands)::/)'
+MIRI_PLUGIN_MANIFEST_FILTER ?= -E 'test(/^manifest::/)'
+MIRI_PLUGIN_CUSTOM_DATA_FILTER ?= -E 'all()'
+MIRI_PLUGIN_PANIC_FILTER ?= -E 'test(~custom_data_) | (test(~_thunk_propagates_failure::) & (test(~on_start_panic) | test(~on_start_err)))'
+MIRI_PLUGIN_HOOK_FILTER ?= -E 'test(~_lifecycle_thunk_dispatches_to_its_method) | test(~_data_thunk_dispatches_to_its_method)'
 
 .PHONY: check-miri-installed
 check-miri-installed:
@@ -814,10 +876,52 @@ cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
 	$(info $(M) Running nautilus-model tests under Miri (filter: $(MIRI_MODEL_FILTER))...)
 	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-model --no-default-features --lib $(MIRI_MODEL_FILTER)
 
+.PHONY: cargo-miri-plugin
+cargo-miri-plugin: export RUST_BACKTRACE=1
+cargo-miri-plugin: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-plugin: check-miri-installed check-nextest-installed
+cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Miri
+	$(info $(M) Running nautilus-plugin library tests under Miri (filter: $(MIRI_PLUGIN_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--lib \
+		$(MIRI_PLUGIN_FILTER)
+	$(info $(M) Running nautilus-plugin manifest tests under Miri (filter: $(MIRI_PLUGIN_MANIFEST_FILTER))...)
+	MIRIFLAGS="$(MIRI_PLUGIN_MANIFEST_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--lib \
+		$(MIRI_PLUGIN_MANIFEST_FILTER)
+	$(info $(M) Running nautilus-plugin custom data dispatch tests under Miri (filter: $(MIRI_PLUGIN_CUSTOM_DATA_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test custom_data_dispatch \
+		$(MIRI_PLUGIN_CUSTOM_DATA_FILTER)
+	$(info $(M) Running nautilus-plugin panic propagation tests under Miri (filter: $(MIRI_PLUGIN_PANIC_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test panic_propagation \
+		$(MIRI_PLUGIN_PANIC_FILTER)
+	$(info $(M) Running nautilus-plugin hook dispatch tests under Miri (filter: $(MIRI_PLUGIN_HOOK_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--test hook_dispatch \
+		$(MIRI_PLUGIN_HOOK_FILTER)
+
 .PHONY: cargo-miri
-cargo-miri:  #-- Run Miri across the in-scope foundational crates (core + model)
+cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
 	$(MAKE) cargo-miri-core
 	$(MAKE) cargo-miri-model
+	$(MAKE) cargo-miri-plugin
 
 #------------------------------------------------------------------------------
 # Benchmarks

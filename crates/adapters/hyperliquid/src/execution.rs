@@ -51,6 +51,7 @@ use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
+    account::resolve_execution_account_address,
     common::{
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
@@ -158,11 +159,12 @@ impl HyperliquidExecutionClient {
         )
         .context("Hyperliquid execution client requires private key")?;
 
-        // Env var fallback mirrors `Secrets::resolve` for private_key and vault_address
-        let account_address = resolve_account_address(
+        let account_address = resolve_execution_account_address(
+            config.private_key.as_deref(),
+            config.vault_address.as_deref(),
             config.account_address.as_deref(),
-            std::env::var("HYPERLIQUID_ACCOUNT_ADDRESS").ok().as_deref(),
-        );
+            config.environment,
+        )?;
 
         let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
@@ -550,10 +552,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let http_client = self.http_client.clone();
-        let symbol = order.instrument_id().symbol.to_string();
+        let symbol = order.instrument_id().symbol.inner();
 
         // Validate asset index exists before marking as submitted
-        let asset = match http_client.get_asset_index(&symbol) {
+        let asset = match http_client.get_asset_index_for_symbol(symbol) {
             Some(a) => a,
             None => {
                 self.emitter
@@ -563,7 +565,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         // Validate order conversion before marking as submitted
-        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+        let price_decimals = http_client
+            .get_price_precision_for_symbol(symbol)
+            .unwrap_or(2);
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
         let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset_and_cloid(
             &order,
@@ -704,8 +708,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 continue;
             }
 
-            let symbol = order.instrument_id().symbol.to_string();
-            let asset = match http_client.get_asset_index(&symbol) {
+            let symbol = order.instrument_id().symbol.inner();
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
                     self.emitter
@@ -714,7 +718,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             };
 
-            let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+            let price_decimals = http_client
+                .get_price_precision_for_symbol(symbol)
+                .unwrap_or(2);
 
             match order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
@@ -919,7 +925,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         let http_client = self.http_client.clone();
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let should_normalize = self.config.normalize_prices;
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
 
@@ -943,8 +949,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let quantity = target_total_qty - filled_qty;
-        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
-        let asset = match http_client.get_asset_index(&symbol) {
+        let price_decimals = http_client
+            .get_price_precision_for_symbol(symbol)
+            .unwrap_or(2);
+        let asset = match http_client.get_asset_index_for_symbol(symbol) {
             Some(a) => a,
             None => {
                 log::warn!(
@@ -1075,20 +1083,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_order", async move {
-            let asset = match http_client.get_asset_index(&symbol) {
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("Asset index not found for symbol {symbol}"),
-                        clock.get_time_ns(),
+                    log::warn!(
+                        "Local cancel validation failed for {client_order_id}: Asset index not found for symbol {symbol}"
                     );
                     return Ok(());
                 }
@@ -1105,13 +1108,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
                         },
                         Err(_) => {
-                            emitter.emit_order_cancel_rejected_event(
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                Some(venue_order_id),
-                                "Invalid venue order ID format",
-                                clock.get_time_ns(),
+                            log::warn!(
+                                "Local cancel validation failed for {client_order_id}: Invalid venue order ID format"
                             );
                             return Ok(());
                         }
@@ -1139,13 +1137,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             log::info!("Order cancelled successfully: {response:?}");
                         }
                     } else {
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &extract_error_message(&response),
-                            clock.get_time_ns(),
+                        let error_msg = extract_error_message(&response);
+                        log::warn!(
+                            "Cancel failed without per-order result for {client_order_id}, awaiting WS reconciliation: {error_msg}"
                         );
                     }
                 }
@@ -1156,13 +1150,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                              awaiting WS reconciliation",
                         );
                     } else {
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &format!("Cancel WebSocket post request failed: {e}"),
-                            clock.get_time_ns(),
+                        log::warn!(
+                            "Ambiguous cancel failure for {client_order_id}, awaiting WS reconciliation: {e}"
                         );
                     }
                 }
@@ -1191,7 +1180,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        let symbol = cmd.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.inner();
         let instrument_id = cmd.instrument_id;
         let strategy_id = cmd.strategy_id;
         let entries: Vec<CancelEntry> = open_orders
@@ -1201,7 +1190,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 instrument_id,
                 client_order_id: o.client_order_id(),
                 venue_order_id: o.venue_order_id(),
-                symbol: symbol.clone(),
+                symbol,
             })
             .collect();
 
@@ -1211,23 +1200,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let ws_client = self.ws_client.clone();
 
         self.spawn_task("cancel_all_orders", async move {
-            let asset = match http_client.get_asset_index(&symbol) {
+            let asset = match http_client.get_asset_index_for_symbol(symbol) {
                 Some(a) => a,
                 None => {
-                    let reason = format!("Asset index not found for symbol {symbol}");
-                    log::warn!("{reason}");
-                    let ts = clock.get_time_ns();
-
-                    for entry in &entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
-                        );
-                    }
+                    log::warn!(
+                        "Local cancel-all validation failed: Asset index not found for symbol {symbol}"
+                    );
                     return Ok(());
                 }
             };
@@ -1235,7 +1213,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
-                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
+                cancel_dispatch.push(entry, asset, &http_client);
             }
 
             if cancel_dispatch.is_empty() {
@@ -1274,7 +1252,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 instrument_id: c.instrument_id,
                 client_order_id: c.client_order_id,
                 venue_order_id: c.venue_order_id,
-                symbol: c.instrument_id.symbol.to_string(),
+                symbol: c.instrument_id.symbol.inner(),
             })
             .collect();
 
@@ -1287,24 +1265,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let mut cancel_dispatch = CancelDispatch::new();
 
             for entry in &entries {
-                let asset = match http_client.get_asset_index(&entry.symbol) {
+                let asset = match http_client.get_asset_index_for_symbol(entry.symbol) {
                     Some(a) => a,
                     None => {
-                        let reason = format!("Asset index not found for symbol {}", entry.symbol);
-                        log::warn!("{reason}, skipping cancel for {}", entry.client_order_id);
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
+                        log::warn!(
+                            "Local batch cancel validation failed for {}: Asset index not found for symbol {}",
                             entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            clock.get_time_ns(),
+                            entry.symbol,
                         );
                         continue;
                     }
                 };
 
-                cancel_dispatch.push(entry, asset, &http_client, &emitter, clock);
+                cancel_dispatch.push(entry, asset, &http_client);
             }
 
             if cancel_dispatch.is_empty() {
@@ -1830,7 +1803,7 @@ struct CancelEntry {
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
-    symbol: String,
+    symbol: Ustr,
 }
 
 struct CancelDispatch {
@@ -1854,14 +1827,7 @@ impl CancelDispatch {
         self.cloid_requests.is_empty() && self.oid_requests.is_empty()
     }
 
-    fn push(
-        &mut self,
-        entry: &CancelEntry,
-        asset: u32,
-        http_client: &HyperliquidHttpClient,
-        emitter: &ExecutionEventEmitter,
-        clock: &'static AtomicTime,
-    ) {
+    fn push(&mut self, entry: &CancelEntry, asset: u32, http_client: &HyperliquidHttpClient) {
         if let Some(cloid) = http_client.cached_client_order_id_cloid(&entry.client_order_id) {
             self.cloid_requests
                 .push(HyperliquidExecCancelByCloidRequest { asset, cloid });
@@ -1874,13 +1840,9 @@ impl CancelDispatch {
                     self.oid_entries.push(entry.clone());
                 }
                 Err(_) => {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
+                    log::warn!(
+                        "Local cancel validation failed for {}: Invalid venue order ID format",
                         entry.client_order_id,
-                        Some(venue_order_id),
-                        "Invalid venue order ID format",
-                        clock.get_time_ns(),
                     );
                 }
             }
@@ -1964,17 +1926,6 @@ async fn submit_cancel_action(
                     inner_errors.len(),
                 ) {
                     log::warn!("{reason}");
-
-                    for entry in sent_entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
-                        );
-                    }
                 } else {
                     for (i, entry) in sent_entries.iter().enumerate() {
                         if let Some(Some(error_msg)) = inner_errors.get(i) {
@@ -1995,39 +1946,16 @@ async fn submit_cancel_action(
                 }
             } else {
                 let error_msg = extract_error_message(&response);
-                log::warn!("{label} rejected by exchange: {error_msg}");
-                let ts = clock.get_time_ns();
-
-                for entry in sent_entries {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
-                        entry.client_order_id,
-                        entry.venue_order_id,
-                        &error_msg,
-                        ts,
-                    );
-                }
+                log::warn!(
+                    "{label} failed without per-order results, awaiting WS reconciliation: {error_msg}"
+                );
             }
         }
         Err(e) => {
             if e.is_transport_error() {
                 log::warn!("{label} transport failure: {e}; awaiting WS reconciliation");
             } else {
-                let reason = format!("{label} WebSocket post request failed: {e}");
-                log::warn!("{reason}");
-                let ts = clock.get_time_ns();
-
-                for entry in sent_entries {
-                    emitter.emit_order_cancel_rejected_event(
-                        entry.strategy_id,
-                        entry.instrument_id,
-                        entry.client_order_id,
-                        entry.venue_order_id,
-                        &reason,
-                        ts,
-                    );
-                }
+                log::warn!("{label} ambiguous failure, awaiting WS reconciliation: {e}");
             }
         }
     }
@@ -2289,16 +2217,6 @@ fn remove_cloid_mapping_for_client_order_id(
     ws_client.remove_cloid_mapping(&Ustr::from(&legacy_cloid.to_hex()));
 }
 
-fn resolve_account_address(config_value: Option<&str>, env_value: Option<&str>) -> Option<String> {
-    let trim_nonempty = |s: &str| {
-        let trimmed = s.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    };
-    config_value
-        .and_then(trim_nonempty)
-        .or_else(|| env_value.and_then(trim_nonempty))
-}
-
 use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
@@ -2328,8 +2246,7 @@ mod tests {
     use super::{
         ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
         OrderIdentity, PostRejectionRoute, WsDispatchState, determine_order_list_grouping,
-        handle_execution_report, register_order_identity_into, resolve_account_address,
-        validate_order_for_hyperliquid,
+        handle_execution_report, register_order_identity_into, validate_order_for_hyperliquid,
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
@@ -3328,25 +3245,5 @@ mod tests {
                 .contains("Unsupported instrument symbol format"),
             "unexpected error: {err}",
         );
-    }
-
-    #[rstest]
-    #[case(Some("0xABC"), None, Some("0xABC"))]
-    #[case(None, Some("0xDEF"), Some("0xDEF"))]
-    #[case(Some("0xABC"), Some("0xDEF"), Some("0xABC"))]
-    #[case(Some(""), Some("0xDEF"), Some("0xDEF"))]
-    #[case(Some("   "), Some("0xDEF"), Some("0xDEF"))]
-    #[case(None, Some(""), None)]
-    #[case(None, Some("   "), None)]
-    #[case(None, None, None)]
-    #[case(Some(" 0xABC "), None, Some("0xABC"))]
-    #[case(None, Some(" 0xDEF "), Some("0xDEF"))]
-    fn test_resolve_account_address(
-        #[case] config_value: Option<&str>,
-        #[case] env_value: Option<&str>,
-        #[case] expected: Option<&str>,
-    ) {
-        let result = resolve_account_address(config_value, env_value);
-        assert_eq!(result.as_deref(), expected);
     }
 }

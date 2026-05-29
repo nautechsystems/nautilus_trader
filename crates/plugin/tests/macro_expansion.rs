@@ -31,13 +31,13 @@ use nautilus_model::{
     events::PositionOpened,
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::{MarketOrder, OrderAny},
-    types::Quantity,
+    types::{Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
     host::{HostContext, HostLogLevel, HostVTable},
-    manifest::PluginManifest,
+    manifest::{PluginManifest, compiled_precision_mode},
     surfaces::{
         actor::PluginActor,
         commands::{
@@ -587,6 +587,12 @@ fn macro_emits_loadable_manifest() {
     assert!(!unsafe { manifest.build_id.target_triple.as_str() }.is_empty());
     // SAFETY: build id strings live in static storage.
     assert!(!unsafe { manifest.build_id.build_profile.as_str() }.is_empty());
+    // SAFETY: build id strings live in static storage.
+    assert_eq!(
+        unsafe { manifest.build_id.precision_mode.as_str() },
+        compiled_precision_mode()
+    );
+    assert_eq!(manifest.build_id.fixed_precision, FIXED_PRECISION);
 
     // SAFETY: slice points at static storage owned by the manifest.
     let cd = unsafe { manifest.custom_data.as_slice() };

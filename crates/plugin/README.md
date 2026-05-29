@@ -141,16 +141,19 @@ Plug-in cdylibs use the platform-native shared-library format:
 Rust's ABI is unstable across compilations on every platform, so the plug-in build must be
 pinned to the host's Rust toolchain version and Nautilus version. Each manifest carries a
 versioned `PluginBuildId` with the `nautilus-plugin` crate version, Rust compiler version when
-the build script can read it, target triple, and build profile. The loader includes that build
-identifier in ABI mismatch diagnostics so operators can spot stale or cross-built cdylibs.
+the build script can read it, target triple, build profile, and fixed-point precision mode. The
+loader includes that build identifier in ABI mismatch diagnostics so operators can spot stale or
+cross-built cdylibs.
 
-The build identifier remains diagnostic; the loader validates only the build-id schema version,
-not the specific crate version, compiler version, target triple, or build profile values.
+The loader validates the build-id schema version and fixed-point precision mode because precision
+changes model layout at the plug-in boundary. The specific crate version, compiler version, target
+triple, and build profile values remain diagnostic.
 
-`NAUTILUS_PLUGIN_ABI_VERSION` tracks the current boundary layout while this early-alpha surface
-is unreleased and unstable. During this phase, the value does not promise compatibility between
-Nautilus versions. Every breaking change to any `#[repr(C)]` struct or vtable in this crate must
-bump it. The host refuses to load a plug-in whose `PluginManifest::abi_version` does not match.
+`NAUTILUS_PLUGIN_ABI_VERSION` and `PLUGIN_BUILD_ID_VERSION` remain `1` while this early-alpha
+surface is unreleased and unstable. During this phase, those values do not promise compatibility
+between Nautilus versions. Rebuild plug-in cdylibs to match the exact host version. The host
+refuses to load a plug-in whose `PluginManifest::abi_version` does not match, and manifest
+validation rejects fixed-point precision mode mismatches.
 
 ## Documentation
 

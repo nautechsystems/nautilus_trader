@@ -1373,12 +1373,43 @@ config.order_display_qty = Some(Quantity::from("0.1"));
 
 Test that the adapter correctly handles and reports order rejections.
 
-| TC    | Name                    | Description                                          | Skip when               |
-|-------|-------------------------|------------------------------------------------------|-------------------------|
-| TC-E70 | PostOnly rejection      | Post‑only order that would cross the spread.         | No post‑only.           |
-| TC-E71 | ReduceOnly rejection    | Reduce‑only order with no position to reduce.        | No reduce‑only.         |
-| TC-E72 | Unsupported order type  | Submit order type not supported by adapter.           | Never.                  |
-| TC-E73 | Unsupported TIF         | Submit order with unsupported time in force.          | Never.                  |
+| TC     | Name                    | Description                                      | Skip when        |
+|--------|-------------------------|--------------------------------------------------|------------------|
+| TC-E70 | PostOnly rejection      | Post‑only order that would cross the spread.     | No post‑only.    |
+| TC-E71 | ReduceOnly rejection    | Reduce‑only order with no position to reduce.    | No reduce‑only.  |
+| TC-E72 | Unsupported order type  | Submit order type not supported by adapter.      | Never.           |
+| TC-E73 | Unsupported TIF         | Submit order with unsupported time in force.     | Never.           |
+| TC-E74 | Ambiguous submit fail   | Transport, timeout, or send failure on submit.   | No mock path.    |
+| TC-E75 | Ambiguous cancel fail   | Transport, timeout, or send failure on cancel.   | No cancel.       |
+| TC-E76 | Ambiguous modify fail   | Transport, timeout, or send failure on modify.   | No modify.       |
+| TC-E77 | Ambiguous batch fail    | Whole‑batch failure without per‑order result.    | No batch.        |
+| TC-E78 | Per‑order batch reject  | Batch response has explicit per‑order rejection. | No batch.        |
+
+TC-E74 through TC-E78 are specified collectively below because they usually require a mock HTTP or
+WebSocket boundary rather than a live venue.
+
+### Ambiguous outcome failures
+
+These cases prove that adapter request failures do not turn into terminal rejection events when
+the venue outcome is unknown.
+
+**Pass criteria:**
+
+- Submit failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
+  response parse failures do not emit `OrderRejected`.
+- Cancel failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
+  whole-request server failures do not emit `OrderCancelRejected`.
+- Modify failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
+  whole-request server failures do not emit `OrderModifyRejected`.
+- Local cancel validation failures log a warning and do not emit `OrderCancelRejected`.
+- Local modify validation failures log a warning and do not emit `OrderModifyRejected`.
+- Whole-batch request failures do not emit one rejection per order when the venue did not return
+  per-order results.
+- Explicit per-order venue rejections still emit the matching rejection event with the venue
+  reason.
+
+The order remains in the appropriate in-flight state until a venue update, query result, or
+reconciliation pass resolves it.
 
 ### TC-E70: PostOnly rejection
 
@@ -1387,13 +1418,15 @@ Test that the adapter correctly handles and reports order rejections.
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
 | **Action**         | ExecTester places post‑only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.               |
-| **Pass criteria**  | Order rejected by venue; `OrderRejected` event received with reason indicating post‑only violation. |
+| **Pass criteria**  | Venue rejects order; `OrderRejected.due_post_only=true`; reason names post‑only violation. |
 | **Skip when**      | Adapter does not support post‑only flag.                               |
 
 **Considerations:**
 
 - The ExecTester's `test_reject_post_only` mode intentionally prices the order to cross.
 - Some venues may partially fill instead of rejecting; behavior is venue-specific.
+- Adapters that emit `OrderRejected` for a post-only crossing reject should set
+  `due_post_only=true` so strategies can distinguish this from other venue rejections.
 
 **Python config:**
 

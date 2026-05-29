@@ -22,28 +22,63 @@
 
 use std::{fmt::Display, path::PathBuf};
 
-use bytes::Bytes;
-use nautilus_common::cache::Cache;
+use nautilus_common::{
+    cache::Cache,
+    messages::{
+        data::{
+            BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+            QuotesResponse, TradesResponse,
+        },
+        execution::SubmitOrderList,
+    },
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    data::{Bar, QuoteTick, TradeTick},
     enums::OmsType,
-    events::{AccountState, OrderEventAny, OrderFilled, OrderInitialized, PositionAdjusted},
+    events::{
+        AccountState, OrderEventAny, OrderFilled, OrderInitialized, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionOpened,
+    },
     orders::OrderAny,
     position::Position,
 };
+#[cfg(feature = "persistence")]
+use nautilus_persistence::backend::catalog::{ParquetDataCatalog, parse_filename_timestamps};
 use serde::de::DeserializeOwned;
 
+#[cfg(test)]
+use crate::capture::builtins::{
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS, PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE, PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
+    PAYLOAD_TYPE_CANCEL_ORDER, PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+    PAYLOAD_TYPE_EXECUTION_MASS_STATUS, PAYLOAD_TYPE_FILL_REPORT,
+    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    PAYLOAD_TYPE_POSITION_STATUS_REPORT, PAYLOAD_TYPE_QUERY_ACCOUNT, PAYLOAD_TYPE_QUERY_ORDER,
+    PAYLOAD_TYPE_REQUEST_COMMAND, PAYLOAD_TYPE_SUBMIT_ORDER, PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_TIME_EVENT, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+};
+#[cfg(all(test, feature = "defi"))]
+use crate::capture::builtins::{
+    PAYLOAD_TYPE_DEFI_REQUEST_COMMAND, PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+};
 use crate::{
     RedbBackend,
     backend::{EventStore, ScanDirection},
     capture::builtins::{
-        PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_ORDER_ACCEPTED,
+        PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_BARS_RESPONSE,
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE, PAYLOAD_TYPE_ORDER_ACCEPTED,
         PAYLOAD_TYPE_ORDER_CANCEL_REJECTED, PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED,
         PAYLOAD_TYPE_ORDER_EMULATED, PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILLED,
         PAYLOAD_TYPE_ORDER_INITIALIZED, PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
         PAYLOAD_TYPE_ORDER_PENDING_CANCEL, PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
         PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
         PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
+        PAYLOAD_TYPE_POSITION_CHANGED, PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED,
+        PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
     },
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -72,26 +107,68 @@ pub struct EventStoreReplayReport {
     pub cache: CacheReplayReport,
 }
 
-/// Replay input scope.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReplayScope {
-    /// Event-store entries only.
-    Forensics,
-    /// Event-store entries plus selected data catalog slices for decision analysis.
-    Decision,
-    /// Event-store entries plus all selected catalog slices for an incident window.
-    FullIncident,
-}
+#[cfg(test)]
+pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
+    PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+    PAYLOAD_TYPE_QUOTES_RESPONSE,
+    PAYLOAD_TYPE_TRADES_RESPONSE,
+    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+    PAYLOAD_TYPE_BARS_RESPONSE,
+    PAYLOAD_TYPE_ORDER_INITIALIZED,
+    PAYLOAD_TYPE_ORDER_DENIED,
+    PAYLOAD_TYPE_ORDER_EMULATED,
+    PAYLOAD_TYPE_ORDER_RELEASED,
+    PAYLOAD_TYPE_ORDER_SUBMITTED,
+    PAYLOAD_TYPE_ORDER_ACCEPTED,
+    PAYLOAD_TYPE_ORDER_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCELED,
+    PAYLOAD_TYPE_ORDER_EXPIRED,
+    PAYLOAD_TYPE_ORDER_TRIGGERED,
+    PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+    PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+    PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+    PAYLOAD_TYPE_ORDER_UPDATED,
+    PAYLOAD_TYPE_ORDER_FILLED,
+    PAYLOAD_TYPE_POSITION_OPENED,
+    PAYLOAD_TYPE_POSITION_CHANGED,
+    PAYLOAD_TYPE_POSITION_CLOSED,
+    PAYLOAD_TYPE_POSITION_ADJUSTED,
+];
 
-impl Display for ReplayScope {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Forensics => f.write_str("forensics"),
-            Self::Decision => f.write_str("decision"),
-            Self::FullIncident => f.write_str("full_incident"),
-        }
-    }
-}
+#[cfg(test)]
+pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_SUBMIT_ORDER,
+    PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_CANCEL_ORDER,
+    PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
+    PAYLOAD_TYPE_QUERY_ORDER,
+    PAYLOAD_TYPE_QUERY_ACCOUNT,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+    PAYLOAD_TYPE_FILL_REPORT,
+    PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    PAYLOAD_TYPE_POSITION_STATUS_REPORT,
+    PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+    PAYLOAD_TYPE_TIME_EVENT,
+    PAYLOAD_TYPE_REQUEST_COMMAND,
+    PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_REQUEST_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+    PAYLOAD_TYPE_BOOK_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
+];
 
 /// Inclusive event-store `seq` bounds for replay input scans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,15 +319,6 @@ impl CatalogSliceCoverage {
     }
 }
 
-/// Planned catalog slice availability.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CatalogSliceStatus {
-    /// The catalog reported files for this slice.
-    Available,
-    /// The catalog reported no files for this slice.
-    Missing,
-}
-
 /// Planned catalog slice joined to a replay input scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogSlicePlan {
@@ -258,19 +326,78 @@ pub struct CatalogSlicePlan {
     pub query: CatalogSliceQuery,
     /// Catalog coverage reported during planning.
     pub coverage: CatalogSliceCoverage,
-    /// Slice availability status.
-    pub status: CatalogSliceStatus,
 }
 
 impl CatalogSlicePlan {
     /// Returns whether the catalog reported no files for this slice.
     #[must_use]
-    pub const fn is_missing(&self) -> bool {
-        matches!(self.status, CatalogSliceStatus::Missing)
+    pub fn is_missing(&self) -> bool {
+        self.coverage.is_missing()
     }
 }
 
-/// Opaque catalog record loaded for replay context.
+/// Typed catalog data loaded for replay context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogReplayData {
+    /// Quote tick loaded from the `quotes` catalog.
+    Quote(QuoteTick),
+    /// Trade tick loaded from the `trades` catalog.
+    Trade(TradeTick),
+    /// Bar loaded from the `bars` catalog.
+    Bar(Bar),
+}
+
+impl CatalogReplayData {
+    /// Returns the catalog data class for this record.
+    #[must_use]
+    pub const fn data_cls(&self) -> &'static str {
+        match self {
+            Self::Quote(_) => "quotes",
+            Self::Trade(_) => "trades",
+            Self::Bar(_) => "bars",
+        }
+    }
+
+    /// Returns the catalog identifier for this record.
+    #[must_use]
+    pub fn identifier(&self) -> String {
+        match self {
+            Self::Quote(quote) => quote.instrument_id.to_string(),
+            Self::Trade(trade) => trade.instrument_id.to_string(),
+            Self::Bar(bar) => bar.bar_type.to_string(),
+        }
+    }
+
+    /// Returns the initialization timestamp for this record.
+    #[must_use]
+    pub const fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Quote(quote) => quote.ts_init,
+            Self::Trade(trade) => trade.ts_init,
+            Self::Bar(bar) => bar.ts_init,
+        }
+    }
+}
+
+impl From<QuoteTick> for CatalogReplayData {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for CatalogReplayData {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
+impl From<Bar> for CatalogReplayData {
+    fn from(value: Bar) -> Self {
+        Self::Bar(value)
+    }
+}
+
+/// Catalog record loaded for replay context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogReplayRecord {
     /// Catalog data class or directory name for the record.
@@ -279,23 +406,19 @@ pub struct CatalogReplayRecord {
     pub identifier: Option<String>,
     /// Record timestamp used for contextual joins.
     pub ts_init: UnixNanos,
-    /// Opaque caller-supplied payload bytes.
-    pub payload: Bytes,
+    /// Typed catalog data loaded for contextual analysis.
+    pub data: CatalogReplayData,
 }
 
 impl CatalogReplayRecord {
-    /// Builds an opaque catalog replay record.
-    pub fn new(
-        data_cls: impl Into<String>,
-        identifier: Option<String>,
-        ts_init: UnixNanos,
-        payload: Bytes,
-    ) -> Self {
+    /// Builds a typed catalog replay record.
+    #[must_use]
+    pub fn from_data(data: CatalogReplayData) -> Self {
         Self {
-            data_cls: data_cls.into(),
-            identifier,
-            ts_init,
-            payload,
+            data_cls: data.data_cls().to_string(),
+            identifier: Some(data.identifier()),
+            ts_init: data.ts_init(),
+            data,
         }
     }
 }
@@ -309,11 +432,9 @@ pub struct CatalogReplaySlice {
     pub records: Vec<CatalogReplayRecord>,
 }
 
-/// Planned replay inputs for a forensics, decision, or full incident replay.
+/// Planned replay inputs for an event-store scan with optional catalog context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplayInputPlan {
-    /// Explicit replay scope.
-    pub scope: ReplayScope,
     /// Requested event-store `seq` bounds.
     pub requested_range: ReplaySeqRange,
     /// Actual event-store range found inside the requested bounds.
@@ -337,11 +458,9 @@ impl ReplayInputPlan {
     }
 }
 
-/// Loaded replay inputs.
+/// Loaded replay inputs with event-store entries and optional catalog context.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplayInputs {
-    /// Explicit replay scope.
-    pub scope: ReplayScope,
     /// Event-store entries in durable `seq` order.
     pub entries: Vec<EventStoreEntry>,
     /// Catalog slices loaded as contextual input.
@@ -374,6 +493,108 @@ pub trait ReplayCatalog {
     ) -> Result<Vec<CatalogReplayRecord>, Self::Error>;
 }
 
+/// Read-only replay catalog adapter backed by [`ParquetDataCatalog`].
+#[cfg(feature = "persistence")]
+#[derive(Debug)]
+pub struct ParquetReplayCatalog<'a> {
+    catalog: &'a mut ParquetDataCatalog,
+}
+
+#[cfg(feature = "persistence")]
+impl<'a> ParquetReplayCatalog<'a> {
+    /// Creates a replay catalog adapter over an existing Parquet catalog.
+    pub const fn new(catalog: &'a mut ParquetDataCatalog) -> Self {
+        Self { catalog }
+    }
+}
+
+#[cfg(feature = "persistence")]
+impl ReplayCatalog for ParquetReplayCatalog<'_> {
+    type Error = anyhow::Error;
+
+    fn plan_slice(
+        &mut self,
+        query: &CatalogSliceQuery,
+    ) -> Result<CatalogSliceCoverage, Self::Error> {
+        let mut files = self.catalog.query_files(
+            &query.data_cls,
+            query.identifiers_option(),
+            Some(query.start),
+            Some(query.end),
+        )?;
+        files.sort();
+
+        let intervals = files
+            .iter()
+            .filter_map(|file| {
+                parse_filename_timestamps(file).map(|(start, end)| {
+                    ReplayTimeRange::new(UnixNanos::from(start), UnixNanos::from(end))
+                })
+            })
+            .collect();
+
+        Ok(CatalogSliceCoverage { files, intervals })
+    }
+
+    fn load_slice(
+        &mut self,
+        plan: &CatalogSlicePlan,
+    ) -> Result<Vec<CatalogReplayRecord>, Self::Error> {
+        let identifiers = plan.query.identifiers_option();
+        let start = Some(plan.query.start);
+        let end = Some(plan.query.end);
+        let files = Some(plan.coverage.files.clone());
+
+        match plan.query.data_cls.as_str() {
+            "quotes" => Ok(catalog_replay_records(
+                self.catalog.query_typed_data::<QuoteTick>(
+                    identifiers,
+                    start,
+                    end,
+                    None,
+                    files,
+                    false,
+                )?,
+            )),
+            "trades" => Ok(catalog_replay_records(
+                self.catalog.query_typed_data::<TradeTick>(
+                    identifiers,
+                    start,
+                    end,
+                    None,
+                    files,
+                    false,
+                )?,
+            )),
+            "bars" => Ok(catalog_replay_records(
+                self.catalog.query_typed_data::<Bar>(
+                    identifiers,
+                    start,
+                    end,
+                    None,
+                    files,
+                    false,
+                )?,
+            )),
+            data_cls => {
+                anyhow::bail!("catalog replay loading for {data_cls} is not supported")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "persistence")]
+fn catalog_replay_records<T>(records: Vec<T>) -> Vec<CatalogReplayRecord>
+where
+    T: Into<CatalogReplayData>,
+{
+    records
+        .into_iter()
+        .map(Into::into)
+        .map(CatalogReplayRecord::from_data)
+        .collect()
+}
+
 /// Errors surfaced while planning or loading replay inputs.
 #[derive(Debug, thiserror::Error)]
 pub enum ReplayInputError {
@@ -390,20 +611,9 @@ pub enum ReplayInputError {
         /// Validation failure.
         message: String,
     },
-    /// A catalog-joined replay scope had no selected catalog slices.
-    #[error("{scope} replay requires at least one selected catalog slice")]
-    EmptyCatalogSelection {
-        /// Replay scope.
-        scope: ReplayScope,
-    },
-    /// A replay input plan was loaded through the wrong scope-specific API.
-    #[error("replay input plan scope {actual} does not match expected scope {expected}")]
-    ScopeMismatch {
-        /// Expected replay scope.
-        expected: ReplayScope,
-        /// Actual replay scope.
-        actual: ReplayScope,
-    },
+    /// A catalog-joined replay plan had no selected catalog slices.
+    #[error("catalog replay requires at least one selected catalog slice")]
+    EmptyCatalogSelection,
     /// A catalog slice needs time bounds, but neither selector nor event-store scan supplied them.
     #[error(
         "catalog slice {data_cls} requires explicit time bounds because the replay scan is empty"
@@ -587,7 +797,6 @@ where
 {
     let span = collect_replay_entry_span(reader, range)?;
     Ok(ReplayInputPlan {
-        scope: ReplayScope::Forensics,
         requested_range: range,
         event_range: span.event_range,
         event_count: span.event_count,
@@ -603,8 +812,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a forensics plan and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns [`ReplayInputError::EventStore`] when the reader scan fails.
 pub fn load_forensics_replay_inputs<B>(
     reader: &EventStoreReader<B>,
     plan: &ReplayInputPlan,
@@ -612,16 +820,14 @@ pub fn load_forensics_replay_inputs<B>(
 where
     B: EventStore,
 {
-    ensure_plan_scope(plan, ReplayScope::Forensics)?;
     let entries = load_replay_entries(reader, plan.requested_range)?;
     Ok(ReplayInputs {
-        scope: ReplayScope::Forensics,
         entries,
         catalog_slices: Vec::new(),
     })
 }
 
-/// Plans decision replay inputs by joining event-store entries with selected catalog slices.
+/// Plans replay inputs by joining event-store entries with selected catalog slices.
 ///
 /// The event-store range supplies durable replay order. Catalog slices are contextual input
 /// selected by the caller; their timestamps bound data lookup but never replace `seq` ordering.
@@ -634,7 +840,7 @@ where
 /// bounds from an empty event-store scan, [`ReplayInputError::InvalidCatalogTimeRange`] when a
 /// resolved slice has `start > end`, [`ReplayInputError::Catalog`] when catalog planning fails,
 /// and [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn plan_decision_replay_inputs<B, C>(
+pub fn plan_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     range: ReplaySeqRange,
@@ -644,16 +850,10 @@ where
     B: EventStore,
     C: ReplayCatalog,
 {
-    plan_catalog_joined_replay_inputs(
-        reader,
-        catalog,
-        ReplayScope::Decision,
-        range,
-        catalog_slices,
-    )
+    plan_catalog_joined_replay_inputs(reader, catalog, range, catalog_slices)
 }
 
-/// Loads decision replay inputs from an existing plan.
+/// Loads catalog replay inputs from an existing plan.
 ///
 /// Event-store entries are returned in durable `seq` order. Catalog records are loaded through
 /// the caller-provided catalog source only; this function does not query live venues or run engine
@@ -661,11 +861,10 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a decision plan,
-/// [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
+/// Returns [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
 /// [`ReplayInputError::Catalog`] when catalog loading fails, and
 /// [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn load_decision_replay_inputs<B, C>(
+pub fn load_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     plan: &ReplayInputPlan,
@@ -674,63 +873,7 @@ where
     B: EventStore,
     C: ReplayCatalog,
 {
-    load_catalog_joined_replay_inputs(reader, catalog, plan, ReplayScope::Decision)
-}
-
-/// Plans full incident replay inputs by joining event-store entries with selected catalog slices.
-///
-/// Callers should select every catalog slice relevant to the incident window. The event-store
-/// range remains the only ordering authority; catalog slices provide read-only context.
-///
-/// # Errors
-///
-/// Returns [`ReplayInputError::EmptyCatalogSelection`] when no catalog slices are selected,
-/// [`ReplayInputError::InvalidSeqRange`] when `range` is invalid,
-/// [`ReplayInputError::MissingCatalogTimeBounds`] when an unbounded selector cannot inherit
-/// bounds from an empty event-store scan, [`ReplayInputError::InvalidCatalogTimeRange`] when a
-/// resolved slice has `start > end`, [`ReplayInputError::Catalog`] when catalog planning fails,
-/// and [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn plan_full_incident_replay_inputs<B, C>(
-    reader: &EventStoreReader<B>,
-    catalog: &mut C,
-    range: ReplaySeqRange,
-    catalog_slices: &[CatalogSliceSelector],
-) -> Result<ReplayInputPlan, ReplayInputError>
-where
-    B: EventStore,
-    C: ReplayCatalog,
-{
-    plan_catalog_joined_replay_inputs(
-        reader,
-        catalog,
-        ReplayScope::FullIncident,
-        range,
-        catalog_slices,
-    )
-}
-
-/// Loads full incident replay inputs from an existing plan.
-///
-/// Event-store entries are returned in durable `seq` order. Catalog records are loaded through
-/// the caller-provided catalog source only; this function does not query live venues or run engine
-/// logic.
-///
-/// # Errors
-///
-/// Returns [`ReplayInputError::ScopeMismatch`] when `plan` is not a full incident plan,
-/// [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
-/// [`ReplayInputError::Catalog`] when catalog loading fails, and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
-pub fn load_full_incident_replay_inputs<B, C>(
-    reader: &EventStoreReader<B>,
-    catalog: &mut C,
-    plan: &ReplayInputPlan,
-) -> Result<ReplayInputs, ReplayInputError>
-where
-    B: EventStore,
-    C: ReplayCatalog,
-{
-    load_catalog_joined_replay_inputs(reader, catalog, plan, ReplayScope::FullIncident)
+    load_catalog_joined_replay_inputs(reader, catalog, plan)
 }
 
 /// Restores cache state from a sealed run without publishing to the bus or touching live venues.
@@ -805,7 +948,6 @@ struct ReplayEntrySpan {
 fn plan_catalog_joined_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
-    scope: ReplayScope,
     range: ReplaySeqRange,
     catalog_slices: &[CatalogSliceSelector],
 ) -> Result<ReplayInputPlan, ReplayInputError>
@@ -814,14 +956,13 @@ where
     C: ReplayCatalog,
 {
     if catalog_slices.is_empty() {
-        return Err(ReplayInputError::EmptyCatalogSelection { scope });
+        return Err(ReplayInputError::EmptyCatalogSelection);
     }
 
     let span = collect_replay_entry_span(reader, range)?;
     let catalog_slices = plan_catalog_slices(catalog, catalog_slices, span.time_range)?;
 
     Ok(ReplayInputPlan {
-        scope,
         requested_range: range,
         event_range: span.event_range,
         event_count: span.event_count,
@@ -834,18 +975,15 @@ fn load_catalog_joined_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
     plan: &ReplayInputPlan,
-    expected_scope: ReplayScope,
 ) -> Result<ReplayInputs, ReplayInputError>
 where
     B: EventStore,
     C: ReplayCatalog,
 {
-    ensure_plan_scope(plan, expected_scope)?;
     let entries = load_replay_entries(reader, plan.requested_range)?;
     let catalog_slices = load_catalog_slices(catalog, &plan.catalog_slices)?;
 
     Ok(ReplayInputs {
-        scope: expected_scope,
         entries,
         catalog_slices,
     })
@@ -922,16 +1060,7 @@ where
                 data_cls: query.data_cls.clone(),
                 message: e.to_string(),
             })?;
-        let status = if coverage.is_missing() {
-            CatalogSliceStatus::Missing
-        } else {
-            CatalogSliceStatus::Available
-        };
-        plans.push(CatalogSlicePlan {
-            query,
-            coverage,
-            status,
-        });
+        plans.push(CatalogSlicePlan { query, coverage });
     }
 
     Ok(plans)
@@ -1012,20 +1141,6 @@ fn resolve_catalog_slice_query(
     })
 }
 
-fn ensure_plan_scope(
-    plan: &ReplayInputPlan,
-    expected: ReplayScope,
-) -> Result<(), ReplayInputError> {
-    if plan.scope != expected {
-        return Err(ReplayInputError::ScopeMismatch {
-            expected,
-            actual: plan.scope,
-        });
-    }
-
-    Ok(())
-}
-
 fn validate_seq_range(range: ReplaySeqRange) -> Result<(), ReplayInputError> {
     if range.from_seq == 0 {
         return Err(ReplayInputError::InvalidSeqRange {
@@ -1094,6 +1209,10 @@ pub fn apply_cache_replay_entry(
     cache: &mut Cache,
     entry: &EventStoreEntry,
 ) -> Result<bool, CacheReplayError> {
+    if apply_complete_cache_payload_entry(cache, entry)? {
+        return Ok(true);
+    }
+
     match entry.payload_type.as_str() {
         PAYLOAD_TYPE_ACCOUNT_STATE => {
             let state = decode_payload::<AccountState>(entry)?;
@@ -1152,9 +1271,70 @@ pub fn apply_cache_replay_entry(
             apply_result(entry, cache.update_order(&event))?;
             apply_fill_to_position(cache, entry, &fill)?;
         }
+        PAYLOAD_TYPE_POSITION_OPENED => {
+            let opened = decode_payload::<PositionOpened>(entry)?;
+            apply_position_opened(cache, entry, &opened)?;
+        }
+        PAYLOAD_TYPE_POSITION_CHANGED => {
+            let changed = decode_payload::<PositionChanged>(entry)?;
+            apply_position_changed(cache, entry, &changed)?;
+        }
+        PAYLOAD_TYPE_POSITION_CLOSED => {
+            let closed = decode_payload::<PositionClosed>(entry)?;
+            apply_position_closed(cache, entry, &closed)?;
+        }
         PAYLOAD_TYPE_POSITION_ADJUSTED => {
             let adjustment = decode_payload::<PositionAdjusted>(entry)?;
             apply_position_adjustment(cache, entry, adjustment)?;
+        }
+        _ => return Ok(false),
+    }
+
+    Ok(true)
+}
+
+fn apply_complete_cache_payload_entry(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+) -> Result<bool, CacheReplayError> {
+    match entry.payload_type.as_str() {
+        PAYLOAD_TYPE_SUBMIT_ORDER_LIST => {
+            let command = decode_payload::<SubmitOrderList>(entry)?;
+            apply_result(entry, cache.add_order_list(command.order_list))?;
+        }
+        PAYLOAD_TYPE_INSTRUMENT_RESPONSE => {
+            let response = decode_payload::<InstrumentResponse>(entry)?;
+            apply_result(entry, cache.add_instrument(response.data))?;
+        }
+        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE => {
+            let response = decode_payload::<InstrumentsResponse>(entry)?;
+            for instrument in response.data {
+                apply_result(entry, cache.add_instrument(instrument))?;
+            }
+        }
+        PAYLOAD_TYPE_QUOTES_RESPONSE => {
+            let response = decode_payload::<QuotesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_quotes(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_TRADES_RESPONSE => {
+            let response = decode_payload::<TradesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_trades(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE => {
+            let response = decode_payload::<FundingRatesResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_funding_rates(&response.data))?;
+            }
+        }
+        PAYLOAD_TYPE_BARS_RESPONSE => {
+            let response = decode_payload::<BarsResponse>(entry)?;
+            if !response.data.is_empty() {
+                apply_result(entry, cache.add_bars(&response.data))?;
+            }
         }
         _ => return Ok(false),
     }
@@ -1213,6 +1393,108 @@ fn apply_fill_to_position(
     Ok(())
 }
 
+fn apply_position_opened(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    opened: &PositionOpened,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&opened.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = opened.trader_id;
+    position.strategy_id = opened.strategy_id;
+    position.instrument_id = opened.instrument_id;
+    position.id = opened.position_id;
+    position.account_id = opened.account_id;
+    position.opening_order_id = opened.opening_order_id;
+    position.closing_order_id = None;
+    position.entry = opened.entry;
+    position.side = opened.side;
+    position.signed_qty = opened.signed_qty;
+    position.quantity = opened.quantity;
+    position.peak_qty = opened.quantity;
+    position.quote_currency = opened.currency;
+    position.ts_opened = opened.ts_event;
+    position.ts_last = opened.ts_event;
+    position.ts_closed = None;
+    position.duration_ns = 0;
+    position.avg_px_open = opened.avg_px_open;
+    position.avg_px_close = None;
+    position.realized_return = 0.0;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
+fn apply_position_changed(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    changed: &PositionChanged,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&changed.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = changed.trader_id;
+    position.strategy_id = changed.strategy_id;
+    position.instrument_id = changed.instrument_id;
+    position.id = changed.position_id;
+    position.account_id = changed.account_id;
+    position.opening_order_id = changed.opening_order_id;
+    position.entry = changed.entry;
+    position.side = changed.side;
+    position.signed_qty = changed.signed_qty;
+    position.quantity = changed.quantity;
+    position.peak_qty = changed.peak_quantity;
+    position.quote_currency = changed.currency;
+    position.ts_opened = changed.ts_opened;
+    position.ts_last = changed.ts_event;
+    position.ts_closed = None;
+    position.avg_px_open = changed.avg_px_open;
+    position.avg_px_close = changed.avg_px_close;
+    position.realized_return = changed.realized_return;
+    position.realized_pnl = changed.realized_pnl;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
+fn apply_position_closed(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    closed: &PositionClosed,
+) -> Result<(), CacheReplayError> {
+    let Some(mut position) = cache.position_owned(&closed.position_id) else {
+        return Ok(());
+    };
+
+    position.trader_id = closed.trader_id;
+    position.strategy_id = closed.strategy_id;
+    position.instrument_id = closed.instrument_id;
+    position.id = closed.position_id;
+    position.account_id = closed.account_id;
+    position.opening_order_id = closed.opening_order_id;
+    position.closing_order_id = closed.closing_order_id;
+    position.entry = closed.entry;
+    position.side = closed.side;
+    position.signed_qty = closed.signed_qty;
+    position.quantity = closed.quantity;
+    position.peak_qty = closed.peak_quantity;
+    position.quote_currency = closed.currency;
+    position.ts_opened = closed.ts_opened;
+    position.ts_last = closed.ts_event;
+    position.ts_closed = closed.ts_closed;
+    position.duration_ns = closed.duration;
+    position.avg_px_open = closed.avg_px_open;
+    position.avg_px_close = closed.avg_px_close;
+    position.realized_return = closed.realized_return;
+    position.realized_pnl = closed.realized_pnl;
+
+    apply_result(entry, cache.update_position(&position))?;
+    Ok(())
+}
+
 fn apply_position_adjustment(
     cache: &mut Cache,
     entry: &EventStoreEntry,
@@ -1268,14 +1550,24 @@ fn reject_quarantined_replay_source(
 #[cfg(test)]
 mod tests {
     use std::{any::Any, cell::Cell, rc::Rc};
+    #[cfg(feature = "persistence")]
+    use std::{
+        fs::{self, File},
+        path::Path,
+    };
 
+    use ahash::AHashSet;
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_common::msgbus::{self, BusTap, Endpoint, MStr, Topic as BusTopic};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         accounts::AccountAny,
-        enums::{OrderStatus, PositionAdjustmentType},
+        data::{Bar, BarSpecification, BarType, FundingRateUpdate, QuoteTick, TradeTick},
+        enums::{
+            AggregationSource, AggressorSide, BarAggregation, OrderSide, OrderStatus,
+            PositionAdjustmentType, PriceType,
+        },
         events::{
             PositionEvent,
             account::stubs::{cash_account_state, cash_account_state_million_usd},
@@ -1283,12 +1575,18 @@ mod tests {
                 OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec,
             },
         },
-        identifiers::{AccountId, PositionId},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
+            VenueOrderId,
+        },
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
-        orders::Order,
-        types::{Currency, Money},
+        orders::{Order, OrderList},
+        types::{Currency, Money, Price, Quantity},
     };
+    #[cfg(feature = "persistence")]
+    use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
     use rstest::rstest;
+    use serde::Serialize;
     use tempfile::TempDir;
     use ustr::Ustr;
 
@@ -1296,7 +1594,9 @@ mod tests {
     use crate::{
         backend::{AppendEntry, MemoryBackend, RedbBackend},
         capture::{
-            builtins::{encode_order_event_any, encode_position_event},
+            builtins::{
+                DEFAULT_CAPTURE_PAYLOAD_TYPES, encode_order_event_any, encode_position_event,
+            },
             encode_account_state,
         },
         entry::Topic as EntryTopic,
@@ -1328,6 +1628,11 @@ mod tests {
 
     fn append_payload(seq: u64, payload_type: &str, payload: Bytes) -> AppendEntry {
         append_payload_with_ts(seq, seq, payload_type, payload)
+    }
+
+    fn append_serde_payload<T: Serialize>(seq: u64, payload_type: &str, value: &T) -> AppendEntry {
+        let payload = rmp_serde::to_vec_named(value).expect("encode replay payload");
+        append_payload(seq, payload_type, Bytes::from(payload))
     }
 
     fn append_payload_with_ts(
@@ -1405,6 +1710,32 @@ mod tests {
         (EventStoreReader::new(backend), replayed)
     }
 
+    fn catalog_quote_record(ts_init: u64) -> CatalogReplayRecord {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        CatalogReplayRecord::from_data(CatalogReplayData::Quote(QuoteTick::new(
+            instrument_id,
+            Price::from("1.0001"),
+            Price::from("1.0002"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        )))
+    }
+
+    fn catalog_trade_record(ts_init: u64) -> CatalogReplayRecord {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        CatalogReplayRecord::from_data(CatalogReplayData::Trade(TradeTick::new(
+            instrument_id,
+            Price::from("1.0001"),
+            Quantity::from("100"),
+            AggressorSide::Buyer,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        )))
+    }
+
     #[derive(Debug)]
     struct CountingTap {
         calls: Rc<Cell<usize>>,
@@ -1469,6 +1800,311 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_plans_selected_slice_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 1_000, 2_000);
+        create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 10_000, 11_000);
+        create_catalog_file(temp_dir.path(), "quotes", "ETHUSDT.BINANCE", 5_000, 6_000);
+
+        let query = CatalogSliceQuery {
+            data_cls: "quotes".to_string(),
+            identifiers: vec!["AUD/USD.SIM".to_string()],
+            start: UnixNanos::from(1_500),
+            end: UnixNanos::from(2_500),
+            required: true,
+        };
+        let coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&query)
+            .unwrap();
+
+        assert_eq!(coverage.files.len(), 1);
+        assert!(
+            coverage.files[0].contains("data/quotes/AUDUSD.SIM/"),
+            "planned file should come from AUD/USD.SIM partition, was {}",
+            coverage.files[0],
+        );
+        assert_eq!(
+            coverage.intervals,
+            vec![ReplayTimeRange::new(
+                UnixNanos::from(1_000),
+                UnixNanos::from(2_000)
+            )]
+        );
+
+        let full_window_query = CatalogSliceQuery {
+            start: UnixNanos::from(0),
+            end: UnixNanos::from(12_000),
+            ..query.clone()
+        };
+        let full_window_coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&full_window_query)
+            .unwrap();
+
+        assert_eq!(full_window_coverage.files.len(), 2);
+        assert_eq!(
+            full_window_coverage.intervals,
+            vec![
+                ReplayTimeRange::new(UnixNanos::from(1_000), UnixNanos::from(2_000)),
+                ReplayTimeRange::new(UnixNanos::from(10_000), UnixNanos::from(11_000)),
+            ]
+        );
+
+        let missing_query = CatalogSliceQuery {
+            start: UnixNanos::from(20_000),
+            end: UnixNanos::from(21_000),
+            ..query
+        };
+        let missing_coverage = ParquetReplayCatalog::new(&mut catalog)
+            .plan_slice(&missing_query)
+            .unwrap();
+
+        assert!(missing_coverage.is_missing());
+        assert!(missing_coverage.intervals.is_empty());
+    }
+
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_loads_selected_quote_records() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let quotes = vec![
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.0001"),
+                Price::from("1.0002"),
+                Quantity::from("100"),
+                Quantity::from("100"),
+                UnixNanos::from(1_000),
+                UnixNanos::from(1_000),
+            ),
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.0003"),
+                Price::from("1.0004"),
+                Quantity::from("200"),
+                Quantity::from("200"),
+                UnixNanos::from(2_000),
+                UnixNanos::from(2_000),
+            ),
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.0005"),
+                Price::from("1.0006"),
+                Quantity::from("300"),
+                Quantity::from("300"),
+                UnixNanos::from(3_000),
+                UnixNanos::from(3_000),
+            ),
+        ];
+        catalog
+            .write_to_parquet(quotes.clone(), None, None, None)
+            .expect("write quotes");
+
+        let query = CatalogSliceQuery {
+            data_cls: "quotes".to_string(),
+            identifiers: vec!["AUD/USD.SIM".to_string()],
+            start: UnixNanos::from(1_500),
+            end: UnixNanos::from(2_500),
+            required: true,
+        };
+        let mut replay_catalog = ParquetReplayCatalog::new(&mut catalog);
+        let coverage = replay_catalog.plan_slice(&query).expect("plan slice");
+        let plan = catalog_slice_plan(query, coverage);
+
+        let records = replay_catalog.load_slice(&plan).expect("load slice");
+
+        assert_eq!(
+            records,
+            vec![CatalogReplayRecord::from_data(CatalogReplayData::Quote(
+                quotes[1]
+            ))],
+        );
+    }
+
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_loads_selected_trade_records() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let trades = vec![
+            TradeTick::new(
+                instrument_id,
+                Price::from("1.0001"),
+                Quantity::from("100"),
+                AggressorSide::Buyer,
+                TradeId::from("T-1"),
+                UnixNanos::from(1_000),
+                UnixNanos::from(1_000),
+            ),
+            TradeTick::new(
+                instrument_id,
+                Price::from("1.0002"),
+                Quantity::from("200"),
+                AggressorSide::Seller,
+                TradeId::from("T-2"),
+                UnixNanos::from(2_000),
+                UnixNanos::from(2_000),
+            ),
+            TradeTick::new(
+                instrument_id,
+                Price::from("1.0003"),
+                Quantity::from("300"),
+                AggressorSide::Buyer,
+                TradeId::from("T-3"),
+                UnixNanos::from(3_000),
+                UnixNanos::from(3_000),
+            ),
+        ];
+        catalog
+            .write_to_parquet(trades.clone(), None, None, None)
+            .expect("write trades");
+
+        let query = CatalogSliceQuery {
+            data_cls: "trades".to_string(),
+            identifiers: vec!["AUD/USD.SIM".to_string()],
+            start: UnixNanos::from(1_500),
+            end: UnixNanos::from(2_500),
+            required: true,
+        };
+        let mut replay_catalog = ParquetReplayCatalog::new(&mut catalog);
+        let coverage = replay_catalog.plan_slice(&query).expect("plan slice");
+        let plan = catalog_slice_plan(query, coverage);
+
+        let records = replay_catalog.load_slice(&plan).expect("load slice");
+
+        assert_eq!(
+            records,
+            vec![CatalogReplayRecord::from_data(CatalogReplayData::Trade(
+                trades[1]
+            ))],
+        );
+    }
+
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_loads_selected_bar_records() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let bars = vec![
+            Bar::new(
+                bar_type,
+                Price::from("1.0000"),
+                Price::from("1.0002"),
+                Price::from("1.0000"),
+                Price::from("1.0001"),
+                Quantity::from("100"),
+                UnixNanos::from(1_000),
+                UnixNanos::from(1_000),
+            ),
+            Bar::new(
+                bar_type,
+                Price::from("1.0001"),
+                Price::from("1.0004"),
+                Price::from("1.0001"),
+                Price::from("1.0003"),
+                Quantity::from("200"),
+                UnixNanos::from(2_000),
+                UnixNanos::from(2_000),
+            ),
+            Bar::new(
+                bar_type,
+                Price::from("1.0003"),
+                Price::from("1.0006"),
+                Price::from("1.0003"),
+                Price::from("1.0005"),
+                Quantity::from("300"),
+                UnixNanos::from(3_000),
+                UnixNanos::from(3_000),
+            ),
+        ];
+        catalog
+            .write_to_parquet(bars.clone(), None, None, None)
+            .expect("write bars");
+
+        let query = CatalogSliceQuery {
+            data_cls: "bars".to_string(),
+            identifiers: vec!["AUD/USD.SIM".to_string()],
+            start: UnixNanos::from(1_500),
+            end: UnixNanos::from(2_500),
+            required: true,
+        };
+        let mut replay_catalog = ParquetReplayCatalog::new(&mut catalog);
+        let coverage = replay_catalog.plan_slice(&query).expect("plan slice");
+        let plan = catalog_slice_plan(query, coverage);
+
+        let records = replay_catalog.load_slice(&plan).expect("load slice");
+
+        assert_eq!(
+            records,
+            vec![CatalogReplayRecord::from_data(CatalogReplayData::Bar(
+                bars[1]
+            ))],
+        );
+    }
+
+    #[cfg(feature = "persistence")]
+    #[rstest]
+    fn parquet_replay_catalog_rejects_unsupported_load_slice() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let plan = CatalogSlicePlan {
+            query: CatalogSliceQuery {
+                data_cls: "order_book_deltas".to_string(),
+                identifiers: vec!["AUD/USD.SIM".to_string()],
+                start: UnixNanos::from(1_000),
+                end: UnixNanos::from(2_000),
+                required: true,
+            },
+            coverage: CatalogSliceCoverage::from_files(vec![
+                "data/order_book_deltas/AUDUSD.SIM/1000_2000.parquet".to_string(),
+            ]),
+        };
+
+        let err = ParquetReplayCatalog::new(&mut catalog)
+            .load_slice(&plan)
+            .expect_err("unsupported data class must fail");
+
+        assert_eq!(
+            err.to_string(),
+            "catalog replay loading for order_book_deltas is not supported",
+        );
+    }
+
+    #[cfg(feature = "persistence")]
+    fn catalog_slice_plan(
+        query: CatalogSliceQuery,
+        coverage: CatalogSliceCoverage,
+    ) -> CatalogSlicePlan {
+        CatalogSlicePlan { query, coverage }
+    }
+
+    #[cfg(feature = "persistence")]
+    fn create_catalog_file(
+        base_path: &Path,
+        data_cls: &str,
+        identifier: &str,
+        start: u64,
+        end: u64,
+    ) {
+        let directory = base_path.join("data").join(data_cls).join(identifier);
+        fs::create_dir_all(&directory).unwrap();
+
+        let filename = timestamps_to_filename(UnixNanos::from(start), UnixNanos::from(end));
+        File::create(directory.join(filename)).unwrap();
+    }
+
     struct BusTapGuard;
 
     impl Drop for BusTapGuard {
@@ -1477,35 +2113,499 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum CacheMutationRecoveryClass {
+        SnapshotOwned,
+        EventStoreCapturedAndReplayed,
+        ForensicOnly,
+        MissingLiveRecovery,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct CacheMutationCoverage {
+        method: &'static str,
+        class: CacheMutationRecoveryClass,
+        payload_types: &'static [&'static str],
+    }
+
+    const CACHE_MUTATION_COVERAGE: &[CacheMutationCoverage] = &[
+        cache_mutation(
+            "set_database",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_general",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation("cache_all", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation(
+            "cache_currencies",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_instruments",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_synthetics",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_accounts",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_orders",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_positions",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "build_index",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_closed_orders",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_closed_positions",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_order",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_position",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_instrument",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_account_events",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "clear_index",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation("reset", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("dispose", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("flush_db", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("add", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation(
+            "add_order_book",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[PAYLOAD_TYPE_BOOK_RESPONSE],
+        ),
+        cache_mutation(
+            "add_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_mark_price",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_index_price",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_funding_rate",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_FUNDING_RATES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_funding_rates",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_FUNDING_RATES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_instrument_status",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_quote",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_QUOTES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_quotes",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_QUOTES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_trade",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_TRADES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_trades",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_TRADES_RESPONSE],
+        ),
+        cache_mutation(
+            "add_bar",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_BARS_RESPONSE],
+        ),
+        cache_mutation(
+            "add_bars",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_BARS_RESPONSE],
+        ),
+        cache_mutation(
+            "add_greeks",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_option_greeks",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_yield_curve",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "add_currency",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_instrument",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+                PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+            ],
+        ),
+        cache_mutation(
+            "add_synthetic",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "add_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "add_venue_order_id",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_UPDATED],
+        ),
+        cache_mutation(
+            "add_order",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_INITIALIZED],
+        ),
+        cache_mutation(
+            "add_order_list",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_SUBMIT_ORDER_LIST],
+        ),
+        cache_mutation(
+            "add_position_id",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_FILLED,
+                PAYLOAD_TYPE_POSITION_OPENED,
+                PAYLOAD_TYPE_POSITION_CHANGED,
+                PAYLOAD_TYPE_POSITION_CLOSED,
+            ],
+        ),
+        cache_mutation(
+            "add_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
+            "update_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "take_account",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "cache_account_owned",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "update_account_owned",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "update_account_state",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ACCOUNT_STATE],
+        ),
+        cache_mutation(
+            "replace_order",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[
+                PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+                PAYLOAD_TYPE_ORDER_WITH_FILLS,
+                PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+            ],
+        ),
+        cache_mutation(
+            "update_order",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_DENIED,
+                PAYLOAD_TYPE_ORDER_EMULATED,
+                PAYLOAD_TYPE_ORDER_RELEASED,
+                PAYLOAD_TYPE_ORDER_SUBMITTED,
+                PAYLOAD_TYPE_ORDER_ACCEPTED,
+                PAYLOAD_TYPE_ORDER_REJECTED,
+                PAYLOAD_TYPE_ORDER_CANCELED,
+                PAYLOAD_TYPE_ORDER_EXPIRED,
+                PAYLOAD_TYPE_ORDER_TRIGGERED,
+                PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+                PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+                PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+                PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+                PAYLOAD_TYPE_ORDER_UPDATED,
+                PAYLOAD_TYPE_ORDER_FILLED,
+            ],
+        ),
+        cache_mutation(
+            "update_order_pending_cancel_local",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "update_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[
+                PAYLOAD_TYPE_ORDER_FILLED,
+                PAYLOAD_TYPE_POSITION_OPENED,
+                PAYLOAD_TYPE_POSITION_CHANGED,
+                PAYLOAD_TYPE_POSITION_CLOSED,
+                PAYLOAD_TYPE_POSITION_ADJUSTED,
+            ],
+        ),
+        cache_mutation(
+            "snapshot_position",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "snapshot_position_state",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "load_snapshot_blob",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "restore_snapshot_blob",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "order_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "position_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "order_book_mut",
+            CacheMutationRecoveryClass::ForensicOnly,
+            &[
+                PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+                PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+            ],
+        ),
+        cache_mutation(
+            "own_order_book_mut",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "set_mark_xrate",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_mark_xrate",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_mark_xrates",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "account_mut",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "update_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "force_remove_from_own_order_book",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "audit_own_order_books",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+    ];
+
+    const CACHE_MUTATION_EXCLUSIONS: &[&str] = &["check_integrity"];
+
+    const fn cache_mutation(
+        method: &'static str,
+        class: CacheMutationRecoveryClass,
+        payload_types: &'static [&'static str],
+    ) -> CacheMutationCoverage {
+        CacheMutationCoverage {
+            method,
+            class,
+            payload_types,
+        }
+    }
+
+    fn cache_public_methods() -> AHashSet<&'static str> {
+        collect_cache_public_methods(false)
+    }
+
+    fn cache_public_mutable_methods() -> AHashSet<&'static str> {
+        collect_cache_public_methods(true)
+    }
+
+    fn collect_cache_public_methods(require_mut_self: bool) -> AHashSet<&'static str> {
+        let source = include_str!("../../common/src/cache/mod.rs");
+        let mut methods = AHashSet::new();
+        let mut pending_name: Option<&'static str> = None;
+        let mut pending_signature = String::new();
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+
+            if pending_name.is_none() {
+                let Some(rest) = trimmed
+                    .strip_prefix("pub fn ")
+                    .or_else(|| trimmed.strip_prefix("pub async fn "))
+                else {
+                    continue;
+                };
+                pending_name = rest.split('(').next();
+                pending_signature.clear();
+                pending_signature.push_str(trimmed);
+            } else {
+                pending_signature.push(' ');
+                pending_signature.push_str(trimmed);
+            }
+
+            if trimmed.contains('{') {
+                if let Some(name) = pending_name.take()
+                    && (!require_mut_self || pending_signature.contains("&mut self"))
+                {
+                    methods.insert(name);
+                }
+                pending_signature.clear();
+            }
+        }
+
+        methods
+    }
+
+    fn sorted_missing_methods<'a>(
+        actual: &'a AHashSet<&'static str>,
+        classified: &'a AHashSet<&'static str>,
+    ) -> Vec<&'static str> {
+        let mut missing: Vec<_> = actual
+            .iter()
+            .copied()
+            .filter(|method| !classified.contains(method))
+            .collect();
+        missing.sort_unstable();
+        missing
+    }
+
+    fn sorted_stale_methods<'a>(
+        classified: &'a AHashSet<&'static str>,
+        actual: &'a AHashSet<&'static str>,
+    ) -> Vec<&'static str> {
+        let mut stale: Vec<_> = classified
+            .iter()
+            .copied()
+            .filter(|method| !actual.contains(method))
+            .collect();
+        stale.sort_unstable();
+        stale
+    }
+
     #[rstest]
-    fn decision_replay_inputs_join_event_entries_with_selected_catalog_slice() {
+    fn catalog_replay_inputs_join_event_entries_with_selected_catalog_slice() {
         let reader = reader_with_entries(
-            "run-decision",
+            "run-catalog",
             &[
                 append_payload_with_ts(1, 120, "RunStarted", Bytes::from_static(b"started")),
                 append_payload_with_ts(2, 100, "SubmitOrder", Bytes::from_static(b"submit")),
             ],
         );
-        let record = CatalogReplayRecord::new(
-            "quotes",
-            Some("AUD/USD.SIM".to_string()),
-            UnixNanos::from(110),
-            Bytes::from_static(b"quote"),
-        );
+        let record = catalog_quote_record(110);
         let mut catalog = FakeReplayCatalog::new(
             CatalogSliceCoverage::from_files(vec!["quotes/AUDUSD.SIM/100_120.parquet".into()]),
             vec![record.clone()],
         );
 
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 2),
             &[CatalogSliceSelector::new("quotes").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan decision replay");
+        .expect("plan catalog replay");
 
-        assert_eq!(plan.scope, ReplayScope::Decision);
         assert_eq!(plan.event_range, Some(ReplaySeqRange::new(1, 2)));
         assert_eq!(plan.event_count, 2);
         assert_eq!(
@@ -1515,7 +2615,7 @@ mod tests {
                 UnixNanos::from(120),
             )),
         );
-        assert_eq!(plan.catalog_slices[0].status, CatalogSliceStatus::Available);
+        assert!(!plan.catalog_slices[0].is_missing());
         assert_eq!(catalog.plan_queries.len(), 1);
         assert_eq!(catalog.plan_queries[0].data_cls, "quotes");
         assert_eq!(
@@ -1526,10 +2626,9 @@ mod tests {
         assert_eq!(catalog.plan_queries[0].end, UnixNanos::from(120));
 
         let loaded =
-            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load decision");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load catalog");
         let seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
 
-        assert_eq!(loaded.scope, ReplayScope::Decision);
         assert_eq!(seqs, vec![1, 2]);
         assert_eq!(loaded.catalog_slices.len(), 1);
         assert_eq!(loaded.catalog_slices[0].records, vec![record]);
@@ -1537,9 +2636,9 @@ mod tests {
     }
 
     #[rstest]
-    fn full_incident_plan_marks_missing_catalog_slice() {
+    fn catalog_plan_marks_missing_catalog_slice() {
         let reader = reader_with_entries(
-            "run-incident",
+            "run-missing-catalog",
             &[append_payload_with_ts(
                 1,
                 1_000,
@@ -1549,16 +2648,15 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let plan = plan_full_incident_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
             &[CatalogSliceSelector::new("trades").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan full incident");
+        .expect("plan catalog replay");
         let missing = plan.missing_catalog_slices();
 
-        assert_eq!(plan.scope, ReplayScope::FullIncident);
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].query.data_cls, "trades");
         assert_eq!(
@@ -1581,7 +2679,7 @@ mod tests {
             )],
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -1591,7 +2689,7 @@ mod tests {
         )
         .expect("plan missing slice");
 
-        let err = load_decision_replay_inputs(&reader, &mut catalog, &plan)
+        let err = load_catalog_replay_inputs(&reader, &mut catalog, &plan)
             .expect_err("required missing slice must fail");
 
         match err {
@@ -1618,7 +2716,7 @@ mod tests {
             )],
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -1627,7 +2725,7 @@ mod tests {
         .expect("plan optional missing slice");
 
         let loaded =
-            load_decision_replay_inputs(&reader, &mut catalog, &plan).expect("load optional");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load optional");
 
         assert_eq!(loaded.catalog_slices.len(), 1);
         assert!(loaded.catalog_slices[0].plan.is_missing());
@@ -1636,9 +2734,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::decision(ReplayScope::Decision)]
-    #[case::full_incident(ReplayScope::FullIncident)]
-    fn catalog_joined_planners_reject_empty_catalog_selection(#[case] scope: ReplayScope) {
+    fn catalog_joined_planner_rejects_empty_catalog_selection() {
         let reader = reader_with_entries(
             "run-empty-selection",
             &[append_payload_with_ts(
@@ -1650,24 +2746,11 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = match scope {
-            ReplayScope::Decision => {
-                plan_decision_replay_inputs(&reader, &mut catalog, ReplaySeqRange::new(1, 1), &[])
-            }
-            ReplayScope::FullIncident => plan_full_incident_replay_inputs(
-                &reader,
-                &mut catalog,
-                ReplaySeqRange::new(1, 1),
-                &[],
-            ),
-            ReplayScope::Forensics => unreachable!("forensics has no catalog selection"),
-        }
-        .expect_err("empty catalog selection must fail");
+        let err = plan_catalog_replay_inputs(&reader, &mut catalog, ReplaySeqRange::new(1, 1), &[])
+            .expect_err("empty catalog selection must fail");
 
         match err {
-            ReplayInputError::EmptyCatalogSelection { scope: actual } => {
-                assert_eq!(actual, scope);
-            }
+            ReplayInputError::EmptyCatalogSelection => {}
             other => panic!("expected EmptyCatalogSelection, was {other:?}"),
         }
         assert!(catalog.plan_queries.is_empty());
@@ -1689,7 +2772,7 @@ mod tests {
             Vec::new(),
         );
 
-        let plan = plan_decision_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -1706,31 +2789,26 @@ mod tests {
     }
 
     #[rstest]
-    fn full_incident_replay_inputs_load_catalog_records() {
+    fn catalog_replay_inputs_load_catalog_records() {
         let reader = reader_with_entries(
-            "run-full-load",
+            "run-catalog-load",
             &[
                 append_payload_with_ts(1, 100, "RunStarted", Bytes::from_static(b"started")),
                 append_payload_with_ts(2, 110, "OrderFilled", Bytes::from_static(b"filled")),
             ],
         );
-        let record = CatalogReplayRecord::new(
-            "trades",
-            Some("AUD/USD.SIM".to_string()),
-            UnixNanos::from(105),
-            Bytes::from_static(b"trade"),
-        );
+        let record = catalog_trade_record(105);
         let mut catalog = FakeReplayCatalog::new(
             CatalogSliceCoverage::from_files(vec!["trades/AUDUSD.SIM/100_110.parquet".into()]),
             vec![record.clone()],
         );
-        let plan = plan_full_incident_replay_inputs(
+        let plan = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 2),
             &[CatalogSliceSelector::new("trades").with_identifier("AUD/USD.SIM")],
         )
-        .expect("plan full incident");
+        .expect("plan catalog replay");
 
         assert_eq!(
             plan.catalog_slices[0].query.identifiers_option(),
@@ -1738,10 +2816,9 @@ mod tests {
         );
 
         let loaded =
-            load_full_incident_replay_inputs(&reader, &mut catalog, &plan).expect("load full");
+            load_catalog_replay_inputs(&reader, &mut catalog, &plan).expect("load catalog");
         let seqs: Vec<_> = loaded.entries.iter().map(|entry| entry.seq).collect();
 
-        assert_eq!(loaded.scope, ReplayScope::FullIncident);
         assert_eq!(seqs, vec![1, 2]);
         assert_eq!(loaded.catalog_slices[0].records, vec![record]);
         assert_eq!(catalog.load_plans.len(), 1);
@@ -1752,7 +2829,7 @@ mod tests {
         let reader = reader_with_entries("run-empty", &[]);
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = plan_decision_replay_inputs(
+        let err = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 10),
@@ -1781,7 +2858,7 @@ mod tests {
         );
         let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
 
-        let err = plan_decision_replay_inputs(
+        let err = plan_catalog_replay_inputs(
             &reader,
             &mut catalog,
             ReplaySeqRange::new(1, 1),
@@ -1821,38 +2898,9 @@ mod tests {
             .expect("plan forensics");
         let loaded = load_forensics_replay_inputs(&reader, &plan).expect("load forensics");
 
-        assert_eq!(plan.scope, ReplayScope::Forensics);
         assert!(plan.catalog_slices.is_empty());
         assert_eq!(loaded.entries.len(), 1);
         assert!(loaded.catalog_slices.is_empty());
-    }
-
-    #[rstest]
-    fn scope_specific_loader_rejects_mismatched_plan() {
-        let reader = reader_with_entries(
-            "run-scope-mismatch",
-            &[append_payload_with_ts(
-                1,
-                500,
-                "RunStarted",
-                Bytes::from_static(b"started"),
-            )],
-        );
-        let plan = plan_forensics_replay_inputs(&reader, ReplaySeqRange::new(1, 1))
-            .expect("plan forensics");
-        let mut catalog = FakeReplayCatalog::new(CatalogSliceCoverage::default(), Vec::new());
-
-        let err = load_decision_replay_inputs(&reader, &mut catalog, &plan)
-            .expect_err("decision loader must reject forensics plan");
-
-        match err {
-            ReplayInputError::ScopeMismatch { expected, actual } => {
-                assert_eq!(expected, ReplayScope::Decision);
-                assert_eq!(actual, ReplayScope::Forensics);
-            }
-            other => panic!("expected ScopeMismatch, was {other:?}"),
-        }
-        assert!(catalog.load_plans.is_empty());
     }
 
     #[rstest]
@@ -1981,6 +3029,470 @@ mod tests {
     }
 
     #[rstest]
+    fn default_capture_payload_types_are_classified_for_cache_replay() {
+        let mut classified = AHashSet::new();
+        let mut overlap = Vec::new();
+
+        for payload_type in CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES {
+            classified.insert(*payload_type);
+        }
+
+        for payload_type in FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES {
+            if !classified.insert(*payload_type) {
+                overlap.push(*payload_type);
+            }
+        }
+
+        let mut seen_defaults = AHashSet::new();
+        let duplicate_defaults: Vec<_> = DEFAULT_CAPTURE_PAYLOAD_TYPES
+            .iter()
+            .copied()
+            .filter(|payload_type| !seen_defaults.insert(*payload_type))
+            .collect();
+        let unclassified: Vec<_> = DEFAULT_CAPTURE_PAYLOAD_TYPES
+            .iter()
+            .copied()
+            .filter(|payload_type| !classified.contains(payload_type))
+            .collect();
+        let extra: Vec<_> = classified
+            .iter()
+            .copied()
+            .filter(|payload_type| !seen_defaults.contains(payload_type))
+            .collect();
+
+        assert!(
+            duplicate_defaults.is_empty(),
+            "default capture payload types must be unique: {duplicate_defaults:?}",
+        );
+        assert!(
+            overlap.is_empty(),
+            "cache replay and forensic-only classes must not overlap: {overlap:?}",
+        );
+        assert!(
+            unclassified.is_empty(),
+            "default capture payload types must be cache replayed or forensic-only: {unclassified:?}",
+        );
+        assert!(
+            extra.is_empty(),
+            "cache replay classification must not list uncaptured payload types: {extra:?}",
+        );
+    }
+
+    #[rstest]
+    fn cache_replay_capture_payload_types_have_replay_rules() {
+        for payload_type in CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES {
+            let entry = append_payload(1, payload_type, Bytes::from_static(&[0xc1])).entry;
+            let mut cache = Cache::default();
+
+            let err = apply_cache_replay_entry(&mut cache, &entry)
+                .expect_err("cache replay payload type must have a decode rule");
+
+            match err {
+                CacheReplayError::Decode {
+                    payload_type: actual,
+                    ..
+                } => {
+                    assert_eq!(actual, *payload_type);
+                }
+                other => panic!("expected Decode for {payload_type}, was {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
+    fn forensic_only_capture_payload_types_are_not_cache_replayed() {
+        for payload_type in FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES {
+            let entry = append_payload(1, payload_type, Bytes::from_static(&[0xc1])).entry;
+            let mut cache = Cache::default();
+
+            let applied = apply_cache_replay_entry(&mut cache, &entry)
+                .expect("forensic-only payload type must not be decoded by cache replay");
+
+            assert!(
+                !applied,
+                "forensic-only payload type must be ignored by cache replay: {payload_type}",
+            );
+        }
+    }
+
+    #[rstest]
+    fn cache_public_mutators_have_recovery_classification() {
+        let mut classified = AHashSet::new();
+        let mut duplicates = Vec::new();
+
+        for row in CACHE_MUTATION_COVERAGE {
+            if !classified.insert(row.method) {
+                duplicates.push(row.method);
+            }
+        }
+
+        for method in CACHE_MUTATION_EXCLUSIONS {
+            if !classified.insert(*method) {
+                duplicates.push(*method);
+            }
+        }
+
+        let public_methods = cache_public_methods();
+        let mutable_methods = cache_public_mutable_methods();
+        let missing = sorted_missing_methods(&mutable_methods, &classified);
+        let stale = sorted_stale_methods(&classified, &public_methods);
+
+        assert!(
+            duplicates.is_empty(),
+            "cache mutation recovery classifications must be unique: {duplicates:?}",
+        );
+        assert!(
+            missing.is_empty(),
+            "public Cache mutators must be classified for recovery: {missing:?}",
+        );
+        assert!(
+            stale.is_empty(),
+            "cache mutation recovery classifications reference missing methods: {stale:?}",
+        );
+    }
+
+    #[rstest]
+    fn cache_mutation_replay_classification_matches_payload_buckets() {
+        for row in CACHE_MUTATION_COVERAGE {
+            match row.class {
+                CacheMutationRecoveryClass::EventStoreCapturedAndReplayed => {
+                    assert!(
+                        !row.payload_types.is_empty(),
+                        "cache-replayed mutation must cite captured payloads: {}",
+                        row.method,
+                    );
+
+                    for payload_type in row.payload_types {
+                        assert!(
+                            CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES.contains(payload_type),
+                            "cache mutation {} cites non-replayed payload {payload_type}",
+                            row.method,
+                        );
+                    }
+                }
+                CacheMutationRecoveryClass::ForensicOnly => {
+                    assert!(
+                        !row.payload_types.is_empty(),
+                        "forensic-only mutation must cite forensic payloads: {}",
+                        row.method,
+                    );
+
+                    for payload_type in row.payload_types {
+                        assert!(
+                            FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES.contains(payload_type),
+                            "cache mutation {} cites non-forensic payload {payload_type}",
+                            row.method,
+                        );
+                    }
+                }
+                CacheMutationRecoveryClass::SnapshotOwned
+                | CacheMutationRecoveryClass::MissingLiveRecovery => {
+                    assert!(
+                        row.payload_types.is_empty(),
+                        "non-event-store cache mutation {} should not cite payloads",
+                        row.method,
+                    );
+                }
+            }
+        }
+    }
+
+    #[rstest]
+    fn submit_order_list_replay_restores_order_list() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let instrument_id = instrument.id();
+        let first_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-001"))
+            .build();
+        let second_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-LIST-002"))
+            .build();
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            instrument_id,
+            first_init.strategy_id,
+            vec![first_init.client_order_id, second_init.client_order_id],
+            UnixNanos::from(1),
+        );
+        let command = SubmitOrderList::new(
+            first_init.trader_id,
+            Some(ClientId::from("SIM")),
+            first_init.strategy_id,
+            order_list.clone(),
+            vec![first_init, second_init],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+        );
+        let entry = append_serde_payload(1, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, &command).entry;
+        let mut cache = Cache::default();
+
+        let applied = apply_cache_replay_entry(&mut cache, &entry).expect("apply order list");
+        let replayed = cache
+            .order_list(&order_list.id)
+            .expect("order list replayed");
+
+        assert!(applied);
+        assert_eq!(replayed, &order_list);
+    }
+
+    #[rstest]
+    fn data_response_replay_restores_instruments_and_market_data() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let instrument_id = instrument.id();
+        let client_id = ClientId::from("DATA");
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Quantity::from("100000"),
+            Quantity::from("100000"),
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+        );
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from("1.00005"),
+            Quantity::from("50000"),
+            AggressorSide::Buyer,
+            TradeId::from("T-DATA-001"),
+            UnixNanos::from(12),
+            UnixNanos::from(13),
+        );
+        let funding_rate = FundingRateUpdate::new(
+            instrument_id,
+            "0.0001".parse().expect("funding rate"),
+            Some(480),
+            Some(UnixNanos::from(60)),
+            UnixNanos::from(14),
+            UnixNanos::from(15),
+        );
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let bar = Bar::new(
+            bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00020"),
+            Price::from("0.99990"),
+            Price::from("1.00010"),
+            Quantity::from("150000"),
+            UnixNanos::from(16),
+            UnixNanos::from(17),
+        );
+        let reader = reader_with_entries(
+            "run-data-response-replay",
+            &[
+                append_serde_payload(
+                    1,
+                    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+                    &InstrumentResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        instrument.clone(),
+                        None,
+                        None,
+                        UnixNanos::from(1),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    2,
+                    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+                    &InstrumentsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id.venue,
+                        vec![instrument],
+                        None,
+                        None,
+                        UnixNanos::from(2),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    3,
+                    PAYLOAD_TYPE_QUOTES_RESPONSE,
+                    &QuotesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![quote],
+                        None,
+                        None,
+                        UnixNanos::from(3),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    4,
+                    PAYLOAD_TYPE_TRADES_RESPONSE,
+                    &TradesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![trade],
+                        None,
+                        None,
+                        UnixNanos::from(4),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    5,
+                    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+                    &FundingRatesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        vec![funding_rate],
+                        None,
+                        None,
+                        UnixNanos::from(5),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    6,
+                    PAYLOAD_TYPE_BARS_RESPONSE,
+                    &BarsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        bar_type,
+                        vec![bar],
+                        None,
+                        None,
+                        UnixNanos::from(6),
+                        None,
+                    ),
+                ),
+            ],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+
+        assert_eq!(report.applied_entries, 6);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(
+            cache.instrument(&instrument_id).map(Instrument::id),
+            Some(instrument_id)
+        );
+        assert_eq!(cache.quotes(&instrument_id), Some(vec![quote]));
+        assert_eq!(cache.trades(&instrument_id), Some(vec![trade]));
+        assert_eq!(
+            cache.funding_rates(&instrument_id),
+            Some(vec![funding_rate])
+        );
+        assert_eq!(cache.bars(&bar_type), Some(vec![bar]));
+    }
+
+    #[rstest]
+    fn empty_data_response_replay_is_noop() {
+        let instrument_id = InstrumentAny::CurrencyPair(audusd_sim()).id();
+        let client_id = ClientId::from("DATA");
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let reader = reader_with_entries(
+            "run-empty-data-response-replay",
+            &[
+                append_serde_payload(
+                    1,
+                    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+                    &InstrumentsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id.venue,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(1),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    2,
+                    PAYLOAD_TYPE_QUOTES_RESPONSE,
+                    &QuotesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(2),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    3,
+                    PAYLOAD_TYPE_TRADES_RESPONSE,
+                    &TradesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(3),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    4,
+                    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+                    &FundingRatesResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(4),
+                        None,
+                    ),
+                ),
+                append_serde_payload(
+                    5,
+                    PAYLOAD_TYPE_BARS_RESPONSE,
+                    &BarsResponse::new(
+                        UUID4::new(),
+                        client_id,
+                        bar_type,
+                        Vec::new(),
+                        None,
+                        None,
+                        UnixNanos::from(5),
+                        None,
+                    ),
+                ),
+            ],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+
+        assert_eq!(report.applied_entries, 5);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(cache.instrument(&instrument_id).is_none());
+        assert_eq!(cache.quotes(&instrument_id), None);
+        assert_eq!(cache.trades(&instrument_id), None);
+        assert_eq!(cache.funding_rates(&instrument_id), None);
+        assert_eq!(cache.bars(&bar_type), None);
+    }
+
+    #[rstest]
     fn order_fill_replay_updates_order_and_creates_position() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-001");
@@ -2033,6 +3545,110 @@ mod tests {
         assert_eq!(position.last_event(), Some(filled));
         assert_eq!(position.trade_ids(), vec![filled.trade_id]);
         assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
+    }
+
+    #[rstest]
+    fn position_lifecycle_replay_updates_existing_position() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-001");
+        let opened_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-OPEN"))
+            .venue_order_id(VenueOrderId::from("V-OPEN"))
+            .trade_id(TradeId::from("T-OPEN"))
+            .position_id(position_id)
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("1.00000"))
+            .build();
+        let mut live_position = Position::new(&instrument, opened_fill);
+        let opened = PositionOpened::create(
+            &live_position,
+            &opened_fill,
+            UUID4::new(),
+            UnixNanos::from(10),
+        );
+
+        let changed_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CHANGE"))
+            .venue_order_id(VenueOrderId::from("V-CHANGE"))
+            .trade_id(TradeId::from("T-CHANGE"))
+            .position_id(position_id)
+            .last_qty(Quantity::from("2"))
+            .last_px(Price::from("1.10000"))
+            .build();
+        live_position.apply(&changed_fill);
+        let changed = PositionChanged::create(
+            &live_position,
+            &changed_fill,
+            UUID4::new(),
+            UnixNanos::from(20),
+        );
+
+        let closed_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CLOSE"))
+            .venue_order_id(VenueOrderId::from("V-CLOSE"))
+            .trade_id(TradeId::from("T-CLOSE"))
+            .order_side(OrderSide::Sell)
+            .position_id(position_id)
+            .last_qty(Quantity::from("3"))
+            .last_px(Price::from("1.20000"))
+            .build();
+        live_position.apply(&closed_fill);
+        let closed = PositionClosed::create(
+            &live_position,
+            &closed_fill,
+            UUID4::new(),
+            UnixNanos::from(30),
+        );
+
+        let mut stale_position = Position::new(&instrument, opened_fill);
+        stale_position.signed_qty = 9.0;
+        stale_position.quantity = Quantity::from("9");
+        let mut cache = Cache::default();
+        cache
+            .add_position(&stale_position, OmsType::Unspecified)
+            .expect("seed stale position");
+
+        let opened_entry =
+            append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
+        let changed_entry =
+            append_position_event(2, &PositionEvent::PositionChanged(changed.clone())).entry;
+        let closed_entry =
+            append_position_event(3, &PositionEvent::PositionClosed(closed.clone())).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &opened_entry).expect("apply opened"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after opened");
+        assert_eq!(replayed.signed_qty.to_bits(), opened.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, opened.quantity);
+        assert_eq!(replayed.ts_last, opened.ts_event);
+
+        assert!(apply_cache_replay_entry(&mut cache, &changed_entry).expect("apply changed"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after changed");
+        assert_eq!(replayed.signed_qty.to_bits(), changed.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, changed.quantity);
+        assert_eq!(replayed.peak_qty, changed.peak_quantity);
+        assert_eq!(
+            replayed.avg_px_open.to_bits(),
+            changed.avg_px_open.to_bits()
+        );
+        assert!(replayed.is_open());
+
+        assert!(apply_cache_replay_entry(&mut cache, &closed_entry).expect("apply closed"));
+        let replayed = cache
+            .position_owned(&position_id)
+            .expect("position after closed");
+        assert_eq!(replayed.signed_qty.to_bits(), closed.signed_qty.to_bits());
+        assert_eq!(replayed.quantity, closed.quantity);
+        assert_eq!(replayed.closing_order_id, closed.closing_order_id);
+        assert_eq!(replayed.duration_ns, closed.duration);
+        assert!(replayed.is_closed());
+        assert!(cache.is_position_closed(&position_id));
     }
 
     #[rstest]

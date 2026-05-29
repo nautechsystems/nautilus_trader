@@ -57,10 +57,11 @@ use nautilus_system::{
 use ustr::Ustr;
 
 use crate::{
-    BusCaptureAdapter, CacheReplayError, CacheReplayReport, CaptureError, EntryDraft, EventStore,
-    EventStoreError, EventStoreWriter, HaltCallback, HaltReason, Headers, RedbBackend, RunId,
-    RunManifest, RunStatus, ScanDirection, Topic, WriterConfig, compute_snapshot_content_hash,
-    default_registry, restore_cache_from_sealed_run, validate_event_store_replay_source,
+    BusCaptureAdapter, CacheReplayError, CacheReplayReport, CaptureError, EncoderRegistry,
+    EntryDraft, EventStore, EventStoreError, EventStoreWriter, HaltCallback, HaltReason, Headers,
+    RedbBackend, RunId, RunManifest, RunStatus, ScanDirection, Topic, WriterConfig,
+    compute_snapshot_content_hash, default_registry, restore_cache_from_sealed_run,
+    validate_event_store_replay_source,
 };
 
 const RUN_STARTED_TOPIC: &str = "run.lifecycle.RunStarted";
@@ -87,6 +88,86 @@ pub struct RecoveryOutcome {
     /// [`RunStatus::CrashedRecovered`], or `None` when no recoverable predecessor
     /// existed (or every predecessor was quarantined).
     pub parent_run_id: Option<RunId>,
+}
+
+type RegistryFactory = dyn Fn() -> EncoderRegistry + Send + Sync + 'static;
+type BackendOpenResult = Result<Box<dyn EventStore + Send>, EventStoreError>;
+type BackendOpener =
+    dyn Fn(&EventStoreConfig, &RunManifest) -> BackendOpenResult + Send + Sync + 'static;
+
+/// Non-serialized lifecycle policy for advanced event-store callers.
+///
+/// [`EventStoreConfig`] remains the serializable run policy. This type carries process-local
+/// construction choices, such as the encoder registry and backend opener used when a kernel
+/// opens a run.
+#[derive(Clone)]
+pub struct EventStoreLifecycleOptions {
+    registry_factory: Arc<RegistryFactory>,
+    backend_opener: Arc<BackendOpener>,
+}
+
+impl Debug for EventStoreLifecycleOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EventStoreLifecycleOptions))
+            .finish_non_exhaustive()
+    }
+}
+
+impl Default for EventStoreLifecycleOptions {
+    fn default() -> Self {
+        Self {
+            registry_factory: Arc::new(default_registry),
+            backend_opener: Arc::new(default_backend_opener),
+        }
+    }
+}
+
+impl EventStoreLifecycleOptions {
+    /// Creates options that use [`default_registry`] and [`RedbBackend`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Uses a caller-supplied encoder registry factory for each opened run.
+    #[must_use]
+    pub fn with_registry_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> EncoderRegistry + Send + Sync + 'static,
+    {
+        self.registry_factory = Arc::new(factory);
+        self
+    }
+
+    /// Uses a caller-supplied encoder registry for each opened run.
+    #[must_use]
+    pub fn with_encoder_registry(self, registry: EncoderRegistry) -> Self {
+        self.with_registry_factory(move || registry.clone())
+    }
+
+    /// Uses a caller-supplied backend opener for each opened run.
+    #[must_use]
+    pub fn with_backend_opener<F>(mut self, opener: F) -> Self
+    where
+        F: Fn(&EventStoreConfig, &RunManifest) -> BackendOpenResult + Send + Sync + 'static,
+    {
+        self.backend_opener = Arc::new(opener);
+        self
+    }
+
+    fn build_registry(&self) -> EncoderRegistry {
+        (self.registry_factory)()
+    }
+
+    fn open_backend(&self, config: &EventStoreConfig, manifest: &RunManifest) -> BackendOpenResult {
+        (self.backend_opener)(config, manifest)
+    }
+}
+
+fn default_backend_opener(config: &EventStoreConfig, manifest: &RunManifest) -> BackendOpenResult {
+    let mut backend = RedbBackend::new(config.base_dir.clone());
+    backend.open_run(manifest.clone())?;
+    Ok(Box::new(backend))
 }
 
 /// Errors surfaced by the boot path.
@@ -328,6 +409,7 @@ pub enum KernelError {
 #[derive(Debug)]
 pub struct EventStoreLifecycle {
     config: Option<EventStoreConfig>,
+    options: EventStoreLifecycleOptions,
     recovered: Vec<RecoveredRun>,
     parent_run_id: Option<String>,
     session: Option<EventStoreSession>,
@@ -353,6 +435,29 @@ impl EventStoreLifecycle {
         instance_id: UUID4,
         clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Self> {
+        Self::boot_with_options(
+            config,
+            instance_id,
+            clock,
+            EventStoreLifecycleOptions::default(),
+        )
+    }
+
+    /// Boots the wrapper at kernel construction time with process-local lifecycle options.
+    ///
+    /// `EventStoreConfig` remains serializable. `options` carries runtime-only construction
+    /// policy for the encoder registry and backend opener.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying [`EventStoreError`] when the recovery sweep fails for a
+    /// reason other than the expected `CrashedPredecessor` handshake.
+    pub fn boot_with_options(
+        config: Option<EventStoreConfig>,
+        instance_id: UUID4,
+        clock: Rc<RefCell<dyn Clock>>,
+        options: EventStoreLifecycleOptions,
+    ) -> anyhow::Result<Self> {
         let (recovered, parent_run_id) = if let Some(cfg) = config.as_ref() {
             let outcome = recover_predecessors(&cfg.base_dir, &instance_id.to_string())?;
             if !outcome.recovered.is_empty() {
@@ -368,6 +473,7 @@ impl EventStoreLifecycle {
         };
         Ok(Self {
             config,
+            options,
             recovered,
             parent_run_id,
             session: None,
@@ -420,7 +526,7 @@ impl EventStoreLifecycle {
         } else {
             self.parent_run_id.clone()
         };
-        let session = open_run(
+        let session = open_run_with_options(
             &config,
             &instance_id.to_string(),
             run_id,
@@ -429,6 +535,7 @@ impl EventStoreLifecycle {
             components,
             self.halt.clone(),
             clock,
+            &self.options,
         )?;
         log::info!(
             "Opened event-store run {} (parent_run_id={:?})",
@@ -736,6 +843,42 @@ pub fn open_run(
     halt_signal: HaltSignal,
     clock: &'static AtomicTime,
 ) -> Result<EventStoreSession, BootError> {
+    open_run_with_options(
+        config,
+        instance_id,
+        run_id,
+        parent_run_id,
+        start_ts_init,
+        components,
+        halt_signal,
+        clock,
+        &EventStoreLifecycleOptions::default(),
+    )
+}
+
+/// Opens a fresh run with process-local lifecycle options.
+///
+/// This follows [`open_run`] but obtains the backend and encoder registry from
+/// `options`.
+///
+/// # Errors
+///
+/// Returns [`BootError::EventStore`] when the backend rejects open, [`BootError::RunStartedSubmit`]
+/// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
+/// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
+/// when the writer fail-stops while waiting for the commit.
+#[allow(clippy::too_many_arguments)]
+pub fn open_run_with_options(
+    config: &EventStoreConfig,
+    instance_id: &str,
+    run_id: RunId,
+    parent_run_id: Option<RunId>,
+    start_ts_init: UnixNanos,
+    components: &RegisteredComponents,
+    halt_signal: HaltSignal,
+    clock: &'static AtomicTime,
+    options: &EventStoreLifecycleOptions,
+) -> Result<EventStoreSession, BootError> {
     let manifest = build_manifest(
         config,
         instance_id,
@@ -745,11 +888,10 @@ pub fn open_run(
         components.clone(),
     );
 
-    let mut backend = RedbBackend::new(config.base_dir.clone());
-    backend.open_run(manifest.clone())?;
+    let backend = options.open_backend(config, &manifest)?;
 
     let writer = Arc::new(EventStoreWriter::spawn(
-        Box::new(backend),
+        backend,
         clock,
         halt_signal.callback(),
         writer_config_from(config),
@@ -765,7 +907,7 @@ pub fn open_run(
 
     let adapter = Arc::new(BusCaptureAdapter::new(
         Arc::clone(&writer),
-        Arc::new(default_registry()),
+        Arc::new(options.build_registry()),
         halt_signal.callback(),
     ));
 
@@ -1017,6 +1159,8 @@ impl KernelEventStoreTrait for EventStoreLifecycle {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(madsim)]
+    use std::path::Path;
     use std::path::PathBuf;
 
     use indexmap::IndexMap;
@@ -1033,8 +1177,11 @@ mod tests {
     };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
-        events::{OrderEventAny, OrderFilled, OrderInitialized},
+        enums::TimeInForce,
+        events::{
+            OrderEventAny, OrderFilled,
+            order::spec::{OrderFilledSpec, OrderInitializedSpec},
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
             VenueOrderId,
@@ -1047,7 +1194,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        AppendEntry, EventStoreEntry, IndexKind, SnapshotAnchor,
+        AppendEntry, EncodedPayload, EventStoreEntry, IndexKind, MemoryBackend, SnapshotAnchor,
         capture::builtins::PAYLOAD_TYPE_TIME_EVENT, compute_entry_hash,
     };
 
@@ -1107,6 +1254,107 @@ mod tests {
             RUN_STARTED_PAYLOAD_TYPE,
             encode_run_started(&RegisteredComponents::default()),
         )
+    }
+
+    #[derive(Debug)]
+    struct TestAuditMessage {
+        value: u8,
+    }
+
+    fn test_registry() -> EncoderRegistry {
+        let mut registry = EncoderRegistry::new();
+        registry.register::<TestAuditMessage, _>(Ustr::from("TestAuditMessage"), |message| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                message.value,
+            ])))
+        });
+        registry
+    }
+
+    fn wait_for_high_watermark(store: &EventStoreLifecycle, expected: u64) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= expected {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "event store high_watermark did not reach {expected} within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct SharedMemoryBackend(Arc<Mutex<MemoryBackend>>);
+
+    impl EventStore for SharedMemoryBackend {
+        fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
+            self.0.lock().expect("memory backend").open_run(manifest)
+        }
+
+        fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
+            self.0.lock().expect("memory backend").append_batch(entries)
+        }
+
+        fn scan_range(
+            &self,
+            from: u64,
+            to: u64,
+            direction: ScanDirection,
+        ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
+            self.0
+                .lock()
+                .expect("memory backend")
+                .scan_range(from, to, direction)
+        }
+
+        fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
+            self.0.lock().expect("memory backend").scan_seq(seq)
+        }
+
+        fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
+            self.0.lock().expect("memory backend").lookup(kind, key)
+        }
+
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.0.lock().expect("memory backend").iter_index_keys(kind)
+        }
+
+        fn record_snapshot_anchor(
+            &mut self,
+            anchor: SnapshotAnchor,
+        ) -> Result<(), EventStoreError> {
+            self.0
+                .lock()
+                .expect("memory backend")
+                .record_snapshot_anchor(anchor)
+        }
+
+        fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+            self.0
+                .lock()
+                .expect("memory backend")
+                .latest_snapshot_anchor()
+        }
+
+        fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
+            self.0.lock().expect("memory backend").seal(status)
+        }
+
+        fn manifest(&self) -> Result<RunManifest, EventStoreError> {
+            self.0.lock().expect("memory backend").manifest()
+        }
+
+        fn high_watermark(&self) -> Result<u64, EventStoreError> {
+            self.0.lock().expect("memory backend").high_watermark()
+        }
     }
 
     fn seed_crashed_predecessor(config: &EventStoreConfig, run_id: &str, crash_point: CrashPoint) {
@@ -1232,6 +1480,323 @@ mod tests {
             "feature_flags must record the retention mode, was {:?}",
             manifest.feature_flags,
         );
+    }
+
+    #[rstest]
+    fn lifecycle_options_default_registry_keeps_builtin_encoders() {
+        let registry = EventStoreLifecycleOptions::default().build_registry();
+
+        assert!(registry.contains::<SubmitOrder>());
+        assert!(registry.contains::<TradingCommand>());
+        assert!(!registry.contains::<TestAuditMessage>());
+    }
+
+    #[rstest]
+    fn lifecycle_options_custom_registry_captures_registered_message() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let options = EventStoreLifecycleOptions::new().with_encoder_registry(test_registry());
+
+        let mut store = EventStoreLifecycle::boot_with_options(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+            options,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.test.audit");
+        msgbus::publish_any(topic, &TestAuditMessage { value: 42 });
+        wait_for_high_watermark(&store, 2);
+
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+
+        assert_eq!(captured.payload_type.as_str(), "TestAuditMessage");
+        assert_eq!(captured.topic.as_ref(), topic.as_str());
+        assert_eq!(captured.payload.as_ref(), &[42]);
+    }
+
+    #[rstest]
+    fn lifecycle_options_memory_backend_opener_captures_and_seals() {
+        let tmp = TempDir::new().expect("tempdir");
+        let memory = Arc::new(Mutex::new(MemoryBackend::new()));
+        let opener_memory = Arc::clone(&memory);
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let options = EventStoreLifecycleOptions::new()
+            .with_encoder_registry(test_registry())
+            .with_backend_opener(move |_, manifest| {
+                opener_memory
+                    .lock()
+                    .expect("memory backend")
+                    .open_run(manifest.clone())?;
+                Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
+            });
+
+        let mut store = EventStoreLifecycle::boot_with_options(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+            options,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.test.memory");
+        msgbus::publish_any(topic, &TestAuditMessage { value: 7 });
+        wait_for_high_watermark(&store, 2);
+
+        store.seal(UnixNanos::from(1_000));
+
+        let backend = memory.lock().expect("memory backend");
+        let manifest = backend.manifest().expect("manifest");
+        let captured = backend
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+
+        assert_eq!(manifest.instance_id, instance_id.to_string());
+        assert_eq!(manifest.status, RunStatus::Ended);
+        assert_eq!(manifest.high_watermark, 3);
+        assert_eq!(captured.payload_type.as_str(), "TestAuditMessage");
+        assert_eq!(captured.topic.as_ref(), topic.as_str());
+        assert_eq!(captured.payload.as_ref(), &[7]);
+    }
+
+    #[cfg(madsim)]
+    #[rstest]
+    fn lifecycle_options_memory_backend_opener_captures_deterministic_seq_order_under_madsim() {
+        let first = capture_madsim_memory_lifecycle_summary(42);
+        let second = capture_madsim_memory_lifecycle_summary(42);
+        let expected = expected_madsim_memory_entries();
+
+        assert_eq!(first.entries, second.entries);
+        assert_eq!(first.entries, expected);
+        assert_eq!(
+            first
+                .entries
+                .iter()
+                .map(|entry| entry.seq)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4],
+        );
+        assert!(
+            first.redb_files.is_empty(),
+            "memory opener must not create redb files, was {:?}",
+            first.redb_files,
+        );
+        assert!(
+            second.redb_files.is_empty(),
+            "memory opener must not create redb files, was {:?}",
+            second.redb_files,
+        );
+    }
+
+    #[cfg(madsim)]
+    fn expected_madsim_memory_entries() -> Vec<CapturedEntrySummary> {
+        vec![
+            CapturedEntrySummary {
+                seq: 1,
+                topic: RUN_STARTED_TOPIC.to_string(),
+                payload_type: RUN_STARTED_PAYLOAD_TYPE.to_string(),
+                payload: encode_run_started(&RegisteredComponents::default()).to_vec(),
+                ts_init: UnixNanos::from(0),
+                ts_publish: UnixNanos::from(10_000),
+            },
+            CapturedEntrySummary {
+                seq: 2,
+                topic: "events.test.madsim".to_string(),
+                payload_type: "TestAuditMessage".to_string(),
+                payload: vec![1],
+                ts_init: UnixNanos::from(20_000),
+                ts_publish: UnixNanos::from(20_000),
+            },
+            CapturedEntrySummary {
+                seq: 3,
+                topic: "events.test.madsim".to_string(),
+                payload_type: "TestAuditMessage".to_string(),
+                payload: vec![2],
+                ts_init: UnixNanos::from(30_000),
+                ts_publish: UnixNanos::from(30_000),
+            },
+            CapturedEntrySummary {
+                seq: 4,
+                topic: RUN_ENDED_TOPIC.to_string(),
+                payload_type: RUN_ENDED_PAYLOAD_TYPE.to_string(),
+                payload: Vec::new(),
+                ts_init: UnixNanos::from(40_000),
+                ts_publish: UnixNanos::from(40_000),
+            },
+        ]
+    }
+
+    #[rstest]
+    fn open_run_with_options_surfaces_backend_opener_error() {
+        let tmp = TempDir::new().expect("tempdir");
+        let config = make_config(tmp.path().to_path_buf());
+        let options = EventStoreLifecycleOptions::new().with_backend_opener(|_, _| {
+            Err(EventStoreError::Backend(
+                "test backend open failed".to_string(),
+            ))
+        });
+
+        let err = open_run_with_options(
+            &config,
+            INSTANCE_ID,
+            "run-open-error".to_string(),
+            None,
+            UnixNanos::from(5_000),
+            &RegisteredComponents::default(),
+            HaltSignal::new(),
+            get_atomic_clock_static(),
+            &options,
+        )
+        .expect_err("backend opener error must stop run open");
+
+        match err {
+            BootError::EventStore(EventStoreError::Backend(msg)) => {
+                assert!(msg.contains("test backend open failed"));
+            }
+            other => panic!("expected backend open failure, was {other:?}"),
+        }
+    }
+
+    #[cfg(madsim)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct MadsimMemoryLifecycleCapture {
+        entries: Vec<CapturedEntrySummary>,
+        redb_files: Vec<PathBuf>,
+    }
+
+    #[cfg(madsim)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct CapturedEntrySummary {
+        seq: u64,
+        topic: String,
+        payload_type: String,
+        payload: Vec<u8>,
+        ts_init: UnixNanos,
+        ts_publish: UnixNanos,
+    }
+
+    #[cfg(madsim)]
+    fn capture_madsim_memory_lifecycle_summary(seed: u64) -> MadsimMemoryLifecycleCapture {
+        get_atomic_clock_static().set_time(UnixNanos::from(10_000));
+
+        let tmp = TempDir::new().expect("tempdir");
+        let memory = Arc::new(Mutex::new(MemoryBackend::new()));
+        let opener_memory = Arc::clone(&memory);
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let mut config = make_config(tmp.path().to_path_buf());
+        config.identity.seed = Some(seed);
+        let options = EventStoreLifecycleOptions::new()
+            .with_encoder_registry(test_registry())
+            .with_backend_opener(move |_, manifest| {
+                opener_memory
+                    .lock()
+                    .expect("memory backend")
+                    .open_run(manifest.clone())?;
+                Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
+            });
+
+        let mut store =
+            EventStoreLifecycle::boot_with_options(Some(config), instance_id, clock_rc, options)
+                .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.test.madsim");
+        get_atomic_clock_static().set_time(UnixNanos::from(20_000));
+        msgbus::publish_any(topic, &TestAuditMessage { value: 1 });
+        get_atomic_clock_static().set_time(UnixNanos::from(30_000));
+        msgbus::publish_any(topic, &TestAuditMessage { value: 2 });
+        assert_eq!(
+            store
+                .session
+                .as_ref()
+                .expect("open session")
+                .high_watermark(),
+            3
+        );
+
+        get_atomic_clock_static().set_time(UnixNanos::from(40_000));
+        store.seal(UnixNanos::from(40_000));
+
+        let backend = memory.lock().expect("memory backend");
+        let manifest = backend.manifest().expect("manifest");
+        assert_eq!(manifest.seed, Some(seed));
+        assert_eq!(manifest.status, RunStatus::Ended);
+        assert_eq!(manifest.high_watermark, 4);
+        let entries = backend
+            .scan_range(1, manifest.high_watermark, ScanDirection::Forward)
+            .expect("scan entries")
+            .into_iter()
+            .map(|entry| CapturedEntrySummary {
+                seq: entry.seq,
+                topic: entry.topic.as_ref().to_string(),
+                payload_type: entry.payload_type.as_str().to_string(),
+                payload: entry.payload.to_vec(),
+                ts_init: entry.ts_init,
+                ts_publish: entry.ts_publish,
+            })
+            .collect();
+        drop(backend);
+
+        MadsimMemoryLifecycleCapture {
+            entries,
+            redb_files: redb_files_under(tmp.path()),
+        }
+    }
+
+    #[cfg(madsim)]
+    fn redb_files_under(dir: &Path) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        collect_redb_files(dir, &mut paths);
+        paths.sort();
+        paths
+    }
+
+    #[cfg(madsim)]
+    fn collect_redb_files(dir: &Path, paths: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                collect_redb_files(&path, paths);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "redb")
+            {
+                paths.push(path);
+            }
+        }
     }
 
     #[rstest]
@@ -1880,41 +2445,12 @@ mod tests {
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000001");
-        let order_init = OrderInitialized::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .build();
         let submit_order = SubmitOrder::new(
             trader_id,
             Some(ClientId::from("BINANCE")),
@@ -2112,41 +2648,12 @@ mod tests {
         let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000002");
-        let order_init = OrderInitialized::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .build();
         let submit_order = SubmitOrder::new(
             trader_id,
             Some(ClientId::from("BINANCE")),
@@ -2237,32 +2744,22 @@ mod tests {
             .expect("open run");
         let run_id = store.run_id().expect("run open").to_string();
 
-        let trader_id = TraderId::from("TRADER-001");
-        let strategy_id = StrategyId::from("S-001");
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let client_order_id = ClientOrderId::from("O-20260510-000003");
         let venue_order_id = VenueOrderId::from("V-99");
-        let filled = OrderFilled::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            AccountId::from("BINANCE-001"),
-            TradeId::from("T-1"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            Price::from("100.00"),
-            Currency::USDT(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(10),
-            UnixNanos::from(11),
-            false,
-            None,
-            Some(Money::new(0.10, Currency::USDT())),
-        );
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .venue_order_id(venue_order_id)
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("100.00"))
+            .currency(Currency::USDT())
+            .ts_event(UnixNanos::from(10))
+            .ts_init(UnixNanos::from(11))
+            .commission(Money::new(0.10, Currency::USDT()))
+            .build();
         let event = OrderEventAny::Filled(filled);
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");

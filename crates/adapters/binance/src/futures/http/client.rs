@@ -1920,10 +1920,19 @@ impl BinanceFuturesHttpClient {
 
         let symbol = format_binance_symbol(&instrument_id);
 
-        let order_id = venue_order_id
-            .map(|id| id.inner().parse::<i64>())
-            .transpose()
-            .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
+        let order_id = match venue_order_id {
+            Some(venue_order_id) => match venue_order_id.inner().parse::<i64>() {
+                Ok(order_id) => Some(order_id),
+                Err(e) if client_order_id.is_some() => {
+                    log::warn!(
+                        "Unable to parse venue_order_id {venue_order_id} for cancel, canceling by client_order_id: {e}"
+                    );
+                    None
+                }
+                Err(e) => anyhow::bail!("Invalid venue order ID: {e}"),
+            },
+            None => None,
+        };
 
         let params = BinanceCancelOrderParams {
             symbol,

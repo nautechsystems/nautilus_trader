@@ -498,14 +498,14 @@ impl HyperliquidWebSocketClient {
         post_only: bool,
         reduce_only: bool,
     ) -> HyperliquidResult<()> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset = signer.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             HyperliquidError::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_precision = signer.get_price_precision(symbol).unwrap_or(2);
+        let price_precision = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
 
         let price_decimal = match price {
             Some(px) if signer.normalize_prices() => {
@@ -582,13 +582,13 @@ impl HyperliquidWebSocketClient {
 
         for order in orders {
             let instrument_id = order.instrument_id();
-            let symbol = instrument_id.symbol.as_str();
-            let asset = signer.get_asset_index(symbol).ok_or_else(|| {
+            let symbol = instrument_id.symbol.inner();
+            let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {
                 HyperliquidError::bad_request(format!(
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let price_decimals = signer.get_price_precision(symbol).unwrap_or(2);
+            let price_decimals = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
             let request = order_to_hyperliquid_request_with_asset_and_cloid(
                 order,
                 asset,
@@ -628,8 +628,8 @@ impl HyperliquidWebSocketClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> HyperliquidResult<()> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset = signer.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             HyperliquidError::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
@@ -685,8 +685,8 @@ impl HyperliquidWebSocketClient {
 
         for (index, (instrument_id, client_order_id, venue_order_id)) in cancels.iter().enumerate()
         {
-            let symbol = instrument_id.symbol.as_str();
-            let Some(asset) = signer.get_asset_index(symbol) else {
+            let symbol = instrument_id.symbol.inner();
+            let Some(asset) = signer.get_asset_index_for_symbol(symbol) else {
                 results[index] = Some(format!(
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ));
@@ -814,8 +814,8 @@ impl HyperliquidWebSocketClient {
         time_in_force: TimeInForce,
         client_order_id: Option<ClientOrderId>,
     ) -> HyperliquidResult<()> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset = signer.get_asset_index(symbol).ok_or_else(|| {
+        let symbol = instrument_id.symbol.inner();
+        let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {
             HyperliquidError::bad_request(format!(
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
@@ -825,7 +825,7 @@ impl HyperliquidWebSocketClient {
             .parse::<u64>()
             .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_decimals = signer.get_price_precision(symbol).unwrap_or(2);
+        let price_decimals = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
         let price = if signer.normalize_prices() {
             normalize_price(price.as_decimal(), price_decimals).normalize()
         } else {

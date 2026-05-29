@@ -188,13 +188,19 @@ impl Iterator for DeltaStreamIterator {
                 }
             };
 
-            // Insert CLEAR on snapshot boundary to reset order book state
-            if data.is_snapshot && !self.last_is_snapshot {
+            let ts_event = parse_timestamp(data.timestamp);
+            let ts_init = parse_timestamp(data.local_timestamp);
+
+            // Insert CLEAR on snapshot boundary to reset order book state.
+            // Some venues emit every book event as a full snapshot, so a new
+            // snapshot timestamp must also reset the previous snapshot state.
+            let starts_new_snapshot =
+                data.is_snapshot && (!self.last_is_snapshot || self.last_ts_event != ts_event);
+
+            if starts_new_snapshot {
                 let clear_instrument_id = self
                     .instrument_id
                     .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
-                let ts_event = parse_timestamp(data.timestamp);
-                let ts_init = parse_timestamp(data.local_timestamp);
 
                 if self.last_ts_event != ts_event
                     && let Some(last_delta) = self.buffer.last_mut()
@@ -437,7 +443,9 @@ impl BatchedDeltasStreamIterator {
                         }
                     };
 
-                    if self.last_ts_event != ts_event && !self.current_batch.is_empty() {
+                    let starts_new_timestamp = self.last_ts_event != ts_event;
+
+                    if starts_new_timestamp && !self.current_batch.is_empty() {
                         // Set F_LAST on the last delta of the completed batch
                         if let Some(last_delta) = self.current_batch.last_mut() {
                             last_delta.flags = RecordFlag::F_LAST.value();
@@ -447,10 +455,10 @@ impl BatchedDeltasStreamIterator {
                         batches_created += 1;
                     }
 
-                    self.last_ts_event = ts_event;
-
-                    // Insert CLEAR on snapshot boundary to reset order book state
-                    if data.is_snapshot && !self.last_is_snapshot {
+                    // Insert CLEAR on snapshot boundary to reset order book state.
+                    // Some venues emit every book event as a full snapshot, so a new
+                    // snapshot timestamp must also reset the previous snapshot state.
+                    if data.is_snapshot && (!self.last_is_snapshot || starts_new_timestamp) {
                         let clear_delta =
                             OrderBookDelta::clear(self.instrument_id, 0, ts_event, ts_init);
                         self.current_batch.push(clear_delta);
@@ -463,6 +471,7 @@ impl BatchedDeltasStreamIterator {
                             break;
                         }
                     }
+                    self.last_ts_event = ts_event;
                     self.last_is_snapshot = data.is_snapshot;
 
                     self.current_batch.push(delta);
@@ -1655,6 +1664,41 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
 
     #[cfg(feature = "python")]
     #[rstest]
+    pub fn test_stream_batched_deltas_with_consecutive_snapshots_inserts_clear() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_consecutive_snapshots.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, None)
+                .unwrap();
+        iterator.fill_pending_batches().transpose().unwrap();
+
+        let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
+        let clear_count = all_deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        assert_eq!(clear_count, 2);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[3].action, BookAction::Clear);
+        assert_eq!(
+            all_deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+        assert_eq!(all_deltas[3].flags & RecordFlag::F_LAST.value(), 0);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
     pub fn test_stream_batched_deltas_limit_includes_clear() {
         // Test that limit counts total emitted deltas (including CLEARs)
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
@@ -2273,6 +2317,70 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
             0,
             "CLEAR at index 5 should not have F_LAST flag"
         );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_deltas_with_consecutive_snapshots_inserts_clear() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_deltas_consecutive_snapshots.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(1), None, None).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+        let clear_count = all_deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        assert_eq!(clear_count, 2);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[3].action, BookAction::Clear);
+        assert_eq!(
+            all_deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+        assert_eq!(all_deltas[3].flags & RecordFlag::F_LAST.value(), 0);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_deltas_consecutive_snapshots_clear_across_chunk_boundary() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+
+        let temp_file =
+            std::env::temp_dir().join("test_stream_deltas_consecutive_snapshots_chunked.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // chunk_size 2 forces the second CLEAR to land on a chunk boundary, deferring its
+        // snapshot row via pending_record. The deferred row must not re-insert a CLEAR.
+        let stream = stream_deltas(&temp_file, 2, Some(1), Some(1), None, None).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+        let clear_count = all_deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        assert_eq!(all_deltas.len(), 6);
+        assert_eq!(clear_count, 2);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[3].action, BookAction::Clear);
+        assert_eq!(
+            all_deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+        assert_eq!(all_deltas[3].flags & RecordFlag::F_LAST.value(), 0);
 
         std::fs::remove_file(&temp_file).ok();
     }

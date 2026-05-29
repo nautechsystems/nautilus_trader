@@ -353,7 +353,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
-        events::OrderEventAny,
+        events::{OrderEventAny, order::spec::OrderCanceledSpec},
         identifiers::{ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, MarketOrder},
         types::Price,
@@ -701,8 +701,6 @@ mod tests {
 
     #[rstest]
     fn test_twap_on_time_event_completes_when_primary_closed() {
-        use nautilus_model::events::OrderCanceled;
-
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
@@ -724,18 +722,12 @@ mod tests {
             let mut cache = cache_rc.borrow_mut();
             let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
 
-            let canceled = OrderCanceled::new(
-                primary.trader_id(),
-                primary.strategy_id(),
-                primary.instrument_id(),
-                primary.client_order_id(),
-                UUID4::new(),
-                0.into(),
-                0.into(),
-                false,
-                None,
-                None,
-            );
+            let canceled = OrderCanceledSpec::builder()
+                .trader_id(primary.trader_id())
+                .strategy_id(primary.strategy_id())
+                .instrument_id(primary.instrument_id())
+                .client_order_id(primary.client_order_id())
+                .build();
             cache
                 .update_order(&OrderEventAny::Canceled(canceled))
                 .unwrap();

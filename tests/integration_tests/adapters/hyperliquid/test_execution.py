@@ -66,7 +66,13 @@ def exec_client_builder(
     live_clock,
     mock_instrument_provider,
 ):
-    def builder(monkeypatch, *, config_kwargs: dict | None = None):
+    def builder(
+        monkeypatch,
+        *,
+        config_kwargs: dict | None = None,
+        account_address: str | None = None,
+        resolved_account_address: str | None = "0x1234567890abcdef1234567890abcdef12345678",
+    ):
         ws_client = _create_ws_mock()
         ws_iter = iter([ws_client])
 
@@ -79,6 +85,12 @@ def exec_client_builder(
         monkeypatch.setattr(
             "nautilus_trader.adapters.hyperliquid.execution.HyperliquidExecutionClient._await_account_registered",
             AsyncMock(),
+        )
+
+        monkeypatch.setattr(
+            "nautilus_trader.adapters.hyperliquid.execution.nautilus_pyo3.hyperliquid_resolve_execution_account_address",
+            MagicMock(return_value=resolved_account_address),
+            raising=False,
         )
 
         mock_http_client.reset_mock()
@@ -104,6 +116,7 @@ def exec_client_builder(
             instrument_provider=mock_instrument_provider,
             config=config,
             name=None,
+            account_address=account_address,
         )
 
         return client, ws_client, mock_http_client, mock_instrument_provider
@@ -112,16 +125,49 @@ def exec_client_builder(
 
 
 @pytest.mark.asyncio
-async def test_account_address_used_for_user_address(exec_client_builder, monkeypatch):
+async def test_resolved_config_account_address_used_for_subscriptions(
+    exec_client_builder,
+    monkeypatch,
+):
     # Arrange
     agent_account = "0xabcdef1234567890abcdef1234567890abcdef12"
     client, ws_client, _, _ = exec_client_builder(
         monkeypatch,
         config_kwargs={"account_address": agent_account},
+        resolved_account_address=agent_account,
     )
 
-    # Assert
-    assert client._user_address == agent_account
+    # Act
+    await client._connect()
+
+    try:
+        # Assert
+        assert client._account_address == agent_account
+        ws_client.subscribe_order_updates.assert_awaited_once_with(agent_account)
+        ws_client.subscribe_user_events.assert_awaited_once_with(agent_account)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_factory_account_address_used_for_subscriptions(exec_client_builder, monkeypatch):
+    # Arrange
+    account_address = "0xabcdef1234567890abcdef1234567890abcdef12"
+    client, ws_client, http_client, _ = exec_client_builder(
+        monkeypatch,
+        account_address=account_address,
+    )
+
+    # Act
+    await client._connect()
+
+    try:
+        # Assert
+        http_client.get_user_address.assert_not_called()
+        ws_client.subscribe_order_updates.assert_awaited_once_with(account_address)
+        ws_client.subscribe_user_events.assert_awaited_once_with(account_address)
+    finally:
+        await client._disconnect()
 
 
 def test_ws_post_timeout_forwarded_to_ws_client(exec_client_builder, monkeypatch):

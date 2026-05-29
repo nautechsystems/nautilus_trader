@@ -35,11 +35,11 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-/// Close-position command. Mirrors the arguments to
-/// [`Strategy::close_position`](nautilus_trading::strategy::Strategy::close_position).
+/// Close-position command. Mirrors the arguments to `Strategy::close_position`.
 ///
 /// The host resolves `position_id` against the live cache to materialise the
 /// `&Position` reference the trait method requires.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosePositionCommand {
     /// The identifier of the position to close.
@@ -117,8 +117,8 @@ impl Deref for ClosePositionHandle {
     }
 }
 
-/// Close-all-positions command. Mirrors the arguments to
-/// [`Strategy::close_all_positions`](nautilus_trading::strategy::Strategy::close_all_positions).
+/// Close-all-positions command. Mirrors the arguments to `Strategy::close_all_positions`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseAllPositionsCommand {
     /// The instrument identifier filtering which positions to close.

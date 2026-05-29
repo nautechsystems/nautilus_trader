@@ -80,6 +80,8 @@ use nautilus_model::defi::{
     data::block::BlockPosition,
     pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
 };
+#[cfg(feature = "streaming")]
+use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
@@ -92,8 +94,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookAction, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, OrderSide, PriceType, RecordFlag,
+        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -107,6 +109,10 @@ use nautilus_model::{
 };
 #[cfg(feature = "streaming")]
 use nautilus_persistence::backend::catalog::{ParquetDataCatalog, timestamps_to_filename};
+#[cfg(feature = "streaming")]
+use nautilus_persistence::test_data::RustTestCustomData;
+#[cfg(feature = "streaming")]
+use nautilus_serialization::ensure_custom_data_registered;
 use rstest::*;
 use serde_json::{Value, json};
 use ustr::Ustr;
@@ -5017,7 +5023,7 @@ fn test_parent_subscribe_with_unparsable_id_returns_error(
     }
     assert!(
         !data_engine.subscribed_book_deltas().contains(&runner),
-        "rejected parent subscribe must NOT leave the id in book_deltas_subs",
+        "rejected parent subscribe must NOT leave the id in book delta state",
     );
 
     // Retrying without the parent flag on the same id must succeed; the
@@ -9642,7 +9648,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -10007,7 +10014,8 @@ fn test_process_pool_liquidity_update(
         U256::from(2000000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
@@ -10110,7 +10118,8 @@ fn test_process_pool_fee_collect(
         300000u128,
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
@@ -10204,7 +10213,8 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x34; 20]),
         U256::from(1000000u128),
@@ -10317,7 +10327,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         U256::from(2000000u128),
         -1000, // Wide range
         1000,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -10370,7 +10381,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -10508,7 +10520,8 @@ fn test_pool_updater_processes_mint_updates_profiler(
         U256::from(200000u128),
         -100, // tick_lower
         100,  // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -10608,7 +10621,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(200000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -10650,7 +10664,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(100000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     data_engine
@@ -10760,7 +10775,8 @@ fn test_pool_updater_processes_collect_updates_profiler(
         30000u128, // amount1
         -100,      // tick_lower
         100,       // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -10864,7 +10880,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         initiator,
         recipient,
         U256::from(1000000u128), // amount0
@@ -11389,6 +11406,8 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
         Vec::new(),
         PoolAnalytics::default(),
         BlockPosition::new(creation_block, "0x0".to_string(), 0, 0),
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     data_engine.process_defi_data(DefiData::PoolSnapshot(stub));
 
@@ -12014,6 +12033,12 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
             deltas_cmd,
         )));
 
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "snapshot and direct book-delta subscribers must share one physical deltas feed",
+    );
+
     let unsubscribe_cmd = UnsubscribeBookDeltas::new(
         audusd_sim.id,
         Some(client_id),
@@ -12039,6 +12064,257 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
 
     assert_eq!(saver.get_messages().len(), 1);
     assert_eq!(saver.get_messages()[0].instrument_id, audusd_sim.id);
+}
+
+#[rstest]
+fn test_duplicate_book_deltas_unsubscribe_keeps_remaining_subscription_active(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+    execute_book_delta_subscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "duplicate logical book-delta subscribers must share one physical deltas feed",
+    );
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one logical book-delta owner must keep the physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one logical subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe(&data_engine, audusd_sim.id, client_id, venue);
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the physical deltas feed should unsubscribe after the last logical owner leaves",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after the last unsubscribe must not reach the torn-down updater",
+    );
+}
+
+#[rstest]
+fn test_distinct_book_deltas_keys_share_physical_subscription(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+
+    execute_book_delta_subscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+    execute_book_delta_subscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_subscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "distinct logical book-delta keys routed to one client must share the physical feed",
+    );
+
+    execute_book_delta_unsubscribe_for_route(
+        &data_engine,
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+    );
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        0,
+        "unsubscribing one routed book-delta key must keep the shared physical feed active",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+    let update_count = cache
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .expect("book must exist while one routed subscriber remains")
+        .update_count;
+
+    execute_book_delta_unsubscribe_for_route(&data_engine, audusd_sim.id, None, Some(venue));
+
+    assert_eq!(
+        book_deltas_unsubscribe_count(&recorder.borrow(), audusd_sim.id),
+        1,
+        "the shared physical feed should unsubscribe after all routed keys leave",
+    );
+
+    process_book_delta(&data_engine, audusd_sim.id);
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .expect("book remains in cache after updater teardown")
+            .update_count,
+        update_count,
+        "deltas published after all routed keys leave must not reach the torn-down updater",
+    );
+}
+
+fn book_deltas_subscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn book_deltas_unsubscribe_count(recorded: &[DataCommand], instrument_id: InstrumentId) -> usize {
+    recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd))
+                    if cmd.instrument_id == instrument_id
+            )
+        })
+        .count()
+}
+
+fn execute_book_delta_subscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_subscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_subscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let subscribe = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+            subscribe,
+        )));
+}
+
+fn execute_book_delta_unsubscribe(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    execute_book_delta_unsubscribe_for_route(
+        data_engine,
+        instrument_id,
+        Some(client_id),
+        Some(venue),
+    );
+}
+
+fn execute_book_delta_unsubscribe_for_route(
+    data_engine: &Rc<RefCell<DataEngine>>,
+    instrument_id: InstrumentId,
+    client_id: Option<ClientId>,
+    venue: Option<Venue>,
+) {
+    let unsubscribe = UnsubscribeBookDeltas::new(
+        instrument_id,
+        client_id,
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+            unsubscribe,
+        )));
 }
 
 fn execute_book_snapshot_subscribe(
@@ -17345,6 +17621,181 @@ fn recorded_request_trades(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<Requ
 }
 
 #[cfg(feature = "streaming")]
+fn recorded_request_funding_rates(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestFundingRates> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::FundingRates(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_data(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestCustomData> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Data(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_instrument(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestInstrument> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Instrument(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn recorded_request_instruments(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestInstruments> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::Instruments(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn split_funding_rate(instrument_id: InstrumentId, ts: u64, rate: &str) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        rate.parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn register_funding_catalog_with_rates(
+    data_engine: &mut DataEngine,
+    label: &str,
+    rates: Vec<FundingRateUpdate>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(rates, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn ensure_engine_custom_data_registered() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        ensure_custom_data_registered::<RustTestCustomData>();
+    });
+}
+
+#[cfg(feature = "streaming")]
+fn rust_test_custom_data_type(identifier: &str) -> DataType {
+    DataType::new(
+        "RustTestCustomData",
+        Some(serde_json::from_value(json!({"source": "catalog-test"})).unwrap()),
+        Some(identifier.to_string()),
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn split_custom(
+    data_type: DataType,
+    instrument_id: InstrumentId,
+    ts: u64,
+    value: f64,
+) -> CustomData {
+    CustomData::new(
+        std::sync::Arc::new(RustTestCustomData {
+            instrument_id,
+            value,
+            flag: value > 1.0,
+            ts_event: UnixNanos::from(ts),
+            ts_init: UnixNanos::from(ts),
+        }),
+        data_type,
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn register_custom_catalog_with_data(
+    data_engine: &mut DataEngine,
+    label: &str,
+    data: Vec<CustomData>,
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    ensure_engine_custom_data_registered();
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog
+        .write_custom_data_batch(data, start, end, None)
+        .unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn custom_response_payload(resp: &CustomDataResponse) -> Vec<CustomData> {
+    resp.data
+        .as_ref()
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("custom response payload should be Vec<CustomData>")
+        .clone()
+}
+
+#[cfg(feature = "streaming")]
+fn custom_values(data: &[CustomData]) -> Vec<f64> {
+    data.iter()
+        .map(|custom| {
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .expect("custom payload should be RustTestCustomData")
+                .value
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
+fn register_instrument_catalog_with_instruments(
+    data_engine: &mut DataEngine,
+    label: &str,
+    instruments: Vec<InstrumentAny>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    catalog.write_instruments(instruments).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
 #[rstest]
 fn test_request_quotes_catalog_only_serves_from_disk(
     audusd_sim: CurrencyPair,
@@ -18127,6 +18578,833 @@ fn test_request_bars_catalog_plus_client_split(
         .collect();
     assert_eq!(ts_inits, vec![1_500, 2_500]);
     assert_eq!(received[0].data[0].bar_type, bar_type);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_funding_catalog_with_rates(
+        &mut data_engine,
+        "funding-catalog-only",
+        vec![
+            split_funding_rate(instrument_id, 1_000, "0.0001"),
+            split_funding_rate(instrument_id, 2_000, "0.0002"),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|rate| rate.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_funding_catalog_with_rates(
+        &mut data_engine,
+        "funding-split",
+        vec![split_funding_rate(instrument_id, 1_500, "0.0001")],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_funding_rates(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+
+    data_engine.response(DataResponse::FundingRates(FundingRatesResponse::new(
+        recorded[0].request_id,
+        client_id,
+        instrument_id,
+        vec![split_funding_rate(instrument_id, 2_500, "0.0002")],
+        recorded[0].start.map(datetime_to_unix_nanos_for_test),
+        recorded[0].end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|rate| rate.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "funding-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from("funding-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_funding_rates_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::FundingRates(RequestFundingRates::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_funding_rates(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_catalog_only_serves_from_disk(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-catalog-only",
+        vec![
+            split_custom(data_type.clone(), instrument_id, 1_000, 1.0),
+            split_custom(data_type.clone(), instrument_id, 2_000, 2.0),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-catalog-only")));
+    msgbus::register_response_handler(&parent_id, handler);
+    let params: Params = serde_json::from_value(json!({"source": "params"})).unwrap();
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data_type, data_type);
+    assert_eq!(
+        received[0]
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("update_catalog")),
+        Some(false)
+    );
+    assert_eq!(custom_values(&data), vec![1.0, 2.0]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_without_identifier_catalog_only_serves_from_disk(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new(
+        "RustTestCustomData",
+        Some(serde_json::from_value(json!({"source": "catalog-test"})).unwrap()),
+        None,
+    );
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-catalog-no-identifier",
+        vec![
+            split_custom(data_type.clone(), instrument_id, 1_000, 1.0),
+            split_custom(data_type.clone(), instrument_id, 2_000, 2.0),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from(
+        "custom-catalog-no-identifier",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].data_type, data_type);
+    assert_eq!(custom_values(&data), vec![1.0, 2.0]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_catalog_plus_client_split(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_custom_catalog_with_data(
+        &mut data_engine,
+        "custom-split",
+        vec![split_custom(data_type.clone(), instrument_id, 1_500, 1.5)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-split-parent")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type.clone(),
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_data(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+
+    data_engine.response(DataResponse::Data(CustomDataResponse::new(
+        recorded[0].request_id,
+        client_id,
+        Some(venue),
+        data_type.clone(),
+        split_custom(data_type, instrument_id, 2_500, 2.5),
+        recorded[0].start.map(datetime_to_unix_nanos_for_test),
+        recorded[0].end.map(datetime_to_unix_nanos_for_test),
+        UnixNanos::default(),
+        None,
+    )));
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(custom_values(&data), vec![1.5, 2.5]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_no_client_no_catalog_emits_empty(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "custom-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let data = custom_response_payload(&received[0]);
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_custom_data_dispatches_straight_to_client_with_no_catalog_registered(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let data_type = rust_test_custom_data_type("RUST.TEST");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Data(RequestCustomData::new(
+        client_id,
+        data_type,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_data(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_no_client_no_catalog_emits_empty(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "instruments-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentsResponse>(Some(Ustr::from("instruments-empty")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_catalog_uses_latest_record(
+    mut audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let mut earlier = audusd_sim.clone();
+    earlier.ts_init = UnixNanos::from(1_000);
+    audusd_sim.ts_init = UnixNanos::from(2_000);
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instrument-latest",
+        vec![
+            InstrumentAny::CurrencyPair(earlier),
+            InstrumentAny::CurrencyPair(audusd_sim),
+        ],
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentResponse>(Some(Ustr::from("instrument-latest")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(received[0].instrument_id, instrument_id);
+    assert_eq!(received[0].data.ts_init(), UnixNanos::from(2_000));
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_catalog_applies_only_last(
+    mut audusd_sim: CurrencyPair,
+    mut gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let mut audusd_earlier = audusd_sim.clone();
+    audusd_earlier.ts_init = UnixNanos::from(1_000);
+    audusd_sim.ts_init = UnixNanos::from(2_000);
+    gbpusd_sim.ts_init = UnixNanos::from(3_000);
+    let audusd_id = audusd_sim.id;
+    let gbpusd_id = gbpusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instruments-only-last",
+        vec![
+            InstrumentAny::CurrencyPair(audusd_earlier),
+            InstrumentAny::CurrencyPair(audusd_sim),
+            InstrumentAny::CurrencyPair(gbpusd_sim),
+        ],
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<InstrumentsResponse>(Some(Ustr::from("instruments-only-last")));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let mut ids_and_timestamps: Vec<(InstrumentId, u64)> = received[0]
+        .data
+        .iter()
+        .map(|instrument| (instrument.id(), instrument.ts_init().as_u64()))
+        .collect();
+    ids_and_timestamps.sort_by_key(|(id, _)| id.to_string());
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        ids_and_timestamps,
+        vec![(audusd_id, 2_000), (gbpusd_id, 3_000)]
+    );
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_dispatches_straight_to_client_with_no_catalog_registered(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instruments(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_force_update_dispatches_to_client_with_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instrument-force-update",
+        vec![InstrumentAny::CurrencyPair(audusd_sim)],
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"force_instrument_update": true})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instrument(RequestInstrument::new(
+        instrument_id,
+        None,
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instruments_update_catalog_dispatches_to_client_with_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_instrument_catalog_with_instruments(
+        &mut data_engine,
+        "instruments-update-catalog",
+        vec![InstrumentAny::CurrencyPair(audusd_sim)],
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let params: Params = serde_json::from_value(json!({"update_catalog": true})).unwrap();
+    let parent_id = UUID4::new();
+    let req = RequestCommand::Instruments(RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instruments(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
     assert_eq!(data_engine.request_pipeline_count(), 0);
 }
 

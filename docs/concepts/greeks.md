@@ -54,6 +54,31 @@ def on_option_greeks(self, greeks: OptionGreeks) -> None:
 See the [Options](options.md) guide for the full subscription API including option
 chain aggregation, strike range filtering, and snapshot modes.
 
+### Persistence and replay
+
+`OptionGreeks` is a native member of the `Data` enum, so it persists to the data catalog
+and replays in backtests as built-in market data (not custom data). Writing and querying
+use the standard catalog API:
+
+```python
+catalog.write_data(greeks)               # greeks: list[OptionGreeks]
+greeks = catalog.query(data_cls=OptionGreeks)
+```
+
+During replay, persisted Greeks reach a subscribed actor or strategy through the same
+`on_option_greeks` handler used for live data.
+
+### Core schema versus custom data
+
+The native `OptionGreeks` fields are the canonical core schema: the five standard Greeks
+(`delta`, `gamma`, `vega`, `theta`, `rho`) plus implied volatility, underlying price, open
+interest, and convention. These field names are stable.
+
+There is no single complete Greeks shape, so venue- or model-specific values such as
+`vanna`, `volga`, `charm`, calibration inputs, or surface metadata belong in
+[custom data](custom_data.md) rather than the native type. New native fields are added only
+as nullable fields, and only when a real integration shows they belong in the common model.
+
 ### Underlying Rust types
 
 The core Rust implementation lives in `crates/model/src/data/greeks.rs`:

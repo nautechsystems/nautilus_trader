@@ -21,7 +21,7 @@ use std::{
     ops::Deref,
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::HasTsInit;
@@ -133,7 +133,8 @@ impl StrikeRange {
 
 /// Exchange-provided option Greeks and implied volatility for a single instrument.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
@@ -216,6 +217,8 @@ impl Display for OptionGreeks {
         )
     }
 }
+
+impl Serializable for OptionGreeks {}
 
 /// Combined quote and Greeks data for a single strike in an option chain.
 #[derive(Clone, Debug)]
@@ -480,6 +483,34 @@ mod tests {
         assert!(display.contains("OptionGreeks"));
         assert!(display.contains("PRICE_ADJUSTED"));
         assert!(display.contains("0.55"));
+    }
+
+    #[rstest]
+    fn test_option_greeks_data_serde_round_trip() {
+        let greeks = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            convention: GreeksConvention::PriceAdjusted,
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                gamma: 0.001,
+                vega: 10.0,
+                theta: -5.0,
+                rho: 0.2,
+            },
+            mark_iv: Some(0.65),
+            bid_iv: None,
+            ask_iv: Some(0.66),
+            underlying_price: Some(50_000.0),
+            open_interest: None,
+            ts_event: UnixNanos::from(1u64),
+            ts_init: UnixNanos::from(2u64),
+        };
+        let data = crate::data::Data::OptionGreeks(greeks);
+
+        let json = serde_json::to_string(&data).unwrap();
+        let roundtripped: crate::data::Data = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtripped, data);
     }
 
     #[rstest]

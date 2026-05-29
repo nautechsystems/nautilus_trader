@@ -66,8 +66,10 @@ use crate::{
             okx_status_to_market_action, parse_client_order_id, parse_fee, parse_fee_currency,
             parse_funding_rate_msg, parse_instrument_any, parse_message_vec,
             parse_millisecond_timestamp, parse_price, parse_quantity,
+            parse_spread_order_status_report as parse_common_spread_order_status_report,
         },
     },
+    http::models::OKXSpreadOrder,
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
 
@@ -285,6 +287,127 @@ pub fn parse_order_event(
     }
 }
 
+/// Parses an OKX spread order message into a specific order event.
+///
+/// # Errors
+///
+/// Returns an error if parsing order identifiers or numeric fields fails.
+#[expect(clippy::too_many_arguments)]
+pub fn parse_spread_order_event(
+    msg: &OKXSpreadOrder,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument: &InstrumentAny,
+    previous_filled_qty: Option<Quantity>,
+    previous_state: Option<&OrderStateSnapshot>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<ParsedOrderEvent> {
+    let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
+    let instrument_id = instrument.id();
+    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
+        || !msg.trade_id.is_empty()
+        || has_acc_fill_sz_increased_value(
+            Some(msg.acc_fill_sz.as_str()),
+            previous_filled_qty,
+            instrument.size_precision(),
+        );
+    let skip_update_check = has_new_fill
+        || matches!(
+            msg.state,
+            OKXOrderStatus::Filled | OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled
+        );
+
+    if !skip_update_check
+        && let Some(prev) = previous_state
+        && is_spread_order_updated_excluding_venue_id_for_live(msg, prev, instrument)?
+    {
+        let ts_event = msg.u_time.map_or(ts_init, parse_millisecond_timestamp);
+        let quantity = parse_quantity(&msg.sz, instrument.size_precision())?;
+        let price = if is_market_price(&msg.px) {
+            None
+        } else {
+            Some(parse_price(&msg.px, instrument.price_precision())?)
+        };
+
+        return Ok(ParsedOrderEvent::Updated(OrderUpdated::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            quantity,
+            UUID4::new(),
+            ts_event,
+            ts_init,
+            false,
+            Some(venue_order_id),
+            Some(account_id),
+            price,
+            None,
+            None,
+            false,
+        )));
+    }
+
+    match msg.state {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
+            match parse_spread_order_fill_report(
+                msg,
+                instrument,
+                account_id,
+                previous_filled_qty,
+                ts_init,
+            )? {
+                Some(report) => Ok(ParsedOrderEvent::Fill(report)),
+                None => Ok(ParsedOrderEvent::Skipped),
+            }
+        }
+        OKXOrderStatus::Live => {
+            let ts_event = msg.c_time.map_or(ts_init, parse_millisecond_timestamp);
+            Ok(ParsedOrderEvent::Accepted(OrderAccepted::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                account_id,
+                UUID4::new(),
+                ts_event,
+                ts_init,
+                false,
+            )))
+        }
+        OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled => {
+            let ts_event = msg
+                .u_time
+                .or(msg.c_time)
+                .map_or(ts_init, parse_millisecond_timestamp);
+            Ok(ParsedOrderEvent::Canceled(OrderCanceled::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                UUID4::new(),
+                ts_event,
+                ts_init,
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+            )))
+        }
+        _ => parse_common_spread_order_status_report(
+            msg,
+            account_id,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .map(|report| ParsedOrderEvent::StatusOnly(Box::new(report))),
+    }
+}
+
 /// Case-insensitive substring check.
 #[inline]
 /// Builds a deterministic synthesized `TradeId` for fills where OKX omits
@@ -311,6 +434,29 @@ fn synthesize_trade_id(msg: &OKXOrderMsg) -> String {
     update(msg.fill_sz.as_bytes());
     update(msg.fill_px.as_bytes());
     update(msg.acc_fill_sz.as_deref().unwrap_or("").as_bytes());
+
+    format!("synth-{hasher:016x}")
+}
+
+fn synthesize_spread_trade_id(msg: &OKXSpreadOrder) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hasher: u64 = FNV_OFFSET;
+    let mut update = |bytes: &[u8]| {
+        for byte in bytes {
+            hasher ^= u64::from(*byte);
+            hasher = hasher.wrapping_mul(FNV_PRIME);
+        }
+        hasher ^= 0xff;
+        hasher = hasher.wrapping_mul(FNV_PRIME);
+    };
+
+    update(msg.ord_id.as_bytes());
+    update(msg.u_time.unwrap_or_default().to_string().as_bytes());
+    update(msg.fill_sz.as_bytes());
+    update(msg.fill_px.as_bytes());
+    update(msg.acc_fill_sz.as_bytes());
 
     format!("synth-{hasher:016x}")
 }
@@ -410,6 +556,36 @@ fn is_order_updated_excluding_venue_id_for_live(
     }
 
     // Price change only applies to limit orders
+    if !is_market_price(&msg.px) {
+        let current_price = parse_price(&msg.px, instrument.price_precision())?;
+
+        if let Some(prev_price) = previous.price
+            && prev_price != current_price
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn is_spread_order_updated_excluding_venue_id_for_live(
+    msg: &OKXSpreadOrder,
+    previous: &OrderStateSnapshot,
+    instrument: &InstrumentAny,
+) -> anyhow::Result<bool> {
+    if msg.state != OKXOrderStatus::Live {
+        let current_venue_id = VenueOrderId::new(msg.ord_id.as_str());
+        if previous.venue_order_id != current_venue_id {
+            return Ok(true);
+        }
+    }
+
+    let current_qty = parse_quantity(&msg.sz, instrument.size_precision())?;
+    if previous.quantity != current_qty {
+        return Ok(true);
+    }
+
     if !is_market_price(&msg.px) {
         let current_price = parse_price(&msg.px, instrument.price_precision())?;
 
@@ -1059,6 +1235,14 @@ fn has_acc_fill_sz_increased(
     previous_filled_qty: Option<Quantity>,
     size_precision: u8,
 ) -> bool {
+    has_acc_fill_sz_increased_value(acc_fill_sz.as_deref(), previous_filled_qty, size_precision)
+}
+
+fn has_acc_fill_sz_increased_value(
+    acc_fill_sz: Option<&str>,
+    previous_filled_qty: Option<Quantity>,
+    size_precision: u8,
+) -> bool {
     if let Some(acc_str) = acc_fill_sz {
         if acc_str.is_empty() || acc_str == "0" {
             return false;
@@ -1120,6 +1304,64 @@ pub fn parse_order_msg(
         }
         _ => parse_order_status_report(msg, instrument, account_id, ts_init)
             .map(ExecutionReport::Order),
+    }
+}
+
+/// Parses a single OKX spread order message into an [`ExecutionReport`].
+///
+/// # Errors
+///
+/// Returns an error if the instrument cannot be found or if parsing the
+/// underlying order payload fails.
+pub fn parse_spread_order_msg(
+    msg: &OKXSpreadOrder,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &AHashMap<Ustr, Quantity>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<ExecutionReport> {
+    let instrument = instruments
+        .get(&msg.sprd_id)
+        .ok_or_else(|| anyhow::anyhow!("No instrument found for sprd_id: {}", msg.sprd_id))?;
+    let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
+    let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
+        || !msg.trade_id.is_empty()
+        || has_acc_fill_sz_increased_value(
+            Some(msg.acc_fill_sz.as_str()),
+            previous_filled_qty,
+            instrument.size_precision(),
+        );
+
+    match msg.state {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
+            match parse_spread_order_fill_report(
+                msg,
+                instrument,
+                account_id,
+                previous_filled_qty,
+                ts_init,
+            )? {
+                Some(report) => Ok(ExecutionReport::Fill(report)),
+                None => parse_common_spread_order_status_report(
+                    msg,
+                    account_id,
+                    instrument.id(),
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                )
+                .map(ExecutionReport::Order),
+            }
+        }
+        _ => parse_common_spread_order_status_report(
+            msg,
+            account_id,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .map(ExecutionReport::Order),
     }
 }
 
@@ -1631,6 +1873,106 @@ pub fn parse_order_status_report(
     Ok(report)
 }
 
+fn parse_spread_order_fill_report(
+    msg: &OKXSpreadOrder,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    previous_filled_qty: Option<Quantity>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<FillReport>> {
+    let client_order_id = parse_client_order_id(msg.cl_ord_id.as_str());
+    let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
+    let trade_id = if msg.trade_id.is_empty() {
+        let synthetic = synthesize_spread_trade_id(msg);
+        TradeId::new(&synthetic)
+    } else {
+        TradeId::new(msg.trade_id.as_str())
+    };
+    let order_side: OrderSide = msg.side.into();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    let price_str = if !msg.fill_px.is_empty() {
+        &msg.fill_px
+    } else if !msg.avg_px.is_empty() {
+        &msg.avg_px
+    } else {
+        &msg.px
+    };
+    let last_px = parse_price(price_str, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse spread price (fill_px='{}', avg_px='{}', px='{}'): {}",
+            msg.fill_px,
+            msg.avg_px,
+            msg.px,
+            e
+        )
+    })?;
+    let last_qty = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        parse_quantity(&msg.fill_sz, size_precision)
+            .map_err(|e| anyhow::anyhow!("Failed to parse spread fill_sz='{}': {e}", msg.fill_sz))?
+    } else if !msg.acc_fill_sz.is_empty() && msg.acc_fill_sz != "0" {
+        let current_filled = parse_quantity(&msg.acc_fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse spread acc_fill_sz='{}': {e}",
+                msg.acc_fill_sz
+            )
+        })?;
+
+        if let Some(prev_qty) = previous_filled_qty {
+            if current_filled < prev_qty {
+                anyhow::bail!(
+                    "Cumulative spread fill went backwards: acc_fill_sz='{}' < previous_filled_qty={} \
+                     (possible stale data after reconnect)",
+                    msg.acc_fill_sz,
+                    prev_qty
+                );
+            }
+
+            let incremental = current_filled - prev_qty;
+            if incremental.is_zero() {
+                log::debug!(
+                    "Skipping duplicate spread fill: acc_fill_sz='{}' unchanged from previous={}",
+                    msg.acc_fill_sz,
+                    prev_qty
+                );
+                return Ok(None);
+            }
+            incremental
+        } else {
+            current_filled
+        }
+    } else {
+        anyhow::bail!(
+            "Cannot determine spread fill quantity: fill_sz='{}' and acc_fill_sz='{}'",
+            msg.fill_sz,
+            msg.acc_fill_sz
+        );
+    };
+    // OKX sprd-orders updates do not carry fee data. REST spread trade reports include fees.
+    let commission = Money::zero(instrument.quote_currency());
+    let ts_event = msg
+        .u_time
+        .or(msg.c_time)
+        .map_or(ts_init, parse_millisecond_timestamp);
+
+    Ok(Some(FillReport::new(
+        account_id,
+        instrument.id(),
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        LiquiditySide::NoLiquiditySide,
+        client_order_id,
+        None,
+        ts_event,
+        ts_init,
+        None,
+    )))
+}
+
 /// Parses an OKX order message into a Nautilus fill report.
 ///
 /// # Errors
@@ -2010,7 +2352,7 @@ pub fn parse_ws_message_data(
             )?;
             Ok(Some(NautilusWsMessage::Data(data_vec)))
         }
-        OKXWsChannel::Trades => {
+        OKXWsChannel::Trades | OKXWsChannel::SprdPublicTrades => {
             let data_vec = parse_trade_msg_vec(
                 data,
                 instrument_id,
@@ -4978,6 +5320,60 @@ mod tests {
         }
     }
 
+    fn create_spread_order_msg_for_event_test(
+        state: OKXOrderStatus,
+        cl_ord_id: &str,
+        ord_id: &str,
+        px: &str,
+        sz: &str,
+    ) -> OKXSpreadOrder {
+        OKXSpreadOrder {
+            sprd_id: Ustr::from("BTC-USDT_BTC-USDT-SWAP"),
+            ord_id: Ustr::from(ord_id),
+            cl_ord_id: Ustr::from(cl_ord_id),
+            tag: String::new(),
+            side: OKXSide::Buy,
+            ord_type: OKXOrderType::Limit,
+            sz: sz.to_string(),
+            px: px.to_string(),
+            avg_px: String::new(),
+            state,
+            acc_fill_sz: "0".to_string(),
+            pending_fill_sz: "0".to_string(),
+            pending_settle_sz: "0".to_string(),
+            canceled_sz: "0".to_string(),
+            fill_sz: String::new(),
+            fill_px: String::new(),
+            trade_id: Ustr::default(),
+            cancel_source: String::new(),
+            req_id: String::new(),
+            amend_result: String::new(),
+            code: String::new(),
+            msg: String::new(),
+            c_time: Some(1_746_947_317_401),
+            u_time: Some(1_746_947_317_402),
+        }
+    }
+
+    #[rstest]
+    fn test_deserialize_spread_orders_message() {
+        let json_data = load_test_json("ws_sprd_orders.json");
+        let frame: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
+
+        match frame {
+            OKXWsFrame::Data { arg, data } => {
+                let orders: Vec<OKXSpreadOrder> = serde_json::from_value(data).unwrap();
+
+                assert_eq!(arg.channel, OKXWsChannel::SprdOrders);
+                assert_eq!(orders.len(), 1);
+                assert_eq!(orders[0].sprd_id, Ustr::from("BCH-USDT_BCH-USDT-SWAP"));
+                assert_eq!(orders[0].ord_id, Ustr::from("3386544889978159104"));
+                assert_eq!(orders[0].state, OKXOrderStatus::Live);
+            }
+            other => panic!("Expected Data, was {other:?}"),
+        }
+    }
+
     #[rstest]
     fn test_synthesize_trade_id_is_deterministic_and_under_36_chars() {
         let mut msg = create_order_msg_for_event_test(
@@ -5108,6 +5504,213 @@ mod tests {
             }
             other => panic!("Expected Accepted, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_event_live_returns_accepted() {
+        let instrument = create_stub_instrument();
+        let msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::Live,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.01",
+        );
+        let client_order_id = ClientOrderId::new("test_client_123");
+        let account_id = AccountId::new("OKX-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let result = parse_spread_order_event(
+            &msg,
+            client_order_id,
+            account_id,
+            trader_id,
+            strategy_id,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            None,
+            None,
+            ts_init,
+        );
+
+        match result.unwrap() {
+            ParsedOrderEvent::Accepted(accepted) => {
+                assert_eq!(accepted.client_order_id, client_order_id);
+                assert_eq!(accepted.venue_order_id, VenueOrderId::new("venue_456"));
+                assert_eq!(accepted.account_id, account_id);
+            }
+            other => panic!("Expected Accepted, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_event_canceled_returns_canceled() {
+        let instrument = create_stub_instrument();
+        let msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::Canceled,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.01",
+        );
+        let client_order_id = ClientOrderId::new("test_client_123");
+        let account_id = AccountId::new("OKX-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let result = parse_spread_order_event(
+            &msg,
+            client_order_id,
+            account_id,
+            trader_id,
+            strategy_id,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            None,
+            None,
+            ts_init,
+        );
+
+        match result.unwrap() {
+            ParsedOrderEvent::Canceled(canceled) => {
+                assert_eq!(canceled.client_order_id, client_order_id);
+                assert_eq!(
+                    canceled.venue_order_id,
+                    Some(VenueOrderId::new("venue_456"))
+                );
+                assert_eq!(canceled.account_id, Some(account_id));
+            }
+            other => panic!("Expected Canceled, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_event_filled_returns_fill() {
+        let instrument = create_stub_instrument();
+        let mut msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::Filled,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.01",
+        );
+        msg.fill_sz = "0.01".to_string();
+        msg.fill_px = "1.0".to_string();
+        msg.trade_id = Ustr::from("trade_789");
+        msg.acc_fill_sz = "0.01".to_string();
+
+        let client_order_id = ClientOrderId::new("test_client_123");
+        let account_id = AccountId::new("OKX-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        let result = parse_spread_order_event(
+            &msg,
+            client_order_id,
+            account_id,
+            trader_id,
+            strategy_id,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            None,
+            None,
+            ts_init,
+        );
+
+        match result.unwrap() {
+            ParsedOrderEvent::Fill(fill) => {
+                assert_eq!(fill.client_order_id, Some(client_order_id));
+                assert_eq!(fill.venue_order_id, VenueOrderId::new("venue_456"));
+                assert_eq!(fill.trade_id, TradeId::from("trade_789"));
+                assert_eq!(fill.last_qty, Quantity::from("0.01000000"));
+            }
+            other => panic!("Expected Fill, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_fill_report_uses_incremental_acc_fill_sz() {
+        let instrument = create_stub_instrument();
+        let mut msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::PartiallyFilled,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.03",
+        );
+        msg.acc_fill_sz = "0.03".to_string();
+        msg.fill_sz = String::new();
+        msg.fill_px = String::new();
+
+        let result = parse_spread_order_fill_report(
+            &msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            AccountId::new("OKX-001"),
+            Some(Quantity::from("0.01000000")),
+            UnixNanos::from(1_000_000_000),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(result.last_qty, Quantity::from("0.02000000"));
+        assert_eq!(result.last_px, Price::from("1.00"));
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_fill_report_skips_duplicate_acc_fill_sz() {
+        let instrument = create_stub_instrument();
+        let mut msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::PartiallyFilled,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.01",
+        );
+        msg.acc_fill_sz = "0.01".to_string();
+        msg.fill_sz = String::new();
+        msg.fill_px = String::new();
+
+        let result = parse_spread_order_fill_report(
+            &msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            AccountId::new("OKX-001"),
+            Some(Quantity::from("0.01000000")),
+            UnixNanos::from(1_000_000_000),
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_spread_order_fill_report_rejects_regressed_acc_fill_sz() {
+        let instrument = create_stub_instrument();
+        let mut msg = create_spread_order_msg_for_event_test(
+            OKXOrderStatus::PartiallyFilled,
+            "test_client_123",
+            "venue_456",
+            "1.0",
+            "0.01",
+        );
+        msg.acc_fill_sz = "0.01".to_string();
+        msg.fill_sz = String::new();
+        msg.fill_px = String::new();
+
+        let error = parse_spread_order_fill_report(
+            &msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            AccountId::new("OKX-001"),
+            Some(Quantity::from("0.03000000")),
+            UnixNanos::from(1_000_000_000),
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Cumulative spread fill went backwards")
+        );
     }
 
     #[rstest]
@@ -6769,5 +7372,85 @@ mod tests {
             Some(NautilusWsMessage::Raw(raw)) => assert_eq!(raw, data),
             _ => panic!("Expected raw event contract market payload"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_ws_message_data_spread_public_trades() {
+        // sprd-public-trades keys the spread as `sprdId` and omits `count`; the
+        // instrument is resolved from the channel arg, so the trade still parses.
+        let data = serde_json::json!([{
+            "sprdId": "ETH-USD-260925_ETH-USD-261225",
+            "tradeId": "3392538740127301632",
+            "px": "16.9",
+            "sz": "100",
+            "side": "sell",
+            "ts": "1780047866507"
+        }]);
+        let instrument_id = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");
+        let mut funding_cache = AHashMap::new();
+        let instruments_cache = AHashMap::new();
+
+        let result = parse_ws_message_data(
+            &OKXWsChannel::SprdPublicTrades,
+            data,
+            &instrument_id,
+            1,
+            0,
+            UnixNanos::default(),
+            &mut funding_cache,
+            &instruments_cache,
+        )
+        .unwrap();
+
+        let Some(NautilusWsMessage::Data(data_vec)) = result else {
+            panic!("expected Data variant, was {result:?}");
+        };
+        assert_eq!(data_vec.len(), 1);
+        let Data::Trade(trade) = &data_vec[0] else {
+            panic!("expected Data::Trade, was {:?}", data_vec[0]);
+        };
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price.as_decimal(), dec!(16.9));
+        assert_eq!(trade.size.as_decimal(), dec!(100));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    }
+
+    #[rstest]
+    fn test_parse_spread_books5_snapshot_with_three_element_levels() {
+        // sprd-books5 pushes a full snapshot with 3-element `[price, size, count]`
+        // levels; it is parsed as a snapshot (F_SNAPSHOT), not an incremental update.
+        let msg: OKXBookMsg = serde_json::from_value(serde_json::json!({
+            "asks": [["16.7", "100", "1"]],
+            "bids": [["16.65", "100", "1"]],
+            "ts": "1780044924909",
+            "seqId": 1779935772619784_u64,
+        }))
+        .unwrap();
+        let instrument_id = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");
+
+        let deltas = parse_book_msg(
+            &msg,
+            instrument_id,
+            2,
+            0,
+            &OKXBookAction::Snapshot,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument_id);
+        assert_eq!(deltas.flags, RecordFlag::F_SNAPSHOT as u8);
+        let bid = deltas
+            .deltas
+            .iter()
+            .find(|d| d.order.side == OrderSide::Buy)
+            .expect("should have a bid delta");
+        let ask = deltas
+            .deltas
+            .iter()
+            .find(|d| d.order.side == OrderSide::Sell)
+            .expect("should have an ask delta");
+        assert_eq!(bid.order.price.as_decimal(), dec!(16.65));
+        assert_eq!(ask.order.price.as_decimal(), dec!(16.7));
     }
 }

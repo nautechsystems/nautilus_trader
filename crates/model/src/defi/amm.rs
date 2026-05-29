@@ -97,6 +97,9 @@ pub struct Pool {
     /// The hooks contract address for Uniswap V4 pools.
     /// For V2/V3 pools, this will be None. For V4, it contains the hooks contract address.
     pub hooks: Option<Address>,
+    /// UNIX timestamp (nanoseconds) when the pool event occurred.
+    #[serde(default)]
+    pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
@@ -136,6 +139,7 @@ impl Pool {
             initial_tick: None,
             initial_sqrt_price_x96: None,
             hooks: None,
+            ts_event: ts_init,
             ts_init,
         }
     }

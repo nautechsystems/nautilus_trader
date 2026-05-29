@@ -46,12 +46,12 @@
 ///
 /// The host refuses to load a plug-in whose [`PluginManifest::abi_version`]
 /// does not match this value. The plug-in surface is unreleased and unstable,
-/// so it only tracks the current boundary layout and does not promise
-/// compatibility between Nautilus versions. Every breaking change to a
-/// `#[repr(C)]` struct or vtable must bump it.
+/// so this value remains `1` during alpha and does not promise compatibility
+/// between Nautilus versions. Rebuild plug-in cdylibs against the matching
+/// host version.
 ///
 /// [`PluginManifest::abi_version`]: crate::manifest::PluginManifest::abi_version
-pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 3;
+pub const NAUTILUS_PLUGIN_ABI_VERSION: u32 = 1;
 
 /// Schema version for [`manifest::PluginBuildId`].
 pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;

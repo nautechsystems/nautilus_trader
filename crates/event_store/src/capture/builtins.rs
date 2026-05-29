@@ -202,6 +202,65 @@ const PAYLOAD_TYPE_DATA_COMMAND: &str = "DataCommand";
 
 const PAYLOAD_TYPE_DATA_RESPONSE: &str = "DataResponse";
 
+#[cfg(test)]
+pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    PAYLOAD_TYPE_SUBMIT_ORDER,
+    PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
+    PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_CANCEL_ORDER,
+    PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
+    PAYLOAD_TYPE_QUERY_ORDER,
+    PAYLOAD_TYPE_QUERY_ACCOUNT,
+    PAYLOAD_TYPE_ORDER_INITIALIZED,
+    PAYLOAD_TYPE_ORDER_DENIED,
+    PAYLOAD_TYPE_ORDER_EMULATED,
+    PAYLOAD_TYPE_ORDER_RELEASED,
+    PAYLOAD_TYPE_ORDER_SUBMITTED,
+    PAYLOAD_TYPE_ORDER_ACCEPTED,
+    PAYLOAD_TYPE_ORDER_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCELED,
+    PAYLOAD_TYPE_ORDER_EXPIRED,
+    PAYLOAD_TYPE_ORDER_TRIGGERED,
+    PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
+    PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+    PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
+    PAYLOAD_TYPE_ORDER_UPDATED,
+    PAYLOAD_TYPE_ORDER_FILLED,
+    PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+    PAYLOAD_TYPE_FILL_REPORT,
+    PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    PAYLOAD_TYPE_POSITION_STATUS_REPORT,
+    PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+    PAYLOAD_TYPE_POSITION_OPENED,
+    PAYLOAD_TYPE_POSITION_CHANGED,
+    PAYLOAD_TYPE_POSITION_CLOSED,
+    PAYLOAD_TYPE_POSITION_ADJUSTED,
+    PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_TIME_EVENT,
+    PAYLOAD_TYPE_REQUEST_COMMAND,
+    PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_REQUEST_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+    #[cfg(feature = "defi")]
+    PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
+    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+    PAYLOAD_TYPE_QUOTES_RESPONSE,
+    PAYLOAD_TYPE_TRADES_RESPONSE,
+    PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
+    PAYLOAD_TYPE_BARS_RESPONSE,
+];
+
 /// Returns an [`EncoderRegistry`] preloaded with the default encoders.
 ///
 /// Callers can extend the returned registry with additional encoders before constructing
@@ -1360,7 +1419,10 @@ mod tests {
             AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
             PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
         },
-        events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
+        events::{
+            PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+            order::spec::{OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec},
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, Venue, VenueOrderId,
@@ -1397,41 +1459,14 @@ mod tests {
     }
 
     fn make_submit_order() -> SubmitOrder {
-        let order_init = OrderInitialized::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            false,
-            false,
-            false,
-            false,
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(2))
+            .build();
         SubmitOrder::new(
             trader_id(),
             Some(ClientId::from("BINANCE")),
@@ -1449,27 +1484,19 @@ mod tests {
     }
 
     fn make_order_filled() -> OrderFilled {
-        OrderFilled::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            venue_order_id(),
-            AccountId::from("BINANCE-001"),
-            TradeId::from("T-9999"),
-            OrderSide::Buy,
-            OrderType::Market,
-            Quantity::from("1"),
-            Price::from("100.00"),
-            Currency::USDT(),
-            LiquiditySide::Taker,
-            UUID4::new(),
-            UnixNanos::from(10),
-            UnixNanos::from(11),
-            false,
-            None,
-            Some(Money::new(0.10, Currency::USDT())),
-        )
+        OrderFilledSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .venue_order_id(venue_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("T-9999"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("100.00"))
+            .currency(Currency::USDT())
+            .ts_event(UnixNanos::from(10))
+            .ts_init(UnixNanos::from(11))
+            .commission(Money::new(0.10, Currency::USDT()))
+            .build()
     }
 
     fn make_order_status_report() -> OrderStatusReport {
@@ -1663,16 +1690,13 @@ mod tests {
     }
 
     fn make_order_submitted() -> OrderSubmitted {
-        OrderSubmitted::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id(),
-            client_order_id(),
-            AccountId::from("BINANCE-001"),
-            UUID4::new(),
-            UnixNanos::from(30),
-            UnixNanos::from(31),
-        )
+        OrderSubmittedSpec::builder()
+            .instrument_id(instrument_id())
+            .client_order_id(client_order_id())
+            .account_id(AccountId::from("BINANCE-001"))
+            .ts_event(UnixNanos::from(30))
+            .ts_init(UnixNanos::from(31))
+            .build()
     }
 
     fn make_modify_order(venue: Option<VenueOrderId>) -> ModifyOrder {

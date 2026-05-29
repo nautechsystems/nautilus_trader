@@ -28,6 +28,7 @@ pub use error::{
     liquidity_error_with_location,
 };
 pub use profiler::PoolProfiler;
+pub use snapshot::PoolSnapshot;
 
 #[cfg(test)]
 pub mod tests;

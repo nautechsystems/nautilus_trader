@@ -15,9 +15,10 @@
 
 //! Host-side function table given to plug-ins for re-entrant callbacks.
 //!
-//! The surface stays explicit and versioned: every host service is a concrete
-//! function pointer, and every added method requires an ABI bump. This avoids
-//! exposing `Arc<MessageBus>` or any `dyn Trait` across the boundary.
+//! The surface stays explicit: every host service is a concrete function
+//! pointer. During alpha, added methods require rebuilding plug-ins to match
+//! the host rather than changing the ABI version. This avoids exposing
+//! `Arc<MessageBus>` or any `dyn Trait` across the boundary.
 
 #![allow(unsafe_code)]
 
@@ -59,8 +60,8 @@ pub struct HostContext {
 ///
 /// All function pointers are non-null and stable for the process lifetime.
 /// Plug-ins stash the pointer and call back through it whenever they need
-/// host services. Adding a method is a breaking ABI change and requires a
-/// [`NAUTILUS_PLUGIN_ABI_VERSION`] bump.
+/// host services. Adding a method is a breaking ABI change and requires
+/// rebuilding plug-ins to match the host during alpha.
 #[repr(C)]
 pub struct HostVTable {
     /// ABI version of this vtable. Must equal [`NAUTILUS_PLUGIN_ABI_VERSION`].

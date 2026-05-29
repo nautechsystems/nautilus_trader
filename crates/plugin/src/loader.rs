@@ -33,7 +33,7 @@ use std::{
 use libloading::{Library, Symbol};
 
 use crate::{
-    NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL,
+    NAUTILUS_PLUGIN_ABI_VERSION, NAUTILUS_PLUGIN_INIT_SYMBOL, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult},
     host::{HostContext, HostLogLevel, HostVTable},
     manifest::{
@@ -82,6 +82,15 @@ pub enum LoadError {
         #[source]
         errors: PluginManifestValidationErrors,
     },
+
+    #[error(
+        "plug-in '{path}' redeclares custom-data type '{type_name}' already provided by '{existing_path}'"
+    )]
+    DuplicateCustomDataType {
+        path: PathBuf,
+        type_name: String,
+        existing_path: PathBuf,
+    },
 }
 
 /// Owned manifest diagnostics captured before a rejected plug-in is unloaded.
@@ -101,6 +110,19 @@ impl PluginManifestDiagnostics {
             plugin_name: borrowed_str_diagnostic(manifest.plugin_name),
             plugin_version: borrowed_str_diagnostic(manifest.plugin_version),
             build_id: PluginBuildIdDiagnostics::from_build_id(&manifest.build_id),
+        }
+    }
+
+    fn from_abi_mismatch_manifest(manifest: &PluginManifest) -> Self {
+        let build_id = if manifest.build_id.schema_version == PLUGIN_BUILD_ID_VERSION {
+            PluginBuildIdDiagnostics::from_build_id(&manifest.build_id)
+        } else {
+            PluginBuildIdDiagnostics::schema_only(manifest.build_id.schema_version)
+        };
+        Self {
+            plugin_name: borrowed_str_diagnostic(manifest.plugin_name),
+            plugin_version: borrowed_str_diagnostic(manifest.plugin_version),
+            build_id,
         }
     }
 }
@@ -130,6 +152,10 @@ pub struct PluginBuildIdDiagnostics {
     pub target_triple: String,
     /// Cargo build profile, or empty when unavailable.
     pub build_profile: String,
+    /// Model fixed-point precision mode, or empty when unavailable.
+    pub precision_mode: String,
+    /// Maximum fixed-point decimal precision, or none when unavailable.
+    pub fixed_precision: Option<u8>,
 }
 
 impl PluginBuildIdDiagnostics {
@@ -140,6 +166,20 @@ impl PluginBuildIdDiagnostics {
             rustc_version: borrowed_str_diagnostic(build_id.rustc_version),
             target_triple: borrowed_str_diagnostic(build_id.target_triple),
             build_profile: borrowed_str_diagnostic(build_id.build_profile),
+            precision_mode: borrowed_str_diagnostic(build_id.precision_mode),
+            fixed_precision: Some(build_id.fixed_precision),
+        }
+    }
+
+    fn schema_only(schema_version: u32) -> Self {
+        Self {
+            schema_version,
+            nautilus_plugin_version: String::new(),
+            rustc_version: String::new(),
+            target_triple: String::new(),
+            build_profile: String::new(),
+            precision_mode: String::new(),
+            fixed_precision: None,
         }
     }
 }
@@ -151,10 +191,18 @@ impl Display for PluginBuildIdDiagnostics {
         let rustc_version = unknown_if_empty(&self.rustc_version);
         let target_triple = unknown_if_empty(&self.target_triple);
         let build_profile = unknown_if_empty(&self.build_profile);
+        let precision_mode = unknown_if_empty(&self.precision_mode);
+        let fixed_precision = self
+            .fixed_precision
+            .map_or_else(|| "<unknown>".to_string(), |value| value.to_string());
+        write!(f, "build_id(schema={schema_version}, ")?;
+        write!(f, "nautilus_plugin_version='{nautilus_plugin_version}', ")?;
+        write!(f, "rustc='{rustc_version}', target='{target_triple}', ")?;
         write!(
             f,
-            "build_id(schema={schema_version}, nautilus_plugin_version='{nautilus_plugin_version}', rustc='{rustc_version}', target='{target_triple}', profile='{build_profile}')"
-        )
+            "profile='{build_profile}', precision_mode='{precision_mode}', "
+        )?;
+        write!(f, "fixed_precision={fixed_precision})")
     }
 }
 
@@ -304,6 +352,33 @@ impl PluginLoader {
         };
 
         let manifest = validate_manifest_ptr(manifest_ptr, &path_buf)?;
+
+        let collision = {
+            let new_types: Vec<&str> = manifest.custom_data().map(|e| e.type_name()).collect();
+            let existing: Vec<(&str, &Path)> = self
+                .loaded
+                .iter()
+                .flat_map(|loaded| {
+                    let loaded_path = loaded.path();
+                    loaded
+                        .validated_manifest()
+                        .custom_data()
+                        .map(move |entry| (entry.type_name(), loaded_path))
+                })
+                .collect();
+            first_duplicate_custom_data_type(&new_types, &existing).map(
+                |(type_name, existing_path)| (type_name.to_string(), existing_path.to_path_buf()),
+            )
+        };
+
+        if let Some((type_name, existing_path)) = collision {
+            return Err(LoadError::DuplicateCustomDataType {
+                path: path_buf,
+                type_name,
+                existing_path,
+            });
+        }
+
         let manifest_ref = manifest.manifest();
         let abi = manifest_ref.abi_version;
         let custom_data_count = manifest.custom_data().len();
@@ -366,7 +441,9 @@ fn validate_manifest_ptr(
             path: path.to_path_buf(),
             expected: NAUTILUS_PLUGIN_ABI_VERSION,
             actual: abi,
-            diagnostics: Box::new(PluginManifestDiagnostics::from_manifest(manifest)),
+            diagnostics: Box::new(PluginManifestDiagnostics::from_abi_mismatch_manifest(
+                manifest,
+            )),
         });
     }
 
@@ -380,11 +457,34 @@ fn validate_manifest_ptr(
     }
 }
 
+/// Returns the first custom-data type name in `new_types` that a previously
+/// loaded plug-in (`existing`) already declares, paired with the path that
+/// declared it first.
+///
+/// Host JSON-deserializer registration is keyed by type name and keeps the
+/// first registration, so a second plug-in declaring an already-registered
+/// type name would have its decoder silently ignored. The loader rejects the
+/// collision instead of letting it pass unnoticed. The intra-plug-in case
+/// (one manifest declaring a name twice) is already caught by manifest
+/// validation; this guards the cross-plug-in case the single-manifest check
+/// cannot see.
+fn first_duplicate_custom_data_type<'a>(
+    new_types: &[&'a str],
+    existing: &[(&'a str, &'a Path)],
+) -> Option<(&'a str, &'a Path)> {
+    new_types.iter().find_map(|&new_type| {
+        existing
+            .iter()
+            .find(|(existing_type, _)| *existing_type == new_type)
+            .map(|&(_, path)| (new_type, path))
+    })
+}
+
 /// Returns the process-wide static `HostVTable` exposed to plug-ins.
 ///
 /// One `&'static HostVTable` is enough because plug-ins never compare
-/// vtables; they only call through the function pointers. Methods can be
-/// added by bumping [`NAUTILUS_PLUGIN_ABI_VERSION`].
+/// vtables; they only call through the function pointers. During alpha,
+/// methods can be added by rebuilding plug-ins to match the host.
 fn host_vtable() -> *const HostVTable {
     static HOST: OnceLock<HostVTable> = OnceLock::new();
     std::ptr::from_ref(HOST.get_or_init(|| HostVTable {
@@ -746,6 +846,7 @@ unsafe extern "C" fn host_log(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::fixed::FIXED_PRECISION;
     use rstest::rstest;
 
     use super::*;
@@ -819,6 +920,43 @@ mod tests {
         assert!(loader.is_empty());
         assert_eq!(loader.len(), 0);
         assert!(loader.loaded().is_empty());
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_finds_cross_plugin_collision() {
+        let path_a = Path::new("/plugins/a.so");
+        let path_b = Path::new("/plugins/b.so");
+        let existing = [
+            ("AlphaTick", path_a),
+            ("BetaTick", path_a),
+            ("GammaTick", path_b),
+        ];
+        let new_types = ["DeltaTick", "BetaTick"];
+
+        let hit = first_duplicate_custom_data_type(&new_types, &existing);
+
+        assert_eq!(hit, Some(("BetaTick", path_a)));
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_returns_none_when_disjoint() {
+        let path_a = Path::new("/plugins/a.so");
+        let existing = [("AlphaTick", path_a)];
+        let new_types = ["BetaTick", "GammaTick"];
+
+        assert_eq!(
+            first_duplicate_custom_data_type(&new_types, &existing),
+            None
+        );
+    }
+
+    #[rstest]
+    fn first_duplicate_custom_data_type_handles_empty_inputs() {
+        let path_a = Path::new("/plugins/a.so");
+        let existing = [("AlphaTick", path_a)];
+
+        assert_eq!(first_duplicate_custom_data_type(&[], &existing), None);
+        assert_eq!(first_duplicate_custom_data_type(&["AlphaTick"], &[]), None);
     }
 
     #[rstest]
@@ -912,6 +1050,7 @@ mod tests {
                     diagnostics.build_id.nautilus_plugin_version.as_str(),
                     env!("CARGO_PKG_VERSION")
                 );
+                assert_eq!(diagnostics.build_id.fixed_precision, Some(FIXED_PRECISION));
             }
             other => panic!("expected AbiMismatch, was {other:?}"),
         }
@@ -922,6 +1061,8 @@ mod tests {
         assert!(rendered.contains("rustc='"));
         assert!(rendered.contains("target='"));
         assert!(rendered.contains("profile='"));
+        assert!(rendered.contains("precision_mode='"));
+        assert!(rendered.contains("fixed_precision="));
     }
 
     #[rstest]
@@ -937,6 +1078,8 @@ mod tests {
                 rustc_version: BorrowedStr::empty(),
                 target_triple: BorrowedStr::empty(),
                 build_profile: BorrowedStr::empty(),
+                precision_mode: BorrowedStr::empty(),
+                fixed_precision: 0,
             },
             custom_data: Slice::empty(),
             actors: Slice::empty(),
@@ -959,6 +1102,8 @@ mod tests {
         assert!(rendered.contains("rustc='<unknown>'"));
         assert!(rendered.contains("target='<unknown>'"));
         assert!(rendered.contains("profile='<unknown>'"));
+        assert!(rendered.contains("precision_mode='<unknown>'"));
+        assert!(rendered.contains("fixed_precision=<unknown>"));
     }
 
     #[rstest]

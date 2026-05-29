@@ -147,12 +147,18 @@ pub fn load_deltas<P: AsRef<Path>>(
         update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
         update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
 
-        // Insert CLEAR on snapshot boundary to reset order book state
-        if data.is_snapshot && !last_is_snapshot {
+        let ts_event = parse_timestamp(data.timestamp);
+        let ts_init = parse_timestamp(data.local_timestamp);
+
+        // Insert CLEAR on snapshot boundary to reset order book state.
+        // Some venues emit every book event as a full snapshot, so a new
+        // snapshot timestamp must also reset the previous snapshot state.
+        let starts_new_snapshot =
+            data.is_snapshot && (!last_is_snapshot || last_ts_event != ts_event);
+
+        if starts_new_snapshot {
             let clear_instrument_id =
                 instrument_id.unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
-            let ts_event = parse_timestamp(data.timestamp);
-            let ts_init = parse_timestamp(data.local_timestamp);
 
             if last_ts_event != ts_event
                 && let Some(last_delta) = deltas.last_mut()
@@ -1386,6 +1392,35 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
 
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].action, BookAction::Clear);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_with_consecutive_snapshots_inserts_clear() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
+hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_consecutive_snapshots.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(1), None, None).unwrap();
+        let clear_count = deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        assert_eq!(clear_count, 2);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[3].action, BookAction::Clear);
+        assert_eq!(
+            deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+        assert_eq!(deltas[3].flags & RecordFlag::F_LAST.value(), 0);
 
         std::fs::remove_file(&temp_file).ok();
     }

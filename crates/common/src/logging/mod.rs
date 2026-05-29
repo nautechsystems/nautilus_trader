@@ -129,6 +129,17 @@ pub fn logging_shutdown() {
     crate::logging::logger::shutdown_graceful();
 }
 
+/// Flushes and syncs file logs to disk.
+///
+/// This is a no-op when logging is not initialized or file logging is disabled.
+///
+/// # Errors
+///
+/// Returns an error if the sync request cannot be delivered or acknowledged.
+pub fn logging_sync_to_disk() -> anyhow::Result<()> {
+    crate::logging::logger::sync_to_disk()
+}
+
 /// Returns whether the core logger is using ANSI colors.
 pub fn logging_is_colored() -> bool {
     LOGGING_COLORED.load(Ordering::Relaxed)

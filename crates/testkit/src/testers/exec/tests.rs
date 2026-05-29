@@ -26,7 +26,7 @@ use nautilus_common::{
         stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     },
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
         IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
@@ -36,10 +36,12 @@ use nautilus_model::{
         AggressorSide, BookType, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::{OrderAccepted, OrderEventAny, OrderPendingCancel},
+    events::{
+        OrderEventAny,
+        order::spec::{OrderAcceptedSpec, OrderPendingCancelSpec},
+    },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orderbook::OrderBook,
@@ -189,6 +191,7 @@ fn test_config_with_position_opening(mut config: ExecTesterConfig) {
         tester.config.open_position_on_start_qty,
         Some(Decimal::from(1))
     );
+    assert!(!tester.config.open_position_on_first_quote);
     assert_eq!(tester.config.open_position_time_in_force, TimeInForce::Ioc);
 }
 
@@ -321,6 +324,137 @@ fn test_on_quote_without_logging(mut config: ExecTesterConfig) {
 
     let result = tester.on_quote(&quote);
     assert!(result.is_ok());
+}
+
+#[rstest]
+fn test_on_quote_opens_start_position_when_configured(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    config.open_position_on_first_quote = true;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+    assert!(result.is_ok());
+    assert!(tester.open_position_submitted);
+
+    let first_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    let result = tester.on_quote(&quote);
+    let second_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    assert!(result.is_ok());
+    assert_eq!(first_count, 1);
+    assert_eq!(second_count, first_count);
+}
+
+#[rstest]
+fn test_on_quote_does_not_open_start_position_without_first_quote_flag(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+    let order_count = tester
+        .cache()
+        .orders(None, Some(&instrument_id), None, None, None)
+        .len();
+
+    assert!(result.is_ok());
+    assert!(!tester.open_position_submitted);
+    assert_eq!(order_count, 0);
+}
+
+#[rstest]
+fn test_on_quote_waits_for_instrument_before_opening_start_position(mut config: ExecTesterConfig) {
+    config.log_data = false;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    config.open_position_on_first_quote = true;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let quote = QuoteTick::new(
+        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        Price::from("50000.0"),
+        Price::from("50001.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = tester.on_quote(&quote);
+
+    assert!(result.is_ok());
+    assert!(!tester.open_position_submitted);
+}
+
+#[rstest]
+fn test_on_instrument_opens_start_position_immediately_by_default(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.open_position_on_start_qty = Some(Decimal::from(1));
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = tester.on_instrument(&instrument);
+
+    let cache_ref = tester.cache();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    assert!(result.is_ok());
+    assert!(tester.open_position_submitted);
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].order_type(), OrderType::Market);
+    assert_eq!(orders[0].order_side(), OrderSide::Buy);
 }
 
 #[rstest]
@@ -1117,6 +1251,7 @@ fn test_submit_bracket_order_sell_creates_order_list(
 
 #[rstest]
 fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument: InstrumentAny) {
+    let instrument_id = instrument.id();
     let cache = create_cache_with_instrument(&instrument);
     let mut tester = ExecTester::new(config);
     register_exec_tester(&mut tester, cache);
@@ -1124,7 +1259,14 @@ fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument:
 
     let result = tester.open_position(Decimal::from(1));
 
+    let cache_ref = tester.cache();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
     assert!(result.is_ok());
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].order_type(), OrderType::Market);
+    assert_eq!(orders[0].order_side(), OrderSide::Buy);
+    assert_eq!(orders[0].quantity(), Quantity::from("1.00000000"));
+    assert_eq!(orders[0].time_in_force(), TimeInForce::Gtc);
 }
 
 #[rstest]
@@ -1508,18 +1650,12 @@ fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
     let strategy_id = order.strategy_id();
     let instrument_id = order.instrument_id();
 
-    let accepted = OrderAccepted::new(
-        TraderId::from("TRADER-001"),
-        strategy_id,
-        instrument_id,
-        cid,
-        VenueOrderId::from("V-1"),
-        AccountId::from("SIM-001"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-    );
+    let accepted = OrderAcceptedSpec::builder()
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(cid)
+        .venue_order_id(VenueOrderId::from("V-1"))
+        .build();
 
     cache
         .borrow_mut()
@@ -1893,18 +2029,13 @@ fn ack_order_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId, venue_orde
         .order(&cid)
         .map(|o| o.cloned())
         .expect("order present");
-    let accepted = OrderAccepted::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        cid,
-        VenueOrderId::from(venue_order_id),
-        AccountId::from("SIM-001"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-    );
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .venue_order_id(VenueOrderId::from(venue_order_id))
+        .build();
     cache
         .borrow_mut()
         .update_order(&OrderEventAny::Accepted(accepted))
@@ -2041,18 +2172,14 @@ fn apply_pending_cancel_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId)
         .order(&cid)
         .map(|o| o.cloned())
         .expect("order present");
-    let event = OrderPendingCancel::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        cid,
-        order.account_id().expect("account id"),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        order.venue_order_id(),
-    );
+    let event = OrderPendingCancelSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .account_id(order.account_id().expect("account id"))
+        .maybe_venue_order_id(order.venue_order_id())
+        .build();
     cache
         .borrow_mut()
         .update_order(&OrderEventAny::PendingCancel(event))

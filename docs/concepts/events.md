@@ -41,11 +41,11 @@ omit the callback, the event is delivered to `on_event` instead.
 ## Order events
 
 Each order event corresponds to a state transition in the
-[order state machine](orders.md#order-state-flow). The `ExecutionEngine`
+[order state machine](orders/index.md#order-state-flow). The `ExecutionEngine`
 applies the event to the order, updates the `Cache`, and publishes it on the
 `MessageBus`. The table below shows the primary transitions; partially filled
 and triggered orders support additional transitions documented in the full
-[order state flow](orders.md#order-state-flow).
+[order state flow](orders/index.md#order-state-flow).
 
 | Event                  | Primary transition                  | Handler                    |
 |------------------------|-------------------------------------|----------------------------|
@@ -233,7 +233,7 @@ For details and examples, see
 
 ## Related guides
 
-- [Orders](orders.md) - Order types and state machine.
+- [Orders](orders/) - Order types and state machine.
 - [Positions](positions.md) - Position lifecycle and PnL.
 - [Execution](execution.md) - Execution flow and risk checks.
 - [Strategies](strategies.md) - Handler implementations in strategies.

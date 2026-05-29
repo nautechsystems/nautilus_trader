@@ -410,8 +410,7 @@ async fn close_position(client: &OKXHttpClient, open: &OpenPosition) -> anyhow::
 
     let venue_order_id = response
         .ord_id
-        .map(|ord_id| ord_id.to_string())
-        .unwrap_or_else(|| "<none>".to_string());
+        .map_or_else(|| "<none>".to_string(), |ord_id| ord_id.to_string());
     log::info!(
         "{}: submitted close venue_order_id={venue_order_id}",
         position.inst_id,

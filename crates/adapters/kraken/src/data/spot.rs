@@ -51,7 +51,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, Data, OrderBookDeltas, OrderBookDeltas_API},
     enums::{AggregationSource, BookType},
-    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
 use tokio::task::JoinHandle;
@@ -62,7 +62,7 @@ type OhlcBufferKey = (Ustr, u32);
 type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
 
 use crate::{
-    common::consts::KRAKEN_VENUE,
+    common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
     config::KrakenDataClientConfig,
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
@@ -420,14 +420,6 @@ impl KrakenSpotDataClient {
         Ok(())
     }
 
-    fn lookup_instrument(
-        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        symbol: &str,
-    ) -> Option<InstrumentAny> {
-        let instrument_id = InstrumentId::new(Symbol::new(symbol), *KRAKEN_VENUE);
-        instruments.load().get(&instrument_id).cloned()
-    }
-
     fn flush_ohlc_buffer(
         ohlc_buffer: &OhlcBuffer,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -455,15 +447,17 @@ impl KrakenSpotDataClient {
 
         match msg {
             KrakenSpotWsMessage::Ticker(tickers) => {
+                let instruments = instruments.load();
+
                 for ticker in &tickers {
                     let Some(instrument) =
-                        Self::lookup_instrument(instruments, ticker.symbol.as_str())
+                        lookup_instrument_in_snapshot(&instruments, ticker.symbol.as_str())
                     else {
                         log::warn!("No instrument for symbol: {}", ticker.symbol);
                         continue;
                     };
 
-                    match parse_quote_tick(ticker, &instrument, ts_init) {
+                    match parse_quote_tick(ticker, instrument, ts_init) {
                         Ok(quote) => {
                             if let Err(e) = sender.send(DataEvent::Data(Data::Quote(quote))) {
                                 log::error!("Failed to send quote: {e}");
@@ -474,15 +468,17 @@ impl KrakenSpotDataClient {
                 }
             }
             KrakenSpotWsMessage::Trade(trades) => {
+                let instruments = instruments.load();
+
                 for trade in &trades {
                     let Some(instrument) =
-                        Self::lookup_instrument(instruments, trade.symbol.as_str())
+                        lookup_instrument_in_snapshot(&instruments, trade.symbol.as_str())
                     else {
                         log::warn!("No instrument for symbol: {}", trade.symbol);
                         continue;
                     };
 
-                    match parse_trade_tick(trade, &instrument, ts_init) {
+                    match parse_trade_tick(trade, instrument, ts_init) {
                         Ok(tick) => {
                             if let Err(e) = sender.send(DataEvent::Data(Data::Trade(tick))) {
                                 log::error!("Failed to send trade: {e}");
@@ -496,15 +492,17 @@ impl KrakenSpotDataClient {
                 data,
                 is_snapshot: _,
             } => {
+                let instruments = instruments.load();
+
                 for book in &data {
                     let Some(instrument) =
-                        Self::lookup_instrument(instruments, book.symbol.as_str())
+                        lookup_instrument_in_snapshot(&instruments, book.symbol.as_str())
                     else {
                         log::warn!("No instrument for symbol: {}", book.symbol);
                         continue;
                     };
                     let sequence = book_sequence.load(Ordering::Relaxed);
-                    match parse_book_deltas(book, &instrument, sequence, ts_init) {
+                    match parse_book_deltas(book, instrument, sequence, ts_init) {
                         Ok(delta_vec) => {
                             if delta_vec.is_empty() {
                                 continue;
@@ -526,15 +524,17 @@ impl KrakenSpotDataClient {
                     return;
                 };
 
+                let instruments = instruments.load();
+
                 for ohlc in &ohlc_data {
                     let Some(instrument) =
-                        Self::lookup_instrument(instruments, ohlc.symbol.as_str())
+                        lookup_instrument_in_snapshot(&instruments, ohlc.symbol.as_str())
                     else {
                         log::warn!("No instrument for symbol: {}", ohlc.symbol);
                         continue;
                     };
 
-                    match parse_ws_bar(ohlc, &instrument, ts_init) {
+                    match parse_ws_bar(ohlc, instrument, ts_init) {
                         Ok(new_bar) => {
                             let key: (Ustr, u32) = (ohlc.symbol, ohlc.interval);
                             let new_interval_begin = UnixNanos::from(
@@ -1154,6 +1154,7 @@ mod tests {
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
     use nautilus_model::{
         enums::BookAction,
+        identifiers::Symbol,
         instruments::{InstrumentAny, currency_pair::CurrencyPair},
         types::{Currency, Price, Quantity},
     };

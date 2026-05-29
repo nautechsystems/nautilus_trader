@@ -49,14 +49,11 @@ use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderEventAny, OrderFilled},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    instruments::InstrumentAny,
     reports::FillReport,
     types::{Currency, Quantity},
 };
-
-use crate::common::consts::KRAKEN_VENUE;
 
 const DEDUP_CAPACITY: usize = 10_000;
 
@@ -494,15 +491,6 @@ pub(crate) fn fill_report_to_order_filled(
         report.venue_position_id,
         Some(report.commission),
     )
-}
-
-/// Looks up an instrument from the shared instruments cache by raw symbol.
-pub(crate) fn lookup_instrument(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    raw_symbol: &str,
-) -> Option<InstrumentAny> {
-    let instrument_id = InstrumentId::new(Symbol::new(raw_symbol), *KRAKEN_VENUE);
-    instruments.load().get(&instrument_id).cloned()
 }
 
 #[cfg(test)]

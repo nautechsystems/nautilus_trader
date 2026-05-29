@@ -483,8 +483,9 @@ mod tests {
             TimeInForce,
         },
         events::{
-            OrderAccepted, OrderAcceptedBatch, OrderCanceled, OrderCanceledBatch, OrderEvent,
-            OrderEventAny, OrderSubmitted, OrderSubmittedBatch, account::state::AccountState,
+            OrderAcceptedBatch, OrderCanceledBatch, OrderEvent, OrderEventAny, OrderSubmittedBatch,
+            account::state::AccountState,
+            order::spec::{OrderAcceptedSpec, OrderCanceledSpec, OrderSubmittedSpec},
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
@@ -908,16 +909,9 @@ mod tests {
     async fn test_execution_event_order_channel() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
 
-        let event = OrderSubmitted::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("EUR/USD.SIM"),
-            ClientOrderId::from("O-001"),
-            AccountId::from("SIM-001"),
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
+        let event = OrderSubmittedSpec::builder()
+            .client_order_id(ClientOrderId::from("O-001"))
+            .build();
 
         tx.send(ExecutionEvent::Order(OrderEventAny::Submitted(event)))
             .unwrap();
@@ -1143,16 +1137,9 @@ mod tests {
         time_evt_tx.send(handler).unwrap();
 
         // Send execution order event
-        let order_event = OrderSubmitted::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("EUR/USD.SIM"),
-            ClientOrderId::from("O-001"),
-            AccountId::from("SIM-001"),
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
+        let order_event = OrderSubmittedSpec::builder()
+            .client_order_id(ClientOrderId::from("O-001"))
+            .build();
         exec_evt_tx
             .send(ExecutionEvent::Order(OrderEventAny::Submitted(order_event)))
             .unwrap();
@@ -1447,26 +1434,12 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
 
         let events = vec![
-            OrderSubmitted::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-001"),
-                AccountId::from("SIM-001"),
-                UUID4::new(),
-                UnixNanos::from(1),
-                UnixNanos::from(2),
-            ),
-            OrderSubmitted::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-002"),
-                AccountId::from("SIM-001"),
-                UUID4::new(),
-                UnixNanos::from(3),
-                UnixNanos::from(4),
-            ),
+            OrderSubmittedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+            OrderSubmittedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-002"))
+                .build(),
         ];
 
         let batch = OrderSubmittedBatch::new(events);
@@ -1488,30 +1461,12 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
 
         let events = vec![
-            OrderAccepted::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-001"),
-                VenueOrderId::from("V-001"),
-                AccountId::from("SIM-001"),
-                UUID4::new(),
-                UnixNanos::from(1),
-                UnixNanos::from(2),
-                false,
-            ),
-            OrderAccepted::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-002"),
-                VenueOrderId::from("V-002"),
-                AccountId::from("SIM-001"),
-                UUID4::new(),
-                UnixNanos::from(3),
-                UnixNanos::from(4),
-                false,
-            ),
+            OrderAcceptedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+            OrderAcceptedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-002"))
+                .build(),
         ];
 
         let batch = OrderAcceptedBatch::new(events);
@@ -1533,30 +1488,12 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
 
         let events = vec![
-            OrderCanceled::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-001"),
-                UUID4::new(),
-                UnixNanos::from(1),
-                UnixNanos::from(2),
-                false,
-                None,
-                Some(AccountId::from("SIM-001")),
-            ),
-            OrderCanceled::new(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("EUR/USD.SIM"),
-                ClientOrderId::from("O-002"),
-                UUID4::new(),
-                UnixNanos::from(3),
-                UnixNanos::from(4),
-                false,
-                None,
-                Some(AccountId::from("SIM-001")),
-            ),
+            OrderCanceledSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+            OrderCanceledSpec::builder()
+                .client_order_id(ClientOrderId::from("O-002"))
+                .build(),
         ];
 
         let batch = OrderCanceledBatch::new(events);

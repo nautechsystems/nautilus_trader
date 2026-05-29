@@ -43,7 +43,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-        OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
+        OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
@@ -2487,6 +2488,138 @@ impl OrderMatchingEngine {
         )
     }
 
+    /// Liquidates all open positions for this instrument.
+    ///
+    /// Cancels open orders if `cancel_open_orders` is true, then closes every open
+    /// position at best bid/ask or the settlement price, emitting accepted and filled
+    /// events for each synthetic close order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the venue order ID generator cannot produce an ID for the synthetic
+    /// liquidation order (internal state inconsistency).
+    ///
+    /// Only positions whose instrument settles in `settlement_currency` are closed.
+    /// Matching engines for other settlement currencies are skipped, scoping
+    /// liquidation to the currency whose margin account breached the threshold.
+    pub fn liquidate_open_positions(
+        &mut self,
+        ts_now: UnixNanos,
+        cancel_open_orders: bool,
+        settlement_currency: Currency,
+    ) {
+        // Only liquidate positions settled in the breached currency.
+        if self.instrument.settlement_currency() != settlement_currency {
+            return;
+        }
+
+        if cancel_open_orders {
+            let open_orders: Vec<RestingOrder> = self.get_open_orders();
+            for order_info in &open_orders {
+                let order = {
+                    let cache = self.cache.borrow();
+                    cache.order_owned(&order_info.client_order_id)
+                };
+
+                if let Some(order) = order {
+                    self.cancel_order(&order, None);
+                }
+            }
+        }
+
+        let instrument_id = self.instrument.id();
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|pos| {
+                    (
+                        pos.trader_id,
+                        pos.strategy_id,
+                        pos.account_id,
+                        pos.id,
+                        OrderCore::closing_side(pos.side),
+                        pos.quantity,
+                    )
+                })
+                .collect()
+        };
+
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
+            // Pre-check: ensure a price source is available before emitting events.
+            let has_price = if closing_side == OrderSide::Sell {
+                self.best_bid_price().is_some() || self.settlement_price.is_some()
+            } else {
+                self.best_ask_price().is_some() || self.settlement_price.is_some()
+            };
+
+            if !has_price {
+                log::warn!(
+                    "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
+                );
+                continue;
+            }
+
+            let client_order_id = ClientOrderId::from(
+                format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
+            );
+            let order = OrderAny::Market(MarketOrder::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                closing_side,
+                quantity,
+                TimeInForce::Ioc,
+                UUID4::new(),
+                ts_now,
+                true, // reduce_only
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![Ustr::from(&format!(
+                    "LIQUIDATION_{}_CLOSE",
+                    self.venue
+                ))]),
+            ));
+
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            {
+                let mut cache = self.cache.borrow_mut();
+                if let Err(e) = cache.add_order(order.clone(), Some(position_id), None, false) {
+                    log::debug!("Liquidation order already in cache: {e}");
+                } else {
+                    drop(cache);
+                    self.publish_order_initialized(&order);
+                    self.cache
+                        .borrow_mut()
+                        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+                        .ok();
+                }
+            }
+
+            // Route through the normal market-order fill machinery (fill model,
+            // book depth consumption, slippage) instead of apply_fills directly.
+            self.account_ids.insert(trader_id, account_id);
+            self.generate_order_submitted(&order, account_id);
+            self.generate_order_accepted(&order, venue_order_id);
+            self.fill_market_order(client_order_id);
+        }
+    }
+
     /// Processes a new order submission.
     ///
     /// Validates the order against instrument precision, expiration, and contingency
@@ -2968,20 +3101,7 @@ impl OrderMatchingEngine {
             return Some(order);
         }
 
-        let is_activated = match &order {
-            OrderAny::TrailingStopMarket(o) => o.is_activated,
-            OrderAny::TrailingStopLimit(o) => o.is_activated,
-            _ => true,
-        };
-
-        let new_match_info = RestingOrder::new(
-            order.client_order_id(),
-            order.order_side().as_specified(),
-            order.order_type(),
-            order.trigger_price(),
-            order.price(),
-            is_activated,
-        );
+        let new_match_info = Self::matching_core_entry(&order);
 
         // Skip the delete+add when unchanged to preserve FIFO at the level
         let unchanged = self
@@ -5070,19 +5190,32 @@ impl OrderMatchingEngine {
             }
         }
 
-        let match_info = RestingOrder::new(
+        let match_info = Self::matching_core_entry(order);
+        self.core.add_order(match_info);
+    }
+
+    fn matching_core_entry(order: &OrderAny) -> RestingOrder {
+        let triggered_limit_style = matches!(
+            order.order_type(),
+            OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit
+        ) && order.is_triggered().is_some_and(|triggered| triggered);
+
+        RestingOrder::new(
             order.client_order_id(),
             order.order_side().as_specified(),
             order.order_type(),
-            order.trigger_price(),
+            if triggered_limit_style {
+                None
+            } else {
+                order.trigger_price()
+            },
             order.price(),
             match order {
                 OrderAny::TrailingStopMarket(o) => o.is_activated,
                 OrderAny::TrailingStopLimit(o) => o.is_activated,
                 _ => true,
             },
-        );
-        self.core.add_order(match_info);
+        )
     }
 
     fn expire_order(&mut self, order: &OrderAny) {
@@ -5302,7 +5435,7 @@ impl OrderMatchingEngine {
 
         match order.order_type() {
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
-                self.fill_limit_order(client_order_id);
+                self.trigger_limit_style_stop_order(client_order_id, order);
             }
             OrderType::StopMarket | OrderType::MarketIfTouched | OrderType::TrailingStopMarket => {
                 self.fill_market_order(client_order_id);
@@ -5313,6 +5446,136 @@ impl OrderMatchingEngine {
                     order.order_type()
                 );
             }
+        }
+    }
+
+    fn trigger_limit_style_stop_order(&mut self, client_order_id: ClientOrderId, order: OrderAny) {
+        if order.is_triggered().is_some_and(|triggered| triggered) {
+            let liquidity_side = match (order.price(), order.trigger_price()) {
+                (Some(price), Some(trigger_price)) => Self::determine_triggered_limit_liquidity(
+                    order.order_side(),
+                    price,
+                    trigger_price,
+                ),
+                _ => LiquiditySide::Maker,
+            };
+
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id)
+                && !matches!(
+                    cached_order.liquidity_side(),
+                    Some(LiquiditySide::Maker | LiquiditySide::Taker)
+                )
+            {
+                cached_order.set_liquidity_side(liquidity_side);
+            }
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        let event = self.create_order_triggered(&order);
+        let order = match self.cache.borrow_mut().update_order(&event) {
+            Ok(order) => order,
+            Err(e) => {
+                log::debug!(
+                    "Failed to apply triggered event for {} before fill: {e}",
+                    order.client_order_id(),
+                );
+                order
+            }
+        };
+        self.dispatch_order_event(event);
+
+        let trigger_price = order
+            .trigger_price()
+            .expect("Limit-style stop order must have a trigger price");
+        let price = order
+            .price()
+            .expect("Limit-style stop order must have a price");
+
+        let maker_inside = match order.order_side() {
+            OrderSide::Buy => self
+                .core
+                .ask
+                .is_some_and(|ask| trigger_price > price && price > ask),
+            OrderSide::Sell => self
+                .core
+                .bid
+                .is_some_and(|bid| trigger_price < price && price < bid),
+            OrderSide::NoOrderSide => false,
+        };
+
+        if maker_inside {
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                cached_order.set_liquidity_side(LiquiditySide::Maker);
+            }
+            self.resync_core_entry(client_order_id);
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        if self
+            .core
+            .is_limit_matched(order.order_side_specified(), price)
+        {
+            if order.is_post_only() {
+                let _ = self.core.delete_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+                let event = self.create_order_rejected(
+                    &order,
+                    format!(
+                        "POST_ONLY {} {} order limit px of {} would have been a TAKER: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    )
+                    .into(),
+                );
+
+                if let Err(e) = self.cache.borrow_mut().update_order(&event) {
+                    log::debug!(
+                        "Failed to apply rejected event for {} after post-only trigger: {e}",
+                        order.client_order_id(),
+                    );
+                }
+                self.dispatch_order_event(event);
+                return;
+            }
+
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                cached_order.set_liquidity_side(LiquiditySide::Taker);
+            }
+            self.resync_core_entry(client_order_id);
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+            cached_order.set_liquidity_side(Self::determine_triggered_limit_liquidity(
+                order.order_side(),
+                price,
+                trigger_price,
+            ));
+        }
+        self.resync_core_entry(client_order_id);
+    }
+
+    fn determine_triggered_limit_liquidity(
+        side: OrderSide,
+        price: Price,
+        trigger_price: Price,
+    ) -> LiquiditySide {
+        if (side == OrderSide::Buy && trigger_price > price)
+            || (side == OrderSide::Sell && trigger_price < price)
+        {
+            LiquiditySide::Maker
+        } else {
+            LiquiditySide::Taker
         }
     }
 
@@ -5385,16 +5648,30 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
+    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    fn create_order_rejected(&self, order: &OrderAny, reason: Ustr) -> OrderEventAny {
         let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
 
-        // Check if rejection is due to post-only
         let due_post_only = reason.as_str().starts_with("POST_ONLY");
 
-        let event = OrderEventAny::Rejected(OrderRejected::new(
+        OrderEventAny::Rejected(OrderRejected::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -5406,7 +5683,11 @@ impl OrderMatchingEngine {
             ts_now,
             false,
             due_post_only,
-        ));
+        ))
+    }
+
+    fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
+        let event = self.create_order_rejected(order, reason);
         self.dispatch_order_event(event);
     }
 
@@ -5549,9 +5830,9 @@ impl OrderMatchingEngine {
         self.dispatch_order_event(event);
     }
 
-    fn generate_order_triggered(&self, order: &OrderAny) {
+    fn create_order_triggered(&self, order: &OrderAny) -> OrderEventAny {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::Triggered(OrderTriggered::new(
+        OrderEventAny::Triggered(OrderTriggered::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -5562,7 +5843,11 @@ impl OrderMatchingEngine {
             false,
             order.venue_order_id(),
             order.account_id(),
-        ));
+        ))
+    }
+
+    fn generate_order_triggered(&self, order: &OrderAny) {
+        let event = self.create_order_triggered(order);
         self.dispatch_order_event(event);
     }
 

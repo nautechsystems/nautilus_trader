@@ -116,6 +116,36 @@ pub enum BybitSubmitOrderError {
     },
 }
 
+/// Error raised after Bybit accepts a cancel request envelope.
+#[derive(Debug, Error)]
+pub enum BybitCancelOrderError {
+    /// Bybit accepted the request envelope, but did not return an order ID.
+    #[error("No order_id in cancel response")]
+    MissingOrderId,
+    /// Bybit returned an order ID, but the immediate order lookup failed.
+    #[error("Order lookup failed after cancellation: {source}")]
+    PostCancelLookup {
+        /// Source lookup error.
+        #[source]
+        source: anyhow::Error,
+    },
+}
+
+/// Error raised after Bybit accepts a modify request envelope.
+#[derive(Debug, Error)]
+pub enum BybitModifyOrderError {
+    /// Bybit accepted the request envelope, but did not return an order ID.
+    #[error("No order_id in amend response")]
+    MissingOrderId,
+    /// Bybit returned an order ID, but the immediate order lookup failed.
+    #[error("Order lookup failed after amendment: {source}")]
+    PostModifyLookup {
+        /// Source lookup error.
+        #[source]
+        source: anyhow::Error,
+    },
+}
+
 impl From<HttpClientError> for BybitHttpError {
     fn from(error: HttpClientError) -> Self {
         Self::NetworkError(error.to_string())
@@ -143,6 +173,25 @@ impl From<BybitErrorResponse> for BybitHttpError {
             message: error.ret_msg,
         }
     }
+}
+
+pub(crate) fn is_bybit_ambiguous_order_error_code(code: i64) -> bool {
+    matches!(
+        code,
+        429 | 10000
+            | 10006
+            | 10016
+            | 10019
+            | 10403
+            | 10429
+            | 170001
+            | 170005
+            | 170007
+            | 170032
+            | 20003
+            | 20006
+            | 500000
+    )
 }
 
 #[cfg(test)]

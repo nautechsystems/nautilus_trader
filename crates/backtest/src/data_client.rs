@@ -17,6 +17,13 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{
+    RequestPoolSnapshot, SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects,
+    SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
+    UnsubscribePool, UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
+    UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+};
 use nautilus_common::{
     cache::Cache,
     clients::DataClient,
@@ -144,6 +151,47 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
+    // DeFi subscriptions/requests are served by replayed data; these silent overrides of the
+    // `DataClient` default stay here because a trait impl cannot be split across modules.
+    #[cfg(feature = "defi")]
+    fn subscribe_blocks(&mut self, _cmd: SubscribeBlocks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool(&mut self, _cmd: SubscribePool) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_swaps(&mut self, _cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_liquidity_updates(
+        &mut self,
+        _cmd: SubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_fee_collects(
+        &mut self,
+        _cmd: SubscribePoolFeeCollects,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_flash_events(
+        &mut self,
+        _cmd: SubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
     }
@@ -198,6 +246,45 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    fn unsubscribe_blocks(&mut self, _cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool(&mut self, _cmd: &UnsubscribePool) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_swaps(&mut self, _cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_liquidity_updates(
+        &mut self,
+        _cmd: &UnsubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_fee_collects(
+        &mut self,
+        _cmd: &UnsubscribePoolFeeCollects,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        _cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
         // No-op in backtest: data is replayed by the engine
         Ok(())
@@ -237,6 +324,11 @@ impl DataClient for BacktestDataClient {
         // No live ATM source in backtest; return Err so the engine fallback
         // creates the option-chain manager without an initial ATM price.
         anyhow::bail!("backtest data client cannot fetch forward prices")
+    }
+
+    #[cfg(feature = "defi")]
+    fn request_pool_snapshot(&self, _request: RequestPoolSnapshot) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 

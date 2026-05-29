@@ -15,6 +15,7 @@
 
 use std::{cmp::max, sync::Arc};
 
+use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{hex, string::formatting::Separable};
@@ -22,7 +23,7 @@ use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
-    pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
+    pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -37,7 +38,7 @@ use crate::{
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
-        client::HyperSyncClient,
+        client::{HyperSyncClient, PoolEventStreamItem},
         helpers::{extract_block_number, extract_event_signature_bytes},
     },
     rpc::{
@@ -541,7 +542,14 @@ impl BlockchainDataClientCore {
                 Err(anyhow::anyhow!("Sync cancelled"))
             }
             result = async {
-                while let Some(log) = pool_events_stream.next().await {
+                while let Some(item) = pool_events_stream.next().await {
+                    let log = match item {
+                        PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
+                            self.cache.cache_block_timestamp(number, timestamp);
+                            continue;
+                        }
+                        PoolEventStreamItem::Log(log) => log,
+                    };
                     let block_number = extract_block_number(&log)?;
                     blocks_processed += block_number - last_block_saved;
                     last_block_saved = block_number;
@@ -728,7 +736,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(swap_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for swap event")?;
         let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
@@ -754,7 +763,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(mint_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for mint event")?;
 
         let liquidity_update = mint_event.to_pool_liquidity_update(
             self.chain.clone(),
@@ -783,7 +793,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(burn_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for burn event")?;
 
         let liquidity_update = burn_event.to_pool_liquidity_update(
             self.chain.clone(),
@@ -812,7 +823,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(collect_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for collect event")?;
 
         let fee_collect = collect_event.to_pool_fee_collect(
             self.chain.clone(),
@@ -837,7 +849,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(flash_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for flash event")?;
 
         let flash = flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
 
@@ -913,8 +926,8 @@ impl BlockchainDataClientCore {
     /// Bootstraps a [`PoolProfiler`] with the latest state for a given pool.
     ///
     /// Uses two paths depending on whether the pool has been synced to the database:
-    /// - **Never synced**: Streams events from HyperSync → restores from on-chain RPC → returns `(profiler, true)`
-    /// - **Previously synced**: Syncs new events to DB → streams from DB → returns `(profiler, false)`
+    /// - **Never synced**: Streams events from HyperSync, restores from on-chain RPC, returns `(profiler, true)`.
+    /// - **Previously synced**: Syncs new events to DB, streams from DB, returns `(profiler, false)`.
     ///
     /// Both paths restore from the latest valid snapshot first (if available), otherwise initialize with pool's initial price.
     ///
@@ -1079,7 +1092,7 @@ impl BlockchainDataClientCore {
     /// - Event parsing or processing fails
     /// - DEX configuration is invalid
     async fn construct_pool_profiler_from_hypersync_rpc(
-        &self,
+        &mut self,
         mut profiler: PoolProfiler,
         from_position: Option<BlockPosition>,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
@@ -1144,7 +1157,14 @@ impl BlockchainDataClientCore {
             .await;
         tokio::pin!(pool_events_stream);
 
-        while let Some(log) = pool_events_stream.next().await {
+        while let Some(item) = pool_events_stream.next().await {
+            let log = match item {
+                PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
+                    self.cache.cache_block_timestamp(number, timestamp);
+                    continue;
+                }
+                PoolEventStreamItem::Log(log) => log,
+            };
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
@@ -1192,13 +1212,24 @@ impl BlockchainDataClientCore {
 
         profiler.finalize_reporting();
 
-        // Hydrate from the current RPC state
-        match self.get_on_chain_snapshot(&profiler).await {
-            Ok(on_chain_snapshot) => profiler.restore_from_snapshot(on_chain_snapshot)?,
-            Err(e) => log::error!(
-                "Failed to restore from on-chain snapshot: {e}, sending not hydrated state to client"
-            ),
-        }
+        let on_chain_snapshot = self
+            .get_on_chain_snapshot(&profiler)
+            .await
+            .with_context(|| {
+                let snapshot_block = profiler
+                    .last_processed_event
+                    .as_ref()
+                    .map_or(profiler.pool.creation_block, |event| event.number);
+
+                format!(
+                    "failed to restore pool {} from on-chain snapshot at block {} with {} ticks and {} positions",
+                    profiler.pool.address,
+                    snapshot_block.separate_with_commas(),
+                    profiler.get_active_tick_values().len().separate_with_commas(),
+                    profiler.get_all_position_keys().len().separate_with_commas()
+                )
+            })?;
+        profiler.restore_from_snapshot(on_chain_snapshot)?;
 
         Ok((profiler, true))
     }
@@ -1236,10 +1267,15 @@ impl BlockchainDataClientCore {
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
                     log::info!("Comparing profiler state with on-chain state...");
-                    let valid = compare_pool_profiler(profiler, &on_chain_snapshot);
+                    let comparison = compare_pool_profiler_detailed(profiler, &on_chain_snapshot);
+                    let valid = comparison.is_valid_for_snapshot();
                     if !valid {
                         log::error!(
                             "Pool profiler state does NOT match on-chain smart contract state"
+                        );
+                    } else if !comparison.is_exact_match() {
+                        log::warn!(
+                            "Pool profiler snapshot has a sqrt ratio mismatch only; accepting snapshot"
                         );
                     }
                     (valid, on_chain_snapshot.block_position)
@@ -1275,10 +1311,12 @@ impl BlockchainDataClientCore {
     /// Used for profiler state restoration after bootstrapping and validation.
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
         if profiler.pool.dex.name == DexType::UniswapV3 {
-            let last_processed_event = profiler
-                .last_processed_event
-                .clone()
-                .expect("We expect at least one processed event in the pool");
+            let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
+            let timestamp = self
+                .cache
+                .get_block_timestamp(last_processed_event.number)
+                .copied()
+                .context("missing block timestamp for on-chain snapshot")?;
             let on_chain_snapshot = self
                 .univ3_pool
                 .fetch_snapshot(
@@ -1287,6 +1325,8 @@ impl BlockchainDataClientCore {
                     profiler.get_active_tick_values().as_slice(),
                     &profiler.get_all_position_keys(),
                     last_processed_event,
+                    timestamp, // ts_event
+                    timestamp, // ts_init (same block timestamp)
                 )
                 .await?;
 
@@ -1297,6 +1337,18 @@ impl BlockchainDataClientCore {
                 profiler.pool.dex.name
             )
         }
+    }
+
+    fn last_processed_event_for_on_chain_snapshot(
+        profiler: &PoolProfiler,
+    ) -> anyhow::Result<BlockPosition> {
+        let Some(last_processed_event) = profiler.last_processed_event.clone() else {
+            anyhow::bail!(
+                "cannot fetch on-chain snapshot for pool {} without a processed event",
+                profiler.pool.address
+            );
+        };
+        Ok(last_processed_event)
     }
 
     /// Replays historical events for a pool to hydrate its profiler state.
@@ -1411,5 +1463,140 @@ impl BlockchainDataClientCore {
     /// proper cleanup of network connections and background tasks.
     pub async fn disconnect(&mut self) {
         self.hypersync_client.disconnect().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::{U160, address};
+    use nautilus_core::UnixNanos;
+    use nautilus_model::defi::{Chain, Token};
+    use rstest::rstest;
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    const WETH_USDT_POOL: &str = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36";
+    const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
+
+    #[rstest]
+    fn last_processed_event_for_on_chain_snapshot_rejects_unprocessed_profiler() {
+        let mut profiler = PoolProfiler::new(weth_usdt_pool());
+        profiler
+            .initialize(U160::from_str_radix("3cb0adde486484998be0b", 16).unwrap())
+            .expect("Known WETH/USDT initial sqrt price should initialize");
+
+        let error = BlockchainDataClientCore::last_processed_event_for_on_chain_snapshot(&profiler)
+            .expect_err("unprocessed profiler should not fetch on-chain state");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "cannot fetch on-chain snapshot for pool {} without a processed event",
+                profiler.pool.address
+            )
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
+    async fn live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails() {
+        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
+
+        let pool = weth_usdt_pool();
+        let chain = Arc::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+        );
+        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Ethereum UniswapV3 should be registered")
+            .dex
+            .clone();
+        let (hypersync_tx, _hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain)
+            .dex_ids(vec![DexType::UniswapV3])
+            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .use_hypersync_for_live_data(true)
+            .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
+            .build();
+        let mut core = BlockchainDataClientCore::new(
+            config,
+            Some(hypersync_tx),
+            None,
+            CancellationToken::new(),
+        );
+        core.cache
+            .add_dex(dex)
+            .await
+            .expect("DEX should be added to in-memory cache");
+
+        let block_position = BlockPosition::new(
+            WETH_USDT_CREATION_BLOCK,
+            "0x2e07c690f149223e4f290986277304ea6a05c6ee47ba303732166bc1b15cbafb".to_string(),
+            11,
+            27,
+        );
+        let mut profiler = PoolProfiler::new(pool);
+        profiler
+            .initialize(U160::from_str_radix("3cb0adde486484998be0b", 16).unwrap())
+            .expect("Known WETH/USDT initial sqrt price should initialize");
+        profiler.last_processed_event = Some(block_position.clone());
+
+        let result = core
+            .construct_pool_profiler_from_hypersync_rpc(profiler, Some(block_position))
+            .await;
+
+        let error = result.expect_err("RPC hydration failure should fail closed");
+        let error_message = format!("{error:?}");
+        assert!(
+            error_message.contains("failed to restore pool"),
+            "hydration error should include pool context, was {error_message}"
+        );
+        assert!(
+            error_message.to_lowercase().contains(WETH_USDT_POOL),
+            "hydration error should include pool address, was {error_message}"
+        );
+    }
+
+    fn weth_usdt_pool() -> SharedPool {
+        let chain = Arc::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+        );
+        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Ethereum UniswapV3 should be registered")
+            .dex
+            .clone();
+        let pool_address = address!("4e68ccd3e89f51c3074ca5072bbac773960dfa36");
+        let token0 = Token::new(
+            chain.clone(),
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        );
+        let token1 = Token::new(
+            chain.clone(),
+            address!("dAC17F958D2ee523a2206206994597C13D831ec7"),
+            "Tether USD".to_string(),
+            "USDT".to_string(),
+            6,
+        );
+
+        Arc::new(Pool::new(
+            chain,
+            dex,
+            pool_address,
+            PoolIdentifier::from_address(pool_address),
+            WETH_USDT_CREATION_BLOCK,
+            token0,
+            token1,
+            Some(3_000),
+            Some(60),
+            UnixNanos::default(),
+        ))
     }
 }

@@ -28,9 +28,9 @@ venue queries, or the live cache to explain past state.
 The event store provides Nautilus with a durable basis to:
 
 - Prove whether a sealed run is clean before replay or archive.
-- Inspect the exact command, report, and event sequence behind an order or agent intent.
+- Inspect the exact command, report, and event sequence behind an order or component intent.
 - Rebuild cache state from captured history, including a snapshot anchor plus the run tail.
-- Compare an agent decision with the engine-side messages that followed from it.
+- Trace an intent through the engine-side messages that followed from it.
 - Seal stale run files before the next run starts after a process exit or writer halt.
 
 ## Terms
@@ -50,7 +50,7 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 **Captured entries include**:
 
 - Execution commands such as submit, modify, and cancel.
-- Data subscription commands that define the actor, strategy, or agent observation window.
+- Data subscription commands that define the actor or strategy observation window.
 - Fired time events and generated order, position, and account events.
 - Raw venue execution reports before reconciliation synthesizes derived events.
 - Reconciliation outputs produced from those raw reports.
@@ -79,7 +79,7 @@ that the event store has already accepted.
 
 ```mermaid
 flowchart LR
-    Producer["Engine, adapter, strategy, or agent"] --> Bus["MessageBus publish/send"]
+    Producer["Engine, adapter, strategy, or component"] --> Bus["MessageBus publish/send"]
     Bus --> Tap["Capture tap"]
     Tap --> Adapter["BusCaptureAdapter"]
     Adapter --> Writer["EventStoreWriter"]
@@ -100,6 +100,24 @@ flowchart LR
 The writer uses a bounded channel. If the writer stalls past its configured threshold, Nautilus
 halts instead of dropping entries or allowing unaudited state changes.
 
+## Lifecycle options
+
+`EventStoreConfig` remains the serializable run policy. Process-local construction policy lives in
+`EventStoreLifecycleOptions`, which advanced callers pass through
+`EventStoreLifecycle::boot_with_options(...)`.
+
+By default, the lifecycle opens `RedbBackend` and installs the default encoder registry. Callers can
+use lifecycle options to:
+
+- Supply a custom encoder registry before the bus tap starts capture.
+- Supply a backend opener that returns any `EventStore` implementation for the new run.
+
+The backend opener is the simulation-safe path for memory capture. A DST harness or focused test can
+open `MemoryBackend` through the normal lifecycle, keep the same bus tap and writer semantics, and
+read the captured entries in-process after seal. Under `cfg(madsim)`, the writer commits each submit
+synchronously, so the captured `seq` order is deterministic. With a `MemoryBackend` opener, capture
+needs no `redb` run file.
+
 ## Entry model
 
 Each event-store entry is one captured message plus metadata:
@@ -116,22 +134,22 @@ Each event-store entry is one captured message plus metadata:
 `seq` orders replay. Timestamps help explain the run, but they do not override `seq`.
 
 The current secondary indices support lookup by `client_order_id` and `venue_order_id`. A
-`correlation_id` index can be added when a concrete forensics caller needs that lookup pattern;
+`correlation_id` index can be added when a concrete inspection caller needs that lookup pattern;
 until then, correlation scans can walk the captured stream.
 
 ## Correlation model
 
-Nautilus records three identity levels so forensics can answer scope, lineage, and message identity
+Nautilus records three identity levels so readers can answer scope, lineage, and message identity
 questions.
 
-- `correlation_id`: the logical workflow or chain. An agent `intent_id` is recorded in this field
+- `correlation_id`: the logical workflow or chain. A component `intent_id` is recorded in this field
   at the dispatch boundary.
 - `causation_id`: the direct parent message that caused this message.
 - `command_id`, `event_id`, or `report_id`: the identity of this specific message.
 
 ```mermaid
 flowchart TD
-    Intent["Agent intent_id"] --> Correlation["correlation_id"]
+    Intent["Component intent_id"] --> Correlation["correlation_id"]
     Command["SubmitOrder command_id"] --> Event["OrderAccepted event_id"]
     Event --> Fill["OrderFilled event_id"]
     Correlation --> Command
@@ -163,10 +181,27 @@ Each run file contains:
 
 The manifest records the run identity and reproducibility inputs:
 
-- `run_id`, `parent_run_id`, and `instance_id`.
-- `binary_hash`, `crate_versions`, `feature_flags`, and adapter versions.
-- `config_hash`, registered components, and optional seed.
-- `start_ts_init`, `end_ts_init`, `high_watermark`, and status.
+- Run identity:
+  - `run_id`
+  - `parent_run_id`
+  - `instance_id`
+
+- Build identity:
+  - `binary_hash`
+  - `crate_versions`
+  - `feature_flags`
+  - Adapter versions
+
+- Configuration identity:
+  - `config_hash`
+  - Registered components
+  - Optional seed
+
+- Lifecycle state:
+  - `start_ts_init`
+  - `end_ts_init`
+  - `high_watermark`
+  - Status
 
 Run status is one of `Running`, `Ended`, `CrashedRecovered`, or `Quarantined`.
 
@@ -223,31 +258,90 @@ sealed run without mutating it and reports `quarantine=not-performed`.
 
 ## Replay modes
 
-The event store supports three replay scopes:
-
-- Forensics replay: scan the event store by `seq` or order identifier.
-- Decision replay: join event-store entries with selected data catalog topics.
-- Full incident replay: replay the event-store stream with all relevant data catalog slices.
-
-Replay follows one ordering rule: apply entries in `seq` order. `ts_init` and `ts_publish` explain
-when messages happened, but `seq` is the durable replay order.
+Replay follows one ordering rule: apply event-store entries in `seq` order. `ts_init` and
+`ts_publish` explain when messages happened, but `seq` is the durable replay order.
 
 The Rust replay-input API keeps planning separate from execution:
 
-- `plan_forensics_replay_inputs` and `load_forensics_replay_inputs` return event-store entries
-  only.
-- `plan_decision_replay_inputs` and `load_decision_replay_inputs` join entries with
-  caller-selected catalog slices for decision analysis.
-- `plan_full_incident_replay_inputs` and `load_full_incident_replay_inputs` join entries with all
-  caller-selected slices for an incident window.
+- Event-store-only replay inputs return entries only.
+- Catalog-joined replay inputs add caller-selected catalog slices for context analysis.
 
-Decision and full incident planners take explicit `CatalogSliceSelector` values and a read-only
-`ReplayCatalog`. Planning resolves catalog time bounds from the event-store scan unless the
-selector supplies explicit bounds, reports missing catalog slices, and preserves `seq` as the
-entry ordering authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus
-catalog records grouped under their selected slice. These APIs do not open live venue clients, run
-strategies or actors, re-run reconciliation, delete files, or replay clock registration/cancel
-lifecycle.
+Catalog planners take explicit `CatalogSliceSelector` values and a read-only `ReplayCatalog`.
+Planning resolves catalog time bounds from the event-store scan unless the selector supplies
+explicit bounds, reports missing catalog slices, and preserves `seq` as the entry ordering
+authority. Loading returns `ReplayInputs`: event-store entries in `seq` order plus catalog records
+grouped under their selected slice.
+
+Rust callers can enable the off-by-default `persistence` feature and wrap a `ParquetDataCatalog`
+with `nautilus_event_store::ParquetReplayCatalog` to plan selected catalog files and
+filename-derived intervals. The bridge can load `quotes`, `trades`, and `bars` into
+typed `CatalogReplayRecord` values.
+
+:::note
+The persistence bridge is read-only: it uses catalog discovery and query APIs but **does not write
+to the catalog**. Unsupported catalog classes fail loading until replay adds a typed payload
+contract for that class.
+:::
+
+## Data sequence sidecar design
+
+:::note
+This section is a design target. Nautilus does not yet implement the sidecar writer, reader, or
+config flag.
+:::
+
+Exact data delivery order is not inferred from catalog timestamps. The compact sidecar design
+records data markers observed at the message-bus dispatch boundary, beside the event-store run,
+without writing full market-data payloads into `EventStoreEntry` rows.
+
+The sidecar can support one audit claim: when marker capture is enabled, Nautilus observed data
+delivery markers in `marker_seq` order at the bus boundary for that run, and each marker contains
+enough identity to join back to candidate catalog rows. It cannot prove that catalog timestamps
+alone define bus order, reconstruct a data point when the catalog row is absent or changed, prove
+venue send order before Nautilus observed the message, or say anything about runs where marker
+capture was disabled.
+
+Markers do not consume event-store `seq` values and do not create gaps in the entry table. Each
+marker has its own monotonically increasing `marker_seq` plus `event_seq_before`, the largest
+event-store `seq` assigned before the marker was observed. A sealed-run analyzer can derive the
+next event-store entry after a marker from `event_seq_before + 1`; markers that share the same
+`event_seq_before` are ordered by `marker_seq`. Event-store `seq` remains the replay-order
+authority for state-affecting entries.
+
+The minimal marker fields are:
+
+- `marker_seq`: run-local marker order.
+- `event_seq_before`: nearest prior event-store entry.
+- `topic`: bus topic observed by the tap.
+- `data_cls`: catalog class, such as `quotes`, `trades`, or `bars`.
+- `identifier`: instrument ID for quotes and trades, or bar type for bars.
+- `ts_event` and `ts_init`: catalog row timestamp keys.
+- `same_ts_ordinal`: observed ordinal among markers with the same `data_cls`, `identifier`, and
+  `ts_init`.
+- `record_fingerprint`: fixed-size hash over the canonical typed row fields.
+
+`same_ts_ordinal` and `record_fingerprint` disambiguate duplicate same-timestamp data without
+storing prices, quantities, sizes, or MessagePack payloads. If two catalog rows are byte-identical
+for the same key and timestamp, the sidecar can prove that Nautilus observed two deliveries in a
+specific marker order; it cannot name a unique physical catalog row after catalog compaction
+rewrites row order.
+
+The stable contract is the marker schema, opt-in capture and reader primitives, gap-free marker
+verification, and catalog join rules. Analysis tools can build on that contract to select windows,
+interpret venue-specific data, rank or cluster markers, present reports, and package run bundles.
+
+The sidecar stays off by default when implemented. A separate config flag enables marker capture,
+and the disabled path installs no data marker writer. Cache replay and live restart do not read
+this sidecar: snapshot-tail replay still applies event-store entries in `seq` order, and live
+restart still boots from cache-owned state plus the event-store parent link.
+
+These APIs **do not**:
+
+- Open live venue clients
+- Run strategies or actors
+- Re-run reconciliation
+- Delete files
+- Replay the clock registration/cancel lifecycle
 
 Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores
 cache state from the sealed run, records that run as the parent of the fresh child run, and skips
@@ -255,10 +349,23 @@ live engines, clients, startup, and venue reconciliation.
 
 The cache replay loader is state-only. It restores the cache-owned snapshot, scans the event-store
 tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
-`Cache`. It does not publish replayed entries to the live message bus, run strategy or actor code,
-query venues, run reconciliation, derive identifiers again, or re-arm clocks. Fired `TimeEvent`s and
-raw venue reports are forensic records on this path; replay applies the synthesized order, position,
-and account events captured later in the run.
+`Cache`. Supported payloads include:
+
+- Synthesized account, order, and position events
+- Captured order lists
+- Complete data responses for instruments, quotes, trades, funding rates, and bars
+
+It **does not**:
+
+- Publish replayed entries to the live message bus
+- Run strategy or actor code
+- Query venues
+- Run reconciliation
+- Derive identifiers again
+- Re-arm clocks
+
+Fired `TimeEvent`s and raw venue reports are inspection records on this path; replay applies the
+synthesized order, position, and account events captured later in the run.
 
 ## Snapshot-anchored recovery
 
@@ -278,7 +385,7 @@ sequenceDiagram
     Replay->>Replay: Apply tail in seq order
 ```
 
-Recovery uses four cases:
+Recovery cases are ordered by how far the message progressed:
 
 - Before enqueue: the message never reached the writer, so producer retry policy applies.
 - After enqueue, before commit: the in-flight batch is not durable, so the high-watermark does
@@ -329,8 +436,8 @@ surface:
 - Process-isolated verification reports truncated or zero-tailed run files as corrupt.
 - Cache replay reconstructs the same observed account, order, and position state as a live cache
   for generated captured event streams.
-- Catalog-joined replay input planning covers selected slices, missing slices, time bounds,
-  scope-specific loaders, and event-store `seq` ordering.
+- Catalog-joined replay input planning covers selected slices, missing slices, time bounds, and
+  event-store `seq` ordering.
 - Crash recovery seals `Running` predecessors as `Ended`, `CrashedRecovered`, or `Quarantined`
   based on the durable tail, and only `CrashedRecovered` runs become parents.
 
@@ -419,11 +526,18 @@ The event store and deterministic simulation testing (DST) solve different parts
 
 - The event store supplies the captured input history.
 - DST controls scheduling, time, seeded randomness, and other in-scope nondeterminism.
-- Together they let a run identified by `(seed, binary_hash, config_hash, schema_version, log)`
-  reproduce engine behavior inside the deterministic simulation scope.
+- Together they let a run reproduce engine behavior inside the deterministic simulation scope when
+  identified by:
+  - `seed`
+  - `binary_hash`
+  - `config_hash`
+  - `schema_version`
+  - `log`
 
-Under `cfg(madsim)`, tests use a synchronous in-memory event store instead of the writer thread, so
-they can assert against an authoritative log without disk I/O or thread scheduling.
+Under `cfg(madsim)`, the writer commits synchronously instead of spawning its writer thread. When a
+simulation harness supplies a `MemoryBackend` opener through lifecycle options, capture stays
+in-process and does not require `redb` files. Redb remains the default durable backend outside that
+advanced options path.
 
 Adapter network I/O remains outside bit-identical replay unless Nautilus captures the relevant
 raw inputs and routes them through deterministic interfaces.

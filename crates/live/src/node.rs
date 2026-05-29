@@ -2776,22 +2776,11 @@ mod tests {
     }
 
     fn stub_order_event() -> ExecutionEvent {
-        use nautilus_core::{UUID4, UnixNanos};
-        use nautilus_model::{
-            events::OrderSubmitted,
-            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
-        };
+        use nautilus_model::events::order::spec::OrderSubmittedSpec;
 
-        ExecutionEvent::Order(OrderEventAny::Submitted(OrderSubmitted::new(
-            TraderId::from("TESTER-001"),
-            StrategyId::from("S-001"),
-            InstrumentId::from("TEST.VENUE"),
-            ClientOrderId::from("O-001"),
-            AccountId::from("TEST-001"),
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )))
+        ExecutionEvent::Order(OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder().build(),
+        ))
     }
 
     fn stub_account_event() -> ExecutionEvent {
@@ -2927,70 +2916,36 @@ mod tests {
     }
 
     fn stub_submitted_batch_event() -> ExecutionEvent {
-        use nautilus_core::{UUID4, UnixNanos};
         use nautilus_model::{
-            events::{OrderSubmitted, OrderSubmittedBatch},
-            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
+            events::{OrderSubmittedBatch, order::spec::OrderSubmittedSpec},
+            identifiers::ClientOrderId,
         };
 
         let events = vec![
-            OrderSubmitted::new(
-                TraderId::from("TESTER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::from("O-001"),
-                AccountId::from("TEST-001"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            ),
-            OrderSubmitted::new(
-                TraderId::from("TESTER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::from("O-002"),
-                AccountId::from("TEST-001"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            ),
+            OrderSubmittedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+            OrderSubmittedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-002"))
+                .build(),
         ];
 
         ExecutionEvent::OrderSubmittedBatch(OrderSubmittedBatch::new(events))
     }
 
     fn stub_canceled_batch_event() -> ExecutionEvent {
-        use nautilus_core::{UUID4, UnixNanos};
         use nautilus_model::{
-            events::{OrderCanceled, OrderCanceledBatch},
-            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
+            events::{OrderCanceledBatch, order::spec::OrderCanceledSpec},
+            identifiers::ClientOrderId,
         };
 
         let events = vec![
-            OrderCanceled::new(
-                TraderId::from("TESTER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::from("O-001"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-                false,
-                None,
-                Some(AccountId::from("TEST-001")),
-            ),
-            OrderCanceled::new(
-                TraderId::from("TESTER-001"),
-                StrategyId::from("S-001"),
-                InstrumentId::from("TEST.VENUE"),
-                ClientOrderId::from("O-002"),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-                false,
-                None,
-                Some(AccountId::from("TEST-001")),
-            ),
+            OrderCanceledSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+            OrderCanceledSpec::builder()
+                .client_order_id(ClientOrderId::from("O-002"))
+                .build(),
         ];
 
         ExecutionEvent::OrderCanceledBatch(OrderCanceledBatch::new(events))

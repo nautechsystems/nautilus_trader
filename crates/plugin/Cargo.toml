@@ -85,3 +85,38 @@ crate-type = ["cdylib"]
 required-features = []
 doc = false
 test = false
+
+[[example]]
+name = "bad_missing_init_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "bad_null_manifest_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "bad_abi_manifest_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "bad_invalid_manifest_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false
+
+[[example]]
+name = "bad_init_panic_plugin"
+crate-type = ["cdylib"]
+required-features = []
+doc = false
+test = false

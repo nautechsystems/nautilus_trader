@@ -451,6 +451,9 @@ pub enum DydxMarketStatus {
     Initializing,
     /// Market is in final settlement.
     FinalSettlement,
+    /// A status value not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 impl From<DydxMarketStatus> for MarketStatusAction {
@@ -462,6 +465,8 @@ impl From<DydxMarketStatus> for MarketStatusAction {
             DydxMarketStatus::PostOnly => Self::Quoting,
             DydxMarketStatus::Initializing => Self::PreOpen,
             DydxMarketStatus::FinalSettlement => Self::Close,
+            // No safe market action for an unmodeled status; emit no change.
+            DydxMarketStatus::Unknown => Self::None,
         }
     }
 }
@@ -493,6 +498,9 @@ pub enum DydxFillType {
     Deleveraged,
     /// Deleveraging (offsetting account).
     Offsetting,
+    /// A fill type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX liquidity side (maker/taker).
@@ -556,6 +564,9 @@ impl From<LiquiditySide> for DydxLiquidity {
 pub enum DydxTickerType {
     /// Perpetual market ticker.
     Perpetual,
+    /// A market type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX trade type.
@@ -589,6 +600,9 @@ pub enum DydxTradeType {
     StopLimit,
     /// Take-profit order (limit).
     TakeProfitLimit,
+    /// A trade type not modeled by this enum.
+    #[serde(other)]
+    Unknown,
 }
 
 /// dYdX transfer types.
@@ -787,6 +801,24 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_reference_enums_tolerate_unmodeled_values() {
+        // Reference/descriptive enums must degrade gracefully on a new venue value
+        // rather than hard-fail deserialization of the whole message.
+        let status: DydxMarketStatus = serde_json::from_str("\"SOME_NEW_STATUS\"").unwrap();
+        let ticker: DydxTickerType = serde_json::from_str("\"SPOT\"").unwrap();
+        let trade: DydxTradeType = serde_json::from_str("\"SOME_NEW_TRADE\"").unwrap();
+        let fill: DydxFillType = serde_json::from_str("\"SOME_NEW_FILL\"").unwrap();
+        assert_eq!(status, DydxMarketStatus::Unknown);
+        assert_eq!(ticker, DydxTickerType::Unknown);
+        assert_eq!(trade, DydxTradeType::Unknown);
+        assert_eq!(fill, DydxFillType::Unknown);
+        assert_eq!(
+            MarketStatusAction::from(DydxMarketStatus::Unknown),
+            MarketStatusAction::None
+        );
+    }
 
     #[rstest]
     fn test_order_status_conversion() {

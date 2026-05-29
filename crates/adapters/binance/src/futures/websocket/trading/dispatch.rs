@@ -172,6 +172,12 @@ pub(crate) fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
             }
         }
+        BinanceFuturesWsTradingMessage::RequestFailed { request_id, msg } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::error!(
+                "WS trading request failed without structured venue response: request_id={request_id}, {msg}"
+            );
+        }
         BinanceFuturesWsTradingMessage::Connected => {
             log::info!("WS trading API connected");
         }

@@ -22,7 +22,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
@@ -149,6 +149,9 @@ impl BacktestNode {
                     .queue_position(venue_config.queue_position())
                     .oto_full_trigger(venue_config.oto_trigger_mode() == OtoTriggerMode::Full)
                     .price_protection_points(venue_config.price_protection_points())
+                    .liquidation_enabled(venue_config.liquidation_enabled())
+                    .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
+                    .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
                     .build();
                 engine.add_venue(sim_config)?;
             }
@@ -560,6 +563,9 @@ fn dispatch_query(
         }
         NautilusDataType::InstrumentStatus => {
             catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize)
+        }
+        NautilusDataType::OptionGreeks => {
+            catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize)
         }
         NautilusDataType::InstrumentClose => {
             catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize)

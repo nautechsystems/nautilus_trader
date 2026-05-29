@@ -1,0 +1,22 @@
+{
+  "trade_id": "0445f96a-10fb-4fdc-a0f9-eed94a2f32e1",
+  "instrument_name": "ETH-USDC",
+  "timestamp": 1775245899929,
+  "trade_price": "2050",
+  "trade_amount": "0.1",
+  "mark_price": "2052.7251201831555",
+  "index_price": "2052.7251201831555",
+  "direction": "sell",
+  "quote_id": null,
+  "rfq_id": null,
+  "wallet": "0xB45Be91c81430D0098cbA69A59Bd45323CF33B80",
+  "subaccount_id": 143373,
+  "tx_status": "settled",
+  "tx_hash": "0x0e4a010450dfd52d8f7e43dcbd6dc745cecd3d18bfa391e1c742b81a919c06d0",
+  "trade_fee": "0",
+  "expected_rebate": "0",
+  "liquidity_role": "maker",
+  "realized_pnl": "0.2764236087424108",
+  "realized_pnl_excl_fees": "0.2764236087424108",
+  "extra_fee": "0"
+}

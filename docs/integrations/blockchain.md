@@ -1,92 +1,241 @@
 # Blockchain
 
-## Core Primitives
+## Overview
 
-Nautilus Trader's blockchain integration is built on foundational primitives defined in the DeFi domain model (`nautilus_model::defi`). These building blocks provide type-safe abstractions for working with EVM-based blockchains.
+The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
+NautilusTrader data model. It combines three services:
+
+- HyperSync for high-throughput historical blocks and contract logs.
+- HTTP RPC for contract calls, Multicall reads, and final on-chain state hydration.
+- Postgres for optional durable cache state, pool metadata, decoded events, and snapshots.
+
+HyperSync and RPC serve different roles. HyperSync is the fast event source. HTTP RPC remains the
+source of truth for current contract state, including Uniswap V3 slot state, active ticks, and
+positions.
+
+## Core primitives
+
+The DeFi domain model lives in `nautilus_model::defi`.
 
 ### Chain
 
-The `Chain` struct represents a blockchain network with its connection endpoints and metadata. Each chain instance contains:
+`Chain` defines the target blockchain and its default service endpoints.
 
-**Fields:**
+| Field                       | Type         | Description                                                        |
+|-----------------------------|--------------|--------------------------------------------------------------------|
+| `name`                      | `Blockchain` | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
+| `chain_id`                  | `u32`        | EVM chain ID, such as `1` for Ethereum.                            |
+| `hypersync_url`             | `String`     | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
+| `rpc_url`                   | `Option`     | Optional direct RPC endpoint stored on the chain model.            |
+| `native_currency_decimals`  | `u8`         | Native gas token decimal precision, usually `18`.                  |
 
-- `name` (`Blockchain`): The blockchain network type (enum of 80+ supported chains)
-- `chain_id` (`u32`): Unique EVM chain identifier (e.g., 1 for Ethereum, 42161 for Arbitrum)
-- `hypersync_url` (`String`): Endpoint for high-performance Hypersync data streaming
-- `rpc_url` (`Option<String>`): Optional HTTP/WSS RPC endpoint for direct node communication
-- `native_currency_decimals` (`u8`): Decimal precision for the chain's native gas token (typically 18)
+Chains can be loaded by numeric ID with `Chain::from_chain_id` or by name with
+`Chain::from_chain_name`.
 
-**Chain Retrieval:**
-
-Chains can be retrieved by numeric ID or string name (case-insensitive):
-
-- **By Chain ID:** Lookup using EVM chain identifier with `from_chain_id`
-- **By Name:** Lookup using blockchain name (case-insensitive: "ethereum", "Ethereum", "ETHEREUM" all work) with `from_chain_name`
-- **Static Instances:** Pre-configured chains available as constants
-
-Each chain has a native currency used for gas fees. The `native_currency()` method returns a properly configured Currency instance:
-
-| Chain Family                                    | Code | Name         | Decimals |
+| Chain family                                    | Code | Name         | Decimals |
 |-------------------------------------------------|------|--------------|----------|
-| Ethereum & L2s (Arbitrum, Base, Optimism, etc.) | ETH  | Ethereum     | 18       |
+| Ethereum and L2s                                | ETH  | Ethereum     | 18       |
 | Polygon                                         | POL  | Polygon      | 18       |
 | Avalanche                                       | AVAX | Avalanche    | 18       |
 | BSC                                             | BNB  | Binance Coin | 18       |
 
-## Contracts
+### DEX and pools
 
-High-performance interface for querying EVM smart contracts with type-safe Rust abstractions. Supports token metadata, DEX pools, and DeFi protocols through efficient batch operations.
+DEX integrations register factory addresses, event signatures, parser functions, and AMM type.
+Pool definitions bind a chain, DEX, pool contract, token pair, fee tier, tick spacing, and creation
+block into a stable Nautilus instrument ID.
 
-### Base (Multicall3)
+Uniswap V3 and compatible concentrated-liquidity pools also use:
 
-Batches multiple contract calls into a single RPC request using Multicall3 (`0xcA11bde05977b3631167028862bE2a173976CA11`).
-
-- Always uses `allow_failure: true` for partial success and detailed errors
-- Executes atomically in the same block
-- Errors: `RpcError` (network issues), `AbiDecodingError` (decode failures)
-
-### ERC20
-
-Inherits from `BaseContract` to use Multicall3 for efficient batch operations. Fetches token metadata, handling non-standard implementations.
-
-**Methods:**
-
-- `fetch_token_info`: Single token metadata (uses multicall internally for name, symbol, decimals)
-- `batch_fetch_token_info`: Multiple tokens in one multicall (3 calls per token)
-- `enforce_token_fields`: Validate non-empty name/symbol
-
-**Error Types:**
-
-1. **`CallFailed`** - Contract missing or function not implemented -> Skip token
-2. **`DecodingError`** - Raw bytes instead of ABI encoding (e.g., `0x5269636f...`) -> Skip token
-3. **`EmptyTokenField`** - Function returns empty string -> Skip if enforced
-
-**Best Practices:**
-
-- Skip pools with any token errors
-- `raw_data` field preserves original response for debugging
-- Non-standard tokens often have other issues (transfer fees, rebasing)
+- `Initialize(uint160,int24)` for initial price state.
+- `Mint` and `Burn` events for position and tick state replay.
+- `Swap` events for live pool price movement.
+- HTTP RPC final-state reads for `slot0`, liquidity, active ticks, and position data.
 
 ## Configuration
 
-| Option                            | Default            | Description |
-|-----------------------------------|--------------------|-------------|
-| `chain`                           | Required           | `nautilus_trader.model.Chain` to synchronize (e.g., `Chain.ETHEREUM`). |
-| `dex_ids`                         | Required           | Sequence of `DexType` identifiers describing which DEX integrations to enable. |
-| `http_rpc_url`                    | Required           | HTTPS RPC endpoint used for EVM calls and Multicall requests. |
-| `wss_rpc_url`                     | `None`             | Optional WSS endpoint for streaming live updates. |
-| `rpc_requests_per_second`         | `None`             | Optional throttle for outbound RPC calls (requests per second). |
-| `multicall_calls_per_rpc_request` | `200`              | Maximum number of Multicall targets batched per RPC request. |
-| `use_hypersync_for_live_data`     | `True`             | When `True`, bootstrap and stream using Hypersync for lower‑latency diffs. |
-| `from_block`                      | `None`             | Optional starting block height for historical backfill. |
-| `pool_filters`                    | `DexPoolFilters()` | Filtering rules applied when selecting DEX pools to monitor. |
-| `postgres_cache_database_config`  | `None`             | Optional `PostgresConnectOptions` enabling on‑disk caching of decoded pool state. |
-| `proxy_url`                       | `None`             | Optional proxy URL for HTTP and WebSocket transports. |
-| `transport_backend`               | `Sockudo`          | WebSocket transport backend. |
+| Option                            | Default            | Description                                            |
+|-----------------------------------|--------------------|--------------------------------------------------------|
+| `chain`                           | Required           | Target `Chain`, such as Ethereum or Arbitrum.          |
+| `dex_ids`                         | `[]`               | DEX integrations to register and sync.                 |
+| `http_rpc_url`                    | Required           | HTTP RPC endpoint for contract reads and Multicall.    |
+| `wss_rpc_url`                     | `None`             | Optional WSS RPC endpoint for RPC live streams.        |
+| `rpc_requests_per_second`         | `None`             | Optional RPC request throttle.                         |
+| `multicall_calls_per_rpc_request` | `200`              | Requested maximum Multicall targets per RPC request.   |
+| `use_hypersync_for_live_data`     | `false` in Rust    | When true, live block and event streams use HyperSync. |
+| `from_block`                      | `None`             | Optional start block for historical sync.              |
+| `pool_filters`                    | `DexPoolFilters()` | Pool universe filtering rules.                         |
+| `postgres_cache_database_config`  | `None`             | Optional Postgres cache configuration.                 |
+| `proxy_url`                       | `None`             | Optional HTTP and WebSocket proxy URL.                 |
+| `transport_backend`               | `Tungstenite`      | WebSocket transport backend.                           |
 
-## Contributing
-
-:::info
-For additional features or to contribute to the Blockchain adapter, please see our
-[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::note
+Pool snapshot requests currently require a Postgres cache database. The in-memory cache can hold
+tokens and pools, but latest pool profiler bootstrap reads snapshot and event state through the
+cache database path.
 :::
+
+## Environment
+
+Set the HyperSync token and RPC URLs outside the repository. Do not commit `.env` files containing
+secrets.
+
+```fish
+set -x ENVIO_API_TOKEN "<envio-token>"
+set -x RPC_HTTP_URL "https://your-rpc.example"
+set -x RPC_WSS_URL "wss://your-rpc.example"
+```
+
+For local `.env` usage:
+
+```dotenv
+ENVIO_API_TOKEN=<envio-token>
+RPC_HTTP_URL=https://your-rpc.example
+RPC_WSS_URL=wss://your-rpc.example
+```
+
+`ENVIO_API_TOKEN` is required by the Rust HyperSync client. Missing or malformed tokens fail client
+construction before any query is sent.
+
+## Local services
+
+The development compose file starts Postgres, Redis, and pgAdmin.
+
+```fish
+make start-services
+make init-db
+```
+
+The default Postgres service listens on `127.0.0.1:5432` with database `nautilus`, user
+`nautilus`, and password `pass`.
+
+Check that the schema exists:
+
+```fish
+docker exec nautilus-database psql -U nautilus -d nautilus -Atc \
+    "select count(*) from information_schema.tables where table_schema='public'"
+```
+
+For destructive DeFi test runs, use a separate database or resettable Docker volume. Pool discovery
+and snapshot tests can write many rows to `token`, `pool`, `pool_*_event`, `pool_snapshot`,
+`pool_position`, and `pool_tick`.
+
+## Data flow
+
+### Pool discovery
+
+Pool discovery streams DEX factory events from HyperSync, fetches ERC-20 metadata through RPC, and
+stores valid tokens and pools in the cache. Pools with invalid or empty token metadata can be
+filtered out through `DexPoolFilters`.
+
+### Live data
+
+When `use_hypersync_for_live_data` is true, the adapter subscribes to blocks through HyperSync and
+then fetches matching DEX contract events for subscribed pools. When false, WSS RPC is used where a
+streaming implementation exists.
+
+### Snapshot bootstrap
+
+For Uniswap V3 snapshots, bootstrap uses a two-stage process:
+
+- Replay historical Initialize, Mint, and Burn events from HyperSync to rebuild ticks and
+  positions.
+- Fetch the final on-chain state through HTTP RPC and Multicall, then restore the profiler from
+  that snapshot.
+
+If final RPC hydration fails, the adapter must fail closed. It must not emit a snapshot built from
+replayed events with stale price state.
+
+## Contracts
+
+### Base contract and Multicall3
+
+`BaseContract` batches contract calls through Multicall3 at
+`0xcA11bde05977b3631167028862bE2a173976CA11`.
+
+- Calls use `allow_failure: true` so individual contract call failures can be reported.
+- Reads execute against a single block context.
+- Transport and provider failures surface as RPC errors.
+
+### ERC-20 metadata
+
+`Erc20Contract` reads `name`, `symbol`, and `decimals` through Multicall. Non-standard token
+contracts may return malformed strings, raw bytes, or empty fields. The adapter can skip pools with
+tokens that fail metadata validation.
+
+### Uniswap V3 pools
+
+`UniswapV3PoolContract` reads global pool state, active ticks, and positions. Large pools can exceed
+provider limits if too many ticks or positions are packed into a single RPC call. The current safety
+behavior is fail-closed on hydration failure; successful delivery for very large pools depends on
+provider limits or future chunked/minimal hydration work.
+
+## Smoke tests
+
+### HyperSync authentication
+
+```fish
+curl -fsS --max-time 15 \
+    -H "Authorization: Bearer $ENVIO_API_TOKEN" \
+    https://1.hypersync.xyz/height
+```
+
+Expected result: JSON with a numeric `height`.
+
+### Small HyperSync query
+
+```fish
+set query (string join '' \
+    '{"from_block":25170900,' \
+    '"to_block":25170901,' \
+    '"include_all_blocks":true,' \
+    '"field_selection":{"block":["number","timestamp","hash"]}}')
+
+curl -sS --max-time 30 \
+    -H "Authorization: Bearer $ENVIO_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$query" \
+    https://1.hypersync.xyz/query/arrow-ipc \
+    -o /dev/null \
+    -w "http_code=%{http_code} size_download=%{size_download}\n"
+```
+
+Expected result: HTTP `200` with a non-zero response size.
+
+### Adapter compile check
+
+```fish
+cargo check -p nautilus-blockchain --features hypersync
+```
+
+### Live fail-closed regression
+
+This ignored test uses real HyperSync replay for the Ethereum WETH/USDT Uniswap V3 pool and a
+deliberately invalid local HTTP RPC URL. It verifies that final RPC hydration failure returns an
+error instead of allowing a stale snapshot through the construction path.
+
+```fish
+cargo test -p nautilus-blockchain --features hypersync \
+    live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails \
+    -- --ignored --nocapture
+```
+
+Expected result: one ignored test passes. On a live network this can take several minutes.
+
+## Operational notes
+
+- Use HyperSync for high-volume historical log scans.
+- Use HTTP RPC for final contract state and validation.
+- Use a paid or high-limit RPC provider for large Uniswap V3 pools.
+- Keep `ENVIO_API_TOKEN`, RPC keys, and Postgres credentials outside version control.
+- Use a separate Postgres database for repeatable DeFi test runs that write pool snapshots.
+- Treat failed final-state hydration as a hard failure for emitted snapshots.
+
+## Current limitations
+
+- Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
+  final-state Multicall hydration.
+- `multicall_calls_per_rpc_request` documents the intended batching limit, but some final snapshot
+  paths still need chunking hardening.
+- A full successful WETH/USDT or WETH/USDC delivery test needs a real HTTP RPC provider that can
+  serve the final-state reads, or the adapter needs minimal/chunked hydration first.

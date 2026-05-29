@@ -95,6 +95,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         The configuration for the client.
     name : str, optional
         The custom client ID.
+    account_address : str, optional
+        The resolved execution account address for REST queries and WebSocket subscriptions.
 
     """
 
@@ -108,6 +110,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         instrument_provider: HyperliquidInstrumentProvider,
         config: HyperliquidExecClientConfig,
         name: str | None = None,
+        account_address: str | None = None,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -172,26 +175,23 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         self._fee_refresh_task: asyncio.Task | None = None
 
-        # Get user address from HTTP client for WebSocket subscriptions.
-        # Resolution order: account_address (agent wallet) → vault_address → EOA
-        self._user_address: str | None = None
-        try:
-            eoa_address = self._client.get_user_address()
-            self._user_address = config.account_address or config.vault_address or eoa_address
-            self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
+        self._account_address = account_address
+        if self._account_address is None:
+            try:
+                self._account_address = nautilus_pyo3.hyperliquid_resolve_execution_account_address(
+                    private_key=config.private_key,
+                    vault_address=config.vault_address,
+                    account_address=config.account_address,
+                    environment=environment,
+                )
+            except Exception as e:
+                self._log.warning(f"Could not resolve account address: {e}")
 
-            if config.account_address:
-                self._log.info(
-                    f"Account address (agent wallet, WS subscriptions): {config.account_address}",
-                    LogColor.BLUE,
-                )
-            elif config.vault_address:
-                self._log.info(
-                    f"Vault address (WS subscriptions): {config.vault_address}",
-                    LogColor.BLUE,
-                )
-        except Exception as e:
-            self._log.warning(f"Could not get user address: {e}")
+        if self._account_address:
+            self._log.info(
+                f"Account address (REST/WS subscriptions): {self._account_address}",
+                LogColor.BLUE,
+            )
 
     @property
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -244,16 +244,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
-        if self._user_address:
-            await self._ws_client.subscribe_order_updates(self._user_address)
+        if self._account_address:
+            await self._ws_client.subscribe_order_updates(self._account_address)
             self._log.info(
-                f"Subscribed to order updates for {self._user_address}",
+                f"Subscribed to order updates for {self._account_address}",
                 LogColor.BLUE,
             )
 
-            await self._ws_client.subscribe_user_events(self._user_address)
+            await self._ws_client.subscribe_user_events(self._account_address)
             self._log.info(
-                f"Subscribed to user events (includes fills) for {self._user_address}",
+                f"Subscribed to user events (includes fills) for {self._account_address}",
                 LogColor.BLUE,
             )
 

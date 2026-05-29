@@ -30,8 +30,8 @@ use std::ops::Deref;
 use nautilus_core::Params;
 use nautilus_model::identifiers::{AccountId, ClientId, ClientOrderId};
 
-/// Query-account command. Mirrors the arguments to
-/// [`Strategy::query_account`](nautilus_trading::strategy::Strategy::query_account).
+/// Query-account command. Mirrors the arguments to `Strategy::query_account`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAccountCommand {
     /// The account identifier to query.
@@ -94,11 +94,11 @@ impl Deref for QueryAccountHandle {
     }
 }
 
-/// Query-order command. Mirrors the arguments to
-/// [`Strategy::query_order`](nautilus_trading::strategy::Strategy::query_order).
+/// Query-order command. Mirrors the arguments to `Strategy::query_order`.
 ///
 /// The host resolves `client_order_id` against the live cache to materialise
 /// the `&OrderAny` reference the trait method requires.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryOrderCommand {
     /// The client order identifier of the order to query.

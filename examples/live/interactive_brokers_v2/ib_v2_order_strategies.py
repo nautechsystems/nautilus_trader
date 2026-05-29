@@ -12,6 +12,11 @@ import os
 from typing import Any
 from uuid import uuid4
 
+from _common import default_es_future_instrument_id
+from _common import default_es_put_option_instrument_id
+from _common import default_es_put_spread_instrument_id
+from _common import default_ym_future_instrument_id
+
 from nautilus_trader.core import nautilus_pyo3 as pyo3
 
 
@@ -214,7 +219,7 @@ class OptionGreeksStrategy(pyo3.Strategy):  # type: ignore[name-defined]
         )
         self.instrument_id = env_instrument_id(
             "IB_V2_OPTION_INSTRUMENT_ID",
-            "ESM6 P6800.IB",
+            default_es_put_option_instrument_id(),
         )
         self._subscribed = False
         self._count = 0
@@ -244,7 +249,7 @@ class OptionGreeksStrategy(pyo3.Strategy):  # type: ignore[name-defined]
 
 class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
     strategy_id_value = "IB-V2-ORDER-001"
-    instrument_id_value = "ESM6.IB"
+    instrument_id_value = default_es_future_instrument_id()
 
     def __init__(self) -> None:
         super().__init__(
@@ -603,34 +608,21 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
 
 class SpreadOrderStrategy(IbV2OrderStrategy):
     strategy_id_value = "IB-V2-SPREAD-STRATEGY"
-    instrument_id_value = "ESM6P6800.IB"
+    instrument_id_value = default_es_put_spread_instrument_id()
 
     def __init__(self) -> None:
         super().__init__()
+        self.instrument_id = env_instrument_id(
+            "IB_V2_SPREAD_INSTRUMENT_ID",
+            self.instrument_id_value,
+        )
         self._flatten_submitted = False
 
     def submit_example_orders(self) -> None:
-        ib = pyo3.interactive_brokers
         order = self.market_order(
             self.client_order_id("SPREAD"),
             pyo3.OrderSide.BUY,
             env_quantity("IB_V2_SPREAD_QUANTITY"),
-            tags=[
-                ib_order_tags(
-                    spreadLegs=[
-                        {
-                            "localSymbol": "ESM6 P6800",
-                            "action": ib.IbLegAction.BUY.as_str(),
-                            "ratio": 1,
-                        },
-                        {
-                            "localSymbol": "ESM6 P6775",
-                            "action": ib.IbLegAction.SELL.as_str(),
-                            "ratio": 1,
-                        },
-                    ],
-                ),
-            ],
         )
         self.submit_ib_order(order)
 
@@ -659,7 +651,7 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
 
 class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
     strategy_id_value = "IB-V2-DB-ID-STRATEGY"
-    instrument_id_value = "YMM6.XCBT"
+    instrument_id_value = default_ym_future_instrument_id()
 
     def __init__(self) -> None:
         super().__init__()

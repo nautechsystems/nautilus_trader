@@ -1289,6 +1289,17 @@ pub fn parse_fill_report(
             );
         }
         crate::common::enums::DydxFillType::Limit => {}
+        crate::common::enums::DydxFillType::Unknown => {
+            log::warn!(
+                "Unmodeled dYdX fill type: {} id={} order_id={} side={:?} size={} price={}",
+                instrument_id,
+                fill.id,
+                fill.order_id,
+                order_side,
+                fill.size,
+                fill.price,
+            );
+        }
     }
 
     let size_precision = instrument.size_precision();

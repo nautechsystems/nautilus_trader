@@ -45,6 +45,7 @@ use crate::{
 fn ws_data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
     match data {
         Data::Custom(custom) => Py::new(py, custom).map(|obj| obj.into_any()),
+        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|obj| obj.into_any()),
         other => Ok(data_to_pycapsule(py, other)),
     }
 }

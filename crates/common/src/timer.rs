@@ -35,9 +35,8 @@ use ustr::Ustr;
 ///
 /// Coerces zero to one to ensure a valid `NonZeroU64`.
 #[must_use]
-#[expect(clippy::missing_panics_doc)] // Value is coerced to >= 1
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
-    NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
+    NonZeroU64::new(interval_ns).unwrap_or(NonZeroU64::MIN)
 }
 
 #[repr(C)]
@@ -497,10 +496,18 @@ mod tests {
     use rstest::*;
     use ustr::Ustr;
 
-    use super::{TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler};
+    use super::{TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval};
     use crate::msgbus::{
         BusTap, Endpoint, MStr, MessagingSwitchboard, Topic, clear_bus_tap, set_bus_tap,
     };
+
+    #[rstest]
+    #[case(0, 1)]
+    #[case(1, 1)]
+    #[case(25, 25)]
+    fn test_create_valid_interval(#[case] interval_ns: u64, #[case] expected: u64) {
+        assert_eq!(create_valid_interval(interval_ns).get(), expected);
+    }
 
     #[rstest]
     fn test_test_timer_pop_event() {

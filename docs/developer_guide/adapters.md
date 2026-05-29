@@ -1226,15 +1226,18 @@ deserialization. The output enum drops shapes the handler consumes internally an
 variants (`Authenticated`, `SendFailed`) that originate in handler logic, not on the wire.
 
 Include `OrderResponse` for venue acknowledgements (place, cancel, amend) and `SendFailed` for
-WebSocket send failures after retries are exhausted. The execution client dispatch layer converts
-these into Nautilus rejection events (`OrderRejected`, `OrderCancelRejected`, etc.).
+WebSocket send failures after retries are exhausted. The execution client dispatch layer may
+convert `OrderResponse` into Nautilus rejection events when the venue explicitly rejects the
+command. It must treat `SendFailed` as an unknown outcome and leave the order state open to
+reconciliation.
 
 **Conversion in data/exec client:**
 
 The data client's message loop matches on `{Venue}WsMessage` variants and calls parse functions
 to produce Nautilus domain types (`Data`, `OrderBookDeltas`, etc.). The execution client's
-dispatch layer handles `OrderResponse`, `SendFailed`, and `Orders` variants. This keeps
-the handler focused on I/O and deserialization while the client layers own domain conversion.
+dispatch layer handles `OrderResponse`, `SendFailed`, and `Orders` variants. `SendFailed`
+records that the venue outcome is unknown; it is not a rejection. This keeps the handler focused
+on I/O and deserialization while the client layers own domain conversion.
 
 The execution dispatch converts order and fill messages using a two-tier routing contract:
 
@@ -1304,6 +1307,40 @@ venues without unbounded memory growth.
 
 ### Error handling
 
+#### Order command outcome policy
+
+Adapters must emit these rejection events only from venue-originating signals:
+
+- `OrderRejected`.
+- `OrderModifyRejected`.
+- `OrderCancelRejected`.
+
+Positive venue evidence includes structured order responses, per-order batch responses, or order
+status messages that explicitly report a rejection.
+
+Local validation is not a venue rejection:
+
+- Validate submit commands before `OrderSubmitted` and emit `OrderDenied` when validation fails.
+- If submit validation fails after `OrderSubmitted`, log the failure and leave the order in flight.
+- If cancel or modify validation fails locally, log a warning and do not emit a rejection event.
+
+Do not emit rejection events for errors that leave the venue outcome unknown. Unknown outcomes
+include transport errors, WebSocket send failures, request timeouts, disconnects, canceled local
+tasks, missing acknowledgements, HTTP 5xx responses, rate limits, retry exhaustion, parse failures
+after a request may have reached the venue, and whole-batch request failures without per-order
+venue results.
+
+When the outcome is unknown, leave the order in its current in-flight state and let WebSocket
+updates, in-flight checks, open-order polling, startup reconciliation, or explicit query commands
+resolve the final state. For batch commands, emit rejection events only for per-order venue
+results that unambiguously reject the command; a whole-request failure must not become one
+rejection per order.
+
+Cancel and modify errors need venue-specific allowlists. A generic venue error such as "not
+found", "already closed", or "unknown order" can mean the order filled or canceled before the
+request was processed. Emit `OrderCancelRejected` or `OrderModifyRejected` only when the venue
+semantics make the command rejection unambiguous.
+
 #### Client-side error propagation
 
 Channel send failures (client -> handler) should propagate loudly as `Result<(), Error>`:
@@ -1357,7 +1394,7 @@ impl MyWsFeedHandler {
         match self.send_with_retry(payload, Some(vec![RATE_LIMIT_KEY])).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                // Emit SendFailed so the exec client dispatch can produce OrderRejected
+                // Emit SendFailed so dispatch can record an unknown outcome.
                 let _ = self.out_tx.send(MyWsMessage::SendFailed {
                     request_id: request_id.clone(),
                     client_order_id: Some(client_order_id),
@@ -1382,8 +1419,8 @@ fn should_retry_error(error: &MyWsError) -> bool {
 
 - Client propagates channel failures immediately (handler unavailable).
 - Handler retries transient WebSocket failures (network issues, timeouts).
-- Handler emits `SendFailed` when retries are exhausted; the exec client dispatch converts
-  these into Nautilus rejection events (`OrderRejected`, `OrderCancelRejected`).
+- Handler emits `SendFailed` when retries are exhausted; the exec client dispatch records an
+  unknown outcome and waits for reconciliation or a later venue update.
 - Use `RetryManager` from `nautilus_network::retry` for consistent backoff.
 
 ### Naming conventions
@@ -1611,6 +1648,15 @@ Use the following conventions when mirroring upstream schemas in Rust.
 - Define streaming payload types in `src/websocket/messages.rs`, giving each venue topic a struct or enum that mirrors the upstream JSON.
 - Apply the same naming guidance as REST models: rely on blanket casing renames and keep field names aligned with the venue unless syntax forces a change; consider serde helpers such as `#[serde(tag = "op")]` or `#[serde(flatten)]` and document the choice.
 - Note any intentional deviations from the upstream schema in code comments and module docs so other contributors can follow the mapping quickly.
+
+### Enum hardening for open venue value sets
+
+A strict enum with no fallback hard-fails the whole message the first time the venue sends a value it does not model. Choose the behavior by what the field drives:
+
+- Reference/descriptive (instrument or product type, market status, ticker type, public trade type): add an `Unknown` fallback so a new value degrades gracefully. Use `#[serde(other)] Unknown`, or a `deserialize_{field}_or_unknown` shim (see `coinbase/src/common/parse.rs`) when the enum also derives `strum::EnumString`. Warn and map `Unknown` to a skip or safe default; never fabricate a value.
+- Order/fill/position state (order/position status, order/fill type, liquidity, time-in-force, trigger fields): keep strict, no catch-all. An unmodeled value must fail deserialization so the handler logs it loudly rather than let the engine run out of sync with the venue.
+
+Model known values explicitly instead of via a catch-all: a documented `"unknown"` sentinel becomes one variant mapped to a safe default with a warning (see `kraken/src/common/enums.rs`); a changelog-named value like `FillOrKill` becomes a real variant.
 
 ---
 

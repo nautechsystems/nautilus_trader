@@ -325,21 +325,14 @@ auto-cancels the order when the position is closed by other means.
 Pass `close_position` via the `params` dictionary on `StopMarket` or `MarketIfTouched` orders.
 Cannot be combined with `reduce_only`.
 
-<Tabs items={['Python', 'Rust']}>
-<Tab value="Python">
-
-```python
-strategy.submit_order(order, params={"close_position": True})
-```
-
-</Tab>
-<Tab value="Rust">
-```rust
+```rust tab="Rust"
 let params = Params::from([("close_position", true.into())]);
 let cmd = SubmitOrder::new(order).with_params(params);
 ```
-</Tab>
-</Tabs>
+
+```python tab="Python"
+strategy.submit_order(order, params={"close_position": True})
+```
 
 :::info
 Nautilus omits `quantity` and `reduceOnly` from the API request when `close_position` is set.

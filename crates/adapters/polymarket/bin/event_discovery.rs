@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let http_client = PolymarketGammaHttpClient::new(None, 60, RetryConfig::default())?;
-    let provider = PolymarketInstrumentProvider::new(http_client.clone());
+    let provider = PolymarketInstrumentProvider::new(http_client.clone(), None);
 
     // ---- Step 1: List available tags ----
     println!("=== Available Tags ===\n");
@@ -168,7 +168,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     });
 
-    let mut provider = PolymarketInstrumentProvider::with_filter(http_client, Arc::new(filter));
+    let mut provider =
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();

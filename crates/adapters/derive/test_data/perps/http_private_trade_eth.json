@@ -1,0 +1,21 @@
+{
+  "direction": "buy",
+  "index_price": "3500",
+  "instrument_name": "ETH-PERP",
+  "is_transfer": false,
+  "label": "alpha-strategy",
+  "liquidity_role": "maker",
+  "mark_price": "3499.5",
+  "order_id": "order-abc",
+  "quote_id": null,
+  "realized_pnl": "12.5",
+  "subaccount_id": 42,
+  "timestamp": 1700000000000,
+  "trade_amount": "0.5",
+  "trade_fee": "0.02",
+  "trade_id": "trade-xyz",
+  "trade_price": "3499.0",
+  "tx_hash": "0xhash",
+  "tx_status": "settled",
+  "wallet": "0xwallet"
+}

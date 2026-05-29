@@ -255,19 +255,11 @@ impl Portfolio {
 
         let update_order_handler = {
             let cache = cache.clone();
-            let clock = clock.clone();
             let inner = inner_weak.clone();
             TypedHandler::from(move |event: &OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
-                    update_order(
-                        &cache,
-                        &clock,
-                        &inner_rc,
-                        config,
-                        event,
-                        OrderUpdateSource::Topic,
-                    );
+                    on_order_event(&cache, &inner_rc, event);
                 }
             })
         };
@@ -2244,6 +2236,7 @@ fn update_order(
         match event {
             OrderEventAny::Accepted(_)
             | OrderEventAny::Canceled(_)
+            | OrderEventAny::Expired(_)
             | OrderEventAny::Rejected(_)
             | OrderEventAny::Updated(_)
             | OrderEventAny::Filled(_) => {}
@@ -2252,17 +2245,17 @@ fn update_order(
             }
         }
 
-        let order = if let Some(order) = cache_ref.order(&event.client_order_id()) {
-            order
-        } else {
+        let order = cache_ref.order(&event.client_order_id());
+        if order.is_none() && !matches!(event, OrderEventAny::Filled(_)) {
             log::error!(
                 "Cannot update order: {} not found in the cache",
                 event.client_order_id()
             );
             return; // No Order Found
-        };
+        }
 
-        if matches!(event, OrderEventAny::Rejected(_)) && order.order_type() != OrderType::StopLimit
+        if matches!(event, OrderEventAny::Rejected(_))
+            && order.is_some_and(|order| order.order_type() != OrderType::StopLimit)
         {
             return; // No change to account state
         }
@@ -2295,12 +2288,14 @@ fn update_order(
     };
 
     if let OrderEventAny::Filled(order_filled) = event {
-        let (post_balance, _state) =
-            inner
-                .borrow()
-                .accounts
-                .update_balances(working_account, &instrument, *order_filled);
-        working_account = post_balance;
+        if !instrument.is_spread() {
+            let (post_balance, _state) = inner.borrow().accounts.update_balances(
+                working_account,
+                &instrument,
+                *order_filled,
+            );
+            working_account = post_balance;
+        }
 
         cache.borrow_mut().cache_account_owned(working_account);
 
@@ -2340,6 +2335,16 @@ fn update_order(
         clock.borrow().timestamp_ns(),
     );
 
+    let publish_account_state =
+        !matches!(source, OrderUpdateSource::Endpoint) || matches!(event, OrderEventAny::Filled(_));
+
+    if !publish_account_state
+        && let Some(account_state) = account_state.as_ref()
+        && let Err(e) = working_account.apply(account_state.clone())
+    {
+        log::error!("Cannot apply generated account state: {e}");
+    }
+
     let updated_account_id = working_account.id();
 
     if account_state.is_some() || matches!(event, OrderEventAny::Filled(_)) {
@@ -2357,16 +2362,58 @@ fn update_order(
     }
 
     if let Some(account_state) = account_state {
-        msgbus::publish_account_state(
-            format!("events.account.{updated_account_id}").into(),
-            &account_state,
-        );
+        if publish_account_state {
+            msgbus::publish_account_state(
+                format!("events.account.{updated_account_id}").into(),
+                &account_state,
+            );
+        }
     } else {
         log::debug!("Added pending calculation for {}", instrument.id());
         inner.borrow_mut().pending_calcs.insert(instrument.id());
     }
 
     log::debug!("Updated {event}");
+}
+
+fn on_order_event(
+    cache: &Rc<RefCell<Cache>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    event: &OrderEventAny,
+) {
+    if let OrderEventAny::Filled(order_filled) = event {
+        inner
+            .borrow_mut()
+            .pre_position_fill_events
+            .remove(&order_filled.event_id);
+        return;
+    }
+
+    let account_id = match event.account_id() {
+        Some(account_id) => account_id,
+        None => return,
+    };
+
+    match event {
+        OrderEventAny::Accepted(_)
+        | OrderEventAny::Canceled(_)
+        | OrderEventAny::Expired(_)
+        | OrderEventAny::Rejected(_)
+        | OrderEventAny::Updated(_) => {}
+        _ => return,
+    }
+
+    let account_state = cache
+        .borrow()
+        .account(&account_id)
+        .and_then(|account| account.last_event());
+
+    if let Some(account_state) = account_state {
+        msgbus::publish_account_state(
+            format!("events.account.{account_id}").into(),
+            &account_state,
+        );
+    }
 }
 
 fn update_position(

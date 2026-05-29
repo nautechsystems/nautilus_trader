@@ -34,6 +34,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    account::resolve_execution_account_address,
     common::{
         consts::{HYPERLIQUID, HYPERLIQUID_POST_ONLY_WOULD_MATCH},
         enums::{
@@ -75,6 +76,24 @@ fn py_hyperliquid_cloid_from_client_order_id(client_order_id: ClientOrderId) -> 
 #[pyo3(name = "hyperliquid_product_type_from_symbol")]
 fn py_hyperliquid_product_type_from_symbol(symbol: &str) -> PyResult<HyperliquidProductType> {
     HyperliquidProductType::from_symbol(symbol).map_err(to_pyvalue_err)
+}
+
+/// Resolve the Hyperliquid execution account address for REST queries and WebSocket subscriptions.
+///
+/// # Errors
+///
+/// Returns an error if the selected vault address or private key is invalid.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.hyperliquid")]
+#[pyo3(name = "hyperliquid_resolve_execution_account_address", signature = (private_key=None, vault_address=None, account_address=None, environment=HyperliquidEnvironment::Mainnet))]
+fn py_hyperliquid_resolve_execution_account_address(
+    private_key: Option<&str>,
+    vault_address: Option<&str>,
+    account_address: Option<&str>,
+    environment: HyperliquidEnvironment,
+) -> PyResult<Option<String>> {
+    resolve_execution_account_address(private_key, vault_address, account_address, environment)
+        .map_err(to_pyvalue_err)
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -151,6 +170,10 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         py_hyperliquid_cloid_from_client_order_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_hyperliquid_resolve_execution_account_address,
         m
     )?)?;
     m.add_class::<HyperliquidDataClientConfig>()?;

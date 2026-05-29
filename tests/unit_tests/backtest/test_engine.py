@@ -156,6 +156,16 @@ class TestBacktestEngine:
         assert self.engine.backtest_end is None
         assert self.engine.iteration == 0  # No exceptions raised
 
+    def test_reset_preserves_strategies(self):
+        # Arrange
+        self.engine.add_strategy(Strategy())
+
+        # Act
+        self.engine.reset()
+
+        # Assert
+        assert len(self.engine.trader.strategies()) == 1
+
     def test_clear_actors_with_no_actors(self):
         # Arrange, Act, Assert
         self.engine.clear_actors()

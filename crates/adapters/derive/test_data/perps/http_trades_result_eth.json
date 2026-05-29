@@ -1,0 +1,30 @@
+{
+  "trades": [
+    {
+      "direction": "sell",
+      "index_price": "3500",
+      "instrument_name": "ETH-PERP",
+      "is_transfer": false,
+      "label": "",
+      "liquidity_role": "taker",
+      "mark_price": "3499",
+      "order_id": "o-1",
+      "quote_id": null,
+      "realized_pnl": "0",
+      "subaccount_id": 7,
+      "timestamp": 1700000000000,
+      "trade_amount": "1",
+      "trade_fee": "0.05",
+      "trade_id": "t-1",
+      "trade_price": "3499",
+      "tx_hash": "0xhash",
+      "tx_status": "settled",
+      "wallet": "0xwallet"
+    }
+  ],
+  "pagination": {
+    "count": 1,
+    "num_pages": 1
+  },
+  "subaccount_id": 7
+}

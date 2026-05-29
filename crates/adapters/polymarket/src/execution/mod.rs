@@ -30,7 +30,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -102,6 +102,10 @@ use crate::{
     },
 };
 
+type PendingSubmitMap = Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>;
+type PendingFillMap = Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>;
+type PendingOrderReportMap = Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>;
+
 /// Live execution client for the Polymarket prediction market.
 #[derive(Debug)]
 pub struct PolymarketExecutionClient {
@@ -120,10 +124,38 @@ pub struct PolymarketExecutionClient {
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
     fill_tracker: Arc<OrderFillTrackerMap>,
-    pending_submits: Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>,
-    pending_fills: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
-    pending_cancels: Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_submits: PendingSubmitMap,
+    pending_cancels: PendingCancelTracker,
+    pending_fills: PendingFillMap,
+    pending_order_reports: PendingOrderReportMap,
+}
+
+#[derive(Clone, Debug, Default)]
+struct PendingCancelTracker {
+    client_order_ids: Arc<Mutex<AHashSet<ClientOrderId>>>,
+}
+
+impl PendingCancelTracker {
+    fn insert(&self, client_order_id: ClientOrderId) {
+        self.client_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(client_order_id);
+    }
+
+    fn remove(&self, client_order_id: &ClientOrderId) -> bool {
+        self.client_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id)
+    }
+
+    fn contains(&self, client_order_id: &ClientOrderId) -> bool {
+        self.client_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .contains(client_order_id)
+    }
 }
 
 impl PolymarketExecutionClient {
@@ -219,9 +251,9 @@ impl PolymarketExecutionClient {
             neg_risk_index: Arc::new(AtomicMap::new()),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
             pending_submits: Arc::new(Mutex::new(FifoCacheMap::default())),
+            pending_cancels: PendingCancelTracker::default(),
             pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
             pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
-            pending_cancels: Arc::new(Mutex::new(AHashSet::new())),
         })
     }
 
@@ -384,6 +416,13 @@ impl PolymarketExecutionClient {
             .unwrap_or(false)
     }
 
+    fn get_neg_risk_from_snapshot(
+        neg_risk_index: &AHashMap<InstrumentId, bool>,
+        instrument_id: &InstrumentId,
+    ) -> bool {
+        neg_risk_index.get(instrument_id).copied().unwrap_or(false)
+    }
+
     fn load_instruments_from_cache(&self) {
         let cache = self.core.cache();
         let instruments: Vec<InstrumentAny> = cache
@@ -491,6 +530,7 @@ impl PolymarketExecutionClient {
                             &order_id_str,
                             venue_order_id,
                             &emitter,
+                            &pending_cancels,
                             clock,
                         )
                         .await;
@@ -519,6 +559,7 @@ impl PolymarketExecutionClient {
                             &order_id_str,
                             venue_order_id,
                             &emitter,
+                            &pending_cancels,
                             clock,
                         )
                         .await;
@@ -669,6 +710,7 @@ impl PolymarketExecutionClient {
                             &order_id_str,
                             venue_order_id,
                             &emitter,
+                            &pending_cancels,
                             clock,
                         )
                         .await;
@@ -735,6 +777,7 @@ impl PolymarketExecutionClient {
                                 &order_id_str,
                                 venue_order_id,
                                 &emitter,
+                                &pending_cancels,
                                 clock,
                             )
                             .await;
@@ -1030,6 +1073,7 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
+        let neg_risk_index = self.neg_risk_index.load();
 
         for order_init in &cmd.order_inits {
             let Some(order) = self
@@ -1088,7 +1132,10 @@ impl ExecutionClient for PolymarketExecutionClient {
                     quantity: order.quantity(),
                     time_in_force: order.time_in_force(),
                     post_only: order.is_post_only(),
-                    neg_risk: self.get_neg_risk(&order.instrument_id()),
+                    neg_risk: Self::get_neg_risk_from_snapshot(
+                        &neg_risk_index,
+                        &order.instrument_id(),
+                    ),
                     expire_time: order.expire_time(),
                     tick_decimals: instrument.price_precision() as u32,
                 },
@@ -1240,6 +1287,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                                         &order_id_str,
                                         venue_order_id,
                                         &emitter,
+                                        &pending_cancels,
                                         clock,
                                     )
                                     .await;
@@ -1310,13 +1358,6 @@ impl ExecutionClient for PolymarketExecutionClient {
                 "Cannot cancel order that is not open: {}",
                 cmd.client_order_id
             );
-            let ts_now = self.clock.get_time_ns();
-            self.emitter.emit_order_cancel_rejected(
-                order_ref,
-                order_ref.venue_order_id(),
-                &format!("Order is not open (status: {:?})", order_ref.status()),
-                ts_now,
-            );
             return Ok(());
         }
 
@@ -1336,10 +1377,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                             "Cancel for {} deferred, venue_order_id not yet available",
                             cmd.client_order_id
                         );
-                        self.pending_cancels
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .insert(cmd.client_order_id);
+                        self.pending_cancels.insert(cmd.client_order_id);
                         return Ok(());
                     }
                 }
@@ -1365,13 +1403,12 @@ impl ExecutionClient for PolymarketExecutionClient {
                     );
                 }
                 Err(e) => {
-                    let ts_now = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected(
-                        &order_clone,
-                        Some(venue_order_id),
-                        &format!("HTTP request failed: {e}"),
-                        ts_now,
+                    log::error!(
+                        "Cancel outcome unknown for {} ({}), awaiting reconciliation: {e}",
+                        order_clone.client_order_id(),
+                        venue_order_id,
                     );
+                    return Err(anyhow::Error::new(e).context("cancel order failed"));
                 }
             }
             Ok(())
@@ -1804,7 +1841,7 @@ fn process_cancel_result(
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
-) {
+) -> CancelResponseStatus {
     if let Some(reason_opt) = response.not_canceled.get(venue_order_id_str) {
         let reason = reason_opt.as_deref().unwrap_or("unknown reason");
         match CancelOutcome::classify(reason) {
@@ -1819,7 +1856,29 @@ fn process_cancel_result(
                 emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &msg, ts_now);
             }
         }
+        return CancelResponseStatus::PerOrderResult;
     }
+
+    if response
+        .canceled
+        .iter()
+        .any(|order_id| order_id == venue_order_id_str)
+    {
+        return CancelResponseStatus::PerOrderResult;
+    }
+
+    log::warn!(
+        "Cancel response for {} did not include per-order result for {}",
+        order.client_order_id(),
+        venue_order_id
+    );
+    CancelResponseStatus::MissingPerOrderResult
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CancelResponseStatus {
+    PerOrderResult,
+    MissingPerOrderResult,
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1830,9 +1889,9 @@ async fn handle_batch_order_responses(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
-    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_fills: &PendingFillMap,
+    pending_order_reports: &PendingOrderReportMap,
+    pending_cancels: &PendingCancelTracker,
     pending_tasks: &Arc<Mutex<Vec<JoinHandle<()>>>>,
     stopping: &Arc<AtomicBool>,
     account_id: AccountId,
@@ -1899,6 +1958,7 @@ async fn handle_batch_order_responses(
         for (order, order_id_str, venue_order_id) in deferred {
             let submitter = submitter.clone();
             let emitter = emitter.clone();
+            let pending_cancels = pending_cancels.clone();
 
             let handle = get_runtime().spawn(async move {
                 execute_deferred_cancel(
@@ -1907,6 +1967,7 @@ async fn handle_batch_order_responses(
                     &order_id_str,
                     venue_order_id,
                     &emitter,
+                    &pending_cancels,
                     clock,
                 )
                 .await;
@@ -1921,14 +1982,11 @@ fn reject_submit_order(
     reason: &str,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
-    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_cancels: &PendingCancelTracker,
 ) {
     let ts_now = clock.get_time_ns();
     emitter.emit_order_rejected(order, reason, ts_now, false);
-    pending_cancels
-        .lock()
-        .expect(MUTEX_POISONED)
-        .remove(&order.client_order_id());
+    pending_cancels.remove(&order.client_order_id());
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1996,10 +2054,10 @@ async fn handle_single_order_response(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    pending_submits: &Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
-    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_submits: &PendingSubmitMap,
+    pending_fills: &PendingFillMap,
+    pending_order_reports: &PendingOrderReportMap,
+    pending_cancels: &PendingCancelTracker,
     account_id: AccountId,
 ) {
     match result {
@@ -2023,6 +2081,7 @@ async fn handle_single_order_response(
                     &order_id_str,
                     venue_order_id,
                     emitter,
+                    pending_cancels,
                     clock,
                 )
                 .await;
@@ -2051,6 +2110,7 @@ async fn handle_single_order_response(
                     &order_id_str,
                     venue_order_id,
                     emitter,
+                    pending_cancels,
                     clock,
                 )
                 .await;
@@ -2077,10 +2137,10 @@ fn handle_unknown_submit_result(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    pending_submits: &Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
-    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_submits: &PendingSubmitMap,
+    pending_fills: &PendingFillMap,
+    pending_order_reports: &PendingOrderReportMap,
+    pending_cancels: &PendingCancelTracker,
     account_id: AccountId,
     size_precision: u8,
     price_precision: u8,
@@ -2110,11 +2170,7 @@ fn handle_unknown_submit_result(
         price_precision,
     );
 
-    if pending_cancels
-        .lock()
-        .expect(MUTEX_POISONED)
-        .remove(&order.client_order_id())
-    {
+    if pending_cancels.contains(&order.client_order_id()) {
         let order_id_str = expected_venue_order_id.to_string();
         return Some((order_id_str, expected_venue_order_id));
     }
@@ -2130,8 +2186,8 @@ fn drain_pending_reports_for_known_order(
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
     fill_tracker_quantity: Option<Quantity>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
+    pending_fills: &PendingFillMap,
+    pending_order_reports: &PendingOrderReportMap,
     account_id: AccountId,
     size_precision: u8,
     price_precision: u8,
@@ -2233,7 +2289,7 @@ fn accept_order_with_pending_fills(
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
     fill_tracker_quantity: Option<Quantity>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_fills: &PendingFillMap,
     size_precision: u8,
     price_precision: u8,
 ) {
@@ -2271,7 +2327,7 @@ fn drain_pending_fills_for_known_order(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_fills: &PendingFillMap,
 ) -> Vec<FillReport> {
     let Some(buffered) = pending_fills
         .lock()
@@ -2313,9 +2369,9 @@ fn handle_order_response(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
-    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
-    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_fills: &PendingFillMap,
+    pending_order_reports: &PendingOrderReportMap,
+    pending_cancels: &PendingCancelTracker,
     account_id: AccountId,
     size_precision: u8,
     price_precision: u8,
@@ -2410,11 +2466,7 @@ fn handle_order_response(
                     }
 
                     // Check if cancel was requested during the HTTP round-trip
-                    if pending_cancels
-                        .lock()
-                        .expect(MUTEX_POISONED)
-                        .remove(&order.client_order_id())
-                    {
+                    if pending_cancels.contains(&order.client_order_id()) {
                         log::info!(
                             "Order {} has pending cancel, issuing deferred cancel for {}",
                             order.client_order_id(),
@@ -2434,19 +2486,13 @@ fn handle_order_response(
                     .unwrap_or_else(|| "unknown error".to_string());
                 let ts_now = clock.get_time_ns();
                 emitter.emit_order_rejected(order, &reason, ts_now, false);
-                pending_cancels
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .remove(&order.client_order_id());
+                pending_cancels.remove(&order.client_order_id());
             }
         }
         Err(e) => {
             let ts_now = clock.get_time_ns();
             emitter.emit_order_rejected(order, &format!("HTTP request failed: {e}"), ts_now, false);
-            pending_cancels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&order.client_order_id());
+            pending_cancels.remove(&order.client_order_id());
         }
     }
     None
@@ -2458,11 +2504,12 @@ async fn execute_deferred_cancel(
     order_id_str: &str,
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
+    pending_cancels: &PendingCancelTracker,
     clock: &'static AtomicTime,
 ) {
     match submitter.cancel_order(order_id_str).await {
         Ok(response) => {
-            process_cancel_result(
+            let status = process_cancel_result(
                 &response,
                 order_id_str,
                 order,
@@ -2470,14 +2517,16 @@ async fn execute_deferred_cancel(
                 emitter,
                 clock,
             );
+
+            if status == CancelResponseStatus::PerOrderResult {
+                pending_cancels.remove(&order.client_order_id());
+            }
         }
         Err(e) => {
-            let ts_now = clock.get_time_ns();
-            emitter.emit_order_cancel_rejected(
-                order,
-                Some(venue_order_id),
-                &format!("Deferred cancel failed: {e}"),
-                ts_now,
+            log::error!(
+                "Deferred cancel outcome unknown for {} ({}), awaiting reconciliation: {e}",
+                order.client_order_id(),
+                venue_order_id,
             );
         }
     }
@@ -2785,7 +2834,7 @@ mod tests {
         let pending_submits = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_fills = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_order_reports = Arc::new(Mutex::new(FifoCacheMap::default()));
-        let pending_cancels = Arc::new(Mutex::new(AHashSet::new()));
+        let pending_cancels = PendingCancelTracker::default();
 
         assert!(
             handle_unknown_submit_result(
@@ -2862,7 +2911,7 @@ mod tests {
         let pending_submits = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_fills = Arc::new(Mutex::new(FifoCacheMap::default()));
         let pending_order_reports = Arc::new(Mutex::new(FifoCacheMap::default()));
-        let pending_cancels = Arc::new(Mutex::new(AHashSet::new()));
+        let pending_cancels = PendingCancelTracker::default();
 
         pending_fills.lock().unwrap().insert(
             venue_order_id,

@@ -32,7 +32,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, Venue},
     instruments::InstrumentAny,
     types::{AccountBalance, MarginBalance},
 };
@@ -56,6 +56,9 @@ pub struct StubExecutionClient {
     stop_count: Rc<Cell<usize>>,
     reset_count: Rc<Cell<usize>>,
     dispose_count: Rc<Cell<usize>>,
+    submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
+    queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
+    handles_all_order_venues: bool,
 }
 
 impl StubExecutionClient {
@@ -81,13 +84,35 @@ impl StubExecutionClient {
             stop_count: Rc::new(Cell::new(0)),
             reset_count: Rc::new(Cell::new(0)),
             dispose_count: Rc::new(Cell::new(0)),
+            submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
+            queried_account_ids: Rc::new(RefCell::new(Vec::new())),
+            handles_all_order_venues: false,
         }
+    }
+
+    /// Configures this stub to accept orders for any instrument venue.
+    #[must_use]
+    pub fn with_handles_all_order_venues(mut self) -> Self {
+        self.handles_all_order_venues = true;
+        self
     }
 
     /// Returns a shared handle to the instruments delivered via [`ExecutionClient::on_instrument`].
     #[must_use]
     pub fn received_instruments(&self) -> Rc<RefCell<Vec<InstrumentAny>>> {
         self.received_instruments.clone()
+    }
+
+    /// Returns a shared handle to the submitted order IDs.
+    #[must_use]
+    pub fn submitted_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.submitted_order_ids.clone()
+    }
+
+    /// Returns a shared handle to the queried account IDs.
+    #[must_use]
+    pub fn queried_account_ids(&self) -> Rc<RefCell<Vec<AccountId>>> {
+        self.queried_account_ids.clone()
     }
 
     /// Returns the number of times [`ExecutionClient::start`] was invoked.
@@ -133,6 +158,10 @@ impl ExecutionClient for StubExecutionClient {
         self.venue
     }
 
+    fn handles_order_venue(&self, venue: Venue) -> bool {
+        self.handles_all_order_venues || self.venue == venue
+    }
+
     fn oms_type(&self) -> OmsType {
         self.oms_type
     }
@@ -173,11 +202,19 @@ impl ExecutionClient for StubExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        self.submitted_order_ids
+            .borrow_mut()
+            .push(cmd.client_order_id);
+
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        self.submitted_order_ids
+            .borrow_mut()
+            .extend(cmd.order_list.client_order_ids);
+
         Ok(()) // Stub implementation always succeeds
     }
 
@@ -197,7 +234,9 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
+        self.queried_account_ids.borrow_mut().push(cmd.account_id);
+
         Ok(()) // Stub implementation always succeeds
     }
 

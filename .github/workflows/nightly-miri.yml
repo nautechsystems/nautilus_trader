@@ -1,10 +1,10 @@
 name: nightly-miri
 
-# Runs Miri across the foundational `nautilus-core` and `nautilus-model` crates
-# to detect undefined behaviour in unsafe code (raw pointer / `CStr` handling
-# in `string::stack_str`, FFI-adjacent invariants, aliasing rules) and confirm
-# that the type-safe domain model holds up against Miri's strict provenance and
-# Stacked Borrows checks.
+# Runs Miri across the foundational `nautilus-core` and `nautilus-model` crates,
+# plus the `nautilus-plugin` ABI boundary. This detects undefined behaviour in
+# unsafe code (raw pointer / `CStr` handling in `string::stack_str`, plug-in FFI
+# ownership paths, aliasing rules) and confirms that the type-safe domain model
+# holds up against Miri's strict provenance and Stacked Borrows checks.
 #
 # Scheduled separately from `nightly-tests` because Miri is roughly 10-100x
 # slower than native execution and has no value gating PR builds; running it on
@@ -31,6 +31,7 @@ jobs:
         crate:
           - core
           - model
+          - plugin
     env:
       # Dedicated target directory: Miri rebuilds against a different sysroot,
       # so sharing a target dir with stable jobs only churns the cache.

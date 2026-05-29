@@ -104,6 +104,7 @@ pub struct BacktestEngine {
     force_stop: bool,
     last_ns: UnixNanos,
     last_module_ns: Option<UnixNanos>,
+    last_liquidation_ns: Option<UnixNanos>,
     end_ns: UnixNanos,
     run_started: Option<UnixNanos>,
     run_finished: Option<UnixNanos>,
@@ -155,6 +156,7 @@ impl BacktestEngine {
             force_stop: false,
             last_ns: UnixNanos::default(),
             last_module_ns: None,
+            last_liquidation_ns: None,
             end_ns: UnixNanos::default(),
             run_started: None,
             run_finished: None,
@@ -391,23 +393,30 @@ impl BacktestEngine {
             // Mirror Cython: validate against the first element only and assume the
             // batch is homogeneous (documented contract on add_data).
             let first = &to_add[0];
-            let first_instrument_id = first.instrument_id();
-            anyhow::ensure!(
-                self.kernel
-                    .cache
-                    .borrow()
-                    .instrument(&first_instrument_id)
-                    .is_some(),
-                "Instrument {first_instrument_id} for the given data not found in the cache. \
-                 Add the instrument through `add_instrument()` prior to adding related data."
-            );
+            #[cfg(feature = "defi")]
+            let first_is_defi = matches!(first, Data::Defi(_));
+            #[cfg(not(feature = "defi"))]
+            let first_is_defi = false;
 
-            if let Data::Bar(bar) = first {
+            if !first_is_defi {
+                let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
-                    bar.bar_type.aggregation_source() == AggregationSource::External,
-                    "bar_type.aggregation_source must be External, was {:?}",
-                    bar.bar_type.aggregation_source(),
+                    self.kernel
+                        .cache
+                        .borrow()
+                        .instrument(&first_instrument_id)
+                        .is_some(),
+                    "Instrument {first_instrument_id} for the given data not found in the cache. \
+                     Add the instrument through `add_instrument()` prior to adding related data."
                 );
+
+                if let Data::Bar(bar) = first {
+                    anyhow::ensure!(
+                        bar.bar_type.aggregation_source() == AggregationSource::External,
+                        "bar_type.aggregation_source must be External, was {:?}",
+                        bar.bar_type.aggregation_source(),
+                    );
+                }
             }
         }
 
@@ -419,7 +428,20 @@ impl BacktestEngine {
         let mut batch_min_ts: Option<UnixNanos> = None;
         let mut batch_max_ts: Option<UnixNanos> = None;
 
+        #[cfg(feature = "defi")]
+        if to_add.iter().any(|item| matches!(item, Data::Defi(_))) {
+            self.add_defi_data_client_if_not_exists(_client_id);
+        }
+
         for item in &to_add {
+            #[cfg(feature = "defi")]
+            if matches!(item, Data::Defi(_)) {
+                let ts = item.ts_init();
+                batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
+                batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
+                continue;
+            }
+
             let instr_id = item.instrument_id();
             self.has_data.insert(instr_id);
 
@@ -682,12 +704,12 @@ impl BacktestEngine {
         self.log_run();
 
         // Skip data before start_ns
-        let mut data = self.data_iterator.next();
+        let mut data = self.data_iterator.next_item();
         while let Some(ref d) = data {
             if d.ts_init() >= start_ns {
                 break;
             }
-            data = self.data_iterator.next();
+            data = self.data_iterator.next_item();
         }
 
         // Initialize last_ns before first data point
@@ -721,7 +743,7 @@ impl BacktestEngine {
                     break;
                 }
                 let done = self.process_next_timer(&clocks);
-                data = self.data_iterator.next();
+                data = self.data_iterator.next_item();
                 if data.is_none() && done {
                     break;
                 }
@@ -747,11 +769,7 @@ impl BacktestEngine {
                 break;
             }
 
-            // Route data to exchange
             self.route_data_to_exchange(d);
-
-            // Process through data engine (may trigger strategy callbacks
-            // which queue trading commands via the sync senders)
             self.kernel.data_engine.borrow_mut().process_data(d.clone());
 
             // Drain deferred commands, then process exchange queues
@@ -759,12 +777,13 @@ impl BacktestEngine {
             self.settle_venues(ts_init);
 
             let prev_last_ns = self.last_ns;
-            data = self.data_iterator.next();
+            data = self.data_iterator.next_item();
 
             // If timestamp changed (or exhausted), flush timers then run modules
             if data.is_none() || data.as_ref().unwrap().ts_init() > prev_last_ns {
                 self.flush_accumulator_events(&clocks, prev_last_ns);
                 self.run_venue_modules(prev_last_ns);
+                self.run_venue_liquidations(prev_last_ns);
             }
 
             self.iteration += 1;
@@ -774,6 +793,7 @@ impl BacktestEngine {
         let ts_now = self.kernel.clock.borrow().timestamp_ns();
         self.settle_venues(ts_now);
         self.run_venue_modules(ts_now);
+        self.run_venue_liquidations(ts_now);
 
         // Cap at last_ns when streaming or after shutdown to avoid firing
         // timers past the current batch or the graceful stop
@@ -886,6 +906,7 @@ impl BacktestEngine {
         self.force_stop = false;
         self.last_ns = UnixNanos::default();
         self.last_module_ns = None;
+        self.last_liquidation_ns = None;
         self.end_ns = UnixNanos::default();
 
         self.accumulator.clear();
@@ -901,11 +922,11 @@ impl BacktestEngine {
     /// Useful when data has been added with `sort=false` for batch performance,
     /// then sorted once before running.
     pub fn sort_data(&mut self) {
-        // Each `add_data` call creates its own stream; the iterator merges streams
-        // by `ts_init` across streams but does not re-sort within a stream. Mark
-        // the engine as sorted so `run` no longer rejects it.
+        // Each add call creates its own stream; the iterator merges streams by
+        // replay timestamp across streams. Mark the engine as sorted so `run`
+        // no longer rejects it.
         self.sorted = true;
-        log::info!("Data sort requested (iterator merges streams by ts_init)");
+        log::info!("Data sort requested (iterator merges streams by replay timestamp)");
     }
 
     /// Clear the engine's internal data stream. Does not clear instruments.
@@ -1051,8 +1072,15 @@ impl BacktestEngine {
     fn route_data_to_exchange(&self, data: &Data) {
         if matches!(
             data,
-            Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_)
+            Data::MarkPriceUpdate(_)
+                | Data::IndexPriceUpdate(_)
+                | Data::OptionGreeks(_)
+                | Data::Custom(_)
         ) {
+            return;
+        }
+        #[cfg(feature = "defi")]
+        if matches!(data, Data::Defi(_)) {
             return;
         }
 
@@ -1069,9 +1097,14 @@ impl BacktestEngine {
                 Data::InstrumentStatus(status) => exchange.process_instrument_status(*status),
                 Data::InstrumentClose(close) => exchange.process_instrument_close(*close),
                 Data::Depth10(depth) => exchange.process_order_book_depth10(depth),
-                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_) => {
+                Data::MarkPriceUpdate(_)
+                | Data::IndexPriceUpdate(_)
+                | Data::OptionGreeks(_)
+                | Data::Custom(_) => {
                     unreachable!("filtered by early return above")
                 }
+                #[cfg(feature = "defi")]
+                Data::Defi(_) => unreachable!("filtered by early return above"),
             }
         } else {
             log::warn!("No exchange found for venue {venue}, data not routed");
@@ -1103,6 +1136,7 @@ impl BacktestEngine {
             {
                 self.settle_venues(ts);
                 self.run_venue_modules(ts);
+                self.run_venue_liquidations(ts);
             }
 
             ts_last = Some(ts_event);
@@ -1130,6 +1164,7 @@ impl BacktestEngine {
         if let Some(ts) = ts_last {
             self.settle_venues(ts);
             self.run_venue_modules(ts);
+            self.run_venue_liquidations(ts);
         }
 
         // On a mid-drain shutdown, anchor state at the firing timer's ts so
@@ -1164,6 +1199,7 @@ impl BacktestEngine {
             {
                 self.settle_venues(ts);
                 self.run_venue_modules(ts);
+                self.run_venue_liquidations(ts);
             }
 
             ts_last = Some(ts_event);
@@ -1190,6 +1226,7 @@ impl BacktestEngine {
         if let Some(ts) = ts_last {
             self.settle_venues(ts);
             self.run_venue_modules(ts);
+            self.run_venue_liquidations(ts);
         }
     }
 
@@ -1347,6 +1384,20 @@ impl BacktestEngine {
         }
 
         // Post-settle any commands emitted by modules
+        self.drain_command_queues();
+        self.settle_venues(ts_now);
+    }
+
+    fn run_venue_liquidations(&mut self, ts_now: UnixNanos) {
+        if self.last_liquidation_ns == Some(ts_now) {
+            return;
+        }
+        self.last_liquidation_ns = Some(ts_now);
+
+        for exchange in self.venues.values() {
+            exchange.borrow_mut().process_liquidations(ts_now);
+        }
+
         self.drain_command_queues();
         self.settle_venues(ts_now);
     }

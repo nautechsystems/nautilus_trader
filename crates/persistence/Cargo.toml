@@ -87,12 +87,12 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-rust_decimal = { workspace = true }
 
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+rust_decimal = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]

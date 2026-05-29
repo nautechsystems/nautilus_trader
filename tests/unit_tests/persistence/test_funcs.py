@@ -16,6 +16,7 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -28,6 +29,7 @@ from nautilus_trader.persistence.funcs import filename_to_class
     [
         (TradeTick, "trade_tick"),
         (OrderBookDelta, "order_book_deltas"),
+        (OptionGreeks, "option_greeks"),
         (pd.DataFrame, "custom_data_frame"),
     ],
 )
@@ -40,6 +42,7 @@ def test_class_to_filename(s, expected):
     [
         ("trade_tick", TradeTick),
         ("order_book_deltas", OrderBookDelta),
+        ("option_greeks", OptionGreeks),
         ("quote_tick", QuoteTick),
         ("nonexistent_filename", None),
     ],

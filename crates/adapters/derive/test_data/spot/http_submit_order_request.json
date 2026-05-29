@@ -1,0 +1,15 @@
+{
+  "amount": "0.1",
+  "direction": "buy",
+  "instrument_name": "ETH-USDC",
+  "label": "research-q4-buy",
+  "limit_price": "100",
+  "max_fee": "1000",
+  "nonce": 17796065232320,
+  "order_type": "limit",
+  "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "signature_expiry_sec": 1779607123,
+  "signer": "0xd1bb5c1daeba3b9ccf690aecceff80a0afb0d48d",
+  "subaccount_id": 144259,
+  "time_in_force": "gtc"
+}

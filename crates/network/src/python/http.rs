@@ -325,13 +325,10 @@ fn params_to_hashmap(
 ///
 /// Returns an error if:
 /// - The HTTP client fails to initialize.
+/// - The dedicated runtime cannot be created or the request thread panics.
 /// - The HTTP request fails (e.g., network error, timeout, invalid URL).
 /// - The server returns an error response.
 /// - The params argument is not a dict.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
@@ -344,11 +341,8 @@ pub fn http_get(
 ) -> PyResult<HttpResponse> {
     let params_map = params_to_hashmap(params)?;
 
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create runtime");
+    join_blocking_http_thread(std::thread::spawn(move || {
+        let runtime = blocking_http_runtime()?;
 
         runtime.block_on(async {
             let client = HttpClient::new(HashMap::new(), vec![], vec![], None, timeout_secs, None)
@@ -359,9 +353,7 @@ pub fn http_get(
                 .await
                 .map_err(HttpClientError::into_py_err)
         })
-    })
-    .join()
-    .expect("Thread panicked")
+    }))
 }
 
 /// Blocking HTTP POST request.
@@ -372,13 +364,10 @@ pub fn http_get(
 ///
 /// Returns an error if:
 /// - The HTTP client fails to initialize.
+/// - The dedicated runtime cannot be created or the request thread panics.
 /// - The HTTP request fails (e.g., network error, timeout, invalid URL).
 /// - The server returns an error response.
 /// - The params argument is not a dict.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
@@ -392,11 +381,8 @@ pub fn http_post(
 ) -> PyResult<HttpResponse> {
     let params_map = params_to_hashmap(params)?;
 
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create runtime");
+    join_blocking_http_thread(std::thread::spawn(move || {
+        let runtime = blocking_http_runtime()?;
 
         runtime.block_on(async {
             let client = HttpClient::new(HashMap::new(), vec![], vec![], None, timeout_secs, None)
@@ -407,9 +393,7 @@ pub fn http_post(
                 .await
                 .map_err(HttpClientError::into_py_err)
         })
-    })
-    .join()
-    .expect("Thread panicked")
+    }))
 }
 
 /// Blocking HTTP PATCH request.
@@ -420,13 +404,10 @@ pub fn http_post(
 ///
 /// Returns an error if:
 /// - The HTTP client fails to initialize.
+/// - The dedicated runtime cannot be created or the request thread panics.
 /// - The HTTP request fails (e.g., network error, timeout, invalid URL).
 /// - The server returns an error response.
 /// - The params argument is not a dict.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, body=None, timeout_secs=None))]
@@ -440,11 +421,8 @@ pub fn http_patch(
 ) -> PyResult<HttpResponse> {
     let params_map = params_to_hashmap(params)?;
 
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create runtime");
+    join_blocking_http_thread(std::thread::spawn(move || {
+        let runtime = blocking_http_runtime()?;
 
         runtime.block_on(async {
             let client = HttpClient::new(HashMap::new(), vec![], vec![], None, timeout_secs, None)
@@ -455,9 +433,7 @@ pub fn http_patch(
                 .await
                 .map_err(HttpClientError::into_py_err)
         })
-    })
-    .join()
-    .expect("Thread panicked")
+    }))
 }
 
 /// Blocking HTTP DELETE request.
@@ -468,13 +444,10 @@ pub fn http_patch(
 ///
 /// Returns an error if:
 /// - The HTTP client fails to initialize.
+/// - The dedicated runtime cannot be created or the request thread panics.
 /// - The HTTP request fails (e.g., network error, timeout, invalid URL).
 /// - The server returns an error response.
 /// - The params argument is not a dict.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.network")]
 #[pyo3(signature = (url, params=None, headers=None, timeout_secs=None))]
@@ -487,11 +460,8 @@ pub fn http_delete(
 ) -> PyResult<HttpResponse> {
     let params_map = params_to_hashmap(params)?;
 
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create runtime");
+    join_blocking_http_thread(std::thread::spawn(move || {
+        let runtime = blocking_http_runtime()?;
 
         runtime.block_on(async {
             let client = HttpClient::new(HashMap::new(), vec![], vec![], None, timeout_secs, None)
@@ -502,9 +472,22 @@ pub fn http_delete(
                 .await
                 .map_err(HttpClientError::into_py_err)
         })
-    })
-    .join()
-    .expect("Thread panicked")
+    }))
+}
+
+fn blocking_http_runtime() -> PyResult<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(to_pyruntime_err)
+}
+
+fn join_blocking_http_thread(
+    handle: std::thread::JoinHandle<PyResult<HttpResponse>>,
+) -> PyResult<HttpResponse> {
+    handle
+        .join()
+        .map_err(|_| to_pyruntime_err("HTTP request thread panicked"))?
 }
 
 /// Downloads a file from URL to filepath using streaming.
@@ -826,6 +809,25 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("params must be a dict"));
+    }
+
+    #[rstest]
+    fn test_join_blocking_http_thread_returns_runtime_error_on_panic() {
+        pyo3::Python::initialize();
+
+        let result = join_blocking_http_thread(std::thread::spawn(|| -> PyResult<HttpResponse> {
+            panic!("synthetic blocking HTTP panic")
+        }));
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        pyo3::Python::attach(|py| {
+            assert!(err.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+        });
+        assert_eq!(
+            err.to_string(),
+            "RuntimeError: HTTP request thread panicked"
+        );
     }
 
     fn create_test_router() -> Router {

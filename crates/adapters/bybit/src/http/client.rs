@@ -54,7 +54,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::{BybitHttpError, BybitSubmitOrderError},
+    error::{BybitCancelOrderError, BybitHttpError, BybitModifyOrderError, BybitSubmitOrderError},
     models::{
         BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
         BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
@@ -2571,7 +2571,7 @@ impl BybitHttpClient {
         let order_id = response
             .result
             .order_id
-            .ok_or_else(|| anyhow::anyhow!("No order_id in cancel response"))?;
+            .ok_or(BybitCancelOrderError::MissingOrderId)?;
 
         let order = self
             .query_order_by_id(
@@ -2580,7 +2580,8 @@ impl BybitHttpClient {
                 BYBIT_ORDER_HISTORY,
                 "after cancellation",
             )
-            .await?;
+            .await
+            .map_err(|source| BybitCancelOrderError::PostCancelLookup { source })?;
 
         let ts_init = self.generate_ts_init();
 
@@ -2832,7 +2833,7 @@ impl BybitHttpClient {
         let order_id = response
             .result
             .order_id
-            .ok_or_else(|| anyhow::anyhow!("No order_id in amend response"))?;
+            .ok_or(BybitModifyOrderError::MissingOrderId)?;
 
         let order = self
             .query_order_by_id(
@@ -2841,7 +2842,8 @@ impl BybitHttpClient {
                 BYBIT_ORDER_REALTIME,
                 "after amendment",
             )
-            .await?;
+            .await
+            .map_err(|source| BybitModifyOrderError::PostModifyLookup { source })?;
 
         let ts_init = self.generate_ts_init();
 

@@ -84,6 +84,8 @@ API reference for field definitions rather than listing them again.
 - Use `✓` for supported features.
 - Use `-` for unsupported features (not `✗` or other symbols).
 - When adding notes for unsupported features, emphasize with italics: `*Not supported*`.
+- Make unsupported notes specific when the reason matters: use `*Not supported by <venue>*`
+  for venue gaps, or `*Not currently implemented*` for adapter gaps.
 - Leave cells empty when no content is needed.
 
 ## Code references
@@ -163,21 +165,17 @@ No imports are needed.
 
 ### Tabs
 
-Use `Tabs` and `Tab` for language-specific or variant code examples.
+Add `tab="..."` to consecutive fenced code blocks for language-specific or variant code examples.
+List Rust before Python so Rust is the default (left-most) tab.
 
 ```markdown
-<Tabs items={['Python', 'Rust']}>
-<Tab value="Python">
-\`\`\`python
-strategy.submit_order(order, params={"close_position": True})
-\`\`\`
-</Tab>
-<Tab value="Rust">
-\`\`\`rust
+\`\`\`rust tab="Rust"
 let params = Params::from([("close_position", true.into())]);
 \`\`\`
-</Tab>
-</Tabs>
+
+\`\`\`python tab="Python"
+strategy.submit_order(order, params={"close_position": True})
+\`\`\`
 ```
 
 ### Steps

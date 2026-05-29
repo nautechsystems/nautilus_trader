@@ -32,8 +32,8 @@ use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId},
 };
 
-/// Cancel-order command. Mirrors the arguments to
-/// [`Strategy::cancel_order`](nautilus_trading::strategy::Strategy::cancel_order).
+/// Cancel-order command. Mirrors the arguments to `Strategy::cancel_order`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelOrderCommand {
     /// The client order identifier of the order to cancel.
@@ -101,8 +101,8 @@ impl Deref for CancelOrderHandle {
     }
 }
 
-/// Cancel-orders (batched) command. Mirrors the arguments to
-/// [`Strategy::cancel_orders`](nautilus_trading::strategy::Strategy::cancel_orders).
+/// Cancel-orders (batched) command. Mirrors the arguments to `Strategy::cancel_orders`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelOrdersCommand {
     /// The client order identifiers of the orders to cancel.
@@ -165,8 +165,8 @@ impl Deref for CancelOrdersHandle {
     }
 }
 
-/// Cancel-all-orders command. Mirrors the arguments to
-/// [`Strategy::cancel_all_orders`](nautilus_trading::strategy::Strategy::cancel_all_orders).
+/// Cancel-all-orders command. Mirrors the arguments to `Strategy::cancel_all_orders`.
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CancelAllOrdersCommand {
     /// The instrument identifier filtering which orders to cancel.

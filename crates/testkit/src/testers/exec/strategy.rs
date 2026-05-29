@@ -54,6 +54,7 @@ pub struct ExecTester {
     pub(super) sell_order: Option<OrderAny>,
     pub(super) buy_stop_order: Option<OrderAny>,
     pub(super) sell_stop_order: Option<OrderAny>,
+    pub(super) open_position_submitted: bool,
 
     // One-shot guard for `test_modify_rejected`: ensures the programmatic
     // modify is attempted at most once across the strategy's lifetime.
@@ -169,6 +170,15 @@ impl DataActor for ExecTester {
             log_info!("{quote:?}", color = LogColor::Cyan);
         }
 
+        if let Some(qty) = self.config.open_position_on_start_qty
+            && self.config.open_position_on_first_quote
+            && !self.open_position_submitted
+            && self.instrument.is_some()
+        {
+            self.open_position(qty)?;
+            self.open_position_submitted = true;
+        }
+
         self.maintain_orders(quote.bid_price, quote.ask_price);
         Ok(())
     }
@@ -258,6 +268,7 @@ impl ExecTester {
             sell_order: None,
             buy_stop_order: None,
             sell_stop_order: None,
+            open_position_submitted: false,
             modify_rejected_attempted: false,
         }
     }
@@ -292,7 +303,10 @@ impl ExecTester {
             );
         }
 
-        if let Some(qty) = self.config.open_position_on_start_qty {
+        if let Some(qty) = self.config.open_position_on_start_qty
+            && !self.config.open_position_on_first_quote
+        {
+            self.open_position_submitted = true;
             self.open_position(qty)?;
         }
 

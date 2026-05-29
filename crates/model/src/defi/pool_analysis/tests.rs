@@ -30,7 +30,11 @@ use rust_decimal::Decimal;
 use crate::defi::{
     Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
     data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
-    pool_analysis::{profiler::PoolProfiler, quote::SwapQuote},
+    pool_analysis::{
+        compare::{PoolProfilerComparison, compare_pool_profiler, compare_pool_profiler_detailed},
+        profiler::PoolProfiler,
+        quote::SwapQuote,
+    },
     stubs::{arbitrum, uniswap_v3},
     tick_map::{
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
@@ -135,7 +139,8 @@ fn create_mint_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -170,7 +175,8 @@ fn create_burn_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -195,7 +201,8 @@ fn create_collect_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -400,7 +407,8 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
         U256::from(1000),
         invalid_tick_lower,
         invalid_tick_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     let result = profiler.process(&DexPoolData::LiquidityUpdate(mint_event));
     assert!(result.is_err());
@@ -659,6 +667,8 @@ fn test_execute_swap_equivalence() {
         uniswap_v3(),
         pool_identifier,
         create_block_position(),
+        UnixNanos::default(),
+        UnixNanos::default(),
         user_address(),
         user_address(),
     );
@@ -700,6 +710,115 @@ fn test_execute_swap_equivalence() {
 
     // Note: Fee growth tracking might differ slightly due to approximation in process_swap
     // but the core state (tick, price, liquidity) should be identical
+}
+
+#[rstest]
+fn test_process_swap_snaps_sqrt_price_to_event() {
+    let pool_definition = pool_definition(None, None, None);
+    let pool_identifier = pool_definition.pool_identifier;
+    let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
+
+    profiler.initialize(sqrt_price_x98()).unwrap();
+
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let swap_quote = profiler
+        .swap_exact_in(U256::from(1000u32), true, None)
+        .unwrap();
+    let mut swap_event = swap_quote.to_swap_event(
+        arbitrum(),
+        uniswap_v3(),
+        pool_identifier,
+        create_block_position(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        user_address(),
+        user_address(),
+    );
+    let event_sqrt_price = swap_event.sqrt_price_x96 - U160::from(1u8);
+    assert_eq!(get_tick_at_sqrt_ratio(event_sqrt_price), swap_event.tick);
+
+    swap_event.sqrt_price_x96 = event_sqrt_price;
+    let zero_for_one = swap_event.amount0.is_positive();
+    let amount_specified = if zero_for_one {
+        swap_event.amount0
+    } else {
+        swap_event.amount1
+    };
+    let simulated_quote = profiler
+        .simulate_swap_through_ticks(amount_specified, zero_for_one, event_sqrt_price)
+        .unwrap();
+    assert_ne!(simulated_quote.sqrt_price_after_x96, event_sqrt_price);
+
+    profiler.process(&DexPoolData::Swap(swap_event)).unwrap();
+
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, event_sqrt_price);
+}
+
+#[rstest]
+fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let mut snapshot = profiler.extract_snapshot();
+    snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+    assert_eq!(
+        get_tick_at_sqrt_ratio(snapshot.state.price_sqrt_ratio_x96),
+        profiler.state.current_tick
+    );
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::SqrtPriceMismatch
+    );
+    assert!(PoolProfilerComparison::SqrtPriceMismatch.is_valid_for_snapshot());
+    assert!(!compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
+fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let mut snapshot = profiler.extract_snapshot();
+    snapshot.state.liquidity += 1;
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::Mismatch
+    );
+    assert!(!PoolProfilerComparison::Mismatch.is_valid_for_snapshot());
+}
+
+#[rstest]
+fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mut mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    let event_ts = UnixNanos::from(profiler.pool.ts_init.as_u64() + 1_000_000_000);
+    mint_event.ts_event = event_ts;
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot();
+
+    assert_eq!(snapshot.ts_event, event_ts);
+    assert_eq!(snapshot.ts_init, event_ts);
+    assert_ne!(snapshot.ts_event, profiler.pool.ts_init);
 }
 
 // Follow Uniswapv3 official tests

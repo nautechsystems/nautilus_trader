@@ -74,7 +74,7 @@ use crate::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
         query::GetGammaMarketsParams,
     },
-    providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_instruments},
+    providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_configured_instruments},
     websocket::{
         client::PolymarketWebSocketClient,
         messages::{MarketWsMessage, PolymarketQuotes, PolymarketWsMessage},
@@ -167,6 +167,48 @@ fn cache_instrument(
     instruments.insert(instrument_id, instrument.clone());
 }
 
+fn cache_and_publish_instruments(
+    instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: Vec<InstrumentAny>,
+) -> usize {
+    let total = instruments.len();
+
+    for instrument in instruments {
+        let instrument_id = instrument.id();
+        cache_instrument(instruments_cache, token_meta, &instrument);
+
+        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+            log::warn!("Failed to publish instrument {instrument_id}: {e}");
+        }
+    }
+
+    total
+}
+
+async fn refresh_scoped_instruments(
+    http_client: PolymarketGammaHttpClient,
+    instrument_config: Option<crate::config::PolymarketInstrumentProviderConfig>,
+    filters: Vec<Arc<dyn InstrumentFilter>>,
+    instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+) -> anyhow::Result<usize> {
+    let Some(instrument_config) = instrument_config else {
+        return Ok(0);
+    };
+    let refreshed =
+        fetch_configured_instruments(&http_client, &instrument_config, &filters).await?;
+
+    Ok(cache_and_publish_instruments(
+        instruments_cache,
+        token_meta,
+        data_sender,
+        refreshed,
+    ))
+}
+
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -231,7 +273,8 @@ impl PolymarketDataClient {
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let provider = PolymarketInstrumentProvider::new(gamma_client);
+        let provider =
+            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
 
         Self {
             clock,
@@ -587,24 +630,81 @@ impl PolymarketDataClient {
     }
 
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<()> {
-        self.provider.load_all(None).await?;
+        self.provider.initialize(false).await?;
 
-        let all_instruments = self.provider.store().list_all();
-        let total = all_instruments.len();
-        for instrument in all_instruments {
-            cache_instrument(&self.instruments, &self.token_meta, instrument);
-            let instrument_id = instrument.id();
+        let total = cache_and_publish_instruments(
+            &self.instruments,
+            &self.token_meta,
+            &self.data_sender,
+            self.provider
+                .store()
+                .list_all()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
 
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
-                log::warn!("Failed to publish instrument {instrument_id}: {e}");
-            }
+        log::info!("Published {total} Polymarket instruments to data engine");
+        Ok(())
+    }
+
+    fn spawn_instrument_refresh_task(&mut self) {
+        let Some(interval_mins) = self.config.update_instruments_interval_mins else {
+            return;
+        };
+
+        if interval_mins == 0 || self.config.instrument_config.is_none() {
+            return;
         }
 
-        log::info!("Published all {total} instruments to data engine");
-        Ok(())
+        let interval = Duration::from_secs(interval_mins.saturating_mul(60));
+        let cancellation = self.cancellation_token.clone();
+        let http_client = self.provider.http_client().clone();
+        let instrument_config = self.config.instrument_config.clone();
+        let filters = self.provider.filters();
+        let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
+        let data_sender = self.data_sender.clone();
+
+        let handle = get_runtime().spawn(async move {
+            log::debug!("Polymarket instrument refresh task started");
+
+            loop {
+                tokio::select! {
+                    () = tokio::time::sleep(interval) => {}
+                    () = cancellation.cancelled() => {
+                        log::debug!("Polymarket instrument refresh task cancelled");
+                        break;
+                    }
+                }
+
+                match refresh_scoped_instruments(
+                    http_client.clone(),
+                    instrument_config.clone(),
+                    filters.clone(),
+                    &instruments_cache,
+                    &token_meta,
+                    &data_sender,
+                )
+                .await
+                {
+                    Ok(total) => {
+                        if total > 0 {
+                            log::info!(
+                                "Refreshed {total} Polymarket instruments into the live cache"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to refresh Polymarket instruments: {e}");
+                    }
+                }
+            }
+
+            log::debug!("Polymarket instrument refresh task ended");
+        });
+
+        self.tasks.push(handle);
     }
 
     fn spawn_message_handler(
@@ -1197,6 +1297,7 @@ impl DataClient for PolymarketDataClient {
             .ok_or_else(|| anyhow::anyhow!("WS message receiver not available after connect"))?;
 
         self.spawn_message_handler(rx);
+        self.spawn_instrument_refresh_task();
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected Polymarket data client");
@@ -1232,11 +1333,14 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        let http = self.provider.http_client().clone();
-        let filters = self.provider.filters();
         let sender = self.data_sender.clone();
-        let instruments_cache = self.instruments.clone();
-        let token_meta = self.token_meta.clone();
+        let instruments = self
+            .instruments
+            .load()
+            .values()
+            .filter(|instrument| instrument.id().venue == *POLYMARKET_VENUE)
+            .cloned()
+            .collect::<Vec<_>>();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *POLYMARKET_VENUE;
@@ -1246,32 +1350,19 @@ impl DataClient for PolymarketDataClient {
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            match fetch_instruments(&http, &filters).await {
-                Ok(instruments) => {
-                    log::info!("Fetched {} instruments from Gamma API", instruments.len());
+            let response = DataResponse::Instruments(InstrumentsResponse::new(
+                request_id,
+                client_id,
+                venue,
+                instruments,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
 
-                    for instrument in &instruments {
-                        cache_instrument(&instruments_cache, &token_meta, instrument);
-                    }
-
-                    let response = DataResponse::Instruments(InstrumentsResponse::new(
-                        request_id,
-                        client_id,
-                        venue,
-                        instruments,
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    ));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instruments response: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch instruments from Gamma API: {e:?}");
-                }
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send instruments response: {e}");
             }
         });
 

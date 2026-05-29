@@ -25,6 +25,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use anyhow::Context;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
@@ -1404,7 +1405,7 @@ impl CoinbaseHttpClient {
         self.inner
             .create_order(&request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to submit order: {e}"))
+            .context("failed to submit order")
     }
 
     /// Cancels one or more orders by venue order ID via batch_cancel.
@@ -1426,7 +1427,7 @@ impl CoinbaseHttpClient {
         self.inner
             .cancel_orders(&request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to cancel orders: {e}"))
+            .context("failed to cancel orders")
     }
 
     /// Fetches the CFM (futures) balance summary.
@@ -1562,7 +1563,7 @@ impl CoinbaseHttpClient {
         self.inner
             .edit_order(&request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to edit order: {e}"))
+            .context("failed to edit order")
     }
 }
 

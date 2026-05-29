@@ -46,7 +46,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE, OKX_SUCCESS_CODE,
+            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE,
+            OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUCCESS_CODE,
         },
         enums::OKXOrderStatus,
         parse::{
@@ -54,7 +55,7 @@ use crate::{
             parse_quantity,
         },
     },
-    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition},
+    http::models::{OKXAccount, OKXCancelAlgoOrderResponse, OKXPosition, OKXSpreadOrder},
     websocket::{
         client::PendingOrderInfo,
         enums::OKXWsOperation,
@@ -62,7 +63,8 @@ use crate::{
         messages::{ExecutionReport, OKXOrderMsg, OKXWsMessage},
         parse::{
             OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_order_event,
-            parse_order_msg, update_fee_fill_caches,
+            parse_order_msg, parse_spread_order_event, parse_spread_order_msg,
+            update_fee_fill_caches,
         },
     },
 };
@@ -270,6 +272,19 @@ pub fn dispatch_ws_message(
                 ts_init,
             );
         }
+        OKXWsMessage::SpreadOrders(order_msgs) => {
+            let ts_init = clock.get_time_ns();
+            dispatch_spread_order_messages(
+                &order_msgs,
+                emitter,
+                state,
+                account_id,
+                instruments,
+                filled_qty_cache,
+                order_state_cache,
+                ts_init,
+            );
+        }
         OKXWsMessage::AlgoOrders(algo_msgs) => {
             let ts_init = clock.get_time_ns();
             let mut reports = Vec::new();
@@ -386,7 +401,11 @@ pub fn dispatch_ws_message(
                     continue;
                 };
 
-                let Some(ident) = state.order_identities.get(&client_order_id) else {
+                let Some(ident) = state
+                    .order_identities
+                    .get(&client_order_id)
+                    .map(|entry| entry.clone())
+                else {
                     log::warn!(
                         "Order response error for untracked order: \
                          op={op:?} cl_ord_id={cl_ord_id} s_code={s_code} s_msg={s_msg}"
@@ -458,10 +477,14 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
-            log::error!("WebSocket send failed: request_id={request_id} error={error}");
+            log::error!(
+                "WebSocket send failed without structured venue response: \
+                 request_id={request_id}, client_order_id={client_order_id:?}, \
+                 op={op:?}, awaiting reconciliation: {error}"
+            );
 
             if let Some(client_order_id) = client_order_id {
-                let ts_init = clock.get_time_ns();
+                let key = client_order_id.as_str();
 
                 match op {
                     Some(
@@ -469,18 +492,7 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::BatchOrders
                         | OKXWsOperation::OrderAlgo,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_orders.remove(key);
-                        if let Some((_, ident)) = state.order_identities.remove(&client_order_id) {
-                            emitter.emit_order_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                &error,
-                                ts_init,
-                                false,
-                            );
-                        }
                     }
                     Some(
                         OKXWsOperation::CancelOrder
@@ -488,38 +500,12 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::MassCancel
                         | OKXWsOperation::CancelAlgos,
                     ) => {
-                        let key = client_order_id.as_str();
                         state.pending_cancels.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_cancel_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-                        let key = client_order_id.as_str();
                         state.pending_amends.remove(key);
-                        if let Some(ident) = state.order_identities.get(&client_order_id) {
-                            emitter.emit_order_modify_rejected_event(
-                                ident.strategy_id,
-                                ident.instrument_id,
-                                client_order_id,
-                                None,
-                                &error,
-                                ts_init,
-                            );
-                        }
                     }
-                    _ => {
-                        log::warn!(
-                            "SendFailed for {client_order_id} with unknown op, cannot emit rejection"
-                        );
-                    }
+                    _ => {}
                 }
             }
         }
@@ -688,6 +674,132 @@ fn dispatch_order_messages(
                 account_id,
                 instruments,
                 fee_cache,
+                filled_qty_cache,
+                emitter,
+                state,
+                ts_init,
+            );
+        }
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn dispatch_spread_order_messages(
+    order_msgs: &[OKXSpreadOrder],
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
+    ts_init: UnixNanos,
+) {
+    for msg in order_msgs {
+        let Some(instrument) = instruments.get(&msg.sprd_id) else {
+            log::warn!(
+                "No instrument for {}, skipping spread order message",
+                msg.sprd_id
+            );
+            continue;
+        };
+
+        let Some(client_order_id) = parse_client_order_id(msg.cl_ord_id.as_str()) else {
+            log::debug!(
+                "Spread order without client_order_id (ord_id={}), sending as report",
+                msg.ord_id
+            );
+            dispatch_spread_order_msg_as_report(
+                msg,
+                account_id,
+                instruments,
+                filled_qty_cache,
+                emitter,
+                state,
+                ts_init,
+            );
+            continue;
+        };
+
+        let identity = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|r| r.clone());
+
+        if let Some(ident) = identity {
+            if is_spread_post_only_auto_cancel(msg) {
+                let ts_event = msg
+                    .u_time
+                    .or(msg.c_time)
+                    .map_or(ts_init, parse_millisecond_timestamp);
+                let rejected = OrderRejected::new(
+                    emitter.trader_id(),
+                    ident.strategy_id,
+                    instrument.id(),
+                    client_order_id,
+                    account_id,
+                    Ustr::from(OKX_POST_ONLY_CANCEL_REASON),
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    true,
+                );
+                state.order_identities.remove(&client_order_id);
+                order_state_cache.remove(&client_order_id);
+                filled_qty_cache.remove(&msg.ord_id);
+                emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                continue;
+            }
+
+            let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
+            let previous_state = order_state_cache.get(&client_order_id);
+
+            match parse_spread_order_event(
+                msg,
+                client_order_id,
+                account_id,
+                emitter.trader_id(),
+                ident.strategy_id,
+                instrument,
+                previous_filled_qty,
+                previous_state,
+                ts_init,
+            ) {
+                Ok(event) => {
+                    update_spread_order_caches(
+                        msg,
+                        instrument,
+                        client_order_id,
+                        filled_qty_cache,
+                        order_state_cache,
+                    );
+                    dispatch_parsed_order_event(
+                        event,
+                        client_order_id,
+                        account_id,
+                        VenueOrderId::new(msg.ord_id.as_str()),
+                        &ident,
+                        instrument,
+                        msg.state,
+                        emitter,
+                        state,
+                        order_state_cache,
+                        ts_init,
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to parse spread order event for {client_order_id}: {e}");
+                }
+            }
+        } else {
+            log::debug!(
+                "Untracked spread order {client_order_id} (ord_id={}), sending as report for reconciliation",
+                msg.ord_id
+            );
+            dispatch_spread_order_msg_as_report(
+                msg,
+                account_id,
+                instruments,
                 filled_qty_cache,
                 emitter,
                 state,
@@ -944,6 +1056,26 @@ fn dispatch_order_msg_as_report(
     }
 }
 
+fn dispatch_spread_order_msg_as_report(
+    msg: &OKXSpreadOrder,
+    account_id: AccountId,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+) {
+    match parse_spread_order_msg(msg, account_id, instruments, filled_qty_cache, ts_init) {
+        Ok(report) => {
+            if let Some(instrument) = instruments.get(&msg.sprd_id) {
+                update_spread_fill_cache(msg, instrument, filled_qty_cache);
+            }
+            dispatch_execution_reports(vec![report], emitter, state);
+        }
+        Err(e) => log::error!("Failed to parse spread order message as report: {e}"),
+    }
+}
+
 /// Updates fee, fill, and order state caches from a raw OKX order message.
 fn update_order_caches(
     msg: &OKXOrderMsg,
@@ -971,6 +1103,50 @@ fn update_order_caches(
             price,
         },
     );
+}
+
+fn update_spread_order_caches(
+    msg: &OKXSpreadOrder,
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
+) {
+    update_spread_fill_cache(msg, instrument, filled_qty_cache);
+
+    let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
+    let quantity = parse_quantity(&msg.sz, instrument.size_precision()).unwrap_or_default();
+    let price = if is_market_price(&msg.px) {
+        None
+    } else {
+        parse_price(&msg.px, instrument.price_precision()).ok()
+    };
+
+    order_state_cache.insert(
+        client_order_id,
+        OrderStateSnapshot {
+            venue_order_id,
+            quantity,
+            price,
+        },
+    );
+}
+
+fn update_spread_fill_cache(
+    msg: &OKXSpreadOrder,
+    instrument: &InstrumentAny,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+) {
+    if !msg.acc_fill_sz.is_empty()
+        && msg.acc_fill_sz != "0"
+        && let Ok(qty) = parse_quantity(&msg.acc_fill_sz, instrument.size_precision())
+    {
+        filled_qty_cache.insert(msg.ord_id, qty);
+    }
+}
+
+fn is_spread_post_only_auto_cancel(msg: &OKXSpreadOrder) -> bool {
+    msg.state == OKXOrderStatus::Canceled && msg.cancel_source == OKX_POST_ONLY_CANCEL_SOURCE
 }
 
 /// Dispatches execution reports with cross-stream deduplication.
@@ -1099,18 +1275,13 @@ pub fn emit_algo_cancel_rejections(
 pub fn emit_batch_cancel_failure(
     contexts: &[AlgoCancelContext],
     error: &str,
-    emitter: &ExecutionEventEmitter,
-    clock: &'static AtomicTime,
+    _emitter: &ExecutionEventEmitter,
+    _clock: &'static AtomicTime,
 ) {
     for ctx in contexts {
-        let ts = clock.get_time_ns();
-        emitter.emit_order_cancel_rejected_event(
-            ctx.strategy_id,
-            ctx.instrument_id,
-            ctx.client_order_id,
-            ctx.venue_order_id,
-            error,
-            ts,
+        log::error!(
+            "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {error}",
+            ctx.client_order_id
         );
     }
 }

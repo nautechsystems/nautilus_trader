@@ -107,10 +107,10 @@ pub struct PoolLiquidityUpdate {
     pub tick_lower: i32,
     /// The upper price tick boundary of the liquidity position.
     pub tick_upper: i32,
-    /// The timestamp of the liquidity update in Unix nanoseconds.
-    pub timestamp: Option<UnixNanos>,
+    /// UNIX timestamp (nanoseconds) when the liquidity update event occurred.
+    pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
-    pub ts_init: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
 }
 
 impl PoolLiquidityUpdate {
@@ -134,7 +134,8 @@ impl PoolLiquidityUpdate {
         amount1: U256,
         tick_lower: i32,
         tick_upper: i32,
-        timestamp: Option<UnixNanos>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
             chain,
@@ -153,8 +154,8 @@ impl PoolLiquidityUpdate {
             amount1,
             tick_lower,
             tick_upper,
-            timestamp,
-            ts_init: timestamp,
+            ts_event,
+            ts_init,
         }
     }
 }

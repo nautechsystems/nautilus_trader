@@ -246,6 +246,15 @@ impl CustomDataTrait for PluginCustomDataValue {
         let cloned = unsafe {
             validated_slot!(CustomDataVTable, self.vtable.as_ptr(), clone_handle)(self.handle)
         };
+        // The `from_json` path rejects a null handle; clone has no error
+        // channel, so a null return (a misbehaving plug-in clone_handle) would
+        // otherwise be dereferenced as a live value by `ts_event` / `to_json` /
+        // `eq_handles`. Fail fast here instead.
+        assert!(
+            !cloned.is_null(),
+            "plug-in '{}' clone_handle returned a null handle",
+            self.type_name
+        );
         Arc::new(Self {
             vtable: self.vtable,
             handle: cloned,
@@ -281,7 +290,7 @@ mod tests {
         NAUTILUS_PLUGIN_ABI_VERSION,
         boundary::{BorrowedStr, Slice},
         manifest::{CustomDataRegistration, PluginBuildId, PluginManifest},
-        surfaces::custom_data::{PluginCustomData, custom_data_vtable},
+        surfaces::custom_data::{CustomDataVTable, PluginCustomData, custom_data_vtable},
     };
 
     #[derive(Clone, PartialEq)]
@@ -417,5 +426,105 @@ mod tests {
                 .contains("not backed by a plug-in custom-data handle"),
             "expected non-plugin custom-data error, was: {err}",
         );
+    }
+
+    #[derive(Clone, PartialEq)]
+    struct NonUtf8Tick;
+
+    impl PluginCustomData for NonUtf8Tick {
+        const TYPE_NAME: &'static str = "NonUtf8Tick";
+
+        fn ts_event(&self) -> u64 {
+            0
+        }
+
+        fn ts_init(&self) -> u64 {
+            0
+        }
+
+        fn to_json(&self) -> anyhow::Result<Vec<u8>> {
+            Ok(vec![0xff, 0xfe])
+        }
+
+        fn from_json(_payload: &[u8]) -> anyhow::Result<Self> {
+            Ok(Self)
+        }
+
+        fn schema_ipc() -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn encode_batch(_items: &[&Self]) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn decode_batch(
+            _ipc_bytes: &[u8],
+            _metadata: &[(String, String)],
+        ) -> anyhow::Result<Vec<Self>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[rstest]
+    fn to_json_surfaces_non_utf8_payload_as_error() {
+        let vtable = custom_data_vtable::<NonUtf8Tick>();
+        let handle = Box::into_raw(Box::new(NonUtf8Tick)).cast::<CustomDataHandle>();
+        let value = PluginCustomDataValue {
+            // SAFETY: generated vtable fills every slot; handle came from Box::into_raw.
+            vtable: unsafe { ValidatedCustomDataVTable::from_raw_unchecked(vtable) },
+            handle,
+            type_name: NonUtf8Tick::TYPE_NAME,
+        };
+
+        let err = value
+            .to_json()
+            .expect_err("non-utf8 to_json payload should surface as an error");
+
+        assert!(
+            err.to_string().contains("utf-8"),
+            "expected utf-8 decode error, was: {err}",
+        );
+        // `value` drops here, freeing the handle via the real drop_handle thunk.
+    }
+
+    #[rstest]
+    #[should_panic(expected = "clone_handle returned a null handle")]
+    fn clone_arc_panics_when_plugin_clone_returns_null() {
+        unsafe extern "C" fn null_clone(_handle: *const CustomDataHandle) -> *mut CustomDataHandle {
+            std::ptr::null_mut()
+        }
+
+        let valid = custom_data_vtable::<BridgeBoundaryTick>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(CustomDataVTable {
+            type_name: valid.type_name,
+            schema_ipc: valid.schema_ipc,
+            from_json: valid.from_json,
+            encode_batch: valid.encode_batch,
+            decode_batch: valid.decode_batch,
+            ts_event: valid.ts_event,
+            ts_init: valid.ts_init,
+            to_json: valid.to_json,
+            clone_handle: Some(null_clone),
+            drop_handle: valid.drop_handle,
+            eq_handles: valid.eq_handles,
+        }));
+        let handle =
+            Box::into_raw(Box::new(BridgeBoundaryTick { value: 5 })).cast::<CustomDataHandle>();
+        let value = PluginCustomDataValue {
+            // SAFETY: the copied vtable fills every required slot; handle came
+            // from Box::into_raw.
+            vtable: unsafe {
+                ValidatedCustomDataVTable::from_raw_unchecked(std::ptr::from_ref(&*vtable))
+            },
+            handle,
+            type_name: BridgeBoundaryTick::TYPE_NAME,
+        };
+
+        // clone_handle returns null, so clone_arc must panic rather than wrap a
+        // null handle that later thunks would dereference.
+        let _ = value.clone_arc();
     }
 }

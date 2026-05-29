@@ -1179,12 +1179,13 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        All stateful fields are reset to their initial value, except for data and instruments which persist.
+        All stateful fields are reset to their initial value while loaded components,
+        data, instruments, and venues persist.
 
         Notes
         -----
-        Data and instruments are retained across resets by default to enable repeated runs
-        with different strategies or parameters against the same dataset.
+        Loaded actors, strategies, execution algorithms, data, and instruments are retained
+        across resets by default. Clear or remove loaded components before adding replacements.
 
         See Also
         --------

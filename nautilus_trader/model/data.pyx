@@ -168,6 +168,9 @@ from nautilus_trader.model.objects cimport price_new
 from nautilus_trader.model.objects cimport quantity_new
 
 
+cdef const char* DATA_FFI_CVEC_CAPSULE_NAME = b"nautilus.DataFFI.CVec"
+
+
 _SUPPORTED_BAR_AGGREGATIONS = (
     BarAggregation.MILLISECOND,
     BarAggregation.SECOND,
@@ -289,7 +292,10 @@ cdef inline IndexPriceUpdate index_price_from_mem_c(IndexPriceUpdate_t mem):
 
 # SAFETY: Do NOT deallocate the capsule here
 cpdef list capsule_to_list(capsule):
-    cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, DATA_FFI_CVEC_CAPSULE_NAME)
+    if data == NULL:
+        raise ValueError("Invalid DataFFI CVec PyCapsule")
+
     cdef Data_t* ptr = <Data_t*>data.ptr
     cdef list objects = []
 
@@ -346,6 +352,8 @@ cpdef list pyo3_list_to_data_list(list pyo3_items):
             result.append(MarkPriceUpdate.from_pyo3(item))
         elif type_name == "IndexPriceUpdate":
             result.append(IndexPriceUpdate.from_pyo3(item))
+        elif type_name == "OptionGreeks":
+            result.append(OptionGreeks.from_pyo3(item))
         elif type_name == "InstrumentStatus":
             result.append(InstrumentStatus.from_pyo3(item))
         elif type_name == "InstrumentClose":

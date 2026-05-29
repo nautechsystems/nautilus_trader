@@ -115,6 +115,10 @@ InstrumentProviderConfig(load_all=True)
 InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE"])
 ```
 
+Subscriptions do not load instruments by themselves. Before a strategy subscribes to
+live data, configure the provider to load the instrument at startup or request the
+instrument explicitly and wait until it reaches the cache.
+
 ## Data clients
 
 Data clients handle market data subscriptions and requests for a venue. They connect to venue APIs
@@ -150,6 +154,7 @@ For real-time data, use subscription methods:
 
 ```python
 def on_start(self) -> None:
+    # Assumes the instrument has already been loaded into the cache
     # Subscribe to live trade updates
     self.subscribe_trade_ticks(InstrumentId.from_str("BTCUSDT-PERP.BINANCE"))
 

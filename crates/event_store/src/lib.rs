@@ -48,6 +48,7 @@ pub mod hash;
 pub mod headers;
 pub mod kernel;
 pub mod manifest;
+pub mod markers;
 pub mod reader;
 pub mod replay;
 pub mod retention;
@@ -73,25 +74,31 @@ pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use kernel::{
-    BootError, EventStoreLifecycle, EventStoreSession, HaltSignal, KernelError, RecoveredRun,
-    RecoveryOutcome, build_run_id, open_run, recover_predecessors,
+    BootError, EventStoreLifecycle, EventStoreLifecycleOptions, EventStoreSession, HaltSignal,
+    KernelError, RecoveredRun, RecoveryOutcome, build_run_id, open_run, open_run_with_options,
+    recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
+pub use markers::{
+    DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
+    StreamDictEntry, StreamSlot, compute_hifi_hash, compute_marker_hash,
+};
 pub use nautilus_system::{
     RegisteredComponents,
     event_store::{EventStoreConfig, RetentionMode, RunIdentity},
 };
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
+#[cfg(feature = "persistence")]
+pub use replay::ParquetReplayCatalog;
 pub use replay::{
-    CacheReplayError, CacheReplayReport, CatalogReplayRecord, CatalogReplaySlice,
-    CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery, CatalogSliceSelector,
-    CatalogSliceStatus, EventStoreReplayReport, ReplayCatalog, ReplayInputError, ReplayInputPlan,
-    ReplayInputs, ReplayScope, ReplaySeqRange, ReplayTimeRange, apply_cache_replay_entry,
-    load_decision_replay_inputs, load_forensics_replay_inputs, load_full_incident_replay_inputs,
-    open_event_store_replay_source, plan_decision_replay_inputs, plan_forensics_replay_inputs,
-    plan_full_incident_replay_inputs, replay_cache_snapshot_tail, restore_cache_from_sealed_run,
-    restore_cache_snapshot_and_replay_tail, restore_cache_snapshot_blob,
-    validate_event_store_replay_source,
+    CacheReplayError, CacheReplayReport, CatalogReplayData, CatalogReplayRecord,
+    CatalogReplaySlice, CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery,
+    CatalogSliceSelector, EventStoreReplayReport, ReplayCatalog, ReplayInputError, ReplayInputPlan,
+    ReplayInputs, ReplaySeqRange, ReplayTimeRange, apply_cache_replay_entry,
+    load_catalog_replay_inputs, load_forensics_replay_inputs, open_event_store_replay_source,
+    plan_catalog_replay_inputs, plan_forensics_replay_inputs, replay_cache_snapshot_tail,
+    restore_cache_from_sealed_run, restore_cache_snapshot_and_replay_tail,
+    restore_cache_snapshot_blob, validate_event_store_replay_source,
 };
 pub use retention::{
     RetentionPlan, RetentionRun, SnapshotAnchorStatus, list_redb_sealed_runs, plan_redb_retention,

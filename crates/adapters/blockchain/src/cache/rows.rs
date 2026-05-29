@@ -152,6 +152,7 @@ pub fn transform_row_to_dex_pool_data(
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
     let log_index = row.try_get::<i32, _>("log_index")? as u32;
+    let timestamp = UnixNanos::from(row.try_get::<String, _>("block_timestamp")?);
 
     match event_type.as_str() {
         "swap" => {
@@ -211,7 +212,8 @@ pub fn transform_row_to_dex_pool_data(
                 transaction_hash,
                 transaction_index,
                 log_index,
-                None, // timestamp
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
                 sender,
                 recipient,
                 amount0,
@@ -299,7 +301,8 @@ pub fn transform_row_to_dex_pool_data(
                 amount1,
                 tick_lower,
                 tick_upper,
-                None, // timestamp
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
             );
 
             Ok(DexPoolData::LiquidityUpdate(pool_liquidity_update))
@@ -348,7 +351,8 @@ pub fn transform_row_to_dex_pool_data(
                 amount1,
                 tick_lower,
                 tick_upper,
-                None, // timestamp
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
             );
 
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
@@ -400,7 +404,8 @@ pub fn transform_row_to_dex_pool_data(
                 transaction_hash,
                 transaction_index,
                 log_index,
-                None, // timestamp
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
                 sender,
                 recipient,
                 amount0,

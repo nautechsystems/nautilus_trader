@@ -106,12 +106,29 @@ pub static OKX_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).expect("non-zero")));
 
-/// Rate limit for order-related WebSocket operations: 250 requests per second.
-///
-/// Based on OKX documentation for sub-account order limits (1000 per 2 seconds,
-/// so we use half for conservative rate limiting).
+/// Rate limit for single order, cancel, and amend WebSocket operations: 30 requests per second.
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(250).expect("non-zero")).expect("valid constant")
+    Quota::per_second(NonZeroU32::new(30).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for batch order, cancel, and amend WebSocket operations: 7 requests per second.
+pub static OKX_WS_BATCH_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(7).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for mass cancel WebSocket operations: 2 requests per second.
+pub static OKX_WS_MASS_CANCEL_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for algo order WebSocket operations: 10 requests per second.
+pub static OKX_WS_ALGO_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate limit for algo cancel WebSocket operations: 1 request per second.
+pub static OKX_WS_ALGO_CANCEL_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
 
 /// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
@@ -121,24 +138,57 @@ pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 pub static OKX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("subscription")]);
 
-/// Pre-interned rate limit key for order operations (place regular and algo orders).
+/// Pre-interned rate limit key for single regular order operations.
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
 pub static OKX_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("order")]);
 
-/// Pre-interned rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
+/// Pre-interned rate limit key for batch order operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-order")]);
+
+/// Pre-interned rate limit key for single regular cancel operations.
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
-/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
 pub static OKX_RATE_LIMIT_KEY_CANCEL: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("cancel")]);
+
+/// Pre-interned rate limit key for batch cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-cancel")]);
+
+/// Pre-interned rate limit key for mass cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
+pub static OKX_RATE_LIMIT_KEY_MASS_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("mass-cancel")]);
 
 /// Pre-interned rate limit key for amend operations (amend orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>
 pub static OKX_RATE_LIMIT_KEY_AMEND: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("amend")]);
+
+/// Pre-interned rate limit key for batch amend operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-multiple-orders>
+pub static OKX_RATE_LIMIT_KEY_BATCH_AMEND: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("batch-amend")]);
+
+/// Pre-interned rate limit key for algo order operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
+pub static OKX_RATE_LIMIT_KEY_ALGO_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("algo-order")]);
+
+/// Pre-interned rate limit key for algo cancel operations.
+///
+/// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
+pub static OKX_RATE_LIMIT_KEY_ALGO_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("algo-cancel")]);
 
 /// Context stored at order submission time for correlating venue responses.
 ///
@@ -467,6 +517,20 @@ impl OKXWebSocketClient {
         self.inst_id_code_cache.load().get(inst_id).copied()
     }
 
+    fn inst_id_symbol_and_code_from_snapshot(
+        inst_id_codes: &AHashMap<Ustr, u64>,
+        inst_id: &InstrumentId,
+        action: &str,
+    ) -> Result<(Ustr, u64), OKXWsError> {
+        let inst_id_symbol = inst_id.symbol.inner();
+        let inst_id_code = inst_id_codes.get(&inst_id_symbol).copied().ok_or_else(|| {
+            OKXWsError::ClientError(format!(
+                "No instIdCode cached for {inst_id}, cannot {action} order"
+            ))
+        })?;
+        Ok((inst_id_symbol, inst_id_code))
+    }
+
     /// Sets the VIP level for this client.
     ///
     /// The VIP level determines which WebSocket channels are available.
@@ -529,12 +593,36 @@ impl OKXWebSocketClient {
                 *OKX_WS_ORDER_QUOTA,
             ),
             (
+                OKX_RATE_LIMIT_KEY_BATCH_ORDER[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
                 OKX_RATE_LIMIT_KEY_CANCEL[0].as_str().to_string(),
                 *OKX_WS_ORDER_QUOTA,
             ),
             (
+                OKX_RATE_LIMIT_KEY_BATCH_CANCEL[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_MASS_CANCEL[0].as_str().to_string(),
+                *OKX_WS_MASS_CANCEL_QUOTA,
+            ),
+            (
                 OKX_RATE_LIMIT_KEY_AMEND[0].as_str().to_string(),
                 *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_BATCH_AMEND[0].as_str().to_string(),
+                *OKX_WS_BATCH_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_ALGO_ORDER[0].as_str().to_string(),
+                *OKX_WS_ALGO_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_ALGO_CANCEL[0].as_str().to_string(),
+                *OKX_WS_ALGO_CANCEL_QUOTA,
             ),
         ];
 
@@ -1857,6 +1945,114 @@ impl OKXWebSocketClient {
         self.unsubscribe(vec![arg]).await
     }
 
+    /// Subscribes to Nitro spread order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_orders(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::SprdOrders,
+            inst_type: None,
+            inst_family: None,
+            inst_id: None,
+        };
+        self.subscribe(vec![arg]).await
+    }
+
+    /// Unsubscribes from Nitro spread order updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn unsubscribe_spread_orders(&self) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::SprdOrders,
+            inst_type: None,
+            inst_family: None,
+            inst_id: None,
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
+    /// Subscribes to best bid/offer quotes for a spread instrument (`sprd-bbo-tbt`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_quotes(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdBboTbt, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Subscribes to 5-level book snapshots for a spread instrument (`sprd-books5`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdBooks5, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Subscribes to public trades for a spread instrument (`sprd-public-trades`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_trades(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdPublicTrades, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread quotes (`sprd-bbo-tbt`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_quotes(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdBboTbt, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread book snapshots (`sprd-books5`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdBooks5, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread public trades (`sprd-public-trades`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_trades(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdPublicTrades, instrument_id.symbol.inner())
+            .await
+    }
+
     /// Subscribes to algo order updates for the given instrument type.
     ///
     /// # Errors
@@ -2054,7 +2250,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ORDER.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_ORDER.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchOrders),
@@ -2082,7 +2278,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchCancelOrders),
@@ -2110,7 +2306,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_AMEND.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_AMEND.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::BatchAmendOrders),
@@ -2183,16 +2379,16 @@ impl OKXWebSocketClient {
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
 
-        let instrument = self
-            .instruments_cache
-            .get_cloned(&instrument_id.symbol.inner())
-            .ok_or_else(|| {
+        let (instrument_type, quote_currency) = {
+            let instruments = self.instruments_cache.load();
+            let symbol = instrument_id.symbol.inner();
+            let instrument = instruments.get(&symbol).ok_or_else(|| {
                 OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
             })?;
-
-        let instrument_type =
-            okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
-        let quote_currency = instrument.quote_currency();
+            let instrument_type = okx_instrument_type(instrument)
+                .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+            (instrument_type, instrument.quote_currency())
+        };
 
         // OKX options only support limit-style orders
         if instrument_type == OKXInstrumentType::Option
@@ -2609,39 +2805,42 @@ impl OKXWebSocketClient {
     /// # References
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-mass-cancel-order>
     pub async fn mass_cancel_orders(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let instrument = self
-            .instruments_cache
-            .get_cloned(&instrument_id.symbol.inner())
-            .ok_or_else(|| {
-                OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
-            })?;
+        let (inst_type, inst_family) = {
+            let instrument = self
+                .instruments_cache
+                .get_cloned(&instrument_id.symbol.inner())
+                .ok_or_else(|| {
+                    OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
+                })?;
 
-        let inst_type =
-            okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+            let inst_type = okx_instrument_type(&instrument)
+                .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
 
-        let symbol = instrument.symbol().inner();
-        let inst_family = match &instrument {
-            InstrumentAny::CurrencyPair(_) => symbol.as_str().to_string(),
-            InstrumentAny::CryptoPerpetual(_) => symbol
-                .as_str()
-                .strip_suffix("-SWAP")
-                .unwrap_or(symbol.as_str())
-                .to_string(),
-            InstrumentAny::CryptoFuture(_) => {
-                let s = symbol.as_str();
-                if let Some(idx) = s.rfind('-') {
-                    s[..idx].to_string()
-                } else {
-                    s.to_string()
+            let symbol = instrument.symbol().inner();
+            let inst_family = match &instrument {
+                InstrumentAny::CurrencyPair(_) => symbol.as_str().to_string(),
+                InstrumentAny::CryptoPerpetual(_) => symbol
+                    .as_str()
+                    .strip_suffix("-SWAP")
+                    .unwrap_or(symbol.as_str())
+                    .to_string(),
+                InstrumentAny::CryptoFuture(_) => {
+                    let s = symbol.as_str();
+                    if let Some(idx) = s.rfind('-') {
+                        s[..idx].to_string()
+                    } else {
+                        s.to_string()
+                    }
                 }
-            }
-            _ => {
-                return Err(OKXWsError::ClientError(
-                    "Unsupported instrument type for mass cancel".to_string(),
-                ));
-            }
+                _ => {
+                    return Err(OKXWsError::ClientError(
+                        "Unsupported instrument type for mass cancel".to_string(),
+                    ));
+                }
+            };
+
+            (inst_type, inst_family)
         };
-        drop(instrument);
 
         let params = WsMassCancelParams {
             inst_type,
@@ -2663,7 +2862,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_MASS_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id: None,
             op: Some(super::enums::OKXWsOperation::MassCancel),
@@ -2698,116 +2897,121 @@ impl OKXWebSocketClient {
             Option<String>,
         )>,
     ) -> Result<(), OKXWsError> {
-        let mut args: Vec<Value> = Vec::with_capacity(orders.len());
+        let args: Vec<Value> = {
+            let mut args = Vec::with_capacity(orders.len());
+            let inst_id_codes = self.inst_id_code_cache.load();
+            let instruments = self.instruments_cache.load();
 
-        for (
-            inst_type,
-            inst_id,
-            td_mode,
-            cl_ord_id,
-            ord_side,
-            pos_side,
-            ord_type,
-            qty,
-            pr,
-            tp,
-            post_only,
-            reduce_only,
-            speed_bump,
-            outcome,
-        ) in orders
-        {
-            let mut builder = WsPostOrderParamsBuilder::default();
-
-            let inst_id_code = self
-                .get_inst_id_code(&inst_id.symbol.inner())
-                .ok_or_else(|| {
-                    OKXWsError::ClientError(format!(
-                        "No instIdCode cached for {inst_id}, cannot submit order"
-                    ))
-                })?;
-            builder.inst_id_code(inst_id_code);
-
-            builder.td_mode(td_mode);
-            builder.cl_ord_id(cl_ord_id.as_str());
-            builder.side(ord_side.as_specified());
-
-            if inst_type != OKXInstrumentType::Events
-                && let Some(instrument) = self.instruments_cache.get_cloned(&inst_id.symbol.inner())
-            {
-                builder.ccy(instrument.quote_currency().to_string());
-            }
-
-            if let Some(ps) = pos_side {
-                builder.pos_side(OKXPositionSide::from(ps));
-            } else if matches!(
+            for (
                 inst_type,
-                OKXInstrumentType::Swap | OKXInstrumentType::Futures | OKXInstrumentType::Option
-            ) {
-                builder.pos_side(OKXPositionSide::Net);
-            }
+                inst_id,
+                td_mode,
+                cl_ord_id,
+                ord_side,
+                pos_side,
+                ord_type,
+                qty,
+                pr,
+                tp,
+                post_only,
+                reduce_only,
+                speed_bump,
+                outcome,
+            ) in orders
+            {
+                let mut builder = WsPostOrderParamsBuilder::default();
 
-            let okx_ord_type = if post_only.unwrap_or(false) {
-                OKXOrderType::PostOnly
-            } else {
-                match ord_type {
-                    OrderType::Market => OKXOrderType::Market,
-                    OrderType::Limit => OKXOrderType::Limit,
-                    OrderType::MarketToLimit => OKXOrderType::Ioc,
-                    _ => {
-                        return Err(OKXWsError::ClientError(format!(
-                            "Unsupported order type for batch submit: {ord_type:?}"
-                        )));
-                    }
-                }
-            };
+                let (inst_id_symbol, inst_id_code) = Self::inst_id_symbol_and_code_from_snapshot(
+                    &inst_id_codes,
+                    &inst_id,
+                    "submit",
+                )?;
+                builder.inst_id_code(inst_id_code);
 
-            builder.ord_type(okx_ord_type);
-            builder.sz(qty.to_string());
+                builder.td_mode(td_mode);
+                builder.cl_ord_id(cl_ord_id.as_str());
+                builder.side(ord_side.as_specified());
 
-            if let Some(p) = pr {
-                builder.px(p.to_string());
-            } else if let Some(p) = tp {
-                builder.px(p.to_string());
-            }
-
-            if let Some(ro) = reduce_only {
-                builder.reduce_only(ro);
-            }
-
-            let speed_bump = if inst_type == OKXInstrumentType::Events {
-                if outcome.is_none() {
-                    return Err(OKXWsError::ClientError(
-                        "OKX event contract orders require `outcome`".to_string(),
-                    ));
+                if inst_type != OKXInstrumentType::Events
+                    && let Some(instrument) = instruments.get(&inst_id_symbol)
+                {
+                    builder.ccy(instrument.quote_currency().to_string());
                 }
 
-                if okx_ord_type == OKXOrderType::PostOnly {
-                    speed_bump
+                if let Some(ps) = pos_side {
+                    builder.pos_side(OKXPositionSide::from(ps));
+                } else if matches!(
+                    inst_type,
+                    OKXInstrumentType::Swap
+                        | OKXInstrumentType::Futures
+                        | OKXInstrumentType::Option
+                ) {
+                    builder.pos_side(OKXPositionSide::Net);
+                }
+
+                let okx_ord_type = if post_only.unwrap_or(false) {
+                    OKXOrderType::PostOnly
                 } else {
-                    Some(speed_bump.unwrap_or_else(|| "1".to_string()))
+                    match ord_type {
+                        OrderType::Market => OKXOrderType::Market,
+                        OrderType::Limit => OKXOrderType::Limit,
+                        OrderType::MarketToLimit => OKXOrderType::Ioc,
+                        _ => {
+                            return Err(OKXWsError::ClientError(format!(
+                                "Unsupported order type for batch submit: {ord_type:?}"
+                            )));
+                        }
+                    }
+                };
+
+                builder.ord_type(okx_ord_type);
+                builder.sz(qty.to_string());
+
+                if let Some(p) = pr {
+                    builder.px(p.to_string());
+                } else if let Some(p) = tp {
+                    builder.px(p.to_string());
                 }
-            } else {
-                speed_bump
-            };
 
-            if let Some(speed_bump) = speed_bump {
-                builder.speed_bump(speed_bump);
+                if let Some(ro) = reduce_only {
+                    builder.reduce_only(ro);
+                }
+
+                let speed_bump = if inst_type == OKXInstrumentType::Events {
+                    if outcome.is_none() {
+                        return Err(OKXWsError::ClientError(
+                            "OKX event contract orders require `outcome`".to_string(),
+                        ));
+                    }
+
+                    if okx_ord_type == OKXOrderType::PostOnly {
+                        speed_bump
+                    } else {
+                        Some(speed_bump.unwrap_or_else(|| "1".to_string()))
+                    }
+                } else {
+                    speed_bump
+                };
+
+                if let Some(speed_bump) = speed_bump {
+                    builder.speed_bump(speed_bump);
+                }
+
+                if let Some(outcome) = outcome {
+                    builder.outcome(outcome);
+                }
+
+                builder.tag(OKX_NAUTILUS_BROKER_ID);
+
+                let params = builder.build().map_err(|e| {
+                    OKXWsError::ClientError(format!("Build order params error: {e}"))
+                })?;
+                let val = serde_json::to_value(params)
+                    .map_err(|e| OKXWsError::JsonError(e.to_string()))?;
+                args.push(val);
             }
-
-            if let Some(outcome) = outcome {
-                builder.outcome(outcome);
-            }
-
-            builder.tag(OKX_NAUTILUS_BROKER_ID);
-
-            let params = builder
-                .build()
-                .map_err(|e| OKXWsError::ClientError(format!("Build order params error: {e}")))?;
-            let val =
-                serde_json::to_value(params).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
-            args.push(val);
-        }
+            args
+        };
 
         self.ws_batch_place_orders(args).await
     }
@@ -2831,41 +3035,41 @@ impl OKXWebSocketClient {
             Option<String>,
         )>,
     ) -> Result<(), OKXWsError> {
-        let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz, speed_bump) in orders {
-            let mut builder = WsAmendOrderParamsBuilder::default();
+        let args: Vec<Value> = {
+            let mut args = Vec::with_capacity(orders.len());
+            let inst_id_codes = self.inst_id_code_cache.load();
 
-            let inst_id_code = self
-                .get_inst_id_code(&inst_id.symbol.inner())
-                .ok_or_else(|| {
-                    OKXWsError::ClientError(format!(
-                        "No instIdCode cached for {inst_id}, cannot amend order"
-                    ))
+            for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz, speed_bump) in orders {
+                let mut builder = WsAmendOrderParamsBuilder::default();
+
+                let (_, inst_id_code) =
+                    Self::inst_id_symbol_and_code_from_snapshot(&inst_id_codes, &inst_id, "amend")?;
+                builder.inst_id_code(inst_id_code);
+
+                builder.cl_ord_id(cl_ord_id.as_str());
+                builder.new_cl_ord_id(new_cl_ord_id.as_str());
+
+                if let Some(p) = pr {
+                    builder.new_px(p.to_string());
+                }
+
+                if let Some(q) = sz {
+                    builder.new_sz(q.to_string());
+                }
+
+                if let Some(speed_bump) = speed_bump {
+                    builder.speed_bump(speed_bump);
+                }
+
+                let params = builder.build().map_err(|e| {
+                    OKXWsError::ClientError(format!("Build amend batch params error: {e}"))
                 })?;
-            builder.inst_id_code(inst_id_code);
-
-            builder.cl_ord_id(cl_ord_id.as_str());
-            builder.new_cl_ord_id(new_cl_ord_id.as_str());
-
-            if let Some(p) = pr {
-                builder.new_px(p.to_string());
+                let val = serde_json::to_value(params)
+                    .map_err(|e| OKXWsError::JsonError(e.to_string()))?;
+                args.push(val);
             }
-
-            if let Some(q) = sz {
-                builder.new_sz(q.to_string());
-            }
-
-            if let Some(speed_bump) = speed_bump {
-                builder.speed_bump(speed_bump);
-            }
-
-            let params = builder.build().map_err(|e| {
-                OKXWsError::ClientError(format!("Build amend batch params error: {e}"))
-            })?;
-            let val =
-                serde_json::to_value(params).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
-            args.push(val);
-        }
+            args
+        };
 
         self.ws_batch_amend_orders(args).await
     }
@@ -2886,34 +3090,37 @@ impl OKXWebSocketClient {
         &self,
         orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
     ) -> Result<(), OKXWsError> {
-        let mut args: Vec<Value> = Vec::with_capacity(orders.len());
-        for (inst_id, cl_ord_id, ord_id) in orders {
-            let mut builder = WsCancelOrderParamsBuilder::default();
+        let args: Vec<Value> = {
+            let mut args = Vec::with_capacity(orders.len());
+            let inst_id_codes = self.inst_id_code_cache.load();
 
-            let inst_id_code = self
-                .get_inst_id_code(&inst_id.symbol.inner())
-                .ok_or_else(|| {
-                    OKXWsError::ClientError(format!(
-                        "No instIdCode cached for {inst_id}, cannot cancel order"
-                    ))
+            for (inst_id, cl_ord_id, ord_id) in orders {
+                let mut builder = WsCancelOrderParamsBuilder::default();
+
+                let (_, inst_id_code) = Self::inst_id_symbol_and_code_from_snapshot(
+                    &inst_id_codes,
+                    &inst_id,
+                    "cancel",
+                )?;
+                builder.inst_id_code(inst_id_code);
+
+                if let Some(c) = cl_ord_id {
+                    builder.cl_ord_id(c.as_str());
+                }
+
+                if let Some(o) = ord_id {
+                    builder.ord_id(o.as_str());
+                }
+
+                let params = builder.build().map_err(|e| {
+                    OKXWsError::ClientError(format!("Build cancel batch params error: {e}"))
                 })?;
-            builder.inst_id_code(inst_id_code);
-
-            if let Some(c) = cl_ord_id {
-                builder.cl_ord_id(c.as_str());
+                let val = serde_json::to_value(params)
+                    .map_err(|e| OKXWsError::JsonError(e.to_string()))?;
+                args.push(val);
             }
-
-            if let Some(o) = ord_id {
-                builder.ord_id(o.as_str());
-            }
-
-            let params = builder.build().map_err(|e| {
-                OKXWsError::ClientError(format!("Build cancel batch params error: {e}"))
-            })?;
-            let val =
-                serde_json::to_value(params).map_err(|e| OKXWsError::JsonError(e.to_string()))?;
-            args.push(val);
-        }
+            args
+        };
 
         self.ws_batch_cancel_orders(args).await
     }
@@ -3029,7 +3236,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ORDER.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_ORDER.to_vec()),
             request_id: Some(request_id),
             client_order_id: Some(client_order_id),
             op: Some(super::enums::OKXWsOperation::OrderAlgo),
@@ -3092,7 +3299,7 @@ impl OKXWebSocketClient {
 
         let cmd = HandlerCommand::Send {
             payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
+            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_CANCEL.to_vec()),
             request_id: Some(request_id),
             client_order_id,
             op: Some(super::enums::OKXWsOperation::CancelAlgos),

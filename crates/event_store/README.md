@@ -34,14 +34,19 @@ The event store is the durable boundary for deterministic engine history.
 `nautilus-event-store` is a single-node, embedded event store for one trading instance. It defines:
 
 - `BusCaptureAdapter`: the seam between message bus dispatch and the writer.
+- `EventStoreLifecycleOptions`: runtime-only lifecycle policy for custom encoder registries and
+  backend openers.
 - `EventStoreWriter`: the append path, batching, high-watermark advancement, and fail-stop signaling.
 - `EventStoreReader`: the read-only range scan, point lookup, and replay-facing surface.
 - `RedbBackend`: the default on-disk backend, with one `redb` file per run.
+- `MemoryBackend`: the in-process backend used by focused tests and simulation-style capture.
 - `Verifier`: the library surface for integrity checks over a single run.
 - `verify`: the standalone binary for process-isolated verification of sealed run files.
 - `plan_redb_retention`: a non-destructive planner for sealed run-file reclaim candidates.
-- `plan_*_replay_inputs`: first, plan read-only inputs for forensics, decision, and incidents.
-- `load_*_replay_inputs`: then, load replay inputs and selected catalog slices from a plan.
+- `ReplayInputPlan`: planned event-store entries in `seq` order, optionally with typed catalog
+  slice plans.
+- `ReplayInputs`: loaded replay entries in `seq` order, optionally with catalog records grouped
+  under selected slices.
 
 The crate does not replace the data catalog, provide OLAP queries, or aggregate multiple trader
 instances into a consensus log.
@@ -82,6 +87,39 @@ fn inspect_run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Lifecycle options
+
+`EventStoreLifecycle::boot(...)` keeps the default behavior: it opens `RedbBackend` and installs
+`default_registry()`. Advanced callers can pass runtime-only options through
+`EventStoreLifecycle::boot_with_options(...)` without changing serialized `EventStoreConfig`.
+
+Register a custom bus payload before the lifecycle opens a run:
+
+```rust
+use bytes::Bytes;
+use nautilus_event_store::{
+    EncodedPayload, EncoderRegistry, EventStoreLifecycleOptions,
+};
+use ustr::Ustr;
+
+#[derive(Debug)]
+struct AuditRecord {
+    payload: Bytes,
+}
+
+let mut registry = EncoderRegistry::new();
+registry.register::<AuditRecord, _>(Ustr::from("AuditRecord"), |record| {
+    Ok(EncodedPayload::without_indices(record.payload.clone()))
+});
+
+let options = EventStoreLifecycleOptions::new().with_encoder_registry(registry);
+// Pass `options` to EventStoreLifecycle::boot_with_options(...).
+```
+
+The same options type accepts a backend opener. The default opener remains `RedbBackend`; tests or
+simulation harnesses can supply an opener that returns `MemoryBackend` or another `EventStore`
+implementation.
 
 ## Storage model
 

@@ -131,15 +131,14 @@ impl CompositeMarketMaker {
         net_position: f64,
         worst_long: Decimal,
         worst_short: Decimal,
-    ) -> Vec<(OrderSide, Price)> {
-        let instrument = self
-            .instrument
-            .as_ref()
-            .expect("instrument should be resolved in on_start");
-        let trade_size = self
-            .trade_size
-            .expect("trade_size should be resolved in on_start")
-            .as_decimal();
+    ) -> anyhow::Result<Vec<(OrderSide, Price)>> {
+        let Some(instrument) = self.instrument.as_ref() else {
+            anyhow::bail!("Cannot compute quotes: instrument is not resolved");
+        };
+        let Some(trade_size) = self.trade_size else {
+            anyhow::bail!("Cannot compute quotes: trade_size is not resolved");
+        };
+        let trade_size = trade_size.as_decimal();
         let max_pos = self.config.max_position.as_decimal();
 
         let anchor_f64 = anchor.as_f64();
@@ -165,7 +164,7 @@ impl CompositeMarketMaker {
         };
 
         if crossed {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let mut orders = Vec::new();
@@ -182,7 +181,7 @@ impl CompositeMarketMaker {
             orders.push((OrderSide::Sell, price));
         }
 
-        orders
+        Ok(orders)
     }
 }
 
@@ -265,11 +264,10 @@ impl DataActor for CompositeMarketMaker {
         }
 
         let anchor_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
-        let anchor = Price::new(
-            anchor_f64,
-            self.price_precision
-                .expect("price_precision should be resolved in on_start"),
-        );
+        let price_precision = self.price_precision.ok_or_else(|| {
+            anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
+        })?;
+        let anchor = Price::new(anchor_f64, price_precision);
 
         let signal_residual = self.signal_residual();
         let instrument_id = self.config.instrument_id;
@@ -368,7 +366,7 @@ impl DataActor for CompositeMarketMaker {
             net_position,
             worst_long,
             worst_short,
-        );
+        )?;
 
         if quotes.is_empty() {
             return Ok(());
@@ -376,7 +374,7 @@ impl DataActor for CompositeMarketMaker {
 
         let trade_size = self
             .trade_size
-            .expect("trade_size should be resolved in on_start");
+            .ok_or_else(|| anyhow::anyhow!("Cannot handle quote: trade_size is not resolved"))?;
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {

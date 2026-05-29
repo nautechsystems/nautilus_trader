@@ -29,6 +29,7 @@ __all__ = [
     "get_hyperliquid_ws_url",
     "hyperliquid_cloid_from_client_order_id",
     "hyperliquid_product_type_from_symbol",
+    "hyperliquid_resolve_execution_account_address",
 ]
 
 HYPERLIQUID_POST_ONLY_WOULD_MATCH: str
@@ -462,3 +463,9 @@ def get_hyperliquid_http_base_url(environment: HyperliquidEnvironment) -> str: .
 def get_hyperliquid_ws_url(environment: HyperliquidEnvironment) -> str: ...
 def hyperliquid_cloid_from_client_order_id(client_order_id: model.ClientOrderId) -> str: ...
 def hyperliquid_product_type_from_symbol(symbol: str) -> HyperliquidProductType: ...
+def hyperliquid_resolve_execution_account_address(
+    private_key: str | None = None,
+    vault_address: str | None = None,
+    account_address: str | None = None,
+    environment: HyperliquidEnvironment = HyperliquidEnvironment.MAINNET,
+) -> str | None: ...

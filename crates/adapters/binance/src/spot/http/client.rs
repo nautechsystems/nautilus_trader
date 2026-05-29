@@ -1415,6 +1415,14 @@ impl BinanceSpotHttpClient {
         self.clock.get_time_ns()
     }
 
+    fn command_validation_error(message: impl Into<String>) -> anyhow::Error {
+        anyhow::anyhow!(BinanceSpotHttpError::ValidationError(message.into()))
+    }
+
+    fn response_parse_error(message: impl Into<String>) -> anyhow::Error {
+        anyhow::anyhow!(BinanceSpotHttpError::ResponseParseError(message.into()))
+    }
+
     /// Retrieves an instrument from the cache.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
@@ -1791,11 +1799,15 @@ impl BinanceSpotHttpClient {
         display_qty: Option<Quantity>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
-        let instrument = self.instrument_from_cache(symbol)?;
+        let instrument = self
+            .instrument_from_cache(symbol)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
         let ts_init = self.generate_ts_init();
 
-        let binance_side = BinanceSide::try_from(order_side)?;
-        let binance_order_type = order_type_to_binance_spot(order_type, post_only)?;
+        let binance_side = BinanceSide::try_from(order_side)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
+        let binance_order_type = order_type_to_binance_spot(order_type, post_only)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
 
         // Validate trigger price for conditional orders
         let requires_trigger = matches!(
@@ -1807,7 +1819,9 @@ impl BinanceSpotHttpClient {
         );
 
         if requires_trigger && trigger_price.is_none() {
-            anyhow::bail!("Conditional orders require a trigger price");
+            return Err(Self::command_validation_error(
+                "Conditional orders require a trigger price",
+            ));
         }
 
         // Validate price for order types that require it
@@ -1820,7 +1834,9 @@ impl BinanceSpotHttpClient {
         );
 
         if requires_price && price.is_none() {
-            anyhow::bail!("{binance_order_type:?} orders require a price");
+            return Err(Self::command_validation_error(format!(
+                "{binance_order_type:?} orders require a price"
+            )));
         }
 
         // Only send TIF for order types that support it
@@ -1831,7 +1847,10 @@ impl BinanceSpotHttpClient {
                 | BinanceSpotOrderType::TakeProfitLimit
         );
         let binance_tif = if supports_tif {
-            Some(time_in_force_to_binance_spot(time_in_force)?)
+            Some(
+                time_in_force_to_binance_spot(time_in_force)
+                    .map_err(|e| Self::command_validation_error(e.to_string()))?,
+            )
         } else {
             None
         };
@@ -1843,7 +1862,9 @@ impl BinanceSpotHttpClient {
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID);
 
         if quote_quantity && binance_order_type != BinanceSpotOrderType::Market {
-            anyhow::bail!("quoteOrderQty is only supported for MARKET orders");
+            return Err(Self::command_validation_error(
+                "quoteOrderQty is only supported for MARKET orders",
+            ));
         }
 
         let (base_qty, quote_qty) = if quote_quantity {
@@ -1875,6 +1896,7 @@ impl BinanceSpotHttpClient {
             BINANCE_NAUTILUS_SPOT_BROKER_ID,
             ts_init,
         )
+        .map_err(|e| Self::response_parse_error(e.to_string()))
     }
 
     /// Submits multiple orders in a single batch request.
@@ -1913,17 +1935,21 @@ impl BinanceSpotHttpClient {
         price: Option<Price>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
-        let instrument = self.instrument_from_cache(symbol)?;
+        let instrument = self
+            .instrument_from_cache(symbol)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
         let ts_init = self.generate_ts_init();
 
-        let binance_side = BinanceSide::try_from(order_side)?;
-        let binance_order_type = order_type_to_binance_spot(order_type, false)?;
-        let binance_tif = time_in_force_to_binance_spot(time_in_force)?;
+        let binance_side = BinanceSide::try_from(order_side)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
+        let binance_order_type = order_type_to_binance_spot(order_type, false)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
+        let binance_tif = time_in_force_to_binance_spot(time_in_force)
+            .map_err(|e| Self::command_validation_error(e.to_string()))?;
 
-        let cancel_order_id: i64 = venue_order_id
-            .inner()
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid venue order ID: {venue_order_id}"))?;
+        let cancel_order_id: i64 = venue_order_id.inner().parse().map_err(|_| {
+            Self::command_validation_error(format!("Invalid venue order ID: {venue_order_id}"))
+        })?;
 
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
@@ -1952,6 +1978,7 @@ impl BinanceSpotHttpClient {
             BINANCE_NAUTILUS_SPOT_BROKER_ID,
             ts_init,
         )
+        .map_err(|e| Self::response_parse_error(e.to_string()))
     }
 
     /// Cancels an existing order on the venue.
@@ -1969,10 +1996,23 @@ impl BinanceSpotHttpClient {
     ) -> anyhow::Result<VenueOrderId> {
         let symbol = instrument_id.symbol.inner();
 
-        let order_id = venue_order_id
-            .map(|id| id.inner().parse::<i64>())
-            .transpose()
-            .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
+        let order_id = match venue_order_id {
+            Some(venue_order_id) => match venue_order_id.inner().parse::<i64>() {
+                Ok(order_id) => Some(order_id),
+                Err(e) if client_order_id.is_some() => {
+                    log::warn!(
+                        "Unable to parse venue_order_id {venue_order_id} for cancel, canceling by client_order_id: {e}"
+                    );
+                    None
+                }
+                Err(e) => {
+                    return Err(Self::command_validation_error(format!(
+                        "Invalid venue order ID: {e}"
+                    )));
+                }
+            },
+            None => None,
+        };
 
         let client_id_str =
             client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_SPOT_BROKER_ID));

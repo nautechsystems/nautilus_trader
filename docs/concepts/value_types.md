@@ -196,7 +196,7 @@ consolidated into a single file.
 :::
 
 For how instrument-level precision constrains valid prices and quantities, see the
-[Precision](instruments.md#precision) section of the Instruments guide.
+[Precision](instruments/index.md#precision) section of the Instruments guide.
 
 ### Arithmetic precision
 

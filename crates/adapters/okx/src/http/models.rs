@@ -158,6 +158,154 @@ pub struct OKXSpreadLeg {
     pub side: OKXSide,
 }
 
+/// Represents the request body for `POST /api/v5/sprd/order`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXPlaceSpreadOrderRequest {
+    /// Spread ID.
+    pub sprd_id: String,
+    /// Client-supplied order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Order tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// Order side.
+    pub side: OKXSide,
+    /// Order type.
+    pub ord_type: OKXOrderType,
+    /// Order size.
+    pub sz: String,
+    /// Limit price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub px: Option<String>,
+}
+
+/// Represents the request body for `POST /api/v5/sprd/cancel-order`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelSpreadOrderRequest {
+    /// Order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Client-supplied order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+}
+
+/// Represents the request body for `POST /api/v5/sprd/mass-cancel`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXCancelAllSpreadOrdersRequest {
+    /// Spread ID.
+    pub sprd_id: String,
+}
+
+/// Represents a spread order from `GET /api/v5/sprd/order` and history endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXSpreadOrder {
+    /// Spread ID.
+    pub sprd_id: Ustr,
+    /// Order ID.
+    pub ord_id: Ustr,
+    /// Client order ID.
+    #[serde(default)]
+    pub cl_ord_id: Ustr,
+    /// Order tag.
+    #[serde(default)]
+    pub tag: String,
+    /// Order side.
+    pub side: OKXSide,
+    /// Order type.
+    pub ord_type: OKXOrderType,
+    /// Order size.
+    pub sz: String,
+    /// Order price.
+    #[serde(default)]
+    pub px: String,
+    /// Average fill price.
+    #[serde(default)]
+    pub avg_px: String,
+    /// Order state.
+    pub state: OKXOrderStatus,
+    /// Accumulated filled size.
+    #[serde(default)]
+    pub acc_fill_sz: String,
+    /// Pending fill size.
+    #[serde(default)]
+    pub pending_fill_sz: String,
+    /// Pending settlement size.
+    #[serde(default)]
+    pub pending_settle_sz: String,
+    /// Canceled size.
+    #[serde(default)]
+    pub canceled_sz: String,
+    /// Last fill size.
+    #[serde(default)]
+    pub fill_sz: String,
+    /// Last fill price.
+    #[serde(default)]
+    pub fill_px: String,
+    /// Trade ID for the last fill, if provided.
+    #[serde(default)]
+    pub trade_id: Ustr,
+    /// Cancel source.
+    #[serde(default)]
+    pub cancel_source: String,
+    /// Request ID for amend responses.
+    #[serde(default)]
+    pub req_id: String,
+    /// Amend result.
+    #[serde(default)]
+    pub amend_result: String,
+    /// Response code.
+    #[serde(default)]
+    pub code: String,
+    /// Response message.
+    #[serde(default)]
+    pub msg: String,
+    /// Creation time in milliseconds.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub c_time: Option<u64>,
+    /// Last update time in milliseconds.
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub u_time: Option<u64>,
+}
+
+/// Represents a spread trade from `GET /api/v5/sprd/trades`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXSpreadTrade {
+    /// Spread ID.
+    pub sprd_id: Ustr,
+    /// Trade ID.
+    pub trade_id: Ustr,
+    /// Order ID.
+    pub ord_id: Ustr,
+    /// Client order ID.
+    #[serde(default)]
+    pub cl_ord_id: Ustr,
+    /// Last filled price.
+    pub fill_px: String,
+    /// Last filled quantity.
+    pub fill_sz: String,
+    /// Trade side.
+    pub side: OKXSide,
+    /// Execution type.
+    #[serde(default)]
+    pub exec_type: OKXExecType,
+    /// Fee currency.
+    #[serde(default)]
+    pub fee_ccy: String,
+    /// Fee amount.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub fee: Option<String>,
+    /// Timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
 /// Settlement configuration for an OKX event contract series.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

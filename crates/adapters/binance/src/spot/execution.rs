@@ -90,6 +90,7 @@ use crate::{
         },
         http::{
             client::BinanceSpotHttpClient,
+            error::BinanceSpotHttpError,
             models::BatchCancelResult,
             query::{BatchCancelItem, CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
         },
@@ -277,20 +278,9 @@ impl BinanceSpotExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    let rejected = OrderRejected::new(
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        account_id,
-                        format!("ws-submit-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
-                        false,
-                        false,
+                    log::error!(
+                        "WS submit request failed for {client_order_id}, awaiting reconciliation: {e}"
                     );
-                    event_emitter.send_order_event(OrderEventAny::Rejected(rejected));
                     anyhow::bail!("WS submit order failed: {e}");
                 }
                 Ok(())
@@ -336,24 +326,30 @@ impl BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Accepted(accepted));
                     }
                     Err(e) => {
-                        let due_post_only = e
-                            .downcast_ref::<crate::spot::http::BinanceSpotHttpError>()
-                            .is_some_and(is_spot_post_only_rejection);
-                        dispatch_state.cleanup_terminal(client_order_id);
-                        let rejected = OrderRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            account_id,
-                            format!("submit-order-error: {e}").into(),
-                            UUID4::new(),
-                            ts_init,
-                            clock.get_time_ns(),
-                            false,
-                            due_post_only,
-                        );
-                        event_emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                        if is_structured_venue_rejection(&e) || is_local_command_failure(&e) {
+                            let due_post_only = e
+                                .downcast_ref::<BinanceSpotHttpError>()
+                                .is_some_and(is_spot_post_only_rejection);
+                            dispatch_state.cleanup_terminal(client_order_id);
+                            let rejected = OrderRejected::new(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                account_id,
+                                format!("submit-order-error: {e}").into(),
+                                UUID4::new(),
+                                ts_init,
+                                clock.get_time_ns(),
+                                false,
+                                due_post_only,
+                            );
+                            event_emitter.send_order_event(OrderEventAny::Rejected(rejected));
+                        } else {
+                            log::error!(
+                                "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
+                            );
+                        }
                         return Err(e);
                     }
                 }
@@ -393,21 +389,10 @@ impl BinanceSpotExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    let ts_now = clock.get_time_ns();
-                    let rejected_event = OrderCancelRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        format!("ws-cancel-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
+                    log::error!(
+                        "WS cancel request failed for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
                     );
-                    event_emitter.send_order_event(OrderEventAny::CancelRejected(rejected_event));
                     anyhow::bail!("WS cancel order failed: {e}");
                 }
                 Ok(())
@@ -424,8 +409,7 @@ impl BinanceSpotExecutionClient {
                         command.venue_order_id,
                         Some(command.client_order_id),
                     )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
+                    .await;
 
                 match result {
                     Ok(venue_order_id) => {
@@ -446,22 +430,34 @@ impl BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
                     }
                     Err(e) => {
-                        let ts_now = clock.get_time_ns();
-                        let rejected_event = OrderCancelRejected::new(
-                            trader_id,
-                            command.strategy_id,
-                            command.instrument_id,
-                            command.client_order_id,
-                            format!("cancel-order-error: {e}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            command.venue_order_id,
-                            Some(account_id),
-                        );
-                        event_emitter
-                            .send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                        if is_structured_venue_rejection(&e) {
+                            let ts_now = clock.get_time_ns();
+                            let rejected_event = OrderCancelRejected::new(
+                                trader_id,
+                                command.strategy_id,
+                                command.instrument_id,
+                                command.client_order_id,
+                                format!("cancel-order-error: {e}").into(),
+                                UUID4::new(),
+                                ts_now,
+                                ts_now,
+                                false,
+                                command.venue_order_id,
+                                Some(account_id),
+                            );
+                            event_emitter
+                                .send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                        } else if is_local_command_failure(&e) {
+                            log::warn!(
+                                "Cancel command failed local validation for {}: {e}",
+                                command.client_order_id
+                            );
+                        } else {
+                            log::error!(
+                                "Ambiguous cancel failure for {}, awaiting reconciliation: {e}",
+                                command.client_order_id
+                            );
+                        }
                         return Err(e);
                     }
                 }
@@ -998,21 +994,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     .await
                 {
                     dispatch_state.pending_requests.remove(&request_id);
-                    let ts_now = clock.get_time_ns();
-                    let rejected_event = OrderModifyRejected::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        format!("ws-modify-order-error: {e}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        command.venue_order_id,
-                        Some(account_id),
+                    log::error!(
+                        "WS modify request failed for {}, awaiting reconciliation: {e}",
+                        command.client_order_id
                     );
-                    event_emitter.send_order_event(OrderEventAny::ModifyRejected(rejected_event));
                     anyhow::bail!("WS modify order failed: {e}");
                 }
                 Ok(())
@@ -1023,22 +1008,26 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             log::debug!("WS trading not active, falling back to HTTP for modify_order");
 
             self.spawn_task("modify_order_http", async move {
-                let result = http_client
-                    .modify_order(
-                        account_id,
-                        command.instrument_id,
-                        command
-                            .venue_order_id
-                            .ok_or_else(|| anyhow::anyhow!("venue_order_id required for modify"))?,
-                        command.client_order_id,
-                        order_side,
-                        order_type,
-                        quantity,
-                        time_in_force,
-                        command.price,
-                    )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
+                let result = match command.venue_order_id {
+                    Some(venue_order_id) => {
+                        http_client
+                            .modify_order(
+                                account_id,
+                                command.instrument_id,
+                                venue_order_id,
+                                command.client_order_id,
+                                order_side,
+                                order_type,
+                                quantity,
+                                time_in_force,
+                                command.price,
+                            )
+                            .await
+                    }
+                    None => Err(anyhow::anyhow!(BinanceSpotHttpError::ValidationError(
+                        "venue_order_id required for modify".to_string()
+                    ))),
+                };
 
                 match result {
                     Ok(report) => {
@@ -1063,22 +1052,29 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Updated(updated_event));
                     }
                     Err(e) => {
-                        let ts_now = clock.get_time_ns();
-                        let rejected_event = OrderModifyRejected::new(
-                            trader_id,
-                            command.strategy_id,
-                            command.instrument_id,
-                            command.client_order_id,
-                            format!("modify-order-error: {e}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            command.venue_order_id,
-                            Some(account_id),
-                        );
-                        event_emitter
-                            .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                        if is_structured_venue_rejection(&e) || is_local_command_failure(&e) {
+                            let ts_now = clock.get_time_ns();
+                            let rejected_event = OrderModifyRejected::new(
+                                trader_id,
+                                command.strategy_id,
+                                command.instrument_id,
+                                command.client_order_id,
+                                format!("modify-order-error: {e}").into(),
+                                UUID4::new(),
+                                ts_now,
+                                ts_now,
+                                false,
+                                command.venue_order_id,
+                                Some(account_id),
+                            );
+                            event_emitter
+                                .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                        } else {
+                            log::error!(
+                                "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
+                                command.client_order_id
+                            );
+                        }
                         return Err(e);
                     }
                 }
@@ -1260,23 +1256,16 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         }
                     }
                     Err(e) => {
-                        for cancel in chunk {
-                            let rejected_event = OrderCancelRejected::new(
-                                trader_id,
-                                cancel.strategy_id,
-                                cancel.instrument_id,
-                                cancel.client_order_id,
-                                format!("batch-cancel-request-failed: {e}").into(),
-                                UUID4::new(),
-                                clock.get_time_ns(),
-                                cancel.ts_init,
-                                false,
-                                cancel.venue_order_id,
-                                Some(account_id),
+                        if is_local_http_command_failure(&e) {
+                            log::warn!(
+                                "Batch cancel command failed local validation for {} orders: {e}",
+                                chunk.len()
                             );
-
-                            event_emitter
-                                .send_order_event(OrderEventAny::CancelRejected(rejected_event));
+                        } else {
+                            log::error!(
+                                "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
+                                chunk.len()
+                            );
                         }
                     }
                 }
@@ -1439,6 +1428,12 @@ fn dispatch_ws_trading_message(
                 );
                 emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
             }
+        }
+        BinanceSpotWsTradingMessage::RequestFailed { request_id, msg } => {
+            dispatch_state.pending_requests.remove(&request_id);
+            log::error!(
+                "WS trading request failed without structured venue response: request_id={request_id}, {msg}"
+            );
         }
         BinanceSpotWsTradingMessage::AllOrdersCanceled {
             request_id,
@@ -1961,15 +1956,32 @@ fn dispatch_untracked_execution_report(
 }
 
 // Checks for GTX (-5022) and spot LIMIT_MAKER (-2010 + specific message)
-fn is_spot_post_only_rejection(error: &crate::spot::http::BinanceSpotHttpError) -> bool {
+fn is_spot_post_only_rejection(error: &BinanceSpotHttpError) -> bool {
     match error {
-        crate::spot::http::BinanceSpotHttpError::BinanceError { code, message } => {
+        BinanceSpotHttpError::BinanceError { code, message } => {
             *code == BINANCE_GTX_ORDER_REJECT_CODE
                 || (*code == BINANCE_NEW_ORDER_REJECTED_CODE
                     && message == BINANCE_SPOT_POST_ONLY_REJECT_MSG)
         }
         _ => false,
     }
+}
+
+fn is_structured_venue_rejection(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceSpotHttpError>()
+        .is_some_and(|be| matches!(be, BinanceSpotHttpError::BinanceError { .. }))
+}
+
+fn is_local_command_failure(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<BinanceSpotHttpError>()
+        .is_some_and(is_local_http_command_failure)
+}
+
+fn is_local_http_command_failure(err: &BinanceSpotHttpError) -> bool {
+    matches!(
+        err,
+        BinanceSpotHttpError::MissingCredentials | BinanceSpotHttpError::ValidationError(_)
+    )
 }
 
 #[cfg(test)]
@@ -2140,39 +2152,39 @@ mod tests {
 
     #[rstest]
     #[case::gtx(
-        crate::spot::http::BinanceSpotHttpError::BinanceError {
+        BinanceSpotHttpError::BinanceError {
             code: BINANCE_GTX_ORDER_REJECT_CODE,
             message: "Order would immediately trigger.".to_string(),
         },
         true,
     )]
     #[case::spot_post_only(
-        crate::spot::http::BinanceSpotHttpError::BinanceError {
+        BinanceSpotHttpError::BinanceError {
             code: BINANCE_NEW_ORDER_REJECTED_CODE,
             message: BINANCE_SPOT_POST_ONLY_REJECT_MSG.to_string(),
         },
         true,
     )]
     #[case::new_order_rejected_other_message(
-        crate::spot::http::BinanceSpotHttpError::BinanceError {
+        BinanceSpotHttpError::BinanceError {
             code: BINANCE_NEW_ORDER_REJECTED_CODE,
             message: "Insufficient balance.".to_string(),
         },
         false,
     )]
     #[case::unrelated_code(
-        crate::spot::http::BinanceSpotHttpError::BinanceError {
+        BinanceSpotHttpError::BinanceError {
             code: -2011,
             message: "Unknown order sent.".to_string(),
         },
         false,
     )]
     #[case::non_binance_error(
-        crate::spot::http::BinanceSpotHttpError::NetworkError("connection reset".to_string()),
+        BinanceSpotHttpError::NetworkError("connection reset".to_string()),
         false,
     )]
     fn test_is_spot_post_only_rejection(
-        #[case] error: crate::spot::http::BinanceSpotHttpError,
+        #[case] error: BinanceSpotHttpError,
         #[case] expected: bool,
     ) {
         assert_eq!(is_spot_post_only_rejection(&error), expected);
