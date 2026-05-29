@@ -57,16 +57,16 @@ pub struct BetfairTicker {
     /// The instrument ID for this ticker.
     pub instrument_id: InstrumentId,
     /// Last traded price.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub last_traded_price: Option<Decimal>,
     /// Total traded volume.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub traded_volume: Option<Decimal>,
     /// Starting price near (projected BSP from matched portion).
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub starting_price_near: Option<Decimal>,
     /// Starting price far (projected BSP from unmatched portion).
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub starting_price_far: Option<Decimal>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -82,7 +82,7 @@ pub struct BetfairStartingPrice {
     /// The instrument ID for this starting price.
     pub instrument_id: InstrumentId,
     /// The realized best starting price value.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub bsp: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -104,10 +104,10 @@ pub struct BetfairBspBookDelta {
     /// The order side as `OrderSide` u8.
     pub side: u32,
     /// The price level.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub price: Decimal,
     /// The size at this price level.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub size: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -140,21 +140,21 @@ pub struct BetfairOrderVoided {
     /// The venue (Betfair) order ID (bet ID).
     pub venue_order_id: String,
     /// The size that was voided.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub size_voided: Decimal,
     /// The order price.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub price: Decimal,
     /// The original order size.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub size: Decimal,
     /// The order side ("BACK" or "LAY").
     pub side: String,
     /// The average price matched.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub avg_price_matched: Option<Decimal>,
     /// The total size matched.
-    #[custom_data_field(json)]
+    #[custom_data_field(serde)]
     pub size_matched: Option<Decimal>,
     /// The void reason. Empty string if absent.
     pub reason: String,
