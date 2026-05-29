@@ -195,6 +195,7 @@ struct ResolveRequestSummary {
     fetched_markets: usize,
     resolved_markets: usize,
     emitted_condition_ids: Vec<String>,
+    failed_condition_ids: Vec<String>,
     used_watchlist_fallback: bool,
     timed_out_watchlist: usize,
     error: Option<String>,
@@ -205,6 +206,7 @@ struct ResolveApplyBatchStats {
     fetched_markets: usize,
     resolved_markets: usize,
     emitted_condition_ids: Vec<String>,
+    failed_condition_ids: Vec<String>,
     error: Option<String>,
 }
 
@@ -220,6 +222,7 @@ struct PolymarketResolveRequestSummaryData {
     fetched_markets: usize,
     resolved_markets: usize,
     emitted_condition_ids: Vec<String>,
+    failed_condition_ids: Vec<String>,
     used_watchlist_fallback: bool,
     timed_out_watchlist: usize,
     error: Option<String>,
@@ -234,6 +237,7 @@ impl PolymarketResolveRequestSummaryData {
             fetched_markets: summary.fetched_markets,
             resolved_markets: summary.resolved_markets,
             emitted_condition_ids: summary.emitted_condition_ids,
+            failed_condition_ids: summary.failed_condition_ids,
             used_watchlist_fallback: summary.used_watchlist_fallback,
             timed_out_watchlist: summary.timed_out_watchlist,
             error: summary.error,
@@ -288,6 +292,7 @@ impl CustomDataTrait for PolymarketResolveRequestSummaryData {
         dict.set_item("fetched_markets", self.fetched_markets)?;
         dict.set_item("resolved_markets", self.resolved_markets)?;
         dict.set_item("emitted_condition_ids", self.emitted_condition_ids.clone())?;
+        dict.set_item("failed_condition_ids", self.failed_condition_ids.clone())?;
         dict.set_item("used_watchlist_fallback", self.used_watchlist_fallback)?;
         dict.set_item("timed_out_watchlist", self.timed_out_watchlist)?;
         dict.set_item("error", self.error.clone())?;
@@ -628,6 +633,13 @@ fn parse_condition_ids_from_request_params(params: &Option<Params>) -> Vec<Strin
         if let Some(instrument_ids) = parse_string_array_param(instrument_ids_value) {
             for value in instrument_ids {
                 if let Ok(instrument_id) = value.parse::<InstrumentId>() {
+                    if instrument_id.venue != *POLYMARKET_VENUE {
+                        log::warn!(
+                            "Ignoring `instrument_ids` entry with non-Polymarket venue: {instrument_id}"
+                        );
+                        continue;
+                    }
+
                     if let Ok(condition_id) = extract_condition_id(&instrument_id) {
                         condition_ids.push(condition_id);
                     } else {
@@ -649,6 +661,16 @@ fn parse_condition_ids_from_request_params(params: &Option<Params>) -> Vec<Strin
     condition_ids.sort();
     condition_ids.dedup();
     condition_ids
+}
+
+fn request_params_has_explicit_condition_selector(params: &Option<Params>) -> bool {
+    let Some(params) = params.as_ref() else {
+        return false;
+    };
+
+    params.contains_key("condition_id")
+        || params.contains_key("condition_ids")
+        || params.contains_key("instrument_ids")
 }
 
 // Inserts `instrument` into the live instrument cache and updates the
@@ -829,10 +851,13 @@ impl PolymarketDataClient {
         error_mode: ResolveBatchErrorMode,
     ) -> ResolveApplyBatchStats {
         let mut stats = ResolveApplyBatchStats::default();
+        let mut unique_condition_ids = condition_ids.to_vec();
+        unique_condition_ids.sort();
+        unique_condition_ids.dedup();
 
-        for condition_id in condition_ids {
+        for chunk in unique_condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
             let params = GetGammaMarketsParams {
-                condition_ids: Some(condition_id.clone()),
+                condition_ids: Some(chunk.join(",")),
                 closed: Some(true),
                 ..Default::default()
             };
@@ -840,34 +865,44 @@ impl PolymarketDataClient {
             match gamma_client.request_markets_by_params(params).await {
                 Ok(markets) => {
                     stats.fetched_markets += markets.len();
-                    let Some(market) = markets
+                    let resolved_by_condition = markets
                         .into_iter()
-                        .find(|market| market.condition_id == *condition_id)
-                    else {
-                        continue;
-                    };
+                        .filter_map(|market| {
+                            build_strict_resolved_market(&market)
+                                .map(|resolved| (resolved.condition_id.clone(), resolved))
+                        })
+                        .collect::<ahash::AHashMap<String, StrictResolvedMarket>>();
 
-                    let Some(resolved) = build_strict_resolved_market(&market) else {
-                        continue;
-                    };
+                    for condition_id in chunk {
+                        let Some(resolved) = resolved_by_condition.get(condition_id) else {
+                            continue;
+                        };
 
-                    stats.resolved_markets += 1;
-                    let emitted = Self::apply_condition_resolution(
-                        ctx,
-                        &resolved.condition_id,
-                        &resolved.winning_asset_id,
-                        &resolved.winning_outcome,
-                    );
+                        stats.resolved_markets += 1;
+                        let emitted = Self::apply_condition_resolution(
+                            ctx,
+                            &resolved.condition_id,
+                            &resolved.winning_asset_id,
+                            &resolved.winning_outcome,
+                        );
 
-                    if emitted > 0 {
-                        stats.emitted_condition_ids.push(resolved.condition_id);
+                        if emitted > 0 {
+                            stats
+                                .emitted_condition_ids
+                                .push(resolved.condition_id.clone());
+                        }
                     }
                 }
                 Err(e) => {
-                    let message =
-                        format!("Resolve request failed for condition_id={condition_id}: {e}");
+                    let message = format!(
+                        "Resolve request failed for {} condition_id(s): {e}",
+                        chunk.len()
+                    );
                     log::warn!("{message}");
-                    stats.error = Some(message);
+                    if stats.error.is_none() {
+                        stats.error = Some(message);
+                    }
+                    stats.failed_condition_ids.extend(chunk.iter().cloned());
 
                     if error_mode == ResolveBatchErrorMode::StopOnFirstError {
                         break;
@@ -2117,27 +2152,37 @@ impl DataClient for PolymarketDataClient {
                 fetched_markets: 0,
                 resolved_markets: 0,
                 emitted_condition_ids: Vec::new(),
+                failed_condition_ids: Vec::new(),
                 used_watchlist_fallback: false,
                 timed_out_watchlist: 0,
                 error: None,
             };
 
+            let has_explicit_selector =
+                request_params_has_explicit_condition_selector(&request_params);
             let mut condition_ids = parse_condition_ids_from_request_params(&request_params);
             if condition_ids.is_empty() {
-                summary.used_watchlist_fallback = true;
-                let snapshot = watchlist.load();
-                let selection = collect_resolve_watch_selection(
-                    &snapshot,
-                    clock.get_time_ns(),
-                    grace_secs,
-                    max_wait_secs,
-                    ResolveWatchSelectionMode::ManualFallback,
-                );
-                drop(snapshot);
+                if has_explicit_selector {
+                    summary.error = Some(
+                        "No valid Polymarket condition_ids could be resolved from request params"
+                            .to_string(),
+                    );
+                } else {
+                    summary.used_watchlist_fallback = true;
+                    let snapshot = watchlist.load();
+                    let selection = collect_resolve_watch_selection(
+                        &snapshot,
+                        clock.get_time_ns(),
+                        grace_secs,
+                        max_wait_secs,
+                        ResolveWatchSelectionMode::ManualFallback,
+                    );
+                    drop(snapshot);
 
-                pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
-                summary.timed_out_watchlist = selection.timed_out_watchlist;
-                condition_ids = selection.condition_ids;
+                    pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
+                    summary.timed_out_watchlist = selection.timed_out_watchlist;
+                    condition_ids = selection.condition_ids;
+                }
             }
 
             summary.requested_condition_ids = condition_ids.clone();
@@ -2152,7 +2197,10 @@ impl DataClient for PolymarketDataClient {
             summary.fetched_markets = stats.fetched_markets;
             summary.resolved_markets = stats.resolved_markets;
             summary.emitted_condition_ids = stats.emitted_condition_ids;
-            summary.error = stats.error;
+            summary.failed_condition_ids = stats.failed_condition_ids;
+            if summary.error.is_none() {
+                summary.error = stats.error;
+            }
 
             let ts_now = clock.get_time_ns();
             let payload = Arc::new(PolymarketResolveRequestSummaryData::from_summary(
@@ -3356,6 +3404,22 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_condition_ids_ignores_non_polymarket_instrument_ids() {
+        let mut params = Params::new();
+        params.insert(
+            "instrument_ids".to_string(),
+            serde_json::json!([
+                "0xCOND-A-0xTOKENA.POLYMARKET",
+                "BTCUSDT-PERP.BINANCE",
+                "ETHUSDT-PERP.BINANCE"
+            ]),
+        );
+
+        let parsed = parse_condition_ids_from_request_params(&Some(params));
+        assert_eq!(parsed, vec!["0xCOND-A".to_string()]);
+    }
+
+    #[rstest]
     fn position_events_build_condition_level_watch_entries() {
         let (ctx, _data_rx) = make_ws_ctx();
         let expiration_ns = UnixNanos::from(1_000_000_000);
@@ -3877,6 +3941,102 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn request_data_explicit_invalid_selector_does_not_fallback_to_watchlist() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
+        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+        pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
+
+        let mut params = Params::new();
+        params.insert(
+            "instrument_ids".to_string(),
+            serde_json::json!(["BTCUSDT-PERP.BINANCE"]),
+        );
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(params),
+        );
+        client.request_data(request).expect("request_data");
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response)
+        })
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert!(!summary.used_watchlist_fallback);
+        assert_eq!(summary.requested_condition_ids, Vec::<String>::new());
+        assert!(summary.error.is_some());
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 0);
+        assert!(
+            client
+                .resolve_poll_watchlist
+                .contains_key(&"0xCOND-REQ".to_string())
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn resolve_poll_task_emits_grouped_close_for_expired_watch_entries() {
         let state = TestServerState::default();
         *state.gamma_response.lock().await = Some(serde_json::json!([
@@ -3967,6 +4127,7 @@ mod tests {
             fetched_markets: 1,
             resolved_markets: 1,
             emitted_condition_ids: vec!["0xCOND-A".to_string()],
+            failed_condition_ids: Vec::new(),
             used_watchlist_fallback: false,
             timed_out_watchlist: 0,
             error: None,
