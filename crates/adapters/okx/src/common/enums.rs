@@ -285,6 +285,55 @@ pub enum OKXInstrumentType {
     Events,
 }
 
+/// Represents an OKX instrument category code (the `instCategory` field).
+///
+/// OKX also returns a deprecated `category` field that is effectively always
+/// `"1"`; `instCategory` is the meaningful value that drives asset-class
+/// mapping. Unknown or future codes fall back to
+/// [`OKXInstrumentCategory::Unknown`] rather than failing to parse.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+pub enum OKXInstrumentCategory {
+    /// Cryptocurrency (`"1"`).
+    #[serde(rename = "1")]
+    #[strum(serialize = "1")]
+    Crypto,
+    /// Equity-linked (`"3"`).
+    #[serde(rename = "3")]
+    #[strum(serialize = "3")]
+    Equity,
+    /// Commodity-linked (`"4"`).
+    #[serde(rename = "4")]
+    #[strum(serialize = "4")]
+    Commodity,
+    /// FX-linked (`"5"`).
+    #[serde(rename = "5")]
+    #[strum(serialize = "5")]
+    Fx,
+    /// Debt-linked (`"6"`).
+    #[serde(rename = "6")]
+    #[strum(serialize = "6")]
+    Debt,
+    /// Unknown or future category code.
+    #[default]
+    #[serde(other)]
+    #[strum(serialize = "")]
+    Unknown,
+}
+
 /// Represents an instrument status on OKX.
 #[derive(
     Copy,

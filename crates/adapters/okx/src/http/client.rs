@@ -192,44 +192,14 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
 fn deserialize_okx_response<T: DeserializeOwned>(
     response_body: &[u8],
 ) -> Result<OKXResponse<T>, serde_json::Error> {
-    let mut value: serde_json::Value = serde_json::from_slice(response_body)?;
-    normalize_okx_duplicate_aliases(&mut value);
-    serde_json::from_value(value)
-}
-
-fn normalize_okx_duplicate_aliases(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(map) => {
-            if map.contains_key("instCategory") {
-                map.remove("category");
-            }
-
-            for value in map.values_mut() {
-                normalize_okx_duplicate_aliases(value);
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                normalize_okx_duplicate_aliases(value);
-            }
-        }
-        _ => {}
-    }
+    serde_json::from_slice(response_body)
 }
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use serde::Deserialize;
 
-    use super::{deserialize_okx_response, resolve_okx_error_message};
-
-    #[derive(Debug, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct DuplicateFieldItem {
-        #[serde(alias = "category")]
-        inst_category: String,
-    }
+    use super::resolve_okx_error_message;
 
     #[rstest]
     fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
@@ -248,25 +218,6 @@ mod tests {
             resolve_okx_error_message(body, "All operations failed"),
             "Test detailed failure",
         );
-    }
-
-    #[rstest]
-    fn test_deserialize_okx_response_accepts_duplicate_nested_fields() {
-        let body = br#"{
-            "code": "0",
-            "msg": "",
-            "data": [
-                {
-                    "category": "",
-                    "instCategory": "1"
-                }
-            ]
-        }"#;
-
-        let response =
-            deserialize_okx_response::<DuplicateFieldItem>(body).expect("valid response");
-
-        assert_eq!(response.data[0].inst_category, "1");
     }
 
     #[rstest]

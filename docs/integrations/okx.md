@@ -24,7 +24,7 @@ Live example scripts are available in
 | Perpetual swaps | `public/instruments`         | Yes  | Yes  | Linear and inverse contracts.              |
 | Futures         | `public/instruments`         | Yes  | Yes  | Dated futures contracts.                   |
 | Options         | `public/instruments`         | Yes  | Yes  | Limit‑style order execution.               |
-| Spreads         | `sprd/spreads`               | Yes  | Yes  | OKX Nitro spread books and private orders. |
+| Spreads         | `sprd/spreads`               | Yes  | Yes  | Snapshots, quotes, trades on business WS.   |
 | Event contracts | `event-contract/*` endpoints | Yes  | Yes  | Parsed as Nautilus `BinaryOption`.         |
 
 Relevant OKX docs:
@@ -131,6 +131,10 @@ with the `.OKX` venue suffix.
 
 Concise spread instrument notes:
 
+- Spread market data streams on the OKX business WebSocket: quotes (`sprd-bbo-tbt`),
+  trades (`sprd-public-trades`), and 5-level book snapshots (`sprd-books5`). Spreads have
+  no incremental book channel, so each `sprd-books5` update is a full snapshot delivered
+  through the order book subscription (flagged as a snapshot, not incremental L2 deltas).
 - Current OKX live spread discovery returns spot, swap, and futures leg combinations.
 - The parser can represent option-leg spread definitions if OKX exposes them through
   the same spread endpoint.

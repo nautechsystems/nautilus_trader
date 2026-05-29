@@ -64,8 +64,8 @@ use crate::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
         },
         enums::{
-            OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
-            OKXVipLevel,
+            OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
+            OKXInstrumentType, OKXVipLevel,
         },
         parse::{
             extract_inst_family, is_okx_spread_symbol, okx_instrument_type_from_symbol,
@@ -434,7 +434,36 @@ impl OKXDataClient {
                 let size_precision = instrument.size_precision();
                 let ts_init = clock.get_time_ns();
 
-                if matches!(channel, OKXWsChannel::BboTbt) {
+                if matches!(channel, OKXWsChannel::SprdBooks5) {
+                    let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            log::error!("Failed to deserialize spread book data: {e}");
+                            return;
+                        }
+                    };
+
+                    // sprd-books5 pushes a full 5-level snapshot each message.
+                    match parse_book_msg_vec(
+                        msgs,
+                        &instrument_id,
+                        price_precision,
+                        size_precision,
+                        OKXBookAction::Snapshot,
+                        ts_init,
+                    ) {
+                        Ok(data_vec) => {
+                            for d in data_vec {
+                                Self::send_data(data_sender, d);
+                            }
+                        }
+                        Err(e) => log::error!("Failed to parse spread book data: {e}"),
+                    }
+
+                    return;
+                }
+
+                if matches!(channel, OKXWsChannel::BboTbt | OKXWsChannel::SprdBboTbt) {
                     let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
                         Ok(m) => m,
                         Err(e) => {
@@ -1053,6 +1082,22 @@ impl DataClient for OKXDataClient {
             anyhow::bail!("OKX only supports L2_MBP order book deltas");
         }
 
+        if is_okx_spread_symbol(cmd.instrument_id.symbol.as_str()) {
+            // Spreads have no incremental book channel; sprd-books5 pushes a full
+            // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
+            let instrument_id = cmd.instrument_id;
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_book(instrument_id)
+                        .await
+                        .context("spread book subscription")
+                },
+                "spread book subscription",
+            );
+            return Ok(());
+        }
+
         let raw_depth = cmd.depth.map_or(0, |d| d.get());
         let depth = resolve_book_depth(raw_depth);
         if depth != raw_depth {
@@ -1111,9 +1156,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_quotes(instrument_id)
+                        .await
+                        .context("spread quotes subscription")
+                },
+                "spread quote subscription",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.subscribe_quotes(instrument_id)
@@ -1126,9 +1184,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_spread_trades(instrument_id)
+                        .await
+                        .context("spread trades subscription")
+                },
+                "spread trade subscription",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.subscribe_trades(instrument_id, false)
@@ -1290,8 +1361,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
+
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_book(instrument_id)
+                        .await
+                        .context("spread book unsubscribe")
+                },
+                "spread book unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         let channel = self.book_channels.get_cloned(&instrument_id);
         self.book_channels.remove(&instrument_id);
 
@@ -1327,9 +1412,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_quotes(instrument_id)
+                        .await
+                        .context("spread quotes unsubscribe")
+                },
+                "spread quote unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.unsubscribe_quotes(instrument_id)
@@ -1342,9 +1440,22 @@ impl DataClient for OKXDataClient {
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
+        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_spread_trades(instrument_id)
+                        .await
+                        .context("spread trades unsubscribe")
+                },
+                "spread trade unsubscribe",
+            );
+            return Ok(());
+        }
+
+        let ws = self.public_ws()?.clone();
         self.spawn_ws(
             async move {
                 ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?

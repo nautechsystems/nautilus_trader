@@ -62,9 +62,9 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{
-            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus,
-            OKXOrderType, OKXPositionSide, OKXSide, OKXSpreadState, OKXSpreadType,
-            OKXTargetCurrency, OKXVipLevel,
+            OKXExecType, OKXInstrumentCategory, OKXInstrumentStatus, OKXInstrumentType,
+            OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
+            OKXSpreadState, OKXSpreadType, OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -2490,14 +2490,14 @@ pub fn parse_option_instrument(
     Ok(InstrumentAny::CryptoOption(instrument))
 }
 
-fn okx_inst_category_to_asset_class(category: Option<&str>) -> AssetClass {
+fn okx_inst_category_to_asset_class(category: Option<OKXInstrumentCategory>) -> AssetClass {
     match category {
-        Some("1") => AssetClass::Cryptocurrency,
-        Some("3") => AssetClass::Equity,
-        Some("4") => AssetClass::Commodity,
-        Some("5") => AssetClass::FX,
-        Some("6") => AssetClass::Debt,
-        _ => AssetClass::Alternative,
+        Some(OKXInstrumentCategory::Crypto) => AssetClass::Cryptocurrency,
+        Some(OKXInstrumentCategory::Equity) => AssetClass::Equity,
+        Some(OKXInstrumentCategory::Commodity) => AssetClass::Commodity,
+        Some(OKXInstrumentCategory::Fx) => AssetClass::FX,
+        Some(OKXInstrumentCategory::Debt) => AssetClass::Debt,
+        Some(OKXInstrumentCategory::Unknown) | None => AssetClass::Alternative,
     }
 }
 
@@ -2530,11 +2530,14 @@ fn build_event_contract_info(definition: &OKXInstrument) -> anyhow::Result<Param
         );
     }
 
-    if let Some(inst_category) = &definition.inst_category {
-        map.insert(
-            "inst_category".to_string(),
-            serde_json::Value::String(inst_category.clone()),
-        );
+    if let Some(inst_category) = definition.inst_category {
+        let code = inst_category.as_ref();
+        if !code.is_empty() {
+            map.insert(
+                "inst_category".to_string(),
+                serde_json::Value::String(code.to_string()),
+            );
+        }
     }
 
     if let Some(inst_id_code) = definition.inst_id_code {
@@ -2580,7 +2583,7 @@ pub fn parse_event_contract_instrument(
         .exp_time
         .map(parse_millisecond_timestamp)
         .unwrap_or_default();
-    let asset_class = okx_inst_category_to_asset_class(definition.inst_category.as_deref());
+    let asset_class = okx_inst_category_to_asset_class(definition.inst_category);
     let info = build_event_contract_info(definition)?;
 
     let instrument = BinaryOption::new_checked(
@@ -3563,7 +3566,7 @@ mod tests {
             uly: Ustr::from(""),
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
-            inst_category: Some("1".to_string()),
+            inst_category: Some(OKXInstrumentCategory::Crypto),
             base_ccy: Ustr::from(""),
             quote_ccy: Ustr::from("USDT"),
             settle_ccy: Ustr::from("USDT"),
@@ -5981,6 +5984,44 @@ mod tests {
         assert_eq!(
             okx_status_to_market_action(parsed),
             MarketStatusAction::NotAvailableForTrading
+        );
+    }
+
+    #[rstest]
+    #[case::crypto("\"1\"", OKXInstrumentCategory::Crypto, AssetClass::Cryptocurrency)]
+    #[case::equity("\"3\"", OKXInstrumentCategory::Equity, AssetClass::Equity)]
+    #[case::commodity("\"4\"", OKXInstrumentCategory::Commodity, AssetClass::Commodity)]
+    #[case::fx("\"5\"", OKXInstrumentCategory::Fx, AssetClass::FX)]
+    #[case::debt("\"6\"", OKXInstrumentCategory::Debt, AssetClass::Debt)]
+    #[case::unknown_code("\"2\"", OKXInstrumentCategory::Unknown, AssetClass::Alternative)]
+    fn test_okx_inst_category_parsing_and_asset_class(
+        #[case] json: &str,
+        #[case] expected: OKXInstrumentCategory,
+        #[case] asset_class: AssetClass,
+    ) {
+        let parsed: OKXInstrumentCategory = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, expected);
+        assert_eq!(okx_inst_category_to_asset_class(Some(parsed)), asset_class);
+    }
+
+    #[rstest]
+    fn test_okx_instrument_reads_inst_category_and_ignores_legacy_category() {
+        // OKX sends both `category` (deprecated) and `instCategory`; the model
+        // must read `instCategory` and ignore `category`.
+        let json = crate::common::testing::load_test_json("http_get_instruments_spot.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let item = &mut value["data"][0];
+        assert_eq!(item["category"], serde_json::json!("1"));
+        item["instCategory"] = serde_json::json!("3"); // must differ from category to prove it wins
+
+        let instrument: OKXInstrument = serde_json::from_value(item.clone()).unwrap();
+        assert_eq!(
+            instrument.inst_category,
+            Some(OKXInstrumentCategory::Equity)
+        );
+        assert_eq!(
+            okx_inst_category_to_asset_class(instrument.inst_category),
+            AssetClass::Equity
         );
     }
 }

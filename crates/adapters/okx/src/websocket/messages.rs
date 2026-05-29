@@ -191,13 +191,40 @@ pub struct OKXSubscription {
     pub args: Vec<OKXSubscriptionArg>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct OKXSubscriptionArg {
     pub channel: OKXWsChannel,
     pub inst_type: Option<OKXInstrumentType>,
     pub inst_family: Option<Ustr>,
     pub inst_id: Option<Ustr>,
+}
+
+impl Serialize for OKXSubscriptionArg {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("channel", &self.channel)?;
+
+        if let Some(inst_type) = &self.inst_type {
+            map.serialize_entry("instType", inst_type)?;
+        }
+
+        if let Some(inst_family) = &self.inst_family {
+            map.serialize_entry("instFamily", inst_family)?;
+        }
+
+        if let Some(inst_id) = &self.inst_id {
+            let key = if self.channel.is_spread() {
+                "sprdId"
+            } else {
+                "instId"
+            };
+            map.serialize_entry(key, inst_id)?;
+        }
+
+        map.end()
+    }
 }
 
 /// OKX WebSocket message variants.
@@ -454,7 +481,10 @@ fn parse_error<E: serde::de::Error>(
 pub struct OKXWebSocketArg {
     /// Channel name that pushed the data.
     pub channel: OKXWsChannel,
-    #[serde(default)]
+    // Spread channels identify the instrument by `sprdId`; a spread's symbol equals
+    // its `sprdId`, and a message carries `instId` xor `sprdId`, so the alias resolves
+    // both to one field without collision.
+    #[serde(default, alias = "sprdId")]
     pub inst_id: Option<Ustr>,
     #[serde(default)]
     pub inst_type: Option<OKXInstrumentType>,
@@ -514,9 +544,14 @@ pub struct OrderBookEntry {
     pub price: String,
     /// Size of the order.
     pub size: String,
+    // Spread book levels (`sprd-books5`) are 3-element `[price, size, count]`,
+    // omitting the liquidated-orders field standard books carry; default the
+    // trailing counts so both array shapes deserialize. Only price/size are used.
     /// Number of liquidated orders.
+    #[serde(default)]
     pub liquidated_orders_count: String,
     /// Total number of orders at this price.
+    #[serde(default)]
     pub orders_count: String,
 }
 
@@ -543,7 +578,11 @@ pub struct OKXBookMsg {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXTradeMsg {
-    /// Instrument ID.
+    // Spread public trades (`sprd-public-trades`) key the instrument as `sprdId`
+    // and omit `count`; the actual instrument is resolved from the channel arg, so
+    // both fields are tolerated here and unused by parsing.
+    /// Instrument ID (`instId`, or `sprdId` for spread public trades).
+    #[serde(default, alias = "sprdId")]
     pub inst_id: Ustr,
     /// Trade ID.
     pub trade_id: String,
@@ -553,7 +592,8 @@ pub struct OKXTradeMsg {
     pub sz: String,
     /// Trade direction (buy or sell).
     pub side: OKXSide,
-    /// Count.
+    /// Count (absent on spread public trades).
+    #[serde(default)]
     pub count: String,
     /// Trade timestamp, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
@@ -2344,5 +2384,80 @@ mod tests {
         assert_eq!(json["newCallbackSpread"], "25");
         assert_eq!(json["newActivePx"], "65000");
         assert!(json.get("callbackSpread").is_none());
+    }
+
+    #[rstest]
+    fn test_subscription_arg_serializes_sprd_id_for_spread_channels() {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::SprdBooks5,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("ETH-USD-260925_ETH-USD-261225")),
+        };
+        let json = serde_json::to_value(&arg).unwrap();
+        assert_eq!(json["channel"], "sprd-books5");
+        assert_eq!(json["sprdId"], "ETH-USD-260925_ETH-USD-261225");
+        assert!(json.get("instId").is_none());
+    }
+
+    #[rstest]
+    fn test_subscription_arg_serializes_inst_id_for_standard_channels() {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::BboTbt,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+        };
+        let json = serde_json::to_value(&arg).unwrap();
+        assert_eq!(json["instId"], "BTC-USDT");
+        assert!(json.get("sprdId").is_none());
+    }
+
+    #[rstest]
+    fn test_websocket_arg_resolves_sprd_id_into_inst_id() {
+        let arg: OKXWebSocketArg = serde_json::from_value(serde_json::json!({
+            "channel": "sprd-bbo-tbt",
+            "sprdId": "ETH-USD-260925_ETH-USD-261225",
+        }))
+        .unwrap();
+        assert_eq!(arg.channel, OKXWsChannel::SprdBboTbt);
+        assert_eq!(
+            arg.inst_id,
+            Some(Ustr::from("ETH-USD-260925_ETH-USD-261225"))
+        );
+    }
+
+    #[rstest]
+    fn test_book_msg_parses_three_element_spread_levels() {
+        // sprd-books5 levels are [price, size, count] (3 elements), unlike the
+        // 4-element standard book levels.
+        let msg: OKXBookMsg = serde_json::from_value(serde_json::json!({
+            "asks": [["16.7", "100", "1"]],
+            "bids": [["16.65", "100", "1"]],
+            "ts": "1780044924909",
+            "seqId": 1779935772619784_u64,
+        }))
+        .unwrap();
+        assert_eq!(msg.asks[0].price, "16.7");
+        assert_eq!(msg.asks[0].size, "100");
+        assert_eq!(msg.bids[0].price, "16.65");
+    }
+
+    #[rstest]
+    fn test_trade_msg_parses_spread_public_trade() {
+        // sprd-public-trades keys the instrument as `sprdId` and omits `count`.
+        let msg: OKXTradeMsg = serde_json::from_value(serde_json::json!({
+            "sprdId": "ETH-USD-260925_ETH-USD-261225",
+            "tradeId": "3392538740127301632",
+            "px": "16.9",
+            "sz": "100",
+            "side": "sell",
+            "ts": "1780047866507",
+        }))
+        .unwrap();
+        assert_eq!(msg.inst_id, Ustr::from("ETH-USD-260925_ETH-USD-261225"));
+        assert_eq!(msg.px, "16.9");
+        assert_eq!(msg.side, OKXSide::Sell);
+        assert!(msg.count.is_empty());
     }
 }

@@ -167,6 +167,12 @@ pub enum OKXWsChannel {
     Orders,
     #[serde(rename = "sprd-orders")]
     SprdOrders,
+    #[serde(rename = "sprd-bbo-tbt")]
+    SprdBboTbt,
+    #[serde(rename = "sprd-books5")]
+    SprdBooks5,
+    #[serde(rename = "sprd-public-trades")]
+    SprdPublicTrades,
     #[serde(rename = "fills")]
     Fills,
     #[serde(rename = "orders-algo")]
@@ -281,4 +287,16 @@ pub enum OKXWsChannel {
     MarkPriceCandle1Month,
     #[serde(rename = "mark-price-candle3M")]
     MarkPriceCandle3Month,
+}
+
+impl OKXWsChannel {
+    /// Returns `true` for OKX Nitro spread channels, which key on `sprdId`
+    /// rather than `instId` and are served on the business WebSocket.
+    #[must_use]
+    pub const fn is_spread(&self) -> bool {
+        matches!(
+            self,
+            Self::SprdOrders | Self::SprdBboTbt | Self::SprdBooks5 | Self::SprdPublicTrades
+        )
+    }
 }

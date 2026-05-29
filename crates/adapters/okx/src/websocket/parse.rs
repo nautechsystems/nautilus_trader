@@ -2352,7 +2352,7 @@ pub fn parse_ws_message_data(
             )?;
             Ok(Some(NautilusWsMessage::Data(data_vec)))
         }
-        OKXWsChannel::Trades => {
+        OKXWsChannel::Trades | OKXWsChannel::SprdPublicTrades => {
             let data_vec = parse_trade_msg_vec(
                 data,
                 instrument_id,
@@ -7372,5 +7372,85 @@ mod tests {
             Some(NautilusWsMessage::Raw(raw)) => assert_eq!(raw, data),
             _ => panic!("Expected raw event contract market payload"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_ws_message_data_spread_public_trades() {
+        // sprd-public-trades keys the spread as `sprdId` and omits `count`; the
+        // instrument is resolved from the channel arg, so the trade still parses.
+        let data = serde_json::json!([{
+            "sprdId": "ETH-USD-260925_ETH-USD-261225",
+            "tradeId": "3392538740127301632",
+            "px": "16.9",
+            "sz": "100",
+            "side": "sell",
+            "ts": "1780047866507"
+        }]);
+        let instrument_id = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");
+        let mut funding_cache = AHashMap::new();
+        let instruments_cache = AHashMap::new();
+
+        let result = parse_ws_message_data(
+            &OKXWsChannel::SprdPublicTrades,
+            data,
+            &instrument_id,
+            1,
+            0,
+            UnixNanos::default(),
+            &mut funding_cache,
+            &instruments_cache,
+        )
+        .unwrap();
+
+        let Some(NautilusWsMessage::Data(data_vec)) = result else {
+            panic!("expected Data variant, was {result:?}");
+        };
+        assert_eq!(data_vec.len(), 1);
+        let Data::Trade(trade) = &data_vec[0] else {
+            panic!("expected Data::Trade, was {:?}", data_vec[0]);
+        };
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price.as_decimal(), dec!(16.9));
+        assert_eq!(trade.size.as_decimal(), dec!(100));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    }
+
+    #[rstest]
+    fn test_parse_spread_books5_snapshot_with_three_element_levels() {
+        // sprd-books5 pushes a full snapshot with 3-element `[price, size, count]`
+        // levels; it is parsed as a snapshot (F_SNAPSHOT), not an incremental update.
+        let msg: OKXBookMsg = serde_json::from_value(serde_json::json!({
+            "asks": [["16.7", "100", "1"]],
+            "bids": [["16.65", "100", "1"]],
+            "ts": "1780044924909",
+            "seqId": 1779935772619784_u64,
+        }))
+        .unwrap();
+        let instrument_id = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");
+
+        let deltas = parse_book_msg(
+            &msg,
+            instrument_id,
+            2,
+            0,
+            &OKXBookAction::Snapshot,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(deltas.instrument_id, instrument_id);
+        assert_eq!(deltas.flags, RecordFlag::F_SNAPSHOT as u8);
+        let bid = deltas
+            .deltas
+            .iter()
+            .find(|d| d.order.side == OrderSide::Buy)
+            .expect("should have a bid delta");
+        let ask = deltas
+            .deltas
+            .iter()
+            .find(|d| d.order.side == OrderSide::Sell)
+            .expect("should have an ask delta");
+        assert_eq!(bid.order.price.as_decimal(), dec!(16.65));
+        assert_eq!(ask.order.price.as_decimal(), dec!(16.7));
     }
 }

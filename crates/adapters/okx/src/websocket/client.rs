@@ -1975,6 +1975,84 @@ impl OKXWebSocketClient {
         self.unsubscribe(vec![arg]).await
     }
 
+    /// Subscribes to best bid/offer quotes for a spread instrument (`sprd-bbo-tbt`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_quotes(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdBboTbt, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Subscribes to 5-level book snapshots for a spread instrument (`sprd-books5`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdBooks5, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Subscribes to public trades for a spread instrument (`sprd-public-trades`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_spread_trades(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe_inst_id(OKXWsChannel::SprdPublicTrades, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread quotes (`sprd-bbo-tbt`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_quotes(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdBboTbt, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread book snapshots (`sprd-books5`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdBooks5, instrument_id.symbol.inner())
+            .await
+    }
+
+    /// Unsubscribes from spread public trades (`sprd-public-trades`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe request fails.
+    pub async fn unsubscribe_spread_trades(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe_inst_id(OKXWsChannel::SprdPublicTrades, instrument_id.symbol.inner())
+            .await
+    }
+
     /// Subscribes to algo order updates for the given instrument type.
     ///
     /// # Errors
