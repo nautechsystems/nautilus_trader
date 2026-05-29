@@ -22,7 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = ["nautilus-common/defi", "nautilus-model/defi"]
+defi = ["nautilus-common/defi", "nautilus-model/defi", "nautilus-system/defi"]
 live = ["nautilus-common/live"]
 persistence = ["dep:nautilus-persistence"]
 
