@@ -56,11 +56,6 @@ fn resolve_instrument_id_from_aliases(
     instrument_id_from_product(&resolved)
 }
 
-fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {
-    let aliases = aliases.load();
-    resolve_instrument_id_from_aliases(&aliases, product_id)
-}
-
 /// Commands sent from [`super::client::CoinbaseWebSocketClient`] to the feed handler.
 pub enum HandlerCommand {
     /// Provides the network-level WebSocket client.
@@ -155,8 +150,8 @@ pub struct FeedHandler {
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     /// Shared with [`super::client::CoinbaseWebSocketClient`]; consulted in
-    /// `resolve_instrument_id` to re-key inbound messages whose wire `product_id`
-    /// is the canonical alias of a subscribed/submitted product.
+    /// `resolve_instrument_id_from_aliases` to re-key inbound messages whose wire
+    /// `product_id` is the canonical alias of a subscribed/submitted product.
     subscription_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     bar_types: AHashMap<String, BarType>,
     account_id: Option<AccountId>,
@@ -183,10 +178,6 @@ impl FeedHandler {
             account_id: None,
             buffer: Vec::new(),
         }
-    }
-
-    fn resolve_instrument_id(&self, product_id: &Ustr) -> InstrumentId {
-        resolve_instrument_id(&self.subscription_aliases, product_id)
     }
 
     /// Sets the account ID used to stamp user-channel execution reports.
@@ -608,11 +599,12 @@ impl FeedHandler {
         let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
 
         let mut first: Option<NautilusWsMessage> = None;
+        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for product in &event.products {
                 let canonical = product.id;
-                let resolved = self.resolve_instrument_id(&canonical);
+                let resolved = resolve_instrument_id_from_aliases(&aliases, &canonical);
                 let Some(status) = parse_ws_status_product(product, resolved, ts_event, ts_init)
                 else {
                     continue;

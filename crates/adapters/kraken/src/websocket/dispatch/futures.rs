@@ -37,13 +37,15 @@ use super::{
     DeltaSnapshot, OrderIdentity, WsDispatchState, ensure_accepted_emitted,
     fill_report_to_order_filled, resolve_client_order_id,
 };
-use crate::common::lookup_instrument_in_snapshot;
-use crate::websocket::futures::{
-    messages::{
-        KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
-        KrakenFuturesOpenOrdersDelta,
+use crate::{
+    common::lookup_instrument_in_snapshot,
+    websocket::futures::{
+        messages::{
+            KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
+            KrakenFuturesOpenOrdersDelta,
+        },
+        parse::{parse_futures_ws_fill_report, parse_futures_ws_order_status_report},
     },
-    parse::{parse_futures_ws_fill_report, parse_futures_ws_order_status_report},
 };
 
 /// Dispatches a Kraken Futures `OpenOrdersDelta` message.

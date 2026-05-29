@@ -39,11 +39,13 @@ use super::{
     OrderIdentity, WsDispatchState, ensure_accepted_emitted, fill_report_to_order_filled,
     resolve_client_order_id,
 };
-use crate::common::lookup_instrument_in_snapshot;
-use crate::websocket::spot_v2::{
-    enums::KrakenExecType,
-    messages::KrakenWsExecutionData,
-    parse::{parse_ws_fill_report, parse_ws_order_status_report},
+use crate::{
+    common::lookup_instrument_in_snapshot,
+    websocket::spot_v2::{
+        enums::KrakenExecType,
+        messages::KrakenWsExecutionData,
+        parse::{parse_ws_fill_report, parse_ws_order_status_report},
+    },
 };
 
 /// Dispatches a Kraken Spot v2 execution message.
