@@ -29,7 +29,7 @@ use nautilus_model::{
     position::{Position, fold_net_position},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
 /// Manages account balance updates and calculations for portfolio management.
 ///
@@ -709,8 +709,20 @@ impl AccountsManager {
             return;
         };
 
-        let new_balance =
-            AccountBalance::new(balance.total + pnl, balance.locked, balance.free + pnl);
+        let new_total = balance.total.as_decimal() + pnl.as_decimal();
+
+        let new_balance = match AccountBalance::from_total_and_locked(
+            new_total,
+            balance.locked.as_decimal(),
+            pnl.currency,
+        ) {
+            Ok(new_balance) => new_balance,
+            Err(e) => {
+                log::error!("Cannot update {} balance: {e}", pnl.currency);
+                return;
+            }
+        };
+
         balances.push(new_balance);
 
         match account {
@@ -768,12 +780,19 @@ impl AccountsManager {
             let balances = account.balances();
 
             let new_balance = if let Some(balance) = balances.get(&currency) {
-                let new_total = balance.total.as_f64() + pnl.as_f64();
-                let new_free = balance.free.as_f64() + pnl.as_f64();
-                let total = Money::new(new_total, currency);
-                let free = Money::new(new_free, currency);
+                let new_total = balance.total.as_decimal() + pnl.as_decimal();
 
-                AccountBalance::new(total, balance.locked, free)
+                match AccountBalance::from_total_and_locked(
+                    new_total,
+                    balance.locked.as_decimal(),
+                    currency,
+                ) {
+                    Ok(new_balance) => new_balance,
+                    Err(e) => {
+                        log::error!("Cannot update {currency} balance: {e}");
+                        return;
+                    }
+                }
             } else {
                 // Mirrors Python `_update_balance_multi_currency`: a fill that
                 // would open a new debit currency on a non-seeded account is
@@ -801,12 +820,18 @@ impl AccountsManager {
 
             let commission_balance = if let Some(balance) = balances.get(&currency) {
                 let new_total = balance.total.as_decimal() - commission.as_decimal();
-                let new_free = balance.free.as_decimal() - commission.as_decimal();
-                AccountBalance::new(
-                    Money::new(new_total.to_f64().unwrap(), currency),
-                    balance.locked,
-                    Money::new(new_free.to_f64().unwrap(), currency),
-                )
+
+                match AccountBalance::from_total_and_locked(
+                    new_total,
+                    balance.locked.as_decimal(),
+                    currency,
+                ) {
+                    Ok(commission_balance) => commission_balance,
+                    Err(e) => {
+                        log::error!("Cannot deduct {currency} commission: {e}");
+                        return;
+                    }
+                }
             } else {
                 if commission.as_decimal() > Decimal::ZERO {
                     log::error!(
@@ -1988,6 +2013,98 @@ mod tests {
             }
             _ => panic!("Expected CashAccount"),
         }
+    }
+
+    // ~100M USDT total with non-zero locked margin: the raw fixed-point value exceeds f64's
+    // exact-integer range (2^53), which is the condition that triggers issue #4165.
+    fn large_locked_usdt_margin_account() -> (AccountAny, Money, Money) {
+        let usdt = Currency::USDT();
+        let total =
+            Money::from_decimal(Decimal::from_str_exact("99999997.91829666").unwrap(), usdt)
+                .unwrap();
+        let locked =
+            Money::from_decimal(Decimal::from_str_exact("32.85965").unwrap(), usdt).unwrap();
+        let free = Money::from_raw(total.raw - locked.raw, usdt);
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(total, locked, free)],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None, // No base currency routes PnL through `update_balance_multi_currency`
+        );
+        (
+            AccountAny::Margin(MarginAccount::new(account_state, false)),
+            total,
+            locked,
+        )
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_preserves_invariant_with_large_locked() {
+        // Regression for issue #4165: applying realized PnL to a large multi-currency margin
+        // balance via independent f64 round-trips drifts `total` and `free` relative to each
+        // other, breaking `total == locked + free` and panicking `AccountBalance::new`.
+        let usdt = Currency::USDT();
+        let (mut account, total, locked) = large_locked_usdt_margin_account();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        // No commission on the fill: only the realized-PnL branch runs. This PnL lands on an
+        // 8dp tick where the old independent f64 round-trips drifted by 2e-8.
+        let fill = OrderFilledSpec::builder().build();
+        let pnl =
+            Money::from_decimal(Decimal::from_str_exact("0.00000064").unwrap(), usdt).unwrap();
+        let mut pnls = [pnl];
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        let balances = account.balances();
+        let balance = balances.get(&usdt).expect("USDT balance");
+        assert_eq!(balance.locked, locked, "locked margin preserved");
+        assert_eq!(balance.total, total + pnl, "total moved by realized PnL");
+        assert_eq!(
+            balance.total.raw,
+            balance.locked.raw + balance.free.raw,
+            "invariant total == locked + free must hold"
+        );
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_commission_preserves_invariant_with_large_locked() {
+        // Regression for issue #4165: the commission branch had the same f64 round-trip drift.
+        let usdt = Currency::USDT();
+        let (mut account, total, locked) = large_locked_usdt_margin_account();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        // This commission reproduces the exact panic values from issue #4165: the old
+        // Decimal-then-f64 round-trips yielded total=99999997.91829666, free=99999965.05864664.
+        let commission =
+            Money::from_decimal(Decimal::from_str_exact("0.00000001").unwrap(), usdt).unwrap();
+        let fill = OrderFilledSpec::builder().commission(commission).build();
+
+        // No PnL entries: only the commission branch runs.
+        let mut pnls: [Money; 0] = [];
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        let balances = account.balances();
+        let balance = balances.get(&usdt).expect("USDT balance");
+        assert_eq!(balance.locked, locked, "locked margin preserved");
+        assert_eq!(
+            balance.total,
+            total - commission,
+            "total reduced by commission"
+        );
+        assert_eq!(
+            balance.total.raw,
+            balance.locked.raw + balance.free.raw,
+            "invariant total == locked + free must hold"
+        );
     }
 
     fn build_margin_account_usd(balance: f64) -> MarginAccount {
