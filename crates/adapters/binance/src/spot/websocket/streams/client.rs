@@ -122,7 +122,15 @@ impl BinanceSpotWebSocketClient {
         let url = url.unwrap_or(BINANCE_SPOT_SBE_WS_URL.to_string());
 
         let credential = match (api_key, api_secret) {
-            (Some(key), Some(secret)) => Some(Arc::new(Ed25519Credential::new(key, &secret)?)),
+            (Some(key), Some(secret)) => {
+                let credential = Ed25519Credential::new(key, &secret).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Binance Spot SBE market-data streams require an Ed25519 API key \
+                         (HMAC keys are not supported): {e}"
+                    )
+                })?;
+                Some(Arc::new(credential))
+            }
             _ => None,
         };
 
@@ -541,5 +549,40 @@ impl BinanceSpotWebSocketClient {
             cancellation_token,
             connection_mode,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_new_rejects_hmac_secret_with_actionable_error() {
+        // An all-zero 48-byte buffer base64-encodes to a non-Ed25519 secret
+        // (no PKCS#8 OID), standing in for an HMAC key. SBE market-data streams
+        // require Ed25519, so construction must fail with guidance that names
+        // HMAC, not the raw OID error.
+        let secret = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0u8; 48]);
+
+        let result = BinanceSpotWebSocketClient::new(
+            None,
+            Some("test_key".to_string()),
+            Some(secret),
+            None,
+            TransportBackend::default(),
+        );
+
+        let err = result.expect_err("HMAC secret must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Ed25519"),
+            "error should mention Ed25519, was: {msg}"
+        );
+        assert!(
+            msg.contains("HMAC"),
+            "error should mention HMAC, was: {msg}"
+        );
     }
 }
