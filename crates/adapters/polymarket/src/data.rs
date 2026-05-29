@@ -3402,6 +3402,39 @@ mod tests {
     }
 
     #[rstest]
+    fn build_strict_resolved_market_real_gamma_samples_cover_resolution_buckets() {
+        // Case A: closed + binary 1/0 + acceptingOrders=false => resolve.
+        let closed_binary_accepting_false =
+            load_gamma_market_fixture("gamma_market_closed_binary_accepting_false.json");
+        let resolved = build_strict_resolved_market(&closed_binary_accepting_false)
+            .expect("expected resolved market for binary accepting=false fixture");
+        assert_eq!(
+            resolved.condition_id,
+            "0x8ccc3f4951ff02c1d34b87988752b4444ad17228732780a6cf22afefe8478bb6"
+        );
+
+        // Case B: closed + binary 1/0 + acceptingOrders=true => still resolve.
+        let closed_binary_accepting_true =
+            load_gamma_market_fixture("gamma_market_closed_binary_accepting_true.json");
+        let resolved = build_strict_resolved_market(&closed_binary_accepting_true)
+            .expect("expected resolved market for binary accepting=true fixture");
+        assert_eq!(
+            resolved.condition_id,
+            "0xd57eed0d44f5b8ca54925d8d6ff440b146b3e6e071da18136ee3ee572d34479e"
+        );
+
+        // Case C: closed + 0/0 => skip (no winner).
+        let closed_zero_zero =
+            load_gamma_market_fixture("gamma_market_closed_zero_zero_legacy.json");
+        assert!(build_strict_resolved_market(&closed_zero_zero).is_none());
+
+        // Case D: closed + non-binary scalar-like distribution => skip.
+        let closed_non_binary =
+            load_gamma_market_fixture("gamma_market_closed_nonbinary_legacy.json");
+        assert!(build_strict_resolved_market(&closed_non_binary).is_none());
+    }
+
+    #[rstest]
     fn parse_condition_ids_supports_single_multi_and_dedup() {
         let mut params = Params::new();
         params.insert("condition_id".to_string(), serde_json::json!("0xCOND-A"));
