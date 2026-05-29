@@ -103,6 +103,56 @@ pub unsafe extern "C" fn logging_init(
     max_file_size: u64,
     max_backup_count: u32,
 ) -> LogGuard_API {
+    unsafe {
+        logging_init_with_options(
+            trader_id,
+            instance_id,
+            level_stdout,
+            level_file,
+            directory_ptr,
+            file_name_ptr,
+            file_format_ptr,
+            component_levels_ptr,
+            is_colored,
+            is_bypassed,
+            print_config,
+            log_components_only,
+            max_file_size,
+            max_backup_count,
+            true.into(),
+            false.into(),
+        )
+    }
+}
+
+/// Initializes logging with explicit logging I/O policy options.
+///
+/// # Safety
+///
+/// Has the same pointer validity requirements as [`logging_init`].
+///
+/// # Panics
+///
+/// Panics if the component-level JSON cannot be parsed or the logger cannot be initialized.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn logging_init_with_options(
+    trader_id: TraderId,
+    instance_id: UUID4,
+    level_stdout: LogLevel,
+    level_file: LogLevel,
+    directory_ptr: *const c_char,
+    file_name_ptr: *const c_char,
+    file_format_ptr: *const c_char,
+    component_levels_ptr: *const c_char,
+    is_colored: u8,
+    is_bypassed: u8,
+    print_config: u8,
+    log_components_only: u8,
+    max_file_size: u64,
+    max_backup_count: u32,
+    fileout_sync_on_flush: u8,
+    buffered_stdout: u8,
+) -> LogGuard_API {
     let level_stdout = map_log_level_to_filter(level_stdout);
     let level_file = map_log_level_to_filter(level_file);
 
@@ -110,7 +160,7 @@ pub unsafe extern "C" fn logging_init(
     let component_levels = parse_component_levels(component_levels_json)
         .expect("Failed to parse component log levels");
 
-    let config = LoggerConfig::new(
+    let mut config = LoggerConfig::new(
         level_stdout,
         level_file,
         component_levels,
@@ -123,6 +173,8 @@ pub unsafe extern "C" fn logging_init(
         None,  // file_config - passed separately to init_logging
         false, // clear_log_file
     );
+    config.fileout_sync_on_flush = u8_as_bool(fileout_sync_on_flush);
+    config.buffered_stdout = u8_as_bool(buffered_stdout);
 
     // Configure file rotation if max_file_size > 0
     let file_rotate = if max_file_size > 0 {
@@ -201,6 +253,12 @@ pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
 #[unsafe(no_mangle)]
 pub extern "C" fn logger_flush() {
     log::logger().flush();
+}
+
+/// Flushes and syncs file logs to disk.
+#[unsafe(no_mangle)]
+pub extern "C" fn logging_sync_to_disk() -> u8 {
+    u8::from(crate::logging::logging_sync_to_disk().is_ok())
 }
 
 /// Flushes global logger buffers of any records and then drops the logger.

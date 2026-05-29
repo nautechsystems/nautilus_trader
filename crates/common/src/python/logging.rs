@@ -47,6 +47,8 @@ impl LoggerConfig {
         log_components_only=None,
         file_config=None,
         clear_log_file=None,
+        fileout_sync_on_flush=None,
+        buffered_stdout=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -59,9 +61,11 @@ impl LoggerConfig {
         log_components_only: Option<bool>,
         file_config: Option<FileWriterConfig>,
         clear_log_file: Option<bool>,
+        fileout_sync_on_flush: Option<bool>,
+        buffered_stdout: Option<bool>,
     ) -> PyResult<Self> {
         let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
-        Ok(Self::new(
+        let mut config = Self::new(
             stdout_level.map_or(LevelFilter::Info, map_log_level_to_filter),
             fileout_level.map_or(LevelFilter::Off, map_log_level_to_filter),
             component_levels,
@@ -73,7 +77,10 @@ impl LoggerConfig {
             bypass_logging.unwrap_or(false),
             file_config,
             clear_log_file.unwrap_or(false),
-        ))
+        );
+        config.fileout_sync_on_flush = fileout_sync_on_flush.unwrap_or(true);
+        config.buffered_stdout = buffered_stdout.unwrap_or(false);
+        Ok(config)
     }
 
     /// Parses a configuration from a spec string.
@@ -125,7 +132,7 @@ impl FileWriterConfig {
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_logging")]
 #[expect(clippy::too_many_arguments)]
-#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None, log_components_only=None))]
+#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None, log_components_only=None, fileout_sync_on_flush=None, buffered_stdout=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -140,6 +147,8 @@ pub fn py_init_logging(
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
     log_components_only: Option<bool>,
+    fileout_sync_on_flush: Option<bool>,
+    buffered_stdout: Option<bool>,
 ) -> PyResult<LogGuard> {
     let level_file = level_file.map_or(LevelFilter::Off, map_log_level_to_filter);
 
@@ -147,7 +156,7 @@ pub fn py_init_logging(
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 
-    let config = LoggerConfig::new(
+    let mut config = LoggerConfig::new(
         map_log_level_to_filter(level_stdout),
         level_file,
         component_levels,
@@ -160,6 +169,8 @@ pub fn py_init_logging(
         None,                         // file_config - passed separately to init_logging
         false,                        // clear_log_file
     );
+    config.fileout_sync_on_flush = fileout_sync_on_flush.unwrap_or(true);
+    config.buffered_stdout = buffered_stdout.unwrap_or(false);
 
     if config.bypass_logging {
         logging_set_bypass();
@@ -173,6 +184,16 @@ pub fn py_init_logging(
 #[pyo3(name = "logger_flush")]
 pub fn py_logger_flush() {
     log::logger().flush();
+}
+
+/// Flush and sync file logs to disk.
+#[pyfunction()]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
+#[pyo3(name = "logging_sync_to_disk")]
+pub fn py_logging_sync_to_disk() -> PyResult<bool> {
+    logging::logging_sync_to_disk()
+        .map(|()| true)
+        .map_err(to_pyvalue_err)
 }
 
 fn parse_component_levels(

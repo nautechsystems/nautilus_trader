@@ -215,6 +215,8 @@ class NautilusKernel:
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
                         log_components_only=logging.log_components_only,
+                        fileout_sync_on_flush=logging.fileout_sync_on_flush,
+                        buffered_stdout=logging.buffered_stdout,
                     )
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -246,6 +248,8 @@ class NautilusKernel:
                         log_components_only=logging.log_components_only,
                         max_file_size=logging.log_file_max_size or 0,
                         max_backup_count=logging.log_file_max_backup_count,
+                        fileout_sync_on_flush=logging.fileout_sync_on_flush,
+                        buffered_stdout=logging.buffered_stdout,
                     )
                     log_header(
                         trader_id=self._trader_id,

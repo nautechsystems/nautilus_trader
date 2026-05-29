@@ -105,6 +105,10 @@ fn make_log_line_with_two_fields() -> LogLine {
 }
 
 fn make_file_writer(name: &str) -> (TempDir, FileWriter) {
+    make_file_writer_with_sync(name, true)
+}
+
+fn make_file_writer_with_sync(name: &str, sync_on_flush: bool) -> (TempDir, FileWriter) {
     let dir = tempdir().expect("failed to create temporary benchmark directory");
     let config = FileWriterConfig::new(
         Some(dir.path().to_string_lossy().into_owned()),
@@ -119,6 +123,7 @@ fn make_file_writer(name: &str) -> (TempDir, FileWriter) {
         config,
         LevelFilter::Debug,
         true,
+        sync_on_flush,
     )
     .expect("failed to create benchmark file writer");
 
@@ -140,7 +145,7 @@ fn init_filtered_global_logger() {
         )
         .expect("failed to initialize benchmark logger");
 
-        std::mem::forget(guard);
+        let _leaked_guard = Box::leak(Box::new(guard));
     });
 }
 
@@ -389,7 +394,7 @@ fn bench_file_flush(c: &mut Criterion) {
             writer
                 .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
                 .expect("buffered file write should not fail");
-            black_box(writer.flush().expect("buffered file flush should not fail"));
+            writer.flush().expect("buffered file flush should not fail");
         });
     });
 
@@ -404,12 +409,10 @@ fn bench_file_flush(c: &mut Criterion) {
                 .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
                 .expect("buffered file write should not fail");
             writer.flush().expect("buffered file flush should not fail");
-            black_box(
-                writer
-                    .get_ref()
-                    .sync_all()
-                    .expect("file sync should not fail"),
-            );
+            writer
+                .get_ref()
+                .sync_all()
+                .expect("file sync should not fail");
         });
     });
 
@@ -421,6 +424,30 @@ fn bench_file_flush(c: &mut Criterion) {
         b.iter(|| {
             writer.write(black_box(CLEAN_FILE_LINE));
             writer.flush();
+        });
+    });
+
+    // Measures the opt-in production `FileWriter::flush` path without per-flush sync_all.
+    // This is the expected fast path when `fileout_sync_on_flush=false`.
+    group.bench_function("file_writer_flush_no_sync_after_write", |b| {
+        let (_dir, mut writer) = make_file_writer_with_sync("flush-no-sync-after-write", false);
+
+        b.iter(|| {
+            writer.write(black_box(CLEAN_FILE_LINE));
+            writer.flush();
+        });
+    });
+
+    // Measures the explicit sync API's writer-side cost.
+    // This should stay in the same range as flush + sync_all because it requests durability.
+    group.bench_function("file_writer_sync_to_disk_after_write", |b| {
+        let (_dir, mut writer) = make_file_writer_with_sync("sync-to-disk-after-write", false);
+
+        b.iter(|| {
+            writer.write(black_box(CLEAN_FILE_LINE));
+            writer
+                .flush_and_sync()
+                .expect("file flush and sync should not fail");
         });
     });
 
@@ -436,11 +463,9 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
         let mut writer = io::sink();
 
         b.iter(|| {
-            black_box(
-                writer
-                    .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
-                    .expect("sink write should not fail"),
-            );
+            writer
+                .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
+                .expect("sink write should not fail");
         });
     });
 
@@ -450,11 +475,9 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
         let mut writer = BufWriter::new(io::sink());
 
         b.iter(|| {
-            black_box(
-                writer
-                    .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
-                    .expect("sink write should not fail"),
-            );
+            writer
+                .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
+                .expect("sink write should not fail");
         });
     });
 
@@ -464,10 +487,8 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
         let mut file = tempfile::tempfile().expect("failed to create benchmark temp file");
 
         b.iter(|| {
-            black_box(
-                file.write_all(black_box(CLEAN_FILE_LINE).as_bytes())
-                    .expect("file write should not fail"),
-            );
+            file.write_all(black_box(CLEAN_FILE_LINE).as_bytes())
+                .expect("file write should not fail");
         });
     });
 
@@ -479,7 +500,7 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
         b.iter(|| {
             file.write_all(black_box(CLEAN_FILE_LINE).as_bytes())
                 .expect("file write should not fail");
-            black_box(file.flush().expect("file flush should not fail"));
+            file.flush().expect("file flush should not fail");
         });
     });
 
@@ -490,11 +511,9 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
         let mut writer = BufWriter::new(file);
 
         b.iter(|| {
-            black_box(
-                writer
-                    .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
-                    .expect("buffered file write should not fail"),
-            );
+            writer
+                .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
+                .expect("buffered file write should not fail");
         });
     });
 
@@ -508,7 +527,7 @@ fn bench_std_stream_proxy(c: &mut Criterion) {
             writer
                 .write_all(black_box(CLEAN_FILE_LINE).as_bytes())
                 .expect("buffered file write should not fail");
-            black_box(writer.flush().expect("buffered file flush should not fail"));
+            writer.flush().expect("buffered file flush should not fail");
         });
     });
 
@@ -533,7 +552,7 @@ fn bench_channel_send(c: &mut Criterion) {
     group.bench_function("send_log_event_no_fields", |b| {
         b.iter_batched(
             || no_fields.clone(),
-            |line| black_box(tx.send(LogEvent::Log(line)).expect("receiver should drain")),
+            |line| tx.send(LogEvent::Log(line)).expect("receiver should drain"),
             BatchSize::SmallInput,
         );
     });
@@ -543,7 +562,7 @@ fn bench_channel_send(c: &mut Criterion) {
     group.bench_function("send_log_event_4_fields", |b| {
         b.iter_batched(
             || with_fields.clone(),
-            |line| black_box(tx.send(LogEvent::Log(line)).expect("receiver should drain")),
+            |line| tx.send(LogEvent::Log(line)).expect("receiver should drain"),
             BatchSize::SmallInput,
         );
     });
@@ -553,7 +572,7 @@ fn bench_channel_send(c: &mut Criterion) {
     group.bench_function("send_log_event_2_fields", |b| {
         b.iter_batched(
             || with_two_fields.clone(),
-            |line| black_box(tx.send(LogEvent::Log(line)).expect("receiver should drain")),
+            |line| tx.send(LogEvent::Log(line)).expect("receiver should drain"),
             BatchSize::SmallInput,
         );
     });

@@ -40,32 +40,54 @@ pub trait LogWriter {
 #[derive(Debug)]
 pub struct StdoutWriter {
     pub is_colored: bool,
-    io: Stdout,
+    io: StdoutSink,
     level: LevelFilter,
+}
+
+#[derive(Debug)]
+enum StdoutSink {
+    Direct(Stdout),
+    Buffered(BufWriter<Stdout>),
 }
 
 impl StdoutWriter {
     /// Creates a new [`StdoutWriter`] instance.
     #[must_use]
-    pub fn new(level: LevelFilter, is_colored: bool) -> Self {
+    pub fn new(level: LevelFilter, is_colored: bool, buffered: bool) -> Self {
+        let io = if buffered {
+            StdoutSink::Buffered(BufWriter::new(io::stdout()))
+        } else {
+            StdoutSink::Direct(io::stdout())
+        };
+
         Self {
-            io: io::stdout(),
-            level,
             is_colored,
+            io,
+            level,
         }
     }
 }
 
 impl LogWriter for StdoutWriter {
     fn write(&mut self, line: &str) {
-        match self.io.write_all(line.as_bytes()) {
+        let result = match &mut self.io {
+            StdoutSink::Direct(io) => io.write_all(line.as_bytes()),
+            StdoutSink::Buffered(io) => io.write_all(line.as_bytes()),
+        };
+
+        match result {
             Ok(()) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
-        match self.io.flush() {
+        let result = match &mut self.io {
+            StdoutSink::Direct(io) => io.flush(),
+            StdoutSink::Buffered(io) => io.flush(),
+        };
+
+        match result {
             Ok(()) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
@@ -216,6 +238,7 @@ pub struct FileWriter {
     instance_id: String,
     level: LevelFilter,
     cur_file_date: NaiveDate,
+    sync_on_flush: bool,
 }
 
 impl FileWriter {
@@ -226,6 +249,7 @@ impl FileWriter {
         file_config: FileWriterConfig,
         fileout_level: LevelFilter,
         clear_log_file: bool,
+        sync_on_flush: bool,
     ) -> Option<Self> {
         // Set up log file
         let json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
@@ -278,6 +302,7 @@ impl FileWriter {
                     instance_id,
                     level: fileout_level,
                     cur_file_date: Utc::now().date_naive(),
+                    sync_on_flush,
                 })
             }
             Err(e) => {
@@ -341,7 +366,7 @@ impl FileWriter {
     }
 
     fn rotate_file(&mut self) {
-        self.flush();
+        self.flush_and_sync_logged();
 
         let new_path = match Self::create_log_file_path(
             &self.file_config,
@@ -378,6 +403,48 @@ impl FileWriter {
                 );
             }
             Err(e) => eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}"),
+        }
+    }
+
+    /// Flushes the userspace file buffer to the OS.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying file buffer cannot be flushed.
+    pub fn flush_buffer(&mut self) -> io::Result<()> {
+        self.buf.flush()
+    }
+
+    /// Requests that flushed file data is synchronized to durable storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operating system cannot sync the file to disk.
+    pub fn sync_to_disk(&mut self) -> io::Result<()> {
+        self.buf.get_ref().sync_all()
+    }
+
+    /// Flushes buffered file data and then syncs it to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either flushing the file buffer or syncing the file to disk fails.
+    pub fn flush_and_sync(&mut self) -> io::Result<()> {
+        let flush_result = self.flush_buffer();
+        let sync_result = self.sync_to_disk();
+        flush_result.and(sync_result)
+    }
+
+    /// Flushes and syncs while preserving the existing logging-on-error behavior.
+    pub fn flush_and_sync_logged(&mut self) {
+        let flush_result = self.flush_buffer();
+        if let Err(e) = flush_result {
+            eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}");
+        }
+
+        let sync_result = self.sync_to_disk();
+        if let Err(e) = sync_result {
+            eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}");
         }
     }
 }
@@ -430,14 +497,16 @@ impl LogWriter for FileWriter {
     }
 
     fn flush(&mut self) {
-        match self.buf.flush() {
+        match self.flush_buffer() {
             Ok(()) => {}
             Err(e) => eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}"),
         }
 
-        match self.buf.get_ref().sync_all() {
-            Ok(()) => {}
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}"),
+        if self.sync_on_flush {
+            match self.sync_to_disk() {
+                Ok(()) => {}
+                Err(e) => eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}"),
+            }
         }
     }
 
@@ -578,6 +647,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         )
         .unwrap();
 
@@ -642,6 +712,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         );
 
         assert!(writer.is_none());
@@ -666,6 +737,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         );
 
         assert!(writer.is_none());
@@ -688,6 +760,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         )
         .unwrap();
 
@@ -712,6 +785,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         )
         .unwrap();
 
@@ -743,6 +817,7 @@ mod tests {
             config,
             LevelFilter::Info,
             true,
+            true,
         )
         .unwrap();
 
@@ -771,6 +846,7 @@ mod tests {
             config,
             LevelFilter::Info,
             false,
+            true,
         )
         .unwrap();
 
@@ -782,8 +858,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_file_writer_sync_on_flush_can_be_disabled() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let mut writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert!(!writer.sync_on_flush);
+        writer.write("hello\n");
+        writer.flush();
+        writer.flush_and_sync().unwrap();
+    }
+
+    #[rstest]
     fn test_stdout_writer_filters_error_level() {
-        let writer = StdoutWriter::new(LevelFilter::Info, true);
+        let writer = StdoutWriter::new(LevelFilter::Info, true, false);
 
         // Error level should NOT be enabled for stdout (goes to stderr)
         let error_line = LogLine {
