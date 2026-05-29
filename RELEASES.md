@@ -108,6 +108,7 @@ Released on TBD (UTC).
 - Fixed Polymarket adapter dropping auto-load batches on Gamma chunk failures (Rust)
 - Fixed Polymarket adapter treating encoded-empty `clob_token_ids` as terminal instead of transient (Rust)
 - Fixed Polymarket PyO3 bootstrap to honor `instrument_config` (#4127), thanks @graceyangfan
+- Fixed Tardis CSV delta loaders missing book resets between consecutive snapshots
 
 ### Internal Improvements
 - Added `cargo machete` pre-commit hook to detect unused workspace dependencies
