@@ -2510,6 +2510,7 @@ mod tests {
     use nautilus_common::{
         live::runner::replace_data_event_sender,
         messages::{DataResponse, data::RequestCustomData},
+        testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_model::{
@@ -3918,29 +3919,27 @@ mod tests {
 
         client.spawn_resolve_poll_task();
 
-        let mut closes = 0usize;
-        let deadline = tokio::time::Instant::now() + StdDuration::from_secs(3);
-        while tokio::time::Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let Some(event) = tokio::time::timeout(remaining, data_rx.recv())
-                .await
-                .expect("timed out waiting for resolve poll events")
-            else {
-                break;
-            };
-
-            if matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))) {
-                closes += 1;
-                if closes >= 2 {
-                    break;
-                }
-            }
-        }
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-POLL".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
 
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
             .await;
+
+        let mut closes = 0usize;
+        while let Ok(event) = data_rx.try_recv() {
+            if matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_))) {
+                closes += 1;
+            }
+        }
 
         assert_eq!(closes, 2);
         assert!(
