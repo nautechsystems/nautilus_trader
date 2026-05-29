@@ -177,6 +177,7 @@ struct ResolveWatchEntry {
 enum ResolveWatchSelectionMode {
     AutoPoll,
     ManualFallback,
+    ManualAllEligible,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -2124,6 +2125,7 @@ impl DataClient for PolymarketDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
         let clock = self.clock;
         let watchlist = self.resolve_poll_watchlist.clone();
+        let resolve_poll_enabled = self.config.resolve_poll_enabled;
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
         let ctx = WsMessageContext {
@@ -2170,12 +2172,17 @@ impl DataClient for PolymarketDataClient {
                 } else {
                     summary.used_watchlist_fallback = true;
                     let snapshot = watchlist.load();
+                    let selection_mode = if resolve_poll_enabled {
+                        ResolveWatchSelectionMode::ManualFallback
+                    } else {
+                        ResolveWatchSelectionMode::ManualAllEligible
+                    };
                     let selection = collect_resolve_watch_selection(
                         &snapshot,
                         clock.get_time_ns(),
                         grace_secs,
                         max_wait_secs,
-                        ResolveWatchSelectionMode::ManualFallback,
+                        selection_mode,
                     );
                     drop(snapshot);
 
@@ -3590,6 +3597,36 @@ mod tests {
     }
 
     #[rstest]
+    fn resolve_watch_selection_manual_all_eligible_includes_expired_unpaused_entries() {
+        let mut watchlist = ahash::AHashMap::new();
+        watchlist.insert(
+            "0xCOND-ACTIVE".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND-ACTIVE".to_string(),
+                expiration_ns: UnixNanos::from(1_000_000_000_000),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xYES".to_string(),
+                    TrackedInstrument {
+                        instrument_id: InstrumentId::from("0xCOND-ACTIVE-0xYES.POLYMARKET"),
+                        token_id: "0xYES".to_string(),
+                        price_precision: 3,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            UnixNanos::from(1_100_000_000_000),
+            10,
+            1800,
+            ResolveWatchSelectionMode::ManualAllEligible,
+        );
+        assert_eq!(selection.condition_ids, vec!["0xCOND-ACTIVE".to_string()]);
+    }
+
+    #[rstest]
     fn market_resolved_emits_grouped_close_and_removes_watch_entry() {
         let (ctx, mut data_rx) = make_ws_ctx();
         let expiration_ns = UnixNanos::from(1_000_000_000);
@@ -3793,6 +3830,87 @@ mod tests {
             summary.emitted_condition_ids,
             vec!["0xCOND-REQ".to_string()]
         );
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_manual_fallback_with_auto_poll_disabled_resolves_expired_entries() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"1\",\"0\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
+        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
+
         let closes = count_instrument_close_events(&events);
         assert_eq!(closes, 2);
     }
