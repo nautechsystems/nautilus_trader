@@ -19,7 +19,6 @@ use std::{
     ffi::CStr,
     fmt::{Debug, Display},
     hash::Hash,
-    io::{Cursor, Write},
     str::FromStr,
 };
 
@@ -29,8 +28,45 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::hex::ENCODE_PAIR;
+
 /// The maximum length of ASCII characters for a `UUID4` string value (includes null terminator).
 pub(crate) const UUID4_LEN: usize = 37;
+
+fn format_uuid4_bytes(bytes: [u8; 16]) -> [u8; UUID4_LEN] {
+    let mut value = [0u8; UUID4_LEN];
+    let mut pos = 0;
+
+    for (idx, byte) in bytes.into_iter().enumerate() {
+        if matches!(idx, 4 | 6 | 8 | 10) {
+            value[pos] = b'-';
+            pos += 1;
+        }
+
+        value[pos..pos + 2].copy_from_slice(&ENCODE_PAIR[byte as usize]);
+        pos += 2;
+    }
+
+    value[36] = 0; // Add the null terminator.
+
+    debug_assert_eq!(pos, 36, "Invariant: UUID text must be 36 bytes");
+    debug_assert!(
+        value[14] == b'4',
+        "Invariant: UUID version digit must be '4' (was {})",
+        value[14] as char
+    );
+    debug_assert!(
+        matches!(value[19], b'8' | b'9' | b'a' | b'b'),
+        "Invariant: UUID variant byte must be RFC 4122 (was {})",
+        value[19] as char
+    );
+    debug_assert!(
+        value[36] == 0,
+        "Invariant: UUID null terminator must be at index 36"
+    );
+
+    value
+}
 
 /// Represents a Universally Unique Identifier (UUID)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
@@ -56,41 +92,9 @@ impl UUID4 {
     #[must_use]
     pub fn new() -> Self {
         let bytes = Self::new_bytes();
-
-        let mut value = [0u8; UUID4_LEN];
-        let mut cursor = Cursor::new(&mut value[..36]);
-
-        write!(
-            cursor,
-            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-            u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-            u16::from_be_bytes([bytes[4], bytes[5]]),
-            u16::from_be_bytes([bytes[6], bytes[7]]),
-            u16::from_be_bytes([bytes[8], bytes[9]]),
-            u64::from_be_bytes([
-                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15], 0, 0
-            ]) >> 16
-        )
-        .expect("Error writing UUID string to buffer");
-
-        value[36] = 0; // Add the null terminator
-
-        debug_assert!(
-            value[14] == b'4',
-            "Invariant: UUID version digit must be '4' (was {})",
-            value[14] as char
-        );
-        debug_assert!(
-            matches!(value[19], b'8' | b'9' | b'a' | b'b'),
-            "Invariant: UUID variant byte must be RFC 4122 (was {})",
-            value[19] as char
-        );
-        debug_assert!(
-            value[36] == 0,
-            "Invariant: UUID null terminator must be at index 36"
-        );
-
-        Self { value }
+        Self {
+            value: format_uuid4_bytes(bytes),
+        }
     }
 
     /// Creates raw `UUIDv4` bytes.
@@ -299,6 +303,7 @@ impl<'de> Deserialize<'de> for UUID4 {
 mod tests {
     use std::{
         collections::hash_map::DefaultHasher,
+        ffi::CStr,
         hash::{Hash, Hasher},
     };
 
@@ -349,6 +354,23 @@ mod tests {
 
         let s = uuid.to_string();
         assert_eq!(s.chars().nth(14).unwrap(), '4');
+    }
+
+    #[rstest]
+    fn test_format_uuid4_bytes_golden() {
+        let bytes = [
+            0x2d, 0x89, 0x66, 0x6b, 0x1a, 0x1e, 0x4a, 0x75, 0xb1, 0x93, 0x4e, 0xb3, 0xb4, 0x54,
+            0xc7, 0x57,
+        ];
+
+        let formatted = format_uuid4_bytes(bytes);
+        let text = CStr::from_bytes_with_nul(&formatted)
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        assert_eq!(text, "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        assert_eq!(formatted[36], 0);
     }
 
     #[rstest]

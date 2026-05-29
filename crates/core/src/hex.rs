@@ -17,7 +17,7 @@
 
 use std::fmt::Display;
 
-const ENCODE_PAIR: [[u8; 2]; 256] = {
+pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
     const NIBBLE: [u8; 16] = *b"0123456789abcdef";
     let mut table = [[0u8; 2]; 256];
     let mut i = 0u16;

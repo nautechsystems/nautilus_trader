@@ -82,6 +82,11 @@ path = "benches/time.rs"
 harness = false
 
 [[bench]]
+name = "datetime"
+path = "benches/datetime.rs"
+harness = false
+
+[[bench]]
 name = "uuid"
 path = "benches/uuid.rs"
 harness = false
