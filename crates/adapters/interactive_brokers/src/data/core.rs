@@ -433,7 +433,7 @@ impl InteractiveBrokersDataClient {
 
         let count = self
             .instrument_provider
-            .fetch_option_chain_by_range(client, &underlying, expiry_min, expiry_max)
+            .fetch_option_chain_by_range(client, &underlying, expiry_min, expiry_max, None)
             .await?;
         log::debug!(
             "Fetched {} IB option instruments for {}",
@@ -647,22 +647,12 @@ impl DataClient for InteractiveBrokersDataClient {
         self.ib_client = Some(handle);
         self.is_connected.store(true, Ordering::Relaxed);
 
-        // Initialize provider and load instruments from cache if configured
+        // Initialize provider and load instruments from cache/config if configured
         tracing::debug!("Initializing IB data instrument provider");
-        if let Err(e) = self.instrument_provider.initialize().await {
-            tracing::warn!("Failed to initialize instrument provider: {}", e);
-        }
-
-        tracing::debug!("Loading configured IB data instruments");
 
         if let Err(e) = self
             .instrument_provider
-            .load_all_async(
-                self.ib_client.as_ref().unwrap().as_arc().as_ref(),
-                None,
-                None,
-                false,
-            )
+            .initialize_with_client(self.ib_client.as_ref().unwrap().as_arc().as_ref())
             .await
         {
             if !self.config.instrument_provider.load_ids.is_empty()

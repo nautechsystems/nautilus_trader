@@ -556,23 +556,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         self.ib_client = Some(handle);
 
-        // Initialize provider and load instruments from cache if configured
+        // Initialize provider and load instruments from cache/config if configured
         log::debug!("Initializing IB execution instrument provider");
-        if let Err(e) = self.instrument_provider.initialize().await {
-            tracing::warn!("Failed to initialize instrument provider: {}", e);
-        }
-
-        // Load instruments from config
-        log::debug!("Loading configured IB execution instruments");
 
         if let Err(e) = self
             .instrument_provider
-            .load_all_async(
-                self.ib_client.as_ref().unwrap().as_arc().as_ref(),
-                None,
-                None,
-                false,
-            )
+            .initialize_with_client(self.ib_client.as_ref().unwrap().as_arc().as_ref())
             .await
         {
             if !self.config.instrument_provider.load_ids.is_empty()

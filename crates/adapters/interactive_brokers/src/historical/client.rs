@@ -34,7 +34,11 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::enums::IbHistoricalTickType,
+    common::{
+        enums::IbHistoricalTickType,
+        shared_client::{self, SharedClientHandle},
+    },
+    config::InteractiveBrokersDataClientConfig,
     data::convert::{
         bar_type_to_ib_bar_size, chrono_to_ib_datetime, ib_bar_to_nautilus_bar,
         ib_timestamp_to_unix_nanos, price_type_to_ib_what_to_show,
@@ -59,6 +63,8 @@ pub struct HistoricalInteractiveBrokersClient {
     ib_client: Arc<Client>,
     /// Instrument provider.
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
+    /// Shared client handle, when this client owns the connection lifecycle.
+    _shared_client: Option<Arc<SharedClientHandle>>,
 }
 
 impl Clone for HistoricalInteractiveBrokersClient {
@@ -66,6 +72,7 @@ impl Clone for HistoricalInteractiveBrokersClient {
         Self {
             ib_client: Arc::clone(&self.ib_client),
             instrument_provider: Arc::clone(&self.instrument_provider),
+            _shared_client: self._shared_client.clone(),
         }
     }
 }
@@ -93,7 +100,74 @@ impl HistoricalInteractiveBrokersClient {
         Self {
             ib_client,
             instrument_provider,
+            _shared_client: None,
         }
+    }
+
+    /// Connect to Interactive Brokers and create a historical data client.
+    ///
+    /// This initializes an instrument provider from `config.instrument_provider` and acquires the
+    /// shared IB client for the configured host, port, and client ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if provider initialization or the IB connection fails.
+    pub async fn connect(config: InteractiveBrokersDataClientConfig) -> anyhow::Result<Self> {
+        let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            config.instrument_provider.clone(),
+        ));
+        instrument_provider.initialize().await?;
+
+        let shared_client = shared_client::get_or_connect(
+            &config.host,
+            config.port,
+            config.client_id,
+            config.connection_timeout,
+        )
+        .await?;
+
+        Ok(Self::from_shared_client(shared_client, instrument_provider))
+    }
+
+    pub(crate) fn from_shared_client(
+        shared_client: SharedClientHandle,
+        instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
+    ) -> Self {
+        let ib_client = Arc::clone(shared_client.as_arc());
+
+        Self {
+            ib_client,
+            instrument_provider,
+            _shared_client: Some(Arc::new(shared_client)),
+        }
+    }
+
+    /// Connect a historical data client with a supplied provider using the shared IB client registry.
+    ///
+    /// This keeps standalone Rust callers from needing to acquire `common::shared_client`
+    /// directly before requesting instruments or historical data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shared client cannot connect or the instrument provider cannot
+    /// initialize.
+    pub async fn connect_with_provider(
+        instrument_provider: InteractiveBrokersInstrumentProvider,
+        config: InteractiveBrokersDataClientConfig,
+    ) -> anyhow::Result<Self> {
+        instrument_provider.initialize().await?;
+        let shared_client = shared_client::get_or_connect(
+            &config.host,
+            config.port,
+            config.client_id,
+            config.connection_timeout,
+        )
+        .await?;
+
+        Ok(Self::from_shared_client(
+            shared_client,
+            Arc::new(instrument_provider),
+        ))
     }
 
     /// Request historical bars.
@@ -165,7 +239,8 @@ impl HistoricalInteractiveBrokersClient {
             // Try to convert instrument ID to contract
             if let Ok(contract) = self
                 .instrument_provider
-                .resolve_contract_for_instrument(instrument_id)
+                .resolve_contract_for_instrument_async(&self.ib_client, instrument_id)
+                .await
             {
                 all_contracts.push(contract);
             } else {
@@ -377,7 +452,8 @@ impl HistoricalInteractiveBrokersClient {
 
             if let Ok(contract) = self
                 .instrument_provider
-                .resolve_contract_for_instrument(instrument_id)
+                .resolve_contract_for_instrument_async(&self.ib_client, instrument_id)
+                .await
             {
                 all_contracts.push(contract);
             } else {
