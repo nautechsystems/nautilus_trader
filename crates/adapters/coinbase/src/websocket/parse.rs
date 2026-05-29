@@ -384,7 +384,9 @@ pub fn parse_ws_status_product(
         CoinbaseProductStatus::Online => MarketStatusAction::Trading,
         CoinbaseProductStatus::Offline => MarketStatusAction::Halt,
         CoinbaseProductStatus::Delisted => MarketStatusAction::Close,
-        CoinbaseProductStatus::Unset => return None,
+        // Unset (futures) carries no info; Unknown is an unmodeled status we cannot
+        // safely map to a market action, so emit nothing rather than guess.
+        CoinbaseProductStatus::Unset | CoinbaseProductStatus::Unknown => return None,
     };
     let reason = if product.status_message.is_empty() {
         None

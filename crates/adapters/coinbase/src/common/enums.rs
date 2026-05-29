@@ -212,6 +212,8 @@ pub enum CoinbaseProductStatus {
     #[serde(rename = "")]
     #[strum(serialize = "")]
     Unset,
+    /// A status value not modeled by this enum.
+    Unknown,
 }
 
 /// Coinbase product venue.

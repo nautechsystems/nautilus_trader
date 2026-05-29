@@ -151,6 +151,8 @@ pub enum MarketStatus {
     Open,
     Suspended,
     Closed,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Sorting options for market listings.
@@ -203,6 +205,8 @@ pub enum MarketBettingType {
     AsianHandicapDoubleLine,
     AsianHandicapSingleLine,
     FixedOdds,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Exchange price data options.
@@ -274,6 +278,8 @@ pub enum PriceLadderType {
     Classic,
     Finest,
     LineRange,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Order filter projection.
@@ -560,6 +566,8 @@ pub enum RunnerStatus {
     RemovedVacant,
     Removed,
     Hidden,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Bet settlement status.
@@ -1148,7 +1156,7 @@ impl From<MarketStatus> for NautilusMarketStatus {
             MarketStatus::Open => Self::Open,
             MarketStatus::Closed => Self::Closed,
             MarketStatus::Suspended => Self::Suspended,
-            MarketStatus::Inactive => Self::NotAvailable,
+            MarketStatus::Inactive | MarketStatus::Unknown => Self::NotAvailable,
         }
     }
 }
@@ -1186,6 +1194,28 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_reference_enums_tolerate_unmodeled_values() {
+        // Market reference enums must degrade gracefully on a new venue value
+        // rather than hard-fail deserialization of the streaming definition.
+        assert_eq!(
+            serde_json::from_str::<MarketStatus>("\"NEW_STATUS\"").unwrap(),
+            MarketStatus::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<MarketBettingType>("\"NEW_TYPE\"").unwrap(),
+            MarketBettingType::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<PriceLadderType>("\"NEW_LADDER\"").unwrap(),
+            PriceLadderType::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<RunnerStatus>("\"NEW_RUNNER\"").unwrap(),
+            RunnerStatus::Unknown
+        );
+    }
 
     #[rstest]
     #[case(BetfairSide::Back, OrderSide::Sell)]

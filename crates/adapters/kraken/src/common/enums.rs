@@ -221,12 +221,15 @@ pub enum KrakenOrderSide {
 #[serde(rename_all = "UPPERCASE")]
 #[strum(ascii_case_insensitive, serialize_all = "UPPERCASE")]
 pub enum KrakenTimeInForce {
-    #[serde(rename = "GTC")]
-    #[strum(serialize = "GTC")]
-    GoodTilCancelled,
     #[serde(rename = "IOC")]
     #[strum(serialize = "IOC")]
     ImmediateOrCancel,
+    #[serde(rename = "FOK")]
+    #[strum(serialize = "FOK")]
+    FillOrKill,
+    #[serde(rename = "GTC")]
+    #[strum(serialize = "GTC")]
+    GoodTilCancelled,
     #[serde(rename = "GTD")]
     #[strum(serialize = "GTD")]
     GoodTilDate,
@@ -484,8 +487,7 @@ pub enum KrakenFuturesOrderType {
     #[serde(rename = "stop_loss")]
     #[strum(serialize = "stop_loss")]
     StopLoss,
-    /// Catch-all for venue-emitted `"unknown"`.
-    #[serde(other)]
+    #[serde(rename = "unknown")]
     Unknown,
 }
 
@@ -610,8 +612,7 @@ pub enum KrakenTriggerSignal {
         serialize = "index_price"
     )]
     Index,
-    /// Catch-all for venue-emitted `"unknown"`.
-    #[serde(other)]
+    #[serde(rename = "unknown")]
     Unknown,
 }
 
@@ -859,8 +860,8 @@ pub enum KrakenTriggerSide {
     #[serde(rename = "trigger_below")]
     #[strum(serialize = "trigger_below")]
     TriggerBelow,
-    /// Catch-all for venue-emitted `"unknown"`; treated as no directional intent.
-    #[serde(other)]
+    /// The venue's `"unknown"` sentinel, carrying no directional intent.
+    #[serde(rename = "unknown")]
     Unknown,
 }
 
@@ -1017,6 +1018,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_time_in_force_deserializes_fok() {
+        // FOK (fill-or-kill) is a valid Kraken timeinforce; inbound executions
+        // must not hard-fail on it.
+        let tif: KrakenTimeInForce = serde_json::from_str("\"FOK\"").unwrap();
+        assert_eq!(tif, KrakenTimeInForce::FillOrKill);
+    }
+
+    #[rstest]
     #[case("\"placed\"", KrakenSendStatus::Placed)]
     #[case("\"cancelled\"", KrakenSendStatus::Cancelled)]
     #[case("\"edited\"", KrakenSendStatus::Edited)]
@@ -1084,6 +1093,15 @@ mod tests {
     ) {
         let parsed: KrakenFuturesOrderType = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    fn test_order_metadata_enums_fail_loud_on_unmodeled_value() {
+        // Only the venue's documented "unknown" sentinel maps to Unknown; any other
+        // unmodeled value must fail deserialization rather than be silently absorbed.
+        assert!(serde_json::from_str::<KrakenFuturesOrderType>("\"iceberg\"").is_err());
+        assert!(serde_json::from_str::<KrakenTriggerSignal>("\"vwap\"").is_err());
+        assert!(serde_json::from_str::<KrakenTriggerSide>("\"sideways\"").is_err());
     }
 
     #[rstest]

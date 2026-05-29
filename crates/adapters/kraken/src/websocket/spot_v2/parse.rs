@@ -346,6 +346,7 @@ fn parse_time_in_force(
         Some(KrakenTimeInForce::GoodTilCancelled) => TimeInForce::Gtc,
         Some(KrakenTimeInForce::ImmediateOrCancel) => TimeInForce::Ioc,
         Some(KrakenTimeInForce::GoodTilDate) => TimeInForce::Gtd,
+        Some(KrakenTimeInForce::FillOrKill) => TimeInForce::Fok,
         None => TimeInForce::Gtc,
     }
 }
@@ -602,6 +603,14 @@ mod tests {
     use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsMessage};
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    #[rstest]
+    fn test_parse_time_in_force_fok() {
+        assert_eq!(
+            parse_time_in_force(Some(KrakenTimeInForce::FillOrKill), None),
+            TimeInForce::Fok
+        );
+    }
 
     fn load_test_json(filename: &str) -> String {
         let path = format!("test_data/{filename}");

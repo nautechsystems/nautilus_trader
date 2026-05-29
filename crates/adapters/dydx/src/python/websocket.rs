@@ -1153,28 +1153,34 @@ fn handle_markets_trading_data(
         let instrument_id = instrument_id_from_ticker(ticker);
 
         if let Some(status) = &update.status {
-            let action = MarketStatusAction::from(*status);
-            let is_trading = matches!(status, DydxMarketStatus::Active);
+            if *status == DydxMarketStatus::Unknown {
+                log::warn!("Skipping unmodeled dYdX market status for {instrument_id}");
+            } else {
+                let action = MarketStatusAction::from(*status);
+                let is_trading = matches!(status, DydxMarketStatus::Active);
 
-            let instrument_status = InstrumentStatus::new(
-                instrument_id,
-                action,
-                ts_init,
-                ts_init,
-                None,
-                None,
-                Some(is_trading),
-                None,
-                None,
-            );
+                let instrument_status = InstrumentStatus::new(
+                    instrument_id,
+                    action,
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    Some(is_trading),
+                    None,
+                    None,
+                );
 
-            if instrument_cache.get_by_market(ticker).is_some() {
-                Python::attach(|py| match instrument_status.into_py_any(py) {
-                    Ok(py_obj) => {
-                        call_python_threadsafe(py, call_soon, callback, py_obj);
-                    }
-                    Err(e) => log::error!("Failed to convert InstrumentStatus to Python: {e}"),
-                });
+                if instrument_cache.get_by_market(ticker).is_some() {
+                    Python::attach(|py| match instrument_status.into_py_any(py) {
+                        Ok(py_obj) => {
+                            call_python_threadsafe(py, call_soon, callback, py_obj);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to convert InstrumentStatus to Python: {e}");
+                        }
+                    });
+                }
             }
         }
 

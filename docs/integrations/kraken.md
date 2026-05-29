@@ -381,13 +381,13 @@ the WS API supports but this adapter does not yet encode.
 | Shape                     | Reason                                                       |
 |---------------------------|--------------------------------------------------------------|
 | Unsupported trigger types | `triggers.reference` accepts only `last` and `index`.        |
-| `FOK` time in force       | Kraken WS v2 has no `FOK` value (only `GTC`, `IOC`, `GTD`).  |
 | Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.                 |
 
 **Not yet encoded by this adapter (follow-up work, currently REST):**
 
 | Shape                       | Notes                                                                                |
 |-----------------------------|--------------------------------------------------------------------------------------|
+| `FOK` time in force         | Encodable as the `FOK` time in force, but the builder routes REST.                   |
 | Trailing stop / stop‑limit  | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
 | Iceberg (`display_qty`)     | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
 | Quote‑quantity orders       | Buy market quote‑qty maps to `cash_order_qty`; routed REST today.                    |

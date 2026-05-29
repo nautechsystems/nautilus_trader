@@ -220,11 +220,20 @@ pub fn parse_instrument_statuses(
     };
     let in_play = def.in_play.unwrap_or(false);
 
+    if status == MarketStatus::Unknown {
+        log::warn!("Skipping unmodeled Betfair market status for market {market_id}");
+        return Vec::new();
+    }
+
     runners
         .iter()
-        .map(|rd| {
+        .filter_map(|rd| {
             let handicap = rd.hc.unwrap_or(Decimal::ZERO);
             let instrument_id = make_instrument_id(market_id, rd.id, handicap);
+            if rd.status == Some(RunnerStatus::Unknown) {
+                log::warn!("Skipping unmodeled Betfair runner status for {instrument_id}");
+                return None;
+            }
             let action = match rd.status {
                 Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant) => {
                     MarketStatusAction::Close
@@ -235,6 +244,8 @@ pub fn parse_instrument_statuses(
                     (MarketStatus::Open, true) => MarketStatusAction::Trading,
                     (MarketStatus::Suspended, _) => MarketStatusAction::Pause,
                     (MarketStatus::Closed, _) => MarketStatusAction::Close,
+                    // Unreachable: unmodeled market status skips the whole definition above.
+                    (MarketStatus::Unknown, _) => MarketStatusAction::None,
                 },
             };
             let is_trading = matches!(status, MarketStatus::Open)
@@ -243,7 +254,7 @@ pub fn parse_instrument_statuses(
                     rd.status,
                     Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant)
                 );
-            InstrumentStatus::new(
+            Some(InstrumentStatus::new(
                 instrument_id,
                 action,
                 ts_event,
@@ -253,7 +264,7 @@ pub fn parse_instrument_statuses(
                 Some(is_trading),
                 None,
                 None,
-            )
+            ))
         })
         .collect()
 }
@@ -812,7 +823,7 @@ pub fn parse_instrument_closes(
                 RunnerStatus::Loser | RunnerStatus::Removed | RunnerStatus::RemovedVacant => {
                     Price::from("0.00")
                 }
-                RunnerStatus::Active | RunnerStatus::Hidden => return None,
+                RunnerStatus::Active | RunnerStatus::Hidden | RunnerStatus::Unknown => return None,
             };
 
             let handicap = rd.hc.unwrap_or(Decimal::ZERO);
@@ -1203,6 +1214,28 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].action, expected_action);
         assert_eq!(results[0].is_trading, Some(expected_is_trading));
+    }
+
+    #[rstest]
+    fn test_parse_instrument_statuses_skips_unknown_market_status() {
+        // An unmodeled market status must not publish a fabricated non-trading
+        // state; the whole definition is skipped.
+        let def = make_status_def(MarketStatus::Unknown, true, RunnerStatus::Active);
+        let results =
+            parse_instrument_statuses("1.123", &def, UnixNanos::default(), UnixNanos::default());
+
+        assert!(results.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_instrument_statuses_skips_unknown_runner() {
+        // An unmodeled runner status must not be emitted as tradable, even in an
+        // open in-play market; we skip it rather than fabricate tradability.
+        let def = make_status_def(MarketStatus::Open, true, RunnerStatus::Unknown);
+        let results =
+            parse_instrument_statuses("1.123", &def, UnixNanos::default(), UnixNanos::default());
+
+        assert!(results.is_empty());
     }
 
     #[rstest]
