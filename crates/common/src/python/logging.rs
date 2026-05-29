@@ -186,7 +186,13 @@ pub fn py_logger_flush() {
     log::logger().flush();
 }
 
-/// Flush and sync file logs to disk.
+/// Flushes and syncs file logs to disk.
+///
+/// This is a no-op when logging is not initialized or file logging is disabled.
+///
+/// # Errors
+///
+/// Returns an error if the sync request cannot be delivered or acknowledged.
 #[pyfunction()]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_sync_to_disk")]

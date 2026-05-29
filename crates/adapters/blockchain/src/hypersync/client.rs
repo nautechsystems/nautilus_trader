@@ -24,9 +24,9 @@ use hypersync_client::{
     simple_types::Log,
 };
 use nautilus_common::live::get_runtime;
-use nautilus_core::hex;
+use nautilus_core::{UnixNanos, hex};
 use nautilus_model::{
-    defi::{Block, DexType, SharedChain},
+    defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
 };
 use nautilus_network::http::Url;
@@ -35,6 +35,50 @@ use crate::{
     exchanges::get_dex_extended, hypersync::transform::transform_hypersync_block,
     rpc::types::BlockchainMessage,
 };
+
+/// An item yielded by the contract-events stream.
+///
+/// Block timestamps are surfaced ahead of the logs from the same response so callers can
+/// populate their block-timestamp cache before converting events from those blocks.
+#[derive(Debug)]
+pub enum PoolEventStreamItem {
+    /// The timestamp for a block referenced by subsequent logs.
+    BlockTimestamp { number: u64, timestamp: UnixNanos },
+    /// A contract event log.
+    Log(Log),
+}
+
+/// Maps one HyperSync response into stream items, surfacing block timestamps ahead of the logs
+/// from the same response so callers can cache them before converting events from those blocks.
+///
+/// Blocks that fail to transform are logged and skipped without dropping the response's logs.
+fn pool_events_from_response(
+    chain: Blockchain,
+    blocks: Vec<Vec<hypersync_client::simple_types::Block>>,
+    logs: Vec<Vec<Log>>,
+) -> Vec<PoolEventStreamItem> {
+    let mut items = Vec::new();
+
+    for batch in blocks {
+        for block in batch {
+            match transform_hypersync_block(chain, block) {
+                Ok(block) => items.push(PoolEventStreamItem::BlockTimestamp {
+                    number: block.number,
+                    timestamp: block.timestamp,
+                }),
+                Err(e) => log::error!("Failed to transform block for timestamp: {e}"),
+            }
+        }
+    }
+
+    for batch in logs {
+        for log in batch {
+            items.push(PoolEventStreamItem::Log(log));
+        }
+    }
+
+    items
+}
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
@@ -249,7 +293,7 @@ impl HyperSyncClient {
         to_block: Option<u64>,
         contract_address: &Address,
         topics: Vec<&str>,
-    ) -> impl Stream<Item = Log> + use<> {
+    ) -> impl Stream<Item = PoolEventStreamItem> + use<> {
         let query = Self::construct_contract_events_query(
             from_block,
             to_block,
@@ -257,6 +301,7 @@ impl HyperSyncClient {
             &topics,
         );
 
+        let chain = self.chain.name;
         let mut rx = self
             .client
             .clone()
@@ -267,11 +312,8 @@ impl HyperSyncClient {
         async_stream::stream! {
               while let Some(response) = rx.recv().await {
                 let response = response.unwrap();
-
-                for batch in response.data.logs {
-                    for log in batch {
-                        yield log
-                    }
+                for item in pool_events_from_response(chain, response.data.blocks, response.data.logs) {
+                    yield item;
                 }
             }
         }
@@ -479,6 +521,16 @@ impl HyperSyncClient {
                     "topic1",
                     "topic2",
                     "topic3",
+                ],
+                // Join block fields so callers can resolve each event's ts_event
+                "block": [
+                    "number",
+                    "hash",
+                    "parent_hash",
+                    "miner",
+                    "gas_limit",
+                    "gas_used",
+                    "timestamp",
                 ]
             }
         });
@@ -505,5 +557,80 @@ impl HyperSyncClient {
             }
             log::debug!("Unsubscribed from blocks");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use hypersync_client::{
+        format::{Address, Hash, Quantity},
+        simple_types::{Block as HypersyncBlock, Log},
+    };
+    use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn synthetic_block(number: u64, timestamp_secs: u64) -> HypersyncBlock {
+        HypersyncBlock {
+            number: Some(number),
+            hash: Some(
+                Hash::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+            ),
+            parent_hash: Some(
+                Hash::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap(),
+            ),
+            miner: Some(Address::from_str("0x0000000000000000000000000000000000000001").unwrap()),
+            gas_limit: Some(Quantity::from(21_000u64)),
+            gas_used: Some(Quantity::from(21_000u64)),
+            timestamp: Some(Quantity::from(timestamp_secs)),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn pool_events_yields_block_timestamps_before_logs() {
+        let items = pool_events_from_response(
+            Blockchain::Ethereum,
+            vec![vec![synthetic_block(12, 100)]],
+            vec![vec![Log::default(), Log::default()]],
+        );
+
+        assert_eq!(items.len(), 3);
+        match &items[0] {
+            PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
+                assert_eq!(*number, 12);
+                assert_eq!(*timestamp, UnixNanos::new(100 * NANOSECONDS_IN_SECOND));
+            }
+            other => panic!("expected BlockTimestamp first, was {other:?}"),
+        }
+        assert!(matches!(items[1], PoolEventStreamItem::Log(_)));
+        assert!(matches!(items[2], PoolEventStreamItem::Log(_)));
+    }
+
+    #[rstest]
+    fn pool_events_skips_unparsable_block_but_keeps_logs() {
+        // A block missing required fields (gas, hash, ...) fails transform and is skipped, but
+        // the response's logs must still be yielded.
+        let bad_block = HypersyncBlock {
+            number: Some(7),
+            ..Default::default()
+        };
+        let items = pool_events_from_response(
+            Blockchain::Ethereum,
+            vec![vec![bad_block]],
+            vec![vec![Log::default()]],
+        );
+
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0], PoolEventStreamItem::Log(_)));
     }
 }

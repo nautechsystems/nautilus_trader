@@ -6,6 +6,8 @@ Released on TBD (UTC).
 - Added BSC chain support to blockchain adapter with `UniswapV3` and `PancakeSwapV3` DEX registrations
 - Added Aerodrome Slipstream pool-event signatures and parsers for bootstrap and replay on Base
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
+- Added DeFi data (`DefiData`) replay through the data and backtest engines as a first-class `Data` variant
+- Added `BacktestEngine.add_defi_data` for replaying DeFi block, pool, and pool-event data in backtests
 - Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
 - Added `correlation_id` field to trading and system command structs for request tracing (Rust)
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
@@ -55,6 +57,7 @@ Released on TBD (UTC).
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 
 ### Breaking Changes
+- Changed DeFi pool-event and snapshot types to require `ts_event`/`ts_init` timestamps (was optional `timestamp`)
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
 - Changed command `new` constructors to accept `correlation_id: Option<UUID4>`, pass `None` for old behavior (Rust)
 - Changed `CVec` to no longer implement `Send`; use typed wrappers for thread transfer (Rust)

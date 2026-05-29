@@ -13,22 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod compare;
-pub mod error;
-pub mod position;
-pub mod profiler;
-pub mod quote;
-pub mod size_estimator;
-pub mod snapshot;
-pub mod swap_math;
+//! Replay ordering for DeFi data.
 
-// Re-exports
-pub use error::{
-    LiquidityMathError, PoolEventKind, PoolEventLocation, PoolProfilerError,
-    liquidity_error_with_location,
-};
-pub use profiler::PoolProfiler;
-pub use snapshot::PoolSnapshot;
+use nautilus_model::defi::DefiData;
 
-#[cfg(test)]
-pub mod tests;
+pub(crate) fn replay_position(data: &DefiData) -> (u64, u32, u32, u8) {
+    let (block_number, transaction_index, log_index) = data.block_position();
+    (
+        block_number,
+        transaction_index,
+        log_index,
+        replay_phase(data),
+    )
+}
+
+const fn replay_phase(data: &DefiData) -> u8 {
+    match data {
+        DefiData::Block(_) => 0,
+        DefiData::Pool(_) => 1,
+        DefiData::PoolSnapshot(_) => 2,
+        DefiData::PoolSwap(_)
+        | DefiData::PoolLiquidityUpdate(_)
+        | DefiData::PoolFeeCollect(_)
+        | DefiData::PoolFlash(_) => 3,
+    }
+}

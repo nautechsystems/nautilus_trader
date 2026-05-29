@@ -94,10 +94,10 @@ pub struct PoolSwap {
     pub liquidity: u128,
     /// The current tick of the pool after the swap occurred.
     pub tick: i32,
-    /// UNIX timestamp (nanoseconds) when the swap occurred.
-    pub timestamp: Option<UnixNanos>,
+    /// UNIX timestamp (nanoseconds) when the swap event occurred.
+    pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
-    pub ts_init: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
     /// Optional computed trade information in market-oriented format.
     /// This translates raw blockchain data into standard trading terminology.
     pub trade_info: Option<SwapTradeInfo>,
@@ -116,7 +116,8 @@ impl PoolSwap {
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        timestamp: Option<UnixNanos>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         sender: Address,
         recipient: Address,
         amount0: I256,
@@ -134,7 +135,8 @@ impl PoolSwap {
             transaction_hash,
             transaction_index,
             log_index,
-            timestamp,
+            ts_event,
+            ts_init,
             sender,
             recipient,
             amount0,
@@ -142,7 +144,6 @@ impl PoolSwap {
             sqrt_price_x96,
             liquidity,
             tick,
-            ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
             trade_info: None,
         }
     }

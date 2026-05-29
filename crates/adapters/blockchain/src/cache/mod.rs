@@ -107,6 +107,14 @@ impl BlockchainCache {
         self.block_timestamps.get(&block_number)
     }
 
+    /// Records a block timestamp in the in-memory cache without persisting it.
+    ///
+    /// Used while streaming pool events so event conversion can resolve `ts_event` for blocks
+    /// that have not been persisted via [`Self::add_block`].
+    pub fn cache_block_timestamp(&mut self, number: u64, timestamp: UnixNanos) {
+        self.block_timestamps.insert(number, timestamp);
+    }
+
     /// Initializes the database connection for persistent storage.
     pub async fn initialize_database(&mut self, pg_connect_options: PgConnectOptions) {
         let database = BlockchainCacheDatabase::init(pg_connect_options).await;
@@ -348,10 +356,11 @@ impl BlockchainCache {
     ///
     /// Returns an error if adding the block to the database fails.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
+        // Populate in-memory first so the timestamp resolves even if persistence fails
+        self.block_timestamps.insert(block.number, block.timestamp);
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
         }
-        self.block_timestamps.insert(block.number, block.timestamp);
         Ok(())
     }
 
@@ -880,5 +889,56 @@ impl BlockchainCache {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use nautilus_core::UnixNanos;
+    use nautilus_model::defi::{Block, Blockchain, Chain};
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    fn test_cache() -> BlockchainCache {
+        BlockchainCache::new(Arc::new(Chain::new(Blockchain::Ethereum, 1)))
+    }
+
+    #[rstest]
+    fn cache_block_timestamp_records_in_memory() {
+        let mut cache = test_cache();
+        assert_eq!(cache.get_block_timestamp(100), None);
+
+        cache.cache_block_timestamp(100, UnixNanos::from(1_700_000_000_000_000_000));
+
+        assert_eq!(
+            cache.get_block_timestamp(100),
+            Some(&UnixNanos::from(1_700_000_000_000_000_000))
+        );
+    }
+
+    #[tokio::test]
+    async fn add_block_populates_timestamp_without_database() {
+        let mut cache = test_cache();
+        let block = Block::new(
+            "0x1".to_string(),
+            "0x0".to_string(),
+            42,
+            Ustr::from("miner"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(1_700_000_000_000_000_000),
+            Some(Blockchain::Ethereum),
+        );
+
+        cache.add_block(block).await.unwrap();
+
+        assert_eq!(
+            cache.get_block_timestamp(42),
+            Some(&UnixNanos::from(1_700_000_000_000_000_000))
+        );
     }
 }

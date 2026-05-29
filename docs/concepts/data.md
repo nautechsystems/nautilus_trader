@@ -478,6 +478,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | `QuoteTick`      | Time when quote occurred at the exchange.             | Time when Nautilus received the quote data. |
 | `OrderBookDelta` | Time when order book update occurred at the exchange. | Time when Nautilus received the order book update. |
 | `Bar`            | Time of the bar's closing (exact minute/hour).        | Time when Nautilus generated (for internal bars) or received the bar data (for external bars). |
+| `DefiData`       | Time the block or pool event occurred.                | Time when Nautilus created the object from the chain data. |
 | `OrderFilled`    | Time when order was filled at the exchange.           | Time when Nautilus received and processed the fill confirmation. |
 | `OrderCanceled`  | Time when cancellation was processed at the exchange. | Time when Nautilus received and processed the cancellation confirmation. |
 | `NewsEvent`      | Time when the news was published.                     | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
@@ -506,6 +507,8 @@ The dual timestamp system enables latency analysis within the platform:
 #### Backtesting environment
 
 - Data is ordered by `ts_init` using a stable sort.
+- DeFi data (`DefiData`) breaks `ts_init` ties by on-chain position (block number, transaction
+  index, log index) so events from the same block replay in canonical chain order.
 - This behavior ensures deterministic processing order and simulates realistic system behavior, including latencies.
 
 #### Live trading environment

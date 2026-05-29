@@ -38,7 +38,7 @@ use crate::{
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
-        client::HyperSyncClient,
+        client::{HyperSyncClient, PoolEventStreamItem},
         helpers::{extract_block_number, extract_event_signature_bytes},
     },
     rpc::{
@@ -542,7 +542,14 @@ impl BlockchainDataClientCore {
                 Err(anyhow::anyhow!("Sync cancelled"))
             }
             result = async {
-                while let Some(log) = pool_events_stream.next().await {
+                while let Some(item) = pool_events_stream.next().await {
+                    let log = match item {
+                        PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
+                            self.cache.cache_block_timestamp(number, timestamp);
+                            continue;
+                        }
+                        PoolEventStreamItem::Log(log) => log,
+                    };
                     let block_number = extract_block_number(&log)?;
                     blocks_processed += block_number - last_block_saved;
                     last_block_saved = block_number;
@@ -729,7 +736,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(swap_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for swap event")?;
         let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
@@ -755,7 +763,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(mint_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for mint event")?;
 
         let liquidity_update = mint_event.to_pool_liquidity_update(
             self.chain.clone(),
@@ -784,7 +793,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(burn_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for burn event")?;
 
         let liquidity_update = burn_event.to_pool_liquidity_update(
             self.chain.clone(),
@@ -813,7 +823,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(collect_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for collect event")?;
 
         let fee_collect = collect_event.to_pool_fee_collect(
             self.chain.clone(),
@@ -838,7 +849,8 @@ impl BlockchainDataClientCore {
         let timestamp = self
             .cache
             .get_block_timestamp(flash_event.block_number)
-            .copied();
+            .copied()
+            .context("missing block timestamp for flash event")?;
 
         let flash = flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
 
@@ -1080,7 +1092,7 @@ impl BlockchainDataClientCore {
     /// - Event parsing or processing fails
     /// - DEX configuration is invalid
     async fn construct_pool_profiler_from_hypersync_rpc(
-        &self,
+        &mut self,
         mut profiler: PoolProfiler,
         from_position: Option<BlockPosition>,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
@@ -1145,7 +1157,14 @@ impl BlockchainDataClientCore {
             .await;
         tokio::pin!(pool_events_stream);
 
-        while let Some(log) = pool_events_stream.next().await {
+        while let Some(item) = pool_events_stream.next().await {
+            let log = match item {
+                PoolEventStreamItem::BlockTimestamp { number, timestamp } => {
+                    self.cache.cache_block_timestamp(number, timestamp);
+                    continue;
+                }
+                PoolEventStreamItem::Log(log) => log,
+            };
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
@@ -1293,6 +1312,11 @@ impl BlockchainDataClientCore {
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
         if profiler.pool.dex.name == DexType::UniswapV3 {
             let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
+            let timestamp = self
+                .cache
+                .get_block_timestamp(last_processed_event.number)
+                .copied()
+                .context("missing block timestamp for on-chain snapshot")?;
             let on_chain_snapshot = self
                 .univ3_pool
                 .fetch_snapshot(
@@ -1301,6 +1325,8 @@ impl BlockchainDataClientCore {
                     profiler.get_active_tick_values().as_slice(),
                     &profiler.get_all_position_keys(),
                     last_processed_event,
+                    timestamp, // ts_event
+                    timestamp, // ts_init (same block timestamp)
                 )
                 .await?;
 

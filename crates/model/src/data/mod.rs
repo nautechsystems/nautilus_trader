@@ -47,6 +47,8 @@ use nautilus_core::{Params, UnixNanos};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, to_string};
 
+#[cfg(feature = "defi")]
+use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
@@ -110,6 +112,8 @@ pub enum Data {
     OptionGreeks(OptionGreeks),
     InstrumentClose(InstrumentClose),
     Custom(CustomData),
+    #[cfg(feature = "defi")]
+    Defi(Box<DefiData>), // This variant is significantly larger
 }
 
 /// A C-compatible representation of [`Data`] for FFI.
@@ -154,6 +158,8 @@ impl TryFrom<Data> for DataFFI {
             }
             Data::InstrumentClose(x) => Ok(Self::InstrumentClose(x)),
             Data::Custom(_) => anyhow::bail!("Cannot convert Data::Custom to DataFFI"),
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => anyhow::bail!("Cannot convert Data::Defi to DataFFI"),
         }
     }
 }
@@ -250,6 +256,8 @@ impl Clone for Data {
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
             Self::Custom(x) => Self::Custom(x.clone()),
+            #[cfg(feature = "defi")]
+            Self::Defi(x) => Self::Defi(x.clone()),
         }
     }
 }
@@ -269,6 +277,8 @@ impl PartialEq for Data {
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => a == b,
+            #[cfg(feature = "defi")]
+            (Self::Defi(a), Self::Defi(b)) => a == b,
             _ => false,
         }
     }
@@ -292,6 +302,10 @@ impl Serialize for Data {
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
             Self::Custom(x) => x.serialize(serializer),
+            #[cfg(feature = "defi")]
+            Self::Defi(_) => Err(serde::ser::Error::custom(
+                "Data::Defi serialization is not supported",
+            )),
         }
     }
 }
@@ -372,6 +386,8 @@ impl Data {
                         .and_then(|s| InstrumentId::from_str(s).ok())
                 })
                 .unwrap_or_else(|| InstrumentId::from("NULL.NULL")),
+            #[cfg(feature = "defi")]
+            Self::Defi(defi) => defi.instrument_id(),
         }
     }
 
@@ -449,6 +465,8 @@ impl HasTsInit for Data {
             Self::OptionGreeks(g) => g.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
             Self::Custom(c) => c.data.ts_init(),
+            #[cfg(feature = "defi")]
+            Self::Defi(d) => d.ts_init(),
         }
     }
 }
@@ -524,6 +542,13 @@ impl From<OptionGreeks> for Data {
 impl From<InstrumentClose> for Data {
     fn from(value: InstrumentClose) -> Self {
         Self::InstrumentClose(value)
+    }
+}
+
+#[cfg(feature = "defi")]
+impl From<DefiData> for Data {
+    fn from(value: DefiData) -> Self {
+        Self::Defi(Box::new(value))
     }
 }
 

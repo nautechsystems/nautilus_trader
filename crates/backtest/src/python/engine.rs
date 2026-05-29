@@ -36,6 +36,8 @@ use nautilus_execution::models::{
     },
     latency::{LatencyModelAny, StaticLatencyModel},
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
@@ -75,6 +77,26 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.backtest")]
 #[derive(Debug)]
 pub struct PyBacktestEngine(BacktestEngine);
+
+// DeFi methods live in their own fully gated `#[pymethods]` block (multiple-pymethods is enabled)
+// so the `gen_stub`/pyo3 expansion never references `DefiData` in non-DeFi builds.
+#[cfg(feature = "defi")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyBacktestEngine {
+    /// Adds DeFi data to the engine.
+    #[pyo3(name = "add_defi_data", signature = (data, client_id=None, sort=true))]
+    fn py_add_defi_data(
+        &mut self,
+        data: Vec<DefiData>,
+        client_id: Option<ClientId>,
+        sort: bool,
+    ) -> PyResult<()> {
+        self.0
+            .add_defi_data(data, client_id, sort)
+            .map_err(to_pyruntime_err)
+    }
+}
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
@@ -1026,6 +1048,11 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 
     if let Ok(close) = obj.extract::<InstrumentClose>() {
         return Ok(Data::InstrumentClose(close));
+    }
+
+    #[cfg(feature = "defi")]
+    if let Ok(defi) = obj.extract::<DefiData>() {
+        return Ok(Data::Defi(Box::new(defi)));
     }
 
     // Fall back to from_pyobject methods for Cython objects

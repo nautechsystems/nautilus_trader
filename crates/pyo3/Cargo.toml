@@ -29,7 +29,11 @@ arrow = [
   "nautilus-serialization/arrow",
 ]
 cython-compat = []
-defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
+defi = [
+  "dep:nautilus-blockchain",
+  "nautilus-backtest/defi",
+  "nautilus-blockchain/python",
+]
 extension-module = [
   "nautilus-analysis/extension-module",
   "nautilus-architect-ax/extension-module",

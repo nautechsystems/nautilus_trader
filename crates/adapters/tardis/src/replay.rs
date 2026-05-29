@@ -219,6 +219,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             msg.instrument_id()
                         );
                     }
+                    #[allow(unreachable_patterns)]
+                    _ => {
+                        log::debug!("Skipping unsupported data type");
+                    }
                 }
 
                 msg_count += 1;

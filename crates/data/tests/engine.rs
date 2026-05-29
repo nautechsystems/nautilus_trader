@@ -9648,7 +9648,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -10013,7 +10014,8 @@ fn test_process_pool_liquidity_update(
         U256::from(2000000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
@@ -10116,7 +10118,8 @@ fn test_process_pool_fee_collect(
         300000u128,
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let sub = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
@@ -10210,7 +10213,8 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x34; 20]),
         U256::from(1000000u128),
@@ -10323,7 +10327,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         U256::from(2000000u128),
         -1000, // Wide range
         1000,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -10376,7 +10381,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
@@ -10514,7 +10520,8 @@ fn test_pool_updater_processes_mint_updates_profiler(
         U256::from(200000u128),
         -100, // tick_lower
         100,  // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -10614,7 +10621,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(200000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     profiler.process_mint(&mint).unwrap();
     cache.borrow_mut().add_pool_profiler(profiler).unwrap();
@@ -10656,7 +10664,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
         U256::from(100000u128),
         -100,
         100,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     data_engine
@@ -10766,7 +10775,8 @@ fn test_pool_updater_processes_collect_updates_profiler(
         30000u128, // amount1
         -100,      // tick_lower
         100,       // tick_upper
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -10870,7 +10880,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
         "0x123".to_string(),
         0,
         0,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
         initiator,
         recipient,
         U256::from(1000000u128), // amount0
@@ -11395,6 +11406,8 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
         Vec::new(),
         PoolAnalytics::default(),
         BlockPosition::new(creation_block, "0x0".to_string(), 0, 0),
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     data_engine.process_defi_data(DefiData::PoolSnapshot(stub));
 

@@ -561,6 +561,7 @@ mod tests {
     use std::sync::Arc;
 
     use alloy_primitives::{Address, I256, U160, U256};
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         defi::{
             Chain, DefiData, PoolFeeCollect, PoolFlash, PoolIdentifier, PoolLiquidityUpdate,
@@ -618,7 +619,8 @@ mod tests {
             format!("0x{block:064x}"),
             tx_index,
             log_index,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
             Address::ZERO,
             Address::ZERO,
             I256::ZERO,
@@ -654,7 +656,8 @@ mod tests {
             U256::ZERO,
             0,
             0,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -680,7 +683,8 @@ mod tests {
             0,
             0,
             0,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -701,7 +705,8 @@ mod tests {
             format!("0x{block:064x}"),
             tx_index,
             log_index,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
             Address::ZERO,
             Address::ZERO,
             U256::ZERO,

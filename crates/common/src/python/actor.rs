@@ -3123,7 +3123,8 @@ class CapturingActor:
             "0xabc123".to_string(),
             0,
             0,
-            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
@@ -3164,7 +3165,8 @@ class CapturingActor:
             U256::from(2_000u64),
             -10,
             10,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -3187,7 +3189,8 @@ class CapturingActor:
             200,
             -10,
             10,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
     }
 
@@ -3203,7 +3206,8 @@ class CapturingActor:
             "0xabc123".to_string(),
             0,
             0,
-            Some(UnixNanos::default()),
+            UnixNanos::default(),
+            UnixNanos::default(),
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),

@@ -1650,6 +1650,15 @@ impl DataEngine {
 
     /// Processes a `Data` enum instance, dispatching to live handlers.
     pub fn process_data(&mut self, data: Data) {
+        #[cfg(feature = "defi")]
+        let data = match data {
+            Data::Defi(defi) => {
+                self.process_defi_data(*defi);
+                return;
+            }
+            data => data,
+        };
+
         self.data_count += 1;
 
         match data {
@@ -1682,6 +1691,8 @@ impl DataEngine {
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
     }
 
@@ -1692,6 +1703,15 @@ impl DataEngine {
     /// republish, option-chain expiry, depth-derived quotes, deferred-command drains) run in this
     /// path.
     pub fn process_pipeline(&mut self, data: Data) {
+        #[cfg(feature = "defi")]
+        let data = match data {
+            Data::Defi(defi) => {
+                self.process_defi_data(*defi);
+                return;
+            }
+            data => data,
+        };
+
         self.data_count += 1;
 
         match data {
@@ -1707,6 +1727,8 @@ impl DataEngine {
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
     }
 

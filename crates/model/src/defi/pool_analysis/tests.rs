@@ -139,7 +139,8 @@ fn create_mint_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -174,7 +175,8 @@ fn create_burn_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -199,7 +201,8 @@ fn create_collect_event(
         amount1,
         ticker_lower,
         ticker_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -404,7 +407,8 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
         U256::from(1000),
         invalid_tick_lower,
         invalid_tick_upper,
-        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
     );
     let result = profiler.process(&DexPoolData::LiquidityUpdate(mint_event));
     assert!(result.is_err());
@@ -663,6 +667,8 @@ fn test_execute_swap_equivalence() {
         uniswap_v3(),
         pool_identifier,
         create_block_position(),
+        UnixNanos::default(),
+        UnixNanos::default(),
         user_address(),
         user_address(),
     );
@@ -729,6 +735,8 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
         uniswap_v3(),
         pool_identifier,
         create_block_position(),
+        UnixNanos::default(),
+        UnixNanos::default(),
         user_address(),
         user_address(),
     );
@@ -793,6 +801,24 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
         PoolProfilerComparison::Mismatch
     );
     assert!(!PoolProfilerComparison::Mismatch.is_valid_for_snapshot());
+}
+
+#[rstest]
+fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mut mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    let event_ts = UnixNanos::from(profiler.pool.ts_init.as_u64() + 1_000_000_000);
+    mint_event.ts_event = event_ts;
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot();
+
+    assert_eq!(snapshot.ts_event, event_ts);
+    assert_eq!(snapshot.ts_init, event_ts);
+    assert_ne!(snapshot.ts_event, profiler.pool.ts_init);
 }
 
 // Follow Uniswapv3 official tests

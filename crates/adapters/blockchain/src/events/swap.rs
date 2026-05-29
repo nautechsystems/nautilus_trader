@@ -100,7 +100,7 @@ impl SwapEvent {
         chain: SharedChain,
         instrument_id: InstrumentId,
         pool_identifier: PoolIdentifier,
-        timestamp: Option<UnixNanos>,
+        timestamp: UnixNanos,
     ) -> PoolSwap {
         PoolSwap::new(
             chain,
@@ -111,7 +111,8 @@ impl SwapEvent {
             self.transaction_hash.clone(),
             self.transaction_index,
             self.log_index,
-            timestamp,
+            timestamp, // ts_event
+            timestamp, // ts_init (same block timestamp)
             self.sender,
             self.receiver,
             self.amount0,

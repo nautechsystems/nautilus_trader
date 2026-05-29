@@ -42,6 +42,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `examples`: Enables example strategies and the EMA crossover backtest example.
+//! - `defi`: Enables DeFi replay APIs and data-engine routing.
 //! - `streaming`: Enables `persistence` dependency for streaming configuration.
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
@@ -60,6 +61,8 @@ pub mod accumulator;
 pub mod config;
 pub mod data_client;
 pub mod data_iterator;
+#[cfg(feature = "defi")]
+pub mod defi;
 pub mod engine;
 pub mod exchange;
 pub mod execution_client;

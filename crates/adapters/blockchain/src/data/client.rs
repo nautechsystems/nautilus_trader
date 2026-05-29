@@ -203,6 +203,12 @@ impl BlockchainDataClient {
                                         }
                                     }
 
+                                    // Cache the block before its events are processed,
+                                    // so conversion can resolve ts_event.
+                                    if let Err(e) = core_client.cache.add_block(block.clone()).await {
+                                        log::error!("Failed to cache block {}: {e}", block.number);
+                                    }
+
                                     Some(DataEvent::DeFi(DefiData::Block(block)))
                                 }
                                 BlockchainMessage::SwapEvent(swap_event) => {

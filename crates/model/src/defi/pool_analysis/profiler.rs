@@ -17,6 +17,7 @@
 
 use ahash::AHashMap;
 use alloy_primitives::{Address, I256, U160, U256};
+use nautilus_core::UnixNanos;
 
 use crate::defi::{
     PoolLiquidityUpdate, PoolSwap, SharedPool,
@@ -86,6 +87,8 @@ pub struct PoolProfiler {
     pub analytics: PoolAnalytics,
     /// The block position of the last processed event.
     pub last_processed_event: Option<BlockPosition>,
+    /// The event timestamp of the last processed event.
+    pub last_processed_ts: Option<UnixNanos>,
     /// Flag indicating whether the pool has been initialized with a starting price.
     pub is_initialized: bool,
     /// Optional progress reporter for tracking event processing.
@@ -110,6 +113,7 @@ impl PoolProfiler {
             state: PoolState::default(),
             analytics: PoolAnalytics::default(),
             last_processed_event: None,
+            last_processed_ts: None,
             is_initialized: false,
             reporter: None,
             last_reported_block: 0,
@@ -343,6 +347,7 @@ impl PoolProfiler {
             swap.transaction_index,
             swap.log_index,
         ));
+        self.last_processed_ts = Some(swap.ts_event);
         self.update_reporter_if_enabled(swap.block);
         self.update_liquidity_analytics();
 
@@ -384,7 +389,8 @@ impl PoolProfiler {
             block.transaction_hash,
             block.transaction_index,
             block.log_index,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
             sender,
             recipient,
             swap_quote.amount0,
@@ -859,6 +865,7 @@ impl PoolProfiler {
             update.transaction_index,
             update.log_index,
         ));
+        self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
 
@@ -946,7 +953,8 @@ impl PoolProfiler {
             amount1,
             tick_lower,
             tick_upper,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
         );
 
         Ok(event)
@@ -999,6 +1007,7 @@ impl PoolProfiler {
             update.transaction_index,
             update.log_index,
         ));
+        self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
 
@@ -1065,7 +1074,8 @@ impl PoolProfiler {
             amount1,
             tick_lower,
             tick_upper,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
         );
 
         Ok(event)
@@ -1113,6 +1123,7 @@ impl PoolProfiler {
             collect.transaction_index,
             collect.log_index,
         ));
+        self.last_processed_ts = Some(collect.ts_event);
         self.update_reporter_if_enabled(collect.block);
         self.update_liquidity_analytics();
 
@@ -1142,6 +1153,7 @@ impl PoolProfiler {
             flash.transaction_index,
             flash.log_index,
         ));
+        self.last_processed_ts = Some(flash.ts_event);
         self.update_reporter_if_enabled(flash.block);
         self.update_liquidity_analytics();
 
@@ -1196,7 +1208,8 @@ impl PoolProfiler {
             block.transaction_hash,
             block.transaction_index,
             block.log_index,
-            None,
+            self.pool.ts_init, // ts_event (simulated; pool init time)
+            self.pool.ts_init, // ts_init
             sender,
             recipient,
             amount0,
@@ -1524,6 +1537,7 @@ impl PoolProfiler {
 
         // Set last processed event
         self.last_processed_event = Some(snapshot.block_position);
+        self.last_processed_ts = Some(snapshot.ts_event);
 
         // Mark as initialized
         self.is_initialized = true;
@@ -1670,6 +1684,8 @@ impl PoolProfiler {
             self.last_processed_event
                 .clone()
                 .expect("No events processed yet"),
+            self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_event (last processed event)
+            self.last_processed_ts.unwrap_or(self.pool.ts_init), // ts_init
         )
     }
 

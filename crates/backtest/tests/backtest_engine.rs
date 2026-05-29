@@ -383,6 +383,348 @@ fn test_add_actor_registers_actor_with_trader() {
     );
 }
 
+#[cfg(feature = "defi")]
+mod defi {
+    use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+
+    use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
+    use nautilus_common::{
+        actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
+        nautilus_actor,
+    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        defi::{
+            AmmType, Block, Blockchain, Chain, DefiData, Dex, DexType, Pool, PoolIdentifier,
+            PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
+            data::block::BlockPosition,
+            pool_analysis::{
+                PoolSnapshot,
+                snapshot::{PoolAnalytics, PoolState},
+            },
+            validation::validate_address,
+        },
+        identifiers::{ActorId, ClientId, InstrumentId},
+    };
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    struct DefiBlockActor {
+        core: DataActorCore,
+        chain: Blockchain,
+        received_blocks: Rc<RefCell<Vec<u64>>>,
+    }
+
+    impl DefiBlockActor {
+        fn new(chain: Blockchain, received_blocks: Rc<RefCell<Vec<u64>>>) -> Self {
+            let config = DataActorConfig {
+                actor_id: Some(ActorId::from("DEFI-BLOCK-ACTOR-001")),
+                ..Default::default()
+            };
+            Self {
+                core: DataActorCore::new(config),
+                chain,
+                received_blocks,
+            }
+        }
+    }
+
+    nautilus_actor!(DefiBlockActor);
+
+    impl Debug for DefiBlockActor {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct(stringify!(DefiBlockActor)).finish()
+        }
+    }
+
+    impl DataActor for DefiBlockActor {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.subscribe_blocks(self.chain, None, None);
+            Ok(())
+        }
+
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+            self.received_blocks.borrow_mut().push(block.number);
+            Ok(())
+        }
+    }
+
+    struct DefiPoolActor {
+        core: DataActorCore,
+        instrument_id: InstrumentId,
+    }
+
+    impl DefiPoolActor {
+        fn new(instrument_id: InstrumentId) -> Self {
+            let config = DataActorConfig {
+                actor_id: Some(ActorId::from("DEFI-POOL-ACTOR-001")),
+                ..Default::default()
+            };
+            Self {
+                core: DataActorCore::new(config),
+                instrument_id,
+            }
+        }
+    }
+
+    nautilus_actor!(DefiPoolActor);
+
+    impl Debug for DefiPoolActor {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct(stringify!(DefiPoolActor)).finish()
+        }
+    }
+
+    impl DataActor for DefiPoolActor {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.subscribe_pool(self.instrument_id, None, None);
+            Ok(())
+        }
+
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[rstest]
+    fn test_run_routes_defi_blocks_to_actor_subscription() {
+        let config = BacktestEngineConfig {
+            bypass_logging: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+        let received_blocks = Rc::new(RefCell::new(Vec::new()));
+        let actor = DefiBlockActor::new(Blockchain::Ethereum, Rc::clone(&received_blocks));
+        engine.add_actor(actor).unwrap();
+
+        let block_1 = Block::new(
+            "0x1".to_string(),
+            "0x0".to_string(),
+            1,
+            Ustr::from("miner"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(10),
+            Some(Blockchain::Ethereum),
+        );
+        let block_2 = Block::new(
+            "0x2".to_string(),
+            "0x1".to_string(),
+            2,
+            Ustr::from("miner"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(20),
+            Some(Blockchain::Ethereum),
+        );
+
+        engine
+            .add_defi_data(
+                vec![DefiData::Block(block_2), DefiData::Block(block_1)],
+                None,
+                true,
+            )
+            .unwrap();
+
+        assert!(
+            engine
+                .kernel()
+                .data_engine
+                .borrow()
+                .registered_clients()
+                .contains(&ClientId::from("BACKTEST"))
+        );
+
+        engine.run(None, None, None, false).unwrap();
+
+        assert_eq!(*received_blocks.borrow(), vec![1, 2]);
+        assert_eq!(engine.kernel().data_engine.borrow().data_count(), 2);
+    }
+
+    #[rstest]
+    fn test_run_replays_defi_pool_snapshot_and_events_into_profiler_state() {
+        let config = BacktestEngineConfig {
+            bypass_logging: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+        let pool = defi_pool();
+        let instrument_id = pool.instrument_id;
+        let snapshot = defi_pool_snapshot(instrument_id, 5, 0, 0);
+        let mint = defi_liquidity_update(&pool, PoolLiquidityUpdateType::Mint, 6, 0, 0, 1_000);
+        let owner = mint.owner;
+        let burn = defi_liquidity_update(&pool, PoolLiquidityUpdateType::Burn, 6, 1, 0, 400);
+
+        engine.add_actor(DefiPoolActor::new(instrument_id)).unwrap();
+        engine
+            .add_defi_data(
+                vec![
+                    DefiData::Block(defi_block(4, 1)),
+                    DefiData::PoolLiquidityUpdate(burn),
+                    DefiData::PoolSnapshot(snapshot),
+                    DefiData::PoolLiquidityUpdate(mint),
+                    DefiData::Pool(pool),
+                ],
+                None,
+                true,
+            )
+            .unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+
+        let cache = engine.kernel().cache.borrow();
+        let profiler = cache
+            .pool_profiler(&instrument_id)
+            .expect("Pool profiler should be cached");
+        let position = profiler
+            .get_position(&owner, -10, 10)
+            .expect("Position should be cached");
+
+        assert!(profiler.is_initialized);
+        assert_eq!(profiler.analytics.total_mints, 1);
+        assert_eq!(profiler.analytics.total_burns, 1);
+        assert_eq!(profiler.get_active_liquidity(), 600);
+        assert_eq!(profiler.get_total_liquidity_from_active_positions(), 600);
+        assert_eq!(position.liquidity, 600);
+        assert_eq!(
+            profiler.last_processed_event.as_ref().map(|pos| (
+                pos.number,
+                pos.transaction_index,
+                pos.log_index
+            )),
+            Some((6, 1, 0))
+        );
+        assert_eq!(engine.iteration(), 5);
+    }
+
+    fn defi_pool() -> Pool {
+        let chain = Arc::new(Chain::new(Blockchain::Base, 8453));
+        let dex = Arc::new(Dex::new(
+            (*chain).clone(),
+            DexType::UniswapV3,
+            "0x0000000000000000000000000000000000000fac",
+            1,
+            AmmType::CLAMM,
+            "PoolCreated",
+            "Swap",
+            "Mint",
+            "Burn",
+            "Collect",
+        ));
+        let token0 = Token::new(
+            Arc::clone(&chain),
+            validate_address("0x0000000000000000000000000000000000000001").unwrap(),
+            "USD Coin".to_string(),
+            "USDC".to_string(),
+            6,
+        );
+        let token1 = Token::new(
+            Arc::clone(&chain),
+            validate_address("0x0000000000000000000000000000000000000002").unwrap(),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        );
+        let pool_address = validate_address("0x0000000000000000000000000000000000000003").unwrap();
+
+        Pool::new(
+            chain,
+            dex,
+            pool_address,
+            PoolIdentifier::from_address(pool_address),
+            1,
+            token0,
+            token1,
+            Some(500),
+            Some(10),
+            UnixNanos::from(2),
+        )
+    }
+
+    fn defi_block(number: u64, timestamp: u64) -> Block {
+        Block::new(
+            format!("0x{number:064x}"),
+            "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            number,
+            Ustr::from("miner"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(timestamp),
+            Some(Blockchain::Base),
+        )
+    }
+
+    fn defi_pool_snapshot(
+        instrument_id: InstrumentId,
+        block: u64,
+        transaction_index: u32,
+        log_index: u32,
+    ) -> PoolSnapshot {
+        PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            defi_block_position(block, transaction_index, log_index),
+            UnixNanos::from(20),
+            UnixNanos::from(20),
+        )
+    }
+
+    fn defi_liquidity_update(
+        pool: &Pool,
+        kind: PoolLiquidityUpdateType,
+        block: u64,
+        transaction_index: u32,
+        log_index: u32,
+        liquidity: u128,
+    ) -> PoolLiquidityUpdate {
+        PoolLiquidityUpdate::new(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            pool.instrument_id,
+            pool.pool_identifier,
+            kind,
+            block,
+            defi_transaction_hash(block, transaction_index, log_index),
+            transaction_index,
+            log_index,
+            None,
+            validate_address("0x0000000000000000000000000000000000000004").unwrap(),
+            liquidity,
+            Default::default(),
+            Default::default(),
+            -10,
+            10,
+            UnixNanos::from(30),
+            UnixNanos::from(30),
+        )
+    }
+
+    fn defi_block_position(block: u64, transaction_index: u32, log_index: u32) -> BlockPosition {
+        BlockPosition::new(
+            block,
+            defi_transaction_hash(block, transaction_index, log_index),
+            transaction_index,
+            log_index,
+        )
+    }
+
+    fn defi_transaction_hash(block: u64, transaction_index: u32, log_index: u32) -> String {
+        format!(
+            "0x{block:016x}{transaction_index:08x}{log_index:08x}{:032x}",
+            0
+        )
+    }
+}
+
 #[rstest]
 fn test_add_exec_algorithm_registers_exec_algorithm_with_trader_and_endpoint() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();

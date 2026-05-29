@@ -748,6 +748,8 @@ impl FeatherWriter {
                 // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
                 self.write_batch(deltas_api.deltas.clone()).await
             }
+            #[allow(unreachable_patterns)]
+            _ => Err("Unsupported Data variant for feather writes".into()),
         }
     }
 

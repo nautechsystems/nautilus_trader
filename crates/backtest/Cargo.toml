@@ -24,6 +24,7 @@ crate-type = ["rlib", "staticlib"]
 default = []
 examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
+defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 plugin = ["dep:nautilus-plugin"]
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [

@@ -435,6 +435,8 @@ impl ParquetDataCatalog {
                 Data::Custom(c) => {
                     custom_data.entry(custom_data_key(&c)).or_default().push(c);
                 }
+                #[allow(unreachable_patterns)]
+                _ => anyhow::bail!("Unsupported Data variant for catalog writes"),
             }
         }
 
