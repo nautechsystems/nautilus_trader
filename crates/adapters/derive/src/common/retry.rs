@@ -95,7 +95,9 @@ pub fn is_fatal_http_error(error: &DeriveHttpError) -> bool {
 #[must_use]
 pub fn should_retry_ws_error(error: &DeriveWsError) -> bool {
     match error {
-        DeriveWsError::Transport(_) | DeriveWsError::RequestCancelled { .. } => true,
+        DeriveWsError::Transport(_)
+        | DeriveWsError::RequestCancelled { .. }
+        | DeriveWsError::Timeout { .. } => true,
         DeriveWsError::JsonRpc { code, .. } => is_retryable_jsonrpc_code(*code),
         DeriveWsError::NotConnected
         | DeriveWsError::Serde(_)
@@ -161,9 +163,35 @@ pub(crate) fn is_write_outcome_ambiguous_jsonrpc(code: i64) -> bool {
 /// rejection paths. They are definitive for submit/cancel/modify outcomes,
 /// even when an idempotent read would retry some of them. HTTP 5xx and
 /// transport failures remain ambiguous for writes.
+///
+/// Retained for the HTTP order-write path (the execution client now writes over
+/// the WebSocket and classifies outcomes via `is_write_outcome_ambiguous_ws`).
 #[must_use]
-pub(crate) fn is_write_outcome_definitive_http_status(status: u16) -> bool {
+pub fn is_write_outcome_definitive_http_status(status: u16) -> bool {
     (400..500).contains(&status)
+}
+
+/// Returns `true` when a WebSocket write's outcome is unknown (sent, but no
+/// clear venue verdict), so the caller emits no terminal event and lets
+/// reconciliation settle the order. `JsonRpc` defers to the shared code policy
+/// in [`is_write_outcome_ambiguous_jsonrpc`] (only `-32603`).
+///
+/// Two non-obvious calls: `Serde` is ambiguous because it is a failure to decode
+/// the *response* (the request cannot fail to serialize), so the action may have
+/// been processed; `NotConnected` is definitive because it is returned before
+/// the frame is sent, so the order was never placed.
+#[must_use]
+pub(crate) fn is_write_outcome_ambiguous_ws(error: &DeriveWsError) -> bool {
+    match error {
+        DeriveWsError::Transport(_)
+        | DeriveWsError::RequestCancelled { .. }
+        | DeriveWsError::Timeout { .. }
+        | DeriveWsError::Serde(_) => true,
+        DeriveWsError::JsonRpc { code, .. } => is_write_outcome_ambiguous_jsonrpc(*code),
+        DeriveWsError::NotConnected
+        | DeriveWsError::Auth(_)
+        | DeriveWsError::MissingCredentials { .. } => false,
+    }
 }
 
 /// Classifies a JSON-RPC error code as fatal. Derive currently does not
@@ -303,5 +331,62 @@ mod tests {
             method: "subscribe".into(),
         };
         assert!(should_retry_ws_error(&err));
+    }
+
+    #[rstest]
+    fn test_ws_timeout_retryable_not_fatal() {
+        let err = DeriveWsError::Timeout {
+            method: "private/order".into(),
+        };
+        assert!(should_retry_ws_error(&err));
+        assert!(!is_fatal_ws_error(&err));
+    }
+
+    #[rstest]
+    fn test_ws_write_outcome_ambiguous_classification() {
+        // Sent-but-unconfirmed outcomes are ambiguous; everything else is a
+        // definitive rejection the caller can surface as a terminal event.
+        let ambiguous = [
+            DeriveWsError::transport("send failed"),
+            DeriveWsError::RequestCancelled {
+                method: "private/order".into(),
+            },
+            DeriveWsError::Timeout {
+                method: "private/order".into(),
+            },
+            // A response the client cannot decode: the action may have been
+            // processed, so await reconciliation rather than reject.
+            DeriveWsError::Serde(serde_json::from_str::<Value>("{").unwrap_err()),
+            DeriveWsError::JsonRpc {
+                code: -32603,
+                message: "Internal error".into(),
+                data: None,
+            },
+        ];
+        let definitive = [
+            DeriveWsError::NotConnected,
+            DeriveWsError::JsonRpc {
+                code: -32602,
+                message: "signed_max_fee_too_low".into(),
+                data: None,
+            },
+            DeriveWsError::MissingCredentials {
+                operation: "private/order".into(),
+            },
+        ];
+
+        for err in &ambiguous {
+            assert!(
+                is_write_outcome_ambiguous_ws(err),
+                "expected ambiguous: {err}"
+            );
+        }
+
+        for err in &definitive {
+            assert!(
+                !is_write_outcome_ambiguous_ws(err),
+                "expected definitive: {err}",
+            );
+        }
     }
 }

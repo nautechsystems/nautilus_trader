@@ -72,14 +72,11 @@ use crate::{
         credential::DeriveCredential,
         enums::{DeriveInstrumentType, DeriveOrderSide},
         parse::{derive_rejection_due_post_only, format_venue_symbol},
-        retry::{
-            http_retry_config, is_write_outcome_ambiguous_jsonrpc,
-            is_write_outcome_definitive_http_status,
-        },
+        retry::{http_retry_config, is_write_outcome_ambiguous_ws},
     },
     config::DeriveExecClientConfig,
     http::{
-        DeriveCredentials, DeriveHttpClient, DeriveHttpError,
+        DeriveCredentials, DeriveHttpClient,
         models::{DeriveInstrument, DeriveOrder, DeriveTrade},
         parse::{
             parse_derive_order_to_report, parse_derive_position_to_report,
@@ -98,7 +95,8 @@ use crate::{
     },
     websocket::{
         DeriveOrdersSubscriptionData, DeriveTradesSubscriptionData, DeriveWebSocketClient,
-        DeriveWsChannel, DeriveWsCredentials, DeriveWsMessage, OrderIdentity, WsDispatchState,
+        DeriveWsChannel, DeriveWsCredentials, DeriveWsError, DeriveWsExecutionHandle,
+        DeriveWsMessage, OrderIdentity, WsDispatchState,
     },
 };
 
@@ -117,6 +115,7 @@ pub struct DeriveExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
+    ws_exec: DeriveWsExecutionHandle,
     instruments: Arc<Mutex<AHashMap<Ustr, DeriveInstrument>>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
@@ -181,6 +180,9 @@ impl DeriveExecutionClient {
             config.proxy_url.clone(),
             ws_credentials,
         );
+        // The handle shares the client's command channel, which survives the
+        // reconnect swap, so it stays valid for the client's lifetime.
+        let ws_exec = ws_client.execution_handle();
 
         let signing = resolve_signing_context(&credential, &config)?;
 
@@ -201,6 +203,7 @@ impl DeriveExecutionClient {
             emitter,
             http_client,
             ws_client,
+            ws_exec,
             instruments: Arc::new(Mutex::new(AHashMap::new())),
             nonce_manager: Arc::new(NonceManager::new()),
             signing,
@@ -976,6 +979,7 @@ impl ExecutionClient for DeriveExecutionClient {
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let http_client = self.http_client.clone();
+        let ws_exec = self.ws_exec.clone();
         let signing = self.signing.clone();
         let nonce_manager = self.nonce_manager.clone();
         let wallet_str = self.credential.wallet_address().to_string();
@@ -1115,58 +1119,31 @@ impl ExecutionClient for DeriveExecutionClient {
                 payload.limit_price,
             );
 
-            match http_client.submit_order(&payload).await {
+            // Discard the result (and any `trades` it carries): fills arrive on
+            // the `.trades` channel and are deduped by trade id.
+            match ws_exec.submit_order(&payload).await {
                 Ok(_) => {
                     log::debug!(
                         "Order submitted: client_order_id={}",
                         order_for_task.client_order_id(),
                     );
                 }
-                Err(DeriveHttpError::JsonRpc { code, message, .. }) => {
-                    // See docs/integrations/derive.md "Order rejection semantics".
-                    if is_write_outcome_ambiguous_jsonrpc(code) {
-                        log::warn!(
-                            "Derive submit for {} returned retryable JSON-RPC {code}: {message}; awaiting WS reconciliation",
-                            order_for_task.client_order_id(),
-                        );
-                    } else {
-                        log::debug!(
-                            "Derive rejected order {}: JSON-RPC {code}: {message}",
-                            order_for_task.client_order_id(),
-                        );
-                        dispatch_state.forget(&order_for_task.client_order_id());
-                        let ts = clock.get_time_ns();
-                        let due_post_only =
-                            derive_rejection_due_post_only(Some(code), &message);
-                        emitter.emit_order_rejected(
-                            &order_for_task,
-                            &format!("JSON-RPC {code}: {message}"),
-                            ts,
-                            due_post_only,
-                        );
-                    }
+                // See docs/integrations/derive.md "Order rejection semantics".
+                Err(e) if is_write_outcome_ambiguous_ws(&e) => {
+                    log::warn!(
+                        "Derive submit for {} returned ambiguous WS outcome: {e}; awaiting reconciliation",
+                        order_for_task.client_order_id(),
+                    );
                 }
-                Err(DeriveHttpError::Http { status, message })
-                    if is_write_outcome_definitive_http_status(status) =>
-                {
+                Err(e) => {
+                    let (reason, due_post_only) = ws_rejection_reason(&e);
                     log::debug!(
-                        "Derive rejected order {}: HTTP {status}: {message}",
+                        "Derive rejected order {}: {reason}",
                         order_for_task.client_order_id(),
                     );
                     dispatch_state.forget(&order_for_task.client_order_id());
                     let ts = clock.get_time_ns();
-                    emitter.emit_order_rejected(
-                        &order_for_task,
-                        &format!("HTTP {status}: {message}"),
-                        ts,
-                        false,
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Order submission failed with ambiguous outcome for {}: {e}; awaiting WS reconciliation",
-                        order_for_task.client_order_id(),
-                    );
+                    emitter.emit_order_rejected(&order_for_task, &reason, ts, due_post_only);
                 }
             }
             Ok(())
@@ -1199,7 +1176,7 @@ impl ExecutionClient for DeriveExecutionClient {
             );
             return Ok(());
         };
-        let http_client = self.http_client.clone();
+        let ws_exec = self.ws_exec.clone();
         let subaccount_id = self.credential.subaccount_id();
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let voi = venue_order_id.to_string();
@@ -1212,50 +1189,26 @@ impl ExecutionClient for DeriveExecutionClient {
 
         self.spawn_task("cancel_order", async move {
             let params = DeriveCancelParams::new(subaccount_id, venue_symbol.as_str(), voi.as_str());
-            match http_client
-                .cancel_order(&params)
-                .await
-            {
-                Ok(_) => {}
-                Err(DeriveHttpError::JsonRpc { code, message, .. }) => {
-                    // See docs/integrations/derive.md "Order rejection semantics".
-                    if is_write_outcome_ambiguous_jsonrpc(code) {
-                        log::warn!(
-                            "Derive cancel for {client_order_id} returned retryable JSON-RPC {code}: {message}; awaiting WS reconciliation",
-                        );
-                    } else {
-                        log::debug!(
-                            "Derive rejected cancel for {client_order_id}: JSON-RPC {code}: {message}",
-                        );
-                        let ts = clock.get_time_ns();
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            Some(stale_venue_order_id),
-                            &format!("JSON-RPC {code}: {message}"),
-                            ts,
-                        );
-                    }
-                }
-                Err(DeriveHttpError::Http { status, message })
-                    if is_write_outcome_definitive_http_status(status) =>
-                {
-                    log::debug!(
-                        "Derive rejected cancel for {client_order_id}: HTTP {status}: {message}",
+            match ws_exec.cancel_order(&params).await {
+                Ok(()) => {}
+                // See docs/integrations/derive.md "Order rejection semantics".
+                Err(e) if is_write_outcome_ambiguous_ws(&e) => {
+                    log::warn!(
+                        "Derive cancel for {client_order_id} returned ambiguous WS outcome: {e}; awaiting reconciliation",
                     );
+                }
+                Err(e) => {
+                    let (reason, _) = ws_rejection_reason(&e);
+                    log::debug!("Derive rejected cancel for {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         Some(stale_venue_order_id),
-                        &format!("HTTP {status}: {message}"),
+                        &reason,
                         ts,
                     );
-                }
-                Err(e) => {
-                    log::warn!("Derive cancel_order failed for {voi}: {e}");
                 }
             }
             Ok(())
@@ -1265,16 +1218,17 @@ impl ExecutionClient for DeriveExecutionClient {
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
+        let ws_exec = self.ws_exec.clone();
         let subaccount_id = self.credential.subaccount_id();
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let side_filter = cmd.order_side;
 
         self.spawn_task("cancel_all_orders", async move {
             // The venue endpoint scopes by instrument only, so when the
-            // caller asks for a single side we must fetch open orders for
-            // the instrument, filter by side, and cancel each one. Calling
-            // `cancel_all` directly would drop both sides and violate the
-            // command's filter.
+            // caller asks for a single side we list open orders (an idempotent
+            // private read kept on HTTP), filter by side, and cancel each one
+            // over the WebSocket. Calling `cancel_all` directly would drop both
+            // sides and violate the command's filter.
             if matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
                 let params = DeriveGetOpenOrdersParams::new(subaccount_id);
                 let result = match http_client.get_open_orders(&params).await {
@@ -1300,7 +1254,7 @@ impl ExecutionClient for DeriveExecutionClient {
                         continue;
                     }
 
-                    if let Err(e) = http_client
+                    if let Err(e) = ws_exec
                         .cancel_order(&DeriveCancelParams::new(
                             subaccount_id,
                             venue_symbol.as_str(),
@@ -1314,14 +1268,14 @@ impl ExecutionClient for DeriveExecutionClient {
                         );
                     }
                 }
-            } else if let Err(e) = http_client
-                .cancel_all(
+            } else if let Err(e) = ws_exec
+                .cancel_all_orders(
                     &DeriveCancelAllParams::new(subaccount_id)
                         .with_instrument_name(venue_symbol.as_str()),
                 )
                 .await
             {
-                log::warn!("Derive cancel_all failed for {venue_symbol}: {e}");
+                log::warn!("Derive cancel_all_orders failed for {venue_symbol}: {e}");
             }
             Ok(())
         });
@@ -1376,12 +1330,14 @@ impl ExecutionClient for DeriveExecutionClient {
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let http_client = self.http_client.clone();
+        let ws_exec = self.ws_exec.clone();
         let signing = self.signing.clone();
         let nonce_manager = self.nonce_manager.clone();
         let wallet_str = self.credential.wallet_address().to_string();
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let instruments = self.instruments.clone();
+        let dispatch_state = self.dispatch_state.clone();
         let order_for_task = order;
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
@@ -1451,14 +1407,20 @@ impl ExecutionClient for DeriveExecutionClient {
                 }
             };
 
-            match http_client.replace_order(&payload).await {
+            // Mark before sending so the cancel-of-old leg is suppressed even if
+            // it arrives before this response.
+            dispatch_state.mark_pending_modify(client_order_id, stale_venue_order_id);
+
+            match ws_exec.modify_order(&payload).await {
                 Ok(order) => {
-                    // The typed HTTP client only returns after decoding
-                    // `result.order`, so this venue id is present on success.
                     let new_voi = VenueOrderId::new(order.order_id.as_str());
                     log::debug!(
                         "Order replaced: client_order_id={client_order_id}, new venue_order_id={new_voi}",
                     );
+                    // Rebind before clearing the marker so a later cancel-of-old
+                    // stays suppressed by the bound-id check.
+                    dispatch_state.record_venue_order_id(client_order_id, new_voi);
+                    dispatch_state.clear_pending_modify(&client_order_id);
                     let ts = clock.get_time_ns();
                     emitter.emit_order_updated(
                         &order_for_task,
@@ -1470,46 +1432,25 @@ impl ExecutionClient for DeriveExecutionClient {
                         ts,
                     );
                 }
-                Err(DeriveHttpError::JsonRpc { code, message, .. }) => {
-                    // See docs/integrations/derive.md "Order rejection semantics".
-                    if is_write_outcome_ambiguous_jsonrpc(code) {
-                        log::warn!(
-                            "Derive modify for {client_order_id} returned retryable JSON-RPC {code}: {message}; awaiting WS reconciliation",
-                        );
-                    } else {
-                        log::debug!(
-                            "Derive rejected modify for {client_order_id}: JSON-RPC {code}: {message}",
-                        );
-                        let ts = clock.get_time_ns();
-                        emitter.emit_order_modify_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            Some(stale_venue_order_id),
-                            &format!("JSON-RPC {code}: {message}"),
-                            ts,
-                        );
-                    }
-                }
-                Err(DeriveHttpError::Http { status, message })
-                    if is_write_outcome_definitive_http_status(status) =>
-                {
-                    log::debug!(
-                        "Derive rejected modify for {client_order_id}: HTTP {status}: {message}",
+                // See docs/integrations/derive.md "Order rejection semantics".
+                Err(e) if is_write_outcome_ambiguous_ws(&e) => {
+                    dispatch_state.clear_pending_modify(&client_order_id);
+                    log::warn!(
+                        "Derive modify for {client_order_id} returned ambiguous WS outcome: {e}; awaiting reconciliation",
                     );
+                }
+                Err(e) => {
+                    dispatch_state.clear_pending_modify(&client_order_id);
+                    let (reason, _) = ws_rejection_reason(&e);
+                    log::debug!("Derive rejected modify for {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
                     emitter.emit_order_modify_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         Some(stale_venue_order_id),
-                        &format!("HTTP {status}: {message}"),
+                        &reason,
                         ts,
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Order modify failed with ambiguous outcome for {client_order_id}: {e}; awaiting WS reconciliation",
                     );
                 }
             }
@@ -1567,6 +1508,18 @@ impl ExecutionClient for DeriveExecutionClient {
             Ok(())
         });
         Ok(())
+    }
+}
+
+// Reason text and post-only classification for a definitive WS write failure.
+// Non-JSON-RPC errors carry no venue code and are never post-only crossings.
+fn ws_rejection_reason(error: &DeriveWsError) -> (String, bool) {
+    match error {
+        DeriveWsError::JsonRpc { code, message, .. } => (
+            format!("JSON-RPC {code}: {message}"),
+            derive_rejection_due_post_only(Some(*code), message),
+        ),
+        other => (other.to_string(), false),
     }
 }
 
@@ -1762,12 +1715,35 @@ fn emit_tracked_order_event(
     let ts_accepted = report.ts_accepted;
     let ts_event = report.ts_last;
 
+    // A `private/replace` cancels the old order and opens a new one under the
+    // same label; suppress events for the superseded old venue order id so they
+    // don't terminate the order that `modify_order` rebinds via `OrderUpdated`.
+    // `pending_modify` covers the in-flight window; the bound-id check covers
+    // after the rebind.
+    if dispatch_state.pending_modify(&client_order_id) == Some(venue_order_id) {
+        log::debug!(
+            "Skipping cancel-replace leg for {client_order_id}: stale venue_order_id={venue_order_id}",
+        );
+        return;
+    }
+
+    if let Some(bound) = dispatch_state.bound_venue_order_id(&client_order_id)
+        && bound != venue_order_id
+    {
+        log::debug!(
+            "Skipping stale {:?} for {client_order_id}: venue_order_id={venue_order_id} superseded by {bound}",
+            report.order_status,
+        );
+        return;
+    }
+
     match report.order_status {
         OrderStatus::Accepted | OrderStatus::PartiallyFilled => {
             if dispatch_state.contains_filled(&client_order_id) {
                 log::debug!("Skipping stale Accepted for {client_order_id} (already filled)",);
                 return;
             }
+            dispatch_state.record_venue_order_id(client_order_id, venue_order_id);
             ensure_accepted_emitted(
                 emitter,
                 dispatch_state,
@@ -1780,6 +1756,7 @@ fn emit_tracked_order_event(
             );
         }
         OrderStatus::Filled => {
+            dispatch_state.record_venue_order_id(client_order_id, venue_order_id);
             ensure_accepted_emitted(
                 emitter,
                 dispatch_state,
@@ -1999,13 +1976,13 @@ async fn cached_or_fetch_instrument(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::cache::Cache;
+    use nautilus_common::{cache::Cache, messages::ExecutionEvent};
     use nautilus_core::UnixNanos;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         data::QuoteTick,
-        enums::{AccountType, OmsType},
-        identifiers::{AccountId, ClientId, InstrumentId, TraderId},
+        enums::{AccountType, OmsType, TimeInForce},
+        identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -2168,5 +2145,104 @@ mod tests {
         assert_eq!(client.oms_type(), OmsType::Netting);
         assert_eq!(client.subaccount_id(), TEST_SUBACCOUNT);
         assert!(!client.is_connected());
+    }
+
+    #[rstest]
+    fn test_emit_tracked_event_suppresses_in_flight_replace_cancel_leg() {
+        // Derive's `private/replace` cancels the old order; the `.orders`
+        // cancel-of-old leg can arrive before `modify_order` rebinds the order,
+        // i.e. while the replace is in flight. In that window only the
+        // `pending_modify` marker (not the bound-id check) can suppress it. The
+        // integration suite covers the post-rebind bound-id branch; this covers
+        // the in-flight branch, which is otherwise unexercised end to end.
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("DERIVE-001");
+        let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+        let cid = ClientOrderId::from("STRAT-MOD-INFLIGHT");
+        let stale_voi = VenueOrderId::from("ord-stale-1");
+        let identity = OrderIdentity {
+            instrument_id,
+            strategy_id: StrategyId::from("S-1"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        };
+        // A `cancelled` report for the stale leg, identical across both cases:
+        // only the dispatch-state marker differs.
+        let report = OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(cid),
+            stale_voi,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Canceled,
+            Quantity::from("1.000"),
+            Quantity::from("0.000"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(2_000),
+            UnixNanos::from(3_000),
+            None,
+        );
+
+        let new_emitter = || {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut emitter = ExecutionEventEmitter::new(
+                clock,
+                TraderId::from("TRADER-001"),
+                account_id,
+                AccountType::Margin,
+                Some(Currency::USDC()),
+            );
+            emitter.set_sender(tx);
+            (emitter, rx)
+        };
+
+        // Marker targets the cancel's venue order id and no bound id is
+        // recorded, so suppression can only come from the in-flight branch.
+        let (emitter, mut rx) = new_emitter();
+        let state = WsDispatchState::new();
+        state.mark_pending_modify(cid, stale_voi);
+        emit_tracked_order_event(
+            &emitter,
+            &state,
+            cid,
+            identity,
+            &report,
+            account_id,
+            UnixNanos::from(0),
+        );
+        let suppressed = rx.try_recv().is_err();
+
+        // A marker for a different venue order id must not suppress: the guard
+        // keys on the specific id, so the cancel-of-old still terminates.
+        let (emitter, mut rx) = new_emitter();
+        let state = WsDispatchState::new();
+        state.mark_pending_modify(cid, VenueOrderId::from("ord-other"));
+        emit_tracked_order_event(
+            &emitter,
+            &state,
+            cid,
+            identity,
+            &report,
+            account_id,
+            UnixNanos::from(0),
+        );
+        let mut saw_canceled = false;
+
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, ExecutionEvent::Order(OrderEventAny::Canceled(_))) {
+                saw_canceled = true;
+            }
+        }
+
+        assert!(
+            suppressed,
+            "in-flight cancel-of-old leg must be suppressed by the pending-modify marker",
+        );
+        assert!(
+            saw_canceled,
+            "a pending-modify marker for a different venue order id must not suppress",
+        );
     }
 }

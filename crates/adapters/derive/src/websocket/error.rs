@@ -52,6 +52,14 @@ pub enum DeriveWsError {
         method: String,
     },
 
+    /// No response arrived within the configured request timeout. The request
+    /// was sent, so the outcome of a state-changing write is unknown.
+    #[error("request `{method}` timed out before response was received")]
+    Timeout {
+        /// Method that was awaiting a response.
+        method: String,
+    },
+
     /// Auth header construction failed (e.g. clock skew, signer error).
     #[error("auth error: {0}")]
     Auth(#[from] AuthError),

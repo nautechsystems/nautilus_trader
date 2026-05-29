@@ -31,7 +31,7 @@ use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
 };
 
 /// Capacity for the cross-source trade-id dedup cache. Sized to cover any
@@ -57,13 +57,17 @@ pub struct OrderIdentity {
 ///
 /// `order_identities` populates on successful `submit_order` and is consulted
 /// by both the `.orders` and `.trades` dispatch paths to decide whether a
-/// frame belongs to a tracked or external order.
+/// frame belongs to a tracked or external order. `pending_modifies` and
+/// `bound_venue_order_ids` track the in-flight and current venue order id of a
+/// `private/replace` so the dispatch suppresses events for the superseded leg.
 #[derive(Debug, Default)]
 pub struct WsDispatchState {
     order_identities: Mutex<AHashMap<ClientOrderId, OrderIdentity>>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_trades: Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>,
+    bound_venue_order_ids: Mutex<AHashMap<ClientOrderId, VenueOrderId>>,
+    pending_modifies: Mutex<AHashMap<ClientOrderId, VenueOrderId>>,
 }
 
 impl WsDispatchState {
@@ -107,6 +111,72 @@ impl WsDispatchState {
             .lock()
             .expect(MUTEX_POISONED)
             .remove(client_order_id);
+        self.bound_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id);
+        self.pending_modifies
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id);
+    }
+
+    /// Records the venue order id currently bound to a tracked client order.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn record_venue_order_id(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) {
+        self.bound_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(client_order_id, venue_order_id);
+    }
+
+    /// Returns the venue order id currently bound to a tracked client order.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[must_use]
+    pub fn bound_venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
+        self.bound_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(client_order_id)
+            .copied()
+    }
+
+    /// Records the old venue order id of an in-flight `private/replace`, set
+    /// before the request so the cancel leg is suppressed.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn mark_pending_modify(
+        &self,
+        client_order_id: ClientOrderId,
+        old_venue_order_id: VenueOrderId,
+    ) {
+        self.pending_modifies
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(client_order_id, old_venue_order_id);
+    }
+
+    /// Clears the in-flight modify marker once the replace resolves.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn clear_pending_modify(&self, client_order_id: &ClientOrderId) {
+        self.pending_modifies
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id);
+    }
+
+    /// Returns the old venue order id of an in-flight modify, when one is set.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[must_use]
+    pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
+        self.pending_modifies
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(client_order_id)
+            .copied()
     }
 
     /// Returns `true` when an `OrderAccepted` has already been emitted for
@@ -180,7 +250,7 @@ impl WsDispatchState {
 mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     };
     use rstest::rstest;
 
@@ -237,5 +307,45 @@ mod tests {
         state.mark_accepted(cid);
         state.forget(&cid);
         assert!(!state.contains_accepted(&cid));
+    }
+
+    #[rstest]
+    fn test_bound_venue_order_id_records_and_advances() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+        let voi1 = VenueOrderId::from("voi-1");
+        let voi2 = VenueOrderId::from("voi-2");
+
+        assert!(state.bound_venue_order_id(&cid).is_none());
+        state.record_venue_order_id(cid, voi1);
+        assert_eq!(state.bound_venue_order_id(&cid), Some(voi1));
+        // A modify rebinds the order to the replacement venue order id.
+        state.record_venue_order_id(cid, voi2);
+        assert_eq!(state.bound_venue_order_id(&cid), Some(voi2));
+    }
+
+    #[rstest]
+    fn test_pending_modify_marker_set_and_cleared() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+        let old_voi = VenueOrderId::from("voi-1");
+
+        assert!(state.pending_modify(&cid).is_none());
+        state.mark_pending_modify(cid, old_voi);
+        assert_eq!(state.pending_modify(&cid), Some(old_voi));
+        state.clear_pending_modify(&cid);
+        assert!(state.pending_modify(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_forget_clears_bound_and_pending() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+
+        state.record_venue_order_id(cid, VenueOrderId::from("voi-1"));
+        state.mark_pending_modify(cid, VenueOrderId::from("voi-1"));
+        state.forget(&cid);
+        assert!(state.bound_venue_order_id(&cid).is_none());
+        assert!(state.pending_modify(&cid).is_none());
     }
 }

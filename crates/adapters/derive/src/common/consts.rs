@@ -141,6 +141,11 @@ pub const RECONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub const WS_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Maximum wait for a JSON-RPC response on the WebSocket transport before the
+/// request outcome is treated as unknown, so a silent venue cannot hang
+/// `connect()` or an order write. Matches [`HTTP_TIMEOUT`].
+pub const WS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

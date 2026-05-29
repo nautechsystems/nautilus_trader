@@ -21,7 +21,7 @@ Rust example testers live in
 The Derive adapter is implemented in Rust under `crates/adapters/derive`. It exposes:
 
 - `DeriveHttpClient`: Low-level REST connectivity to `api.lyra.finance` (mainnet) or `api-demo.lyra.finance` (testnet).
-- `DeriveWebSocketClient`: JSON-RPC WebSocket transport with subscription tracking and reconnect.
+- `DeriveWebSocketClient`: JSON-RPC WebSocket transport with subscription tracking, reconnect, and signed order entry (the WebSocket Trading API).
 - `DeriveInstrumentProvider`: Per-currency instrument fetch and caching.
 - `DeriveDataClient`: Live market data client.
 - `DeriveDataClientFactory`: Data client factory for the live node builder.
@@ -206,13 +206,16 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 ### Execution
 
 Order placement, cancellation, modification, query, and report generation use Derive's
-EIP-712 self-custodial signing flow. Order-entry writes use REST, while account, order,
-trade, and balance state stream through the private WebSocket channels
-(`{subaccount_id}.orders`, `{subaccount_id}.trades`, `{subaccount_id}.balances`).
+EIP-712 self-custodial signing flow. Order-entry writes (`private/order`, `private/cancel`,
+`private/cancel_all`, `private/replace`) go over the WebSocket Trading API on the same
+authenticated session that streams account, order, trade, and balance state through the
+private channels (`{subaccount_id}.orders`, `{subaccount_id}.trades`,
+`{subaccount_id}.balances`). The signed EIP-712 body is identical regardless of transport.
 
 :::note
-Derive also exposes order entry through its WebSocket Trading API. Nautilus Derive does not
-send orders over that path yet; support will be added in a follow-up release.
+The HTTP order-entry endpoints remain available on `DeriveHttpClient` for tooling and tests,
+but the live execution client routes all writes over the WebSocket Trading API. Report
+generation, account refresh, and instrument lookups still use REST.
 :::
 
 Perpetuals, options, and ERC-20 spot pairs all use the Derive Trade module. Spot has no
@@ -261,10 +264,10 @@ into a different quote.
 
 #### Order rejection semantics
 
-State-changing writes (`submit_order`, `modify_order`, `cancel_order`) use
-`send_private_once` and are not replayed. The adapter emits a terminal rejection event
-(`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) for definitive venue
-failures:
+State-changing writes (`submit_order`, `modify_order`, `cancel_order`) are sent once over the
+WebSocket Trading API and are not replayed. The adapter keys terminal vs ambiguous handling
+off the WebSocket request outcome. It emits a terminal rejection event (`OrderRejected`,
+`OrderModifyRejected`, `OrderCancelRejected`) for definitive venue failures:
 
 - Signed-action rejections such as invalid params, insufficient margin, or unknown orders.
 - Venue business codes such as `11009 Zero liquidity`.
@@ -272,8 +275,6 @@ failures:
   as `OrderRejected` with `due_post_only=true`.
 - Rate-limit responses (`-32000 Rate limit exceeded`), where the gateway rejects the request
   before the matching engine sees it.
-- Non-JSON-RPC HTTP 4xx responses, including auth failures, throttling, and malformed
-  requests.
 
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
 `11008` and message `Post only order cannot cross the market`. The adapter marks that
@@ -287,8 +288,8 @@ reconciliation or later status reports settle the state. The ambiguous set is de
 narrow:
 
 - `-32603`, a generic JSON-RPC internal error.
-- HTTP 5xx responses.
-- Transport errors.
+- A response that cannot be decoded (the action may have been processed).
+- Request timeouts, dropped responses on reconnect, and transport errors.
 
 This distinction protects both sides of the order lifecycle. A false terminal rejection can
 make the engine treat a live order as rejected; a false ambiguous outcome can leave an

@@ -38,9 +38,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     error::DeriveWsError,
-    messages::{
-        DeriveWsChannel, DeriveWsFrame, WsRequestParams, WsSubscribeParams, WsSubscriptionPayload,
-    },
+    messages::{DeriveWsChannel, DeriveWsFrame, WsSubscribeParams, WsSubscriptionPayload},
 };
 use crate::http::models::JsonRpcRequest;
 
@@ -50,9 +48,11 @@ pub(super) enum HandlerCommand {
     /// Hand the active [`WebSocketClient`] to the handler.
     SetClient(WebSocketClient),
     /// Send a JSON-RPC request and resolve the oneshot when the venue replies.
+    /// `params` is a pre-serialized `Value` so the handler stays agnostic to the
+    /// per-method param types (login, subscribe, signed `private/*` bodies).
     Request {
         method: &'static str,
-        params: WsRequestParams,
+        params: Value,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     },
     /// Gracefully tear down the WebSocket connection.
@@ -196,7 +196,7 @@ impl FeedHandler {
     async fn dispatch_request(
         &mut self,
         method: &'static str,
-        params: WsRequestParams,
+        params: Value,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     ) {
         let Some(ref client) = self.client else {
@@ -323,12 +323,9 @@ mod tests {
         let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let params = serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap();
         handler
-            .dispatch_request(
-                "public/login",
-                WsSubscribeParams { channels: vec![] }.into(),
-                response_tx,
-            )
+            .dispatch_request("public/login", params, response_tx)
             .await;
 
         let outcome = response_rx.await.expect("oneshot resolved");

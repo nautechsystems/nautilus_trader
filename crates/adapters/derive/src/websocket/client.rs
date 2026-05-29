@@ -40,7 +40,8 @@ use nautilus_network::{
         AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
 use super::{
     error::{DeriveWsError, Result},
@@ -49,19 +50,25 @@ use super::{
         ticker_subscribe_params, trades_subscribe_params,
     },
     messages::{
-        DeriveWsChannel, WsLoginParams, WsLoginResult, WsRequestParams, WsSubscribeParams,
-        WsSubscribeResult, WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel,
-        ticker_channel, trades_channel,
+        DeriveWsChannel, WsLoginParams, WsLoginResult, WsSubscribeParams, WsSubscribeResult,
+        WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel, ticker_channel,
+        trades_channel,
     },
 };
 use crate::{
     common::{
         consts::{
             RECONNECT_BACKOFF_FACTOR, RECONNECT_BASE_BACKOFF, RECONNECT_JITTER_MS,
-            RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_HEARTBEAT_SECS,
+            RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_HEARTBEAT_SECS, WS_REQUEST_TIMEOUT,
         },
         enums::DeriveEnvironment,
         urls,
+    },
+    http::{
+        models::{DeriveEmptyResult, DeriveOrder, DeriveOrderResult, DeriveReplaceResult},
+        query::{
+            DeriveCancelAllParams, DeriveCancelParams, DeriveOrderParams, DeriveReplaceParams,
+        },
     },
     signing::auth::build_ws_login,
 };
@@ -121,6 +128,7 @@ pub struct DeriveWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>>,
     subscriptions: Arc<DashMap<String, ()>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    request_timeout: Duration,
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -128,6 +136,21 @@ pub struct DeriveWebSocketClient {
 pub struct DeriveWebSocketSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     subscriptions: Arc<DashMap<String, ()>>,
+    request_timeout: Duration,
+}
+
+/// Cloneable handle for issuing signed `private/*` trading requests over the
+/// WebSocket transport.
+///
+/// Carries the same `cmd_tx` the owning [`DeriveWebSocketClient`] swaps on
+/// connect/reconnect, so a handle obtained at construction stays valid for the
+/// client's lifetime. The handle is transport-only: it sends the pre-signed
+/// body and surfaces the venue's JSON-RPC outcome. Session authorization is the
+/// client's responsibility (via `public/login`).
+#[derive(Debug, Clone)]
+pub struct DeriveWsExecutionHandle {
+    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    request_timeout: Duration,
 }
 
 impl DeriveWebSocketClient {
@@ -182,6 +205,7 @@ impl DeriveWebSocketClient {
             out_rx: None,
             subscriptions: Arc::new(DashMap::new()),
             task_handle: None,
+            request_timeout: WS_REQUEST_TIMEOUT,
         }
     }
 
@@ -275,6 +299,7 @@ impl DeriveWebSocketClient {
         let credentials = self.credentials.clone();
         let subscriptions = Arc::clone(&self.subscriptions);
         let cmd_tx_for_loop = cmd_tx.clone();
+        let request_timeout = self.request_timeout;
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler =
@@ -297,9 +322,13 @@ impl DeriveWebSocketClient {
 
                         get_runtime().spawn(async move {
                             if let Some(creds) = creds_async
-                                && let Err(e) =
-                                    login_via_handler(&cmd_tx_async, &auth_tracker_async, &creds)
-                                        .await
+                                && let Err(e) = login_via_handler(
+                                    &cmd_tx_async,
+                                    &auth_tracker_async,
+                                    &creds,
+                                    request_timeout,
+                                )
+                                .await
                             {
                                 log::error!("Derive WebSocket re-login failed: {e}");
                             }
@@ -309,9 +338,12 @@ impl DeriveWebSocketClient {
                             let channels: Vec<String> =
                                 subs_async.iter().map(|e| e.key().clone()).collect();
                             for channel in channels {
-                                if let Err(e) =
-                                    subscribe_via_handler(&cmd_tx_async, vec![channel.clone()])
-                                        .await
+                                if let Err(e) = subscribe_via_handler(
+                                    &cmd_tx_async,
+                                    vec![channel.clone()],
+                                    request_timeout,
+                                )
+                                .await
                                 {
                                     log::error!(
                                         "Derive WebSocket resubscribe failed for {channel}: {e}",
@@ -336,7 +368,8 @@ impl DeriveWebSocketClient {
         self.task_handle = Some(stream_handle);
 
         if let Some(creds) = self.credentials.clone()
-            && let Err(e) = login_via_handler(&cmd_tx, &self.auth_tracker, &creds).await
+            && let Err(e) =
+                login_via_handler(&cmd_tx, &self.auth_tracker, &creds, self.request_timeout).await
         {
             // Without teardown, a retry connect() would short-circuit on
             // is_active() and return Ok without a valid session.
@@ -539,6 +572,21 @@ impl DeriveWebSocketClient {
         DeriveWebSocketSubscriptionHandle {
             cmd_tx: Arc::clone(&self.cmd_tx),
             subscriptions: Arc::clone(&self.subscriptions),
+            request_timeout: self.request_timeout,
+        }
+    }
+
+    /// Returns a cloneable handle for issuing signed `private/*` trading
+    /// requests.
+    ///
+    /// The handle shares the client's command channel, so it stays valid across
+    /// reconnects (the channel is swapped behind a shared lock). Obtain it once
+    /// and clone it into each order-submission task.
+    #[must_use]
+    pub fn execution_handle(&self) -> DeriveWsExecutionHandle {
+        DeriveWsExecutionHandle {
+            cmd_tx: Arc::clone(&self.cmd_tx),
+            request_timeout: self.request_timeout,
         }
     }
 
@@ -650,8 +698,13 @@ impl DeriveWebSocketSubscriptionHandle {
         let topics = channel_topics(&channels);
         let params = WsSubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsSubscribeResult =
-            send_request(&cmd_tx, methods::PUBLIC_SUBSCRIBE, params.into()).await?;
+        let _: WsSubscribeResult = send_request(
+            &cmd_tx,
+            methods::PUBLIC_SUBSCRIBE,
+            &params,
+            self.request_timeout,
+        )
+        .await?;
 
         for channel in topics {
             self.subscriptions.insert(channel, ());
@@ -677,8 +730,13 @@ impl DeriveWebSocketSubscriptionHandle {
         let topics = channel_topics(&channels);
         let params = WsUnsubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsUnsubscribeResult =
-            send_request(&cmd_tx, methods::PUBLIC_UNSUBSCRIBE, params.into()).await?;
+        let _: WsUnsubscribeResult = send_request(
+            &cmd_tx,
+            methods::PUBLIC_UNSUBSCRIBE,
+            &params,
+            self.request_timeout,
+        )
+        .await?;
 
         for channel in topics {
             self.subscriptions.remove(&channel);
@@ -688,8 +746,13 @@ impl DeriveWebSocketSubscriptionHandle {
 
     async fn send_subscribe(&self, channel: String, params: &WsSubscribeParams) -> Result<()> {
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsSubscribeResult =
-            send_request(&cmd_tx, methods::PUBLIC_SUBSCRIBE, params.clone().into()).await?;
+        let _: WsSubscribeResult = send_request(
+            &cmd_tx,
+            methods::PUBLIC_SUBSCRIBE,
+            params,
+            self.request_timeout,
+        )
+        .await?;
         self.subscriptions.insert(channel, ());
         Ok(())
     }
@@ -699,21 +762,116 @@ impl DeriveWebSocketSubscriptionHandle {
             channels: vec![DeriveWsChannel::from(channel.clone())],
         };
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsUnsubscribeResult =
-            send_request(&cmd_tx, methods::PUBLIC_UNSUBSCRIBE, params.into()).await?;
+        let _: WsUnsubscribeResult = send_request(
+            &cmd_tx,
+            methods::PUBLIC_UNSUBSCRIBE,
+            &params,
+            self.request_timeout,
+        )
+        .await?;
         self.subscriptions.remove(&channel);
         Ok(())
     }
 }
 
-async fn send_request<R>(
+impl DeriveWsExecutionHandle {
+    /// Submits a signed order via `private/order`.
+    ///
+    /// `params` must be the fully-built signed body from
+    /// [`crate::http::query::order_to_derive_payload`]. Returns the accepted
+    /// order echoed by the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let result: DeriveOrderResult = send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_ORDER,
+            params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(result.order)
+    }
+
+    /// Modifies a working order by atomically cancelling it and submitting a
+    /// replacement (the venue's `private/replace`). Returns the new order
+    /// echoed by the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveOrder> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let result: DeriveReplaceResult = send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_REPLACE,
+            params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(result.order)
+    }
+
+    /// Cancels a single order via `private/cancel`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn cancel_order(&self, params: &DeriveCancelParams) -> Result<()> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let _: DeriveEmptyResult = send_request(
+            &cmd_tx,
+            methods::PRIVATE_CANCEL,
+            params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Cancels every open order on the subaccount (the venue's
+    /// `private/cancel_all`), optionally scoped to an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn cancel_all_orders(&self, params: &DeriveCancelAllParams) -> Result<()> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let _: DeriveEmptyResult = send_request(
+            &cmd_tx,
+            methods::PRIVATE_CANCEL_ALL,
+            params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+// Awaits the venue's raw `result`, bounded by `timeout`. A dropped responder
+// (handler torn down on reconnect) surfaces as `RequestCancelled`, a timeout as
+// `Timeout`; both leave a state-changing write's outcome ambiguous.
+async fn send_raw<P>(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     method: &'static str,
-    params: WsRequestParams,
-) -> Result<R>
+    params: &P,
+    timeout: Duration,
+) -> Result<Value>
 where
-    R: Default + DeserializeOwned,
+    P: Serialize + ?Sized,
 {
+    let params = serde_json::to_value(params)?;
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     cmd_tx
         .send(HandlerCommand::Request {
@@ -722,17 +880,56 @@ where
             response_tx,
         })
         .map_err(|e| DeriveWsError::transport(format!("failed to enqueue `{method}`: {e}")))?;
-    let value = response_rx
-        .await
-        .map_err(|_| DeriveWsError::RequestCancelled {
+
+    // On timeout the handler's `pending` entry leaks until the next reconnect's
+    // `fail_pending` drains it; the later send to the dropped receiver is a
+    // no-op logged at debug.
+    match tokio::time::timeout(timeout, response_rx).await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(_)) => Err(DeriveWsError::RequestCancelled {
             method: method.to_owned(),
-        })??;
+        }),
+        Err(_) => Err(DeriveWsError::Timeout {
+            method: method.to_owned(),
+        }),
+    }
+}
+
+// Decodes the result, treating a null/absent `result` as `R::default()` (for
+// login/subscribe/unsubscribe and the cancel family's `DeriveEmptyResult`).
+async fn send_request<P, R>(
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    method: &'static str,
+    params: &P,
+    timeout: Duration,
+) -> Result<R>
+where
+    P: Serialize + ?Sized,
+    R: Default + DeserializeOwned,
+{
+    let value = send_raw(cmd_tx, method, params, timeout).await?;
     let typed = if value.is_null() {
         R::default()
     } else {
         serde_json::from_value(value)?
     };
     Ok(typed)
+}
+
+// Decodes the result with no `Default` fallback, for `private/order` and
+// `private/replace` whose success result is always a populated object.
+async fn send_request_typed<P, R>(
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    method: &'static str,
+    params: &P,
+    timeout: Duration,
+) -> Result<R>
+where
+    P: Serialize + ?Sized,
+    R: DeserializeOwned,
+{
+    let value = send_raw(cmd_tx, method, params, timeout).await?;
+    Ok(serde_json::from_value(value)?)
 }
 
 fn channel_topics(channels: &[DeriveWsChannel]) -> Vec<String> {
@@ -743,6 +940,7 @@ async fn login_via_handler(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     auth_tracker: &AuthTracker,
     creds: &DeriveWsCredentials,
+    timeout: Duration,
 ) -> Result<()> {
     let login = build_ws_login(&creds.wallet_address, &creds.signer)?;
     let params = WsLoginParams {
@@ -752,7 +950,7 @@ async fn login_via_handler(
     };
     let _receiver = auth_tracker.begin();
 
-    match send_request::<WsLoginResult>(cmd_tx, methods::PUBLIC_LOGIN, params.into()).await {
+    match send_request::<_, WsLoginResult>(cmd_tx, methods::PUBLIC_LOGIN, &params, timeout).await {
         Ok(_) => {
             auth_tracker.succeed();
             log::info!("Derive WebSocket authenticated");
@@ -768,12 +966,13 @@ async fn login_via_handler(
 async fn subscribe_via_handler(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     channels: Vec<String>,
+    timeout: Duration,
 ) -> Result<()> {
     let params = WsSubscribeParams {
         channels: channels.into_iter().map(DeriveWsChannel::from).collect(),
     };
     let _: WsSubscribeResult =
-        send_request(cmd_tx, methods::PUBLIC_SUBSCRIBE, params.into()).await?;
+        send_request(cmd_tx, methods::PUBLIC_SUBSCRIBE, &params, timeout).await?;
     Ok(())
 }
 
@@ -845,5 +1044,48 @@ mod tests {
     fn test_credentials_constructor_rejects_invalid_session_key() {
         let err = DeriveWsCredentials::new("0xWALLET", "not-a-hex-key").unwrap_err();
         assert!(err.to_string().contains("invalid session key"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_raw_times_out_when_no_response_arrives() {
+        // Keep the receiver alive so the request enqueues, but never reply: the
+        // bounded await must surface a Timeout rather than hang forever.
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let err = send_raw(
+            &cmd_tx,
+            methods::PRIVATE_ORDER,
+            &serde_json::json!({}),
+            Duration::from_millis(50),
+        )
+        .await
+        .expect_err("must time out");
+
+        match err {
+            DeriveWsError::Timeout { method } => assert_eq!(method, methods::PRIVATE_ORDER),
+            other => panic!("expected Timeout, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_request_typed_rejects_null_result() {
+        // `private/order` and `private/replace` always return a populated
+        // object on success; a null result is a protocol violation that must
+        // surface as a serde error (classified ambiguous by the exec client).
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        tokio::spawn(async move {
+            if let Some(HandlerCommand::Request { response_tx, .. }) = cmd_rx.recv().await {
+                let _ = response_tx.send(Ok(Value::Null));
+            }
+        });
+        let result: Result<DeriveOrderResult> = send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_ORDER,
+            &serde_json::json!({}),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(matches!(result, Err(DeriveWsError::Serde(_))));
     }
 }

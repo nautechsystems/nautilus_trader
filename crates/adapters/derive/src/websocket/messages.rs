@@ -844,6 +844,12 @@ pub fn balances_channel(subaccount_id: u64) -> String {
 }
 
 /// JSON-RPC method names exchanged on the Derive WebSocket transport.
+///
+/// The `private/*` trading methods mirror the REST endpoints exactly: the
+/// signed EIP-712 params built in [`crate::http::query`] and the result
+/// envelopes in [`crate::http::models`] are reused verbatim over the
+/// WebSocket. The session is authorized once via `PUBLIC_LOGIN`; no
+/// per-request auth headers are sent.
 pub mod methods {
     /// Authenticated session login. Params: [`super::WsLoginParams`].
     pub const PUBLIC_LOGIN: &str = "public/login";
@@ -851,6 +857,16 @@ pub mod methods {
     pub const PUBLIC_SUBSCRIBE: &str = "subscribe";
     /// Unsubscribe from a list of channels. Params: [`super::WsUnsubscribeParams`].
     pub const PUBLIC_UNSUBSCRIBE: &str = "unsubscribe";
+    /// Submit a signed order. Params: [`crate::http::query::DeriveOrderParams`].
+    pub const PRIVATE_ORDER: &str = "private/order";
+    /// Cancel a single order. Params: [`crate::http::query::DeriveCancelParams`].
+    pub const PRIVATE_CANCEL: &str = "private/cancel";
+    /// Cancel every open order on the subaccount, optionally scoped to an
+    /// instrument. Params: [`crate::http::query::DeriveCancelAllParams`].
+    pub const PRIVATE_CANCEL_ALL: &str = "private/cancel_all";
+    /// Atomically cancel one order and submit a replacement. Params:
+    /// [`crate::http::query::DeriveReplaceParams`].
+    pub const PRIVATE_REPLACE: &str = "private/replace";
 }
 
 #[cfg(test)]

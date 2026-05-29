@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Added Deribit public `TradeId` provenance prefix (`RFQ-`/`BLK-`/`COMBO-`) for block, RFQ, and combo trades
 - Added Deribit `subscribe_combo_legs` opt-in for combo leg trade streams
 - Added Derive initial adapter (on-chain spot, perps, options)
+- Added Derive WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Hyperliquid WebSocket trading API support for submit, cancel, modify, and cancel-all actions
 - Added Hyperliquid HIP-4 outcome `BinaryOption.info` with parsed venue description and question metadata
 - Added Hyperliquid `HYPERLIQUID_ACCOUNT_ADDRESS` env var fallback for `HyperliquidExecClientConfig.account_address`

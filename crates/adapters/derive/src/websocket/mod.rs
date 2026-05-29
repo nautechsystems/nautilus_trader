@@ -31,7 +31,10 @@ pub mod handler;
 pub mod messages;
 pub mod parse;
 
-pub use client::{DeriveWebSocketClient, DeriveWebSocketSubscriptionHandle, DeriveWsCredentials};
+pub use client::{
+    DeriveWebSocketClient, DeriveWebSocketSubscriptionHandle, DeriveWsCredentials,
+    DeriveWsExecutionHandle,
+};
 pub(crate) use context::WsMessageContext;
 pub use dispatch::{ORDER_DEDUP_CAPACITY, OrderIdentity, TRADE_DEDUP_CAPACITY, WsDispatchState};
 pub use error::DeriveWsError;
