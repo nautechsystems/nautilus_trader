@@ -586,6 +586,7 @@ impl DataClient for InteractiveBrokersDataClient {
             task.abort();
         }
         self.tasks.clear();
+        self.clear_bar_tracking_state();
         self.cancellation_token = CancellationToken::new();
 
         Ok(())
@@ -600,6 +601,7 @@ impl DataClient for InteractiveBrokersDataClient {
         self.cancel_active_subscriptions()?;
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
+        self.clear_bar_tracking_state();
 
         {
             let mut cache = self
@@ -2266,6 +2268,25 @@ impl DataClient for InteractiveBrokersDataClient {
     }
 }
 
+impl InteractiveBrokersDataClient {
+    fn clear_bar_tracking_state(&self) {
+        if let Ok(mut tasks) = self.bar_timeout_tasks.try_lock() {
+            for task in tasks.values() {
+                task.abort();
+            }
+            tasks.clear();
+        } else {
+            tracing::warn!("Failed to lock IB bar timeout tasks for cleanup");
+        }
+
+        if let Ok(mut last_bars) = self.last_bars.try_lock() {
+            last_bars.clear();
+        } else {
+            tracing::warn!("Failed to lock IB last bars for cleanup");
+        }
+    }
+}
+
 impl Drop for InteractiveBrokersDataClient {
     fn drop(&mut self) {
         let _ = self.stop();
@@ -2356,5 +2377,51 @@ mod tests {
 
         assert!(!client.cancellation_token.is_cancelled());
         assert!(!client.cancellation_token.child_token().is_cancelled());
+    }
+
+    #[rstest]
+    fn test_stop_clears_bar_tracking_state() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_data_event_sender(sender);
+
+        let config = InteractiveBrokersDataClientConfig::default();
+        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            config.instrument_provider.clone(),
+        ));
+        let mut client =
+            InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
+        let bar_type = "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string();
+
+        let task = get_runtime().spawn(async {
+            std::future::pending::<()>().await;
+        });
+
+        get_runtime().block_on(async {
+            client
+                .bar_timeout_tasks
+                .lock()
+                .await
+                .insert(bar_type.clone(), task);
+            client.last_bars.lock().await.insert(
+                bar_type.clone(),
+                ibapi::market_data::realtime::Bar {
+                    date: time::OffsetDateTime::from_unix_timestamp(1).unwrap(),
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 1.0,
+                    volume: 1.0,
+                    wap: 1.0,
+                    count: 1,
+                },
+            );
+        });
+
+        client.stop().unwrap();
+
+        get_runtime().block_on(async {
+            assert!(client.bar_timeout_tasks.lock().await.is_empty());
+            assert!(client.last_bars.lock().await.is_empty());
+        });
     }
 }
