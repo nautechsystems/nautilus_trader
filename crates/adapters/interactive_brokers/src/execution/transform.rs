@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_list_id_sets_oca_group_when_missing() {
+    fn test_order_list_id_does_not_set_oca_group() {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::new(
                 NautilusSymbol::from("AAPL"),
@@ -790,7 +790,7 @@ mod tests {
         let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
-        assert_eq!(ib_order.oca_group, "OL-001");
+        assert!(ib_order.oca_group.is_empty());
     }
 
     #[rstest]

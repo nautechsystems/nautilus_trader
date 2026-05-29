@@ -189,6 +189,10 @@ fn ib_contract_info(details: &ibapi::contracts::ContractDetails) -> nautilus_cor
     }
 
     info.insert("contract".to_string(), serde_json::Value::Object(contract));
+    info.insert(
+        "priceMagnifier".to_string(),
+        serde_json::Value::from(details.price_magnifier),
+    );
     info
 }
 
@@ -523,6 +527,35 @@ mod tests {
 
         assert_eq!(option.asset_class(), AssetClass::Index);
         assert_eq!(option.underlying(), Some(Ustr::from("^SPX")));
+    }
+
+    #[rstest]
+    fn test_parse_contract_preserves_price_magnifier_in_info() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("AAPL"),
+                security_type: SecurityType::Stock,
+                exchange: Exchange::from("SMART"),
+                primary_exchange: Exchange::from("NASDAQ"),
+                currency: Currency::from("USD"),
+                local_symbol: String::from("AAPL"),
+                ..Default::default()
+            },
+            min_tick: 0.01,
+            price_magnifier: 100,
+            ..Default::default()
+        };
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("XNAS"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+        let InstrumentAny::Equity(equity) = instrument else {
+            panic!("expected equity");
+        };
+
+        assert_eq!(
+            equity.info.unwrap().get("priceMagnifier"),
+            Some(&serde_json::Value::from(100))
+        );
     }
 
     #[rstest]

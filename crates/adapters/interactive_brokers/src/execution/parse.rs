@@ -48,6 +48,26 @@ pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &Ins
         && (avg_fill_price > 0.0 || is_spread_instrument_id(instrument_id))
 }
 
+pub(crate) fn ib_venue_order_id(order_id: i32, perm_id: i32) -> VenueOrderId {
+    if order_id != 0 {
+        VenueOrderId::new(order_id.to_string())
+    } else {
+        VenueOrderId::new(format!("PERM-{perm_id}"))
+    }
+}
+
+pub(crate) fn normalized_order_ref(order_ref: &str) -> Option<&str> {
+    if order_ref.is_empty() {
+        return None;
+    }
+
+    Some(
+        order_ref
+            .rsplit_once(':')
+            .map_or(order_ref, |(base, _)| base),
+    )
+}
+
 /// Parse an IB execution to a Nautilus FillReport.
 ///
 /// # Errors
@@ -97,15 +117,9 @@ pub fn parse_execution_to_fill_report(
     // Create trade ID
     let trade_id = TradeId::new(&execution.execution_id);
 
-    // Create venue order ID
-    let venue_order_id = VenueOrderId::new(execution.order_id.to_string());
+    let venue_order_id = ib_venue_order_id(execution.order_id, execution.perm_id);
 
-    // Parse client order ID from order reference
-    let client_order_id = if !execution.order_reference.is_empty() {
-        Some(ClientOrderId::new(&execution.order_reference))
-    } else {
-        None
-    };
+    let client_order_id = normalized_order_ref(&execution.order_reference).map(ClientOrderId::new);
 
     let mut report = FillReport::new(
         account_id,
@@ -144,8 +158,7 @@ pub fn parse_order_status_to_report(
     // Get price magnifier from instrument provider
     let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
 
-    // Convert Nautilus order status
-    let nautilus_status = match IbOrderStatus::from_str(&order_status.status) {
+    let mut nautilus_status = match IbOrderStatus::from_str(&order_status.status) {
         Ok(status) => status.nautilus_status(),
         _ => {
             tracing::warn!(
@@ -192,19 +205,18 @@ pub fn parse_order_status_to_report(
         0.0
     };
 
-    // Extract venue order ID from order_status
-    let venue_order_id = VenueOrderId::new(order_status.order_id.to_string());
+    if order_status.filled > 0.0
+        && (order_status.remaining > 0.0
+            || order.is_some_and(|order| order.total_quantity > order_status.filled))
+    {
+        nautilus_status = NautilusOrderStatus::PartiallyFilled;
+    }
 
-    // Extract client order ID from order reference if available
-    let client_order_id = if let Some(order) = order {
-        if order.order_ref.is_empty() {
-            None
-        } else {
-            Some(ClientOrderId::new(&order.order_ref))
-        }
-    } else {
-        None
-    };
+    let venue_order_id = ib_venue_order_id(order_status.order_id, order_status.perm_id);
+
+    let client_order_id = order
+        .and_then(|order| normalized_order_ref(&order.order_ref))
+        .map(ClientOrderId::new);
 
     // Map order type from IB order if available
     let order_type = order
@@ -629,6 +641,65 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_status, NautilusOrderStatus::Rejected);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_partial_fill_and_perm_fallback() {
+        let instrument_provider = create_test_instrument_provider();
+        let instrument_id = create_test_instrument_id();
+        let account_id = AccountId::from("IB-001");
+
+        let order_status = OrderStatus {
+            order_id: 0,
+            status: String::from("Submitted"),
+            filled: 3.0,
+            remaining: 7.0,
+            average_fill_price: 150.25,
+            perm_id: 123_456,
+            parent_id: 0,
+            last_fill_price: 150.25,
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: 0.0,
+        };
+        let order = Order {
+            action: Action::Buy,
+            total_quantity: 10.0,
+            order_type: "LMT".to_string(),
+            limit_price: Some(150.25),
+            order_ref: "O-20260527-001:123".to_string(),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            Some(&order),
+            instrument_id,
+            account_id,
+            &instrument_provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, NautilusOrderStatus::PartiallyFilled);
+        assert_eq!(report.venue_order_id.to_string(), "PERM-123456");
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("O-20260527-001"))
+        );
+    }
+
+    #[rstest]
+    fn test_ib_venue_order_id_prefers_order_id_and_falls_back_to_perm_id() {
+        assert_eq!(ib_venue_order_id(123, 456).to_string(), "123");
+        assert_eq!(ib_venue_order_id(0, 456).to_string(), "PERM-456");
+    }
+
+    #[rstest]
+    fn test_normalized_order_ref_strips_ib_suffix() {
+        assert_eq!(normalized_order_ref("O-001:123"), Some("O-001"));
+        assert_eq!(normalized_order_ref("O-001"), Some("O-001"));
+        assert_eq!(normalized_order_ref(""), None);
     }
 
     #[rstest]

@@ -125,6 +125,27 @@ fn apply_client_order_id_floor(
 }
 
 #[rstest]
+fn ib_order_selector_parses_numeric_venue_order_id() {
+    let selector = IbOrderSelector::from_venue_order_id(&VenueOrderId::from("123")).unwrap();
+
+    assert_eq!(selector, IbOrderSelector::OrderId(123));
+    assert!(selector.matches(123, 456));
+    assert!(!selector.matches(124, 456));
+    assert_eq!(selector.venue_order_id(), VenueOrderId::from("123"));
+}
+
+#[rstest]
+fn ib_order_selector_parses_perm_venue_order_id() {
+    let selector = IbOrderSelector::from_venue_order_id(&VenueOrderId::from("PERM-456")).unwrap();
+
+    assert_eq!(selector, IbOrderSelector::PermId(456));
+    assert!(selector.matches(0, 456));
+    assert!(selector.matches(123, 456));
+    assert!(!selector.matches(123, 457));
+    assert_eq!(selector.venue_order_id(), VenueOrderId::from("PERM-456"));
+}
+
+#[rstest]
 fn submit_order_rejects_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
@@ -350,6 +371,112 @@ fn create_test_execution_data(
         cumulative_quantity: shares,
         average_price: price,
         order_reference: String::new(),
+        ev_rule: String::new(),
+        ev_multiplier: None,
+        model_code: String::new(),
+        last_liquidity: Liquidity::None,
+        pending_price_revision: false,
+        submitter: String::new(),
+    };
+
+    ExecutionData {
+        request_id: 0,
+        contract,
+        execution,
+    }
+}
+
+fn create_test_stock_execution_data(
+    contract_id: i32,
+    order_id: i32,
+    execution_id: &str,
+) -> ExecutionData {
+    let contract = Contract {
+        contract_id,
+        symbol: IBSymbol::from("AAPL"),
+        security_type: SecurityType::Stock,
+        exchange: Exchange::from("SMART"),
+        currency: IBCurrency::from("USD"),
+        ..Default::default()
+    };
+
+    let execution = Execution {
+        execution_id: execution_id.to_string(),
+        order_id,
+        time: String::from("20250101 08:00:00"),
+        side: String::from("BOT"),
+        shares: 10.0,
+        price: 150.25,
+        perm_id: 0,
+        client_id: 0,
+        liquidation: 0,
+        account_number: String::new(),
+        exchange: String::new(),
+        cumulative_quantity: 10.0,
+        average_price: 150.25,
+        order_reference: String::from("O-IB-001"),
+        ev_rule: String::new(),
+        ev_multiplier: None,
+        model_code: String::new(),
+        last_liquidity: Liquidity::None,
+        pending_price_revision: false,
+        submitter: String::new(),
+    };
+
+    ExecutionData {
+        request_id: 0,
+        contract,
+        execution,
+    }
+}
+
+fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> ExecutionData {
+    let contract = Contract {
+        contract_id: 0,
+        symbol: IBSymbol::from("SPY"),
+        security_type: SecurityType::Spread,
+        exchange: Exchange::from("SMART"),
+        currency: IBCurrency::from("USD"),
+        combo_legs: vec![
+            ibapi::contracts::ComboLeg {
+                contract_id: 12345,
+                ratio: 1,
+                action: String::from("BUY"),
+                exchange: String::from("SMART"),
+                open_close: ibapi::contracts::ComboLegOpenClose::Same,
+                short_sale_slot: 0,
+                designated_location: String::new(),
+                exempt_code: 0,
+            },
+            ibapi::contracts::ComboLeg {
+                contract_id: 67890,
+                ratio: 1,
+                action: String::from("SELL"),
+                exchange: String::from("SMART"),
+                open_close: ibapi::contracts::ComboLegOpenClose::Same,
+                short_sale_slot: 0,
+                designated_location: String::new(),
+                exempt_code: 0,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let execution = Execution {
+        execution_id: execution_id.to_string(),
+        order_id,
+        time: String::from("20250101 08:00:00"),
+        side: String::from("BOT"),
+        shares: 1.0,
+        price: 1.25,
+        perm_id: 0,
+        client_id: 0,
+        liquidation: 0,
+        account_number: String::new(),
+        exchange: String::new(),
+        cumulative_quantity: 1.0,
+        average_price: 1.25,
+        order_reference: String::from("O-IB-SPREAD"),
         ev_rule: String::new(),
         ev_multiplier: None,
         model_code: String::new(),
@@ -637,6 +764,71 @@ fn test_cached_spread_instrument_ids_for_preload_ignores_non_spread_orders() {
     );
 
     assert!(spread_ids.is_empty());
+}
+
+#[rstest]
+fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
+    let (client, _, _) = create_test_execution_client();
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    client
+        .instrument_provider
+        .insert_test_instrument(InstrumentAny::from(equity), 265598, 1);
+    let exec_data = create_test_stock_execution_data(0, 123, "exec-aapl-001");
+    let cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+
+    let report = client
+        .parse_historical_fill_report(&cmd, &exec_data, 1.25, "USD", UnixNanos::default())
+        .unwrap();
+
+    assert_eq!(report.instrument_id, instrument_id);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-IB-001"))
+    );
+    assert_eq!(report.trade_id, TradeId::from("exec-aapl-001"));
+    assert_eq!(report.venue_order_id, VenueOrderId::from("123"));
+    assert_eq!(report.last_qty, Quantity::from(10));
+    assert_eq!(report.last_px, Price::from("150.25"));
+}
+
+#[rstest]
+fn test_parse_historical_fill_report_uses_cached_bag_spread_id() {
+    let (client, _, _) = create_test_execution_client();
+    let spread = create_test_option_spread();
+    let instrument_id = spread.id;
+    client
+        .instrument_provider
+        .insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
+    client
+        .instrument_provider
+        .insert_test_contract_id_mapping(12345, create_test_leg_instrument());
+    client.instrument_provider.insert_test_contract_id_mapping(
+        67890,
+        InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART")),
+    );
+    let exec_data = create_test_bag_execution_data(7001, "exec-spread-001");
+    let cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+
+    let report = client
+        .parse_historical_fill_report(&cmd, &exec_data, 2.00, "USD", UnixNanos::default())
+        .unwrap();
+
+    assert_eq!(report.instrument_id, instrument_id);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-IB-SPREAD"))
+    );
+    assert_eq!(report.trade_id, TradeId::from("exec-spread-001"));
+    assert_eq!(report.venue_order_id, VenueOrderId::from("7001"));
+    assert_eq!(report.last_qty, Quantity::from(1));
+    assert_eq!(report.last_px, Price::from("1.25"));
 }
 
 #[tokio::test]

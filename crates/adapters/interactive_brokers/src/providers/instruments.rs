@@ -127,6 +127,16 @@ impl InteractiveBrokersInstrumentProvider {
         self.price_magnifiers.insert(instrument_id, price_magnifier);
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_test_contract_id_mapping(
+        &self,
+        contract_id: i32,
+        instrument_id: InstrumentId,
+    ) {
+        self.contract_id_to_instrument_id
+            .insert(contract_id, instrument_id);
+    }
+
     /// Initialize the provider by loading cache if configured.
     ///
     /// This is equivalent to Python's `provider.initialize()` method.
@@ -181,8 +191,16 @@ impl InteractiveBrokersInstrumentProvider {
             let Some(contract) = contract_from_instrument_info(&instrument) else {
                 continue;
             };
+            let price_magnifier = price_magnifier_from_instrument_info(&instrument);
 
-            if self.cache_instrument(instrument_id, instrument, None, Some(contract), None, false) {
+            if self.cache_instrument(
+                instrument_id,
+                instrument,
+                None,
+                Some(contract),
+                price_magnifier,
+                false,
+            ) {
                 added += 1;
             }
         }
@@ -330,6 +348,38 @@ impl InteractiveBrokersInstrumentProvider {
         self.contract_id_to_instrument_id
             .get(&contract_id)
             .map(|entry| *entry.value())
+    }
+
+    /// Resolve an instrument ID from an IB contract using provider symbology and venue rules.
+    ///
+    /// This first checks the provider's contract ID cache, then derives the instrument ID using the
+    /// configured symbology method and `determine_venue`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract cannot be converted to an instrument ID.
+    pub fn resolve_instrument_id_for_contract(
+        &self,
+        contract: &Contract,
+    ) -> anyhow::Result<InstrumentId> {
+        if contract.contract_id != 0
+            && let Some(instrument_id) = self.get_instrument_id_by_contract_id(contract.contract_id)
+        {
+            return Ok(instrument_id);
+        }
+
+        if contract.security_type == SecurityType::Spread {
+            return self.resolve_spread_instrument_id_for_contract(contract);
+        }
+
+        let venue = self.determine_venue(contract, None);
+
+        match self.config.symbology_method {
+            SymbologyMethod::Simplified => {
+                ib_contract_to_instrument_id_simplified(contract, Some(venue))
+            }
+            SymbologyMethod::Raw => ib_contract_to_instrument_id_raw(contract, Some(venue)),
+        }
     }
 
     fn resolve_spread_instrument_id_for_contract(
@@ -1309,12 +1359,45 @@ fn contract_from_instrument_info(instrument: &InstrumentAny) -> Option<Contract>
     parse_contract_from_json(contract_json).ok()
 }
 
+fn price_magnifier_from_instrument_info(instrument: &InstrumentAny) -> Option<i32> {
+    let value = serde_json::to_value(instrument).ok()?;
+    let price_magnifier = find_price_magnifier_json(&value)?;
+    parse_i32_json(price_magnifier)
+}
+
 fn find_contract_json(value: &serde_json::Value) -> Option<&serde_json::Value> {
     if let Some(contract_json) = value.get("info").and_then(|info| info.get("contract")) {
         return Some(contract_json);
     }
 
     value.as_object()?.values().find_map(find_contract_json)
+}
+
+fn find_price_magnifier_json(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    if let Some(info) = value.get("info")
+        && let Some(price_magnifier) = info
+            .get("priceMagnifier")
+            .or_else(|| info.get("price_magnifier"))
+    {
+        return Some(price_magnifier);
+    }
+
+    value
+        .as_object()?
+        .values()
+        .find_map(find_price_magnifier_json)
+}
+
+fn parse_i32_json(value: &serde_json::Value) -> Option<i32> {
+    if let Some(value) = value.as_i64() {
+        return i32::try_from(value).ok();
+    }
+
+    if let Some(value) = value.as_u64() {
+        return i32::try_from(value).ok();
+    }
+
+    value.as_str()?.parse::<i32>().ok()
 }
 
 fn expiry_bound_from_days(days: Option<u32>) -> Option<String> {
@@ -2558,9 +2641,15 @@ mod tests {
         .into()
     }
 
-    fn create_contract_info(contract: &Contract) -> Params {
+    fn create_contract_info(contract: &Contract, price_magnifier: Option<i32>) -> Params {
         let mut info = Params::new();
         info.insert(String::from("contract"), contract_to_json_value(contract));
+        if let Some(price_magnifier) = price_magnifier {
+            info.insert(
+                String::from("priceMagnifier"),
+                serde_json::Value::from(price_magnifier),
+            );
+        }
         info
     }
 
@@ -2728,7 +2817,7 @@ mod tests {
         };
         let ib_instrument = create_test_instrument_with_info(
             ib_instrument_id,
-            Some(create_contract_info(&contract)),
+            Some(create_contract_info(&contract, Some(100))),
         );
         let non_ib_instrument = create_test_instrument(non_ib_instrument_id);
 
@@ -2745,6 +2834,7 @@ mod tests {
                 .contract_id,
             265598
         );
+        assert_eq!(provider.get_price_magnifier(&ib_instrument_id), 100);
     }
 
     #[tokio::test]

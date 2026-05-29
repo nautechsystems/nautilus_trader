@@ -39,9 +39,7 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
-use crate::common::parse::ib_contract_to_instrument_id_simple;
-
-fn raw_ib_account_code(account_id: &AccountId) -> String {
+pub(crate) fn raw_ib_account_code(account_id: &AccountId) -> String {
     account_id
         .to_string()
         .strip_prefix("IB-")
@@ -265,10 +263,8 @@ pub async fn check_external_position_change(
     let mut tracker = position_tracker.lock().await;
     let known_quantity = tracker.get(&contract_id).copied().unwrap_or(Decimal::ZERO);
 
-    // Skip zero positions
     if new_quantity.is_zero() {
-        tracker.remove(&contract_id);
-        return None;
+        return (!known_quantity.is_zero()).then_some((true, known_quantity));
     }
 
     // Check if this is an external position change
@@ -373,6 +369,7 @@ pub async fn subscribe_positions(
 
     let exec_sender = get_exec_event_sender();
     let clock = get_atomic_clock_realtime();
+    let client_for_instruments = Arc::clone(client);
 
     // Spawn background task to handle position updates
     nautilus_common::live::get_runtime().spawn(async move {
@@ -401,89 +398,83 @@ pub async fn subscribe_positions(
                             new_quantity
                         );
 
-                        // Convert IB contract to instrument ID
-                        match ib_contract_to_instrument_id_simple(&position.contract) {
-                            Ok(instrument_id) => {
-                                // Get instrument for precision
-                                if let Some(instrument) = instrument_provider.find(&instrument_id) {
-                                    // Determine position side
-                                    let position_side = if new_quantity.is_zero() {
-                                        PositionSideSpecified::Flat
-                                    } else if new_quantity > Decimal::ZERO {
-                                        PositionSideSpecified::Long
-                                    } else {
-                                        PositionSideSpecified::Short
-                                    };
-
-                                    let quantity = Quantity::new(
-                                        new_quantity.abs().to_f64().unwrap_or(0.0),
-                                        instrument.size_precision(),
-                                    );
-
-                                    // Convert IB avg_cost to Nautilus Price, accounting for price magnifier and multiplier
-                                    // Python: converted_avg_cost = avg_cost / (multiplier * price_magnifier)
-                                    let avg_px_open = if position.average_cost > 0.0 {
-                                        let price_magnifier = instrument_provider
-                                            .get_price_magnifier(&instrument_id)
-                                            as f64;
-                                        let multiplier = instrument.multiplier().as_f64();
-                                        let converted_avg_cost =
-                                            position.average_cost / (multiplier * price_magnifier);
-                                        let price_precision = instrument.price_precision();
-                                        Some(
-                                            Decimal::from_f64_retain(converted_avg_cost)
-                                                .and_then(|d| {
-                                                    // Round to price precision
-                                                    let rounded =
-                                                        d.round_dp(price_precision as u32);
-                                                    Some(rounded)
-                                                })
-                                                .unwrap_or_default(),
-                                        )
-                                    } else {
-                                        None
-                                    };
-
-                                    let ts_init = clock.get_time_ns();
-
-                                    let report = PositionStatusReport::new(
-                                        account_id,
-                                        instrument_id,
-                                        position_side,
-                                        quantity,
-                                        ts_init,
-                                        ts_init,
-                                        None, // report_id: auto-generated
-                                        None, // venue_position_id
-                                        avg_px_open,
-                                    );
-
-                                    // Send position status report
-                                    let event = ExecutionEvent::Report(
-                                        ExecutionReport::Position(
-                                            Box::new(report),
-                                        ),
-                                    );
-
-                                    if exec_sender.send(event).is_err() {
-                                        tracing::warn!(
-                                            "Failed to send position status report for external change"
-                                        );
-                                    } else {
-                                        tracing::info!(
-                                            "Generated position status report for external change (likely option exercise)"
-                                        );
-                                    }
+                        match instrument_provider
+                            .get_instrument(&client_for_instruments, &position.contract)
+                            .await
+                        {
+                            Ok(Some(instrument)) => {
+                                let instrument_id = instrument.id();
+                                let position_side = if new_quantity.is_zero() {
+                                    PositionSideSpecified::Flat
+                                } else if new_quantity > Decimal::ZERO {
+                                    PositionSideSpecified::Long
                                 } else {
+                                    PositionSideSpecified::Short
+                                };
+
+                                let quantity = Quantity::new(
+                                    new_quantity.abs().to_f64().unwrap_or(0.0),
+                                    instrument.size_precision(),
+                                );
+
+                                let avg_px_open = if position.average_cost > 0.0 {
+                                    let price_magnifier =
+                                        instrument_provider.get_price_magnifier(&instrument_id)
+                                            as f64;
+                                    let multiplier = instrument.multiplier().as_f64();
+                                    let converted_avg_cost =
+                                        position.average_cost / (multiplier * price_magnifier);
+                                    let price_precision = instrument.price_precision();
+                                    Some(
+                                        Decimal::from_f64_retain(converted_avg_cost)
+                                            .map(|d| d.round_dp(price_precision as u32))
+                                            .unwrap_or_default(),
+                                    )
+                                } else {
+                                    None
+                                };
+
+                                let ts_init = clock.get_time_ns();
+
+                                let report = PositionStatusReport::new(
+                                    account_id,
+                                    instrument_id,
+                                    position_side,
+                                    quantity,
+                                    ts_init,
+                                    ts_init,
+                                    None,
+                                    None,
+                                    avg_px_open,
+                                );
+                                let event = ExecutionEvent::Report(ExecutionReport::Position(
+                                    Box::new(report),
+                                ));
+
+                                if exec_sender.send(event).is_err() {
                                     tracing::warn!(
-                                        "Instrument not found for contract ID: {}",
-                                        contract_id
+                                        "Failed to send position status report for external change"
+                                    );
+                                } else {
+                                    if new_quantity.is_zero() {
+                                        position_tracker.lock().await.remove(&contract_id);
+                                    }
+
+                                    tracing::info!(
+                                        "Generated position status report for external change (likely option exercise)"
                                     );
                                 }
                             }
+                            Ok(None) => {
+                                tracing::warn!(
+                                    "Instrument not found for external position contract ID: {}",
+                                    contract_id
+                                );
+                            }
                             Err(e) => {
                                 tracing::warn!(
-                                    "Failed to convert contract to instrument ID: {}",
+                                    "Failed to resolve external position contract ID {}: {}",
+                                    contract_id,
                                     e
                                 );
                             }
@@ -548,10 +539,11 @@ mod tests {
     use ibapi::accounts::AccountSummary;
     use nautilus_model::types::{AccountBalance, Currency, MarginBalance, Money};
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::{
-        AccountSummaryTags, merge_account_summary_balance, merge_account_summary_margin,
-        parse_currency,
+        AccountSummaryTags, check_external_position_change, create_position_tracker,
+        merge_account_summary_balance, merge_account_summary_margin, parse_currency,
     };
 
     fn margin_summary(tag: &str, value: &str, currency: &str) -> AccountSummary {
@@ -587,6 +579,21 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "Account summary currency was empty",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_position_change_reports_tracked_zero_close() {
+        let tracker = create_position_tracker();
+        tracker.lock().await.insert(42, Decimal::new(5, 0));
+
+        let change = check_external_position_change(&tracker, 42, Decimal::ZERO).await;
+
+        assert_eq!(change, Some((true, Decimal::new(5, 0))));
+        assert_eq!(
+            tracker.lock().await.get(&42).copied(),
+            Some(Decimal::new(5, 0))
         );
     }
 
