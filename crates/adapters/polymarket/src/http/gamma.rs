@@ -549,6 +549,14 @@ impl PolymarketGammaHttpClient {
         Ok((instruments, transient))
     }
 
+    /// Fetches raw Gamma markets using arbitrary query params with auto-pagination.
+    pub async fn request_markets_by_params(
+        &self,
+        base_params: GetGammaMarketsParams,
+    ) -> anyhow::Result<Vec<GammaMarket>> {
+        self.fetch_gamma_markets_paginated(base_params).await
+    }
+
     /// Fetches instruments from an event slug with client-side sorting and limiting.
     ///
     /// The `/events?slug=` response already includes the full markets array,
