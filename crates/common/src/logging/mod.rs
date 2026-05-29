@@ -135,7 +135,7 @@ pub fn logging_shutdown() {
 ///
 /// # Errors
 ///
-/// Returns an error if the sync request cannot be delivered to the logging thread.
+/// Returns an error if the sync request cannot be delivered or acknowledged.
 pub fn logging_sync_to_disk() -> anyhow::Result<()> {
     crate::logging::logger::sync_to_disk()
 }
