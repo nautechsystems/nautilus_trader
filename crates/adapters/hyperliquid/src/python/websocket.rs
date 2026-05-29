@@ -31,7 +31,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
-use pyo3::{conversion::IntoPyObjectExt, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
     common::enums::HyperliquidEnvironment,
@@ -158,6 +158,11 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.
+    ///
+    /// Returns a list of `OrderStatusReport`s, one per accepted order in the
+    /// same order as `orders`. Trigger children of a `normalTpsl` group carry
+    /// a `pending-cloid:` placeholder venue id until the real oid arrives via
+    /// the user-events stream.
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,
@@ -178,11 +183,16 @@ impl HyperliquidWebSocketClient {
             })?;
             let order_refs: Vec<&OrderAny> = order_anys.iter().collect();
 
-            client
+            let reports = client
                 .submit_orders(&signer, &order_refs)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(())
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
         })
     }
 
