@@ -21,17 +21,18 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
-        MarkPriceUpdate, NULL_ORDER, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{AggregationSource, BookAction, OrderSide, RecordFlag},
+    enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
 
 use super::{
     message::{
-        BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, DerivativeTickerMsg, TradeMsg, WsMessage,
+        BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, DerivativeTickerMsg, OptionSummaryMsg,
+        TradeMsg, WsMessage,
     },
     types::TardisInstrumentMiniInfo,
 };
@@ -144,10 +145,44 @@ pub fn parse_tardis_ws_message(
                 }
             }
         }
+        WsMessage::OptionSummary(msg) => Some(Data::OptionGreeks(parse_option_summary_msg(
+            &msg,
+            info.instrument_id,
+        ))),
         // Derivative ticker messages are handled through a separate callback path
         // for FundingRateUpdate since they're not part of the Data enum.
         WsMessage::DerivativeTicker(_) => None,
         WsMessage::Disconnect(_) => None,
+    }
+}
+
+/// Parses a Tardis option summary message into a Nautilus `OptionGreeks`.
+///
+/// Greeks absent from the exchange feed default to `0.0` (matching the existing exchange-greeks
+/// producers); implied volatilities, underlying price and open interest stay `None` when the
+/// exchange does not provide them.
+#[must_use]
+pub fn parse_option_summary_msg(
+    msg: &OptionSummaryMsg,
+    instrument_id: InstrumentId,
+) -> OptionGreeks {
+    OptionGreeks {
+        instrument_id,
+        convention: GreeksConvention::BlackScholes,
+        greeks: OptionGreekValues {
+            delta: msg.delta.unwrap_or(0.0),
+            gamma: msg.gamma.unwrap_or(0.0),
+            vega: msg.vega.unwrap_or(0.0),
+            theta: msg.theta.unwrap_or(0.0),
+            rho: msg.rho.unwrap_or(0.0),
+        },
+        mark_iv: msg.mark_iv,
+        bid_iv: msg.best_bid_iv,
+        ask_iv: msg.best_ask_iv,
+        underlying_price: msg.underlying_price,
+        open_interest: msg.open_interest,
+        ts_event: UnixNanos::from(msg.timestamp),
+        ts_init: UnixNanos::from(msg.local_timestamp),
     }
 }
 
@@ -968,6 +1003,92 @@ mod tests {
 
         assert!(result.is_some());
         assert!(matches!(result.unwrap(), Data::Deltas(_)));
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_option_summary_routes_to_option_greeks() {
+        let json_data = load_test_json("option_summary.json");
+        let msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
+        let ts_event = UnixNanos::from(msg.timestamp);
+        let ts_init = UnixNanos::from(msg.local_timestamp);
+        let ws_msg = WsMessage::OptionSummary(msg);
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
+
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
+
+        let Some(Data::OptionGreeks(greeks)) = result else {
+            panic!("Expected Data::OptionGreeks, was {result:?}");
+        };
+        assert_eq!(greeks.instrument_id, instrument_id);
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
+        assert_eq!(greeks.greeks.delta, 0.25);
+        assert_eq!(greeks.greeks.gamma, 0.00002);
+        assert_eq!(greeks.greeks.vega, 45.5);
+        assert_eq!(greeks.greeks.theta, -15.2);
+        assert_eq!(greeks.greeks.rho, 0.05);
+        assert_eq!(greeks.mark_iv, Some(0.565));
+        assert_eq!(greeks.bid_iv, Some(0.55));
+        assert_eq!(greeks.ask_iv, Some(0.58));
+        assert_eq!(greeks.underlying_price, Some(63_500.0));
+        assert_eq!(greeks.open_interest, Some(150.0));
+        assert_eq!(greeks.ts_event, ts_event);
+        assert_eq!(greeks.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_option_summary_msg_defaults_absent_fields() {
+        let ts = DateTime::parse_from_rfc3339("2024-01-15T10:30:00.123Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let msg = OptionSummaryMsg {
+            symbol: ustr::Ustr::from("BTC-28JUN24-70000-C"),
+            exchange: TardisExchange::Deribit,
+            option_type: "call".to_string(),
+            strike_price: 70_000.0,
+            expiration_date: ts,
+            best_bid_price: None,
+            best_bid_amount: None,
+            best_bid_iv: None,
+            best_ask_price: None,
+            best_ask_amount: None,
+            best_ask_iv: None,
+            last_price: None,
+            open_interest: None,
+            mark_price: None,
+            mark_iv: None,
+            delta: None,
+            gamma: None,
+            vega: None,
+            theta: None,
+            rho: None,
+            underlying_price: None,
+            underlying_index: "BTC-USD".to_string(),
+            timestamp: ts,
+            local_timestamp: ts,
+        };
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let greeks = parse_option_summary_msg(&msg, instrument_id);
+
+        // Absent greeks default to 0.0; absent IVs, underlying and open interest stay None.
+        assert_eq!(greeks.greeks.delta, 0.0);
+        assert_eq!(greeks.greeks.gamma, 0.0);
+        assert_eq!(greeks.greeks.vega, 0.0);
+        assert_eq!(greeks.greeks.theta, 0.0);
+        assert_eq!(greeks.greeks.rho, 0.0);
+        assert_eq!(greeks.mark_iv, None);
+        assert_eq!(greeks.bid_iv, None);
+        assert_eq!(greeks.ask_iv, None);
+        assert_eq!(greeks.underlying_price, None);
+        assert_eq!(greeks.open_interest, None);
     }
 
     #[rstest]

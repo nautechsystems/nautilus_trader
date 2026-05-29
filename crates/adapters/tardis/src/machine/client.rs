@@ -217,6 +217,9 @@ pub fn determine_instrument_info(
         WsMessage::DerivativeTicker(msg) => {
             TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
         }
+        WsMessage::OptionSummary(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
+        }
         WsMessage::Disconnect(_) => return None,
     };
 

@@ -26,15 +26,15 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        Bar, BarType, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
 };
 use nautilus_serialization::arrow::{
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
-    trades_to_arrow_record_batch_bytes,
+    book_depth10_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
+    quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 
@@ -149,6 +149,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     let mut quotes_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
     let mut trades_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
     let mut bars_cursors: AHashMap<BarType, DateCursor> = AHashMap::new();
+    let mut greeks_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
 
     // Initialize date collection maps
     let mut deltas_map: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
@@ -156,6 +157,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     let mut quotes_map: AHashMap<InstrumentId, Vec<QuoteTick>> = AHashMap::new();
     let mut trades_map: AHashMap<InstrumentId, Vec<TradeTick>> = AHashMap::new();
     let mut bars_map: AHashMap<BarType, Vec<Bar>> = AHashMap::new();
+    let mut greeks_map: AHashMap<InstrumentId, Vec<OptionGreeks>> = AHashMap::new();
 
     let mut msg_count = 0;
 
@@ -208,11 +210,19 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             delta.instrument_id
                         );
                     }
+                    Data::OptionGreeks(msg) => {
+                        handle_option_greeks_msg(
+                            msg,
+                            &mut greeks_map,
+                            &mut greeks_cursors,
+                            &path,
+                            compression,
+                        );
+                    }
                     Data::MarkPriceUpdate(_)
                     | Data::IndexPriceUpdate(_)
                     | Data::FundingRateUpdate(_)
                     | Data::InstrumentStatus(_)
-                    | Data::OptionGreeks(_)
                     | Data::InstrumentClose(_)
                     | Data::Custom(_) => {
                         log::debug!(
@@ -263,6 +273,11 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     for (bar_type, bars) in &bars_map {
         let cursor = bars_cursors.get(bar_type).expect("Expected cursor");
         batch_and_write_bars(bars, bar_type, cursor.date_utc, &path, compression);
+    }
+
+    for (instrument_id, greeks) in &greeks_map {
+        let cursor = greeks_cursors.get(instrument_id).expect("Expected cursor");
+        batch_and_write_greeks(greeks, instrument_id, cursor.date_utc, &path, compression);
     }
 
     log::info!(
@@ -416,6 +431,36 @@ fn handle_bar_msg(
         .push(bar);
 }
 
+fn handle_option_greeks_msg(
+    greeks: OptionGreeks,
+    map: &mut AHashMap<InstrumentId, Vec<OptionGreeks>>,
+    cursors: &mut AHashMap<InstrumentId, DateCursor>,
+    path: &Path,
+    compression: Compression,
+) {
+    let cursor = cursors
+        .entry(greeks.instrument_id)
+        .or_insert_with(|| DateCursor::new(greeks.ts_init));
+
+    if greeks.ts_init > cursor.end_ns {
+        if let Some(greeks_vec) = map.remove(&greeks.instrument_id) {
+            batch_and_write_greeks(
+                &greeks_vec,
+                &greeks.instrument_id,
+                cursor.date_utc,
+                path,
+                compression,
+            );
+        }
+        // Update cursor
+        *cursor = DateCursor::new(greeks.ts_init);
+    }
+
+    map.entry(greeks.instrument_id)
+        .or_insert_with(|| Vec::with_capacity(100_000))
+        .push(greeks);
+}
+
 fn batch_and_write_deltas(
     deltas: &[OrderBookDelta],
     instrument_id: &InstrumentId,
@@ -510,6 +555,28 @@ fn batch_and_write_bars(
         log::error!("Error writing {}: {e}", filepath.display());
     } else {
         log::info!("File written: {}", filepath.display());
+    }
+}
+
+fn batch_and_write_greeks(
+    greeks: &[OptionGreeks],
+    instrument_id: &InstrumentId,
+    date: NaiveDate,
+    path: &Path,
+    compression: Compression,
+) {
+    match option_greeks_to_arrow_record_batch_bytes(greeks) {
+        Ok(batch) => write_batch(
+            &batch,
+            "option_greeks",
+            instrument_id,
+            date,
+            path,
+            compression,
+        ),
+        Err(e) => {
+            log::error!("Error converting OptionGreeks to Arrow: {e:?}");
+        }
     }
 }
 
@@ -674,5 +741,92 @@ mod tests {
 
         assert_eq!(cursor.date_utc, expected_date);
         assert_eq!(cursor.end_ns, UnixNanos::from(expected_end_ns));
+    }
+
+    #[rstest]
+    fn test_option_greeks_replay_catalog_round_trip() {
+        use nautilus_model::types::{Price, Quantity};
+        use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+
+        use crate::{
+            common::testing::load_test_json,
+            machine::{message::OptionSummaryMsg, parse::parse_option_summary_msg},
+        };
+
+        let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
+        let compression = ParquetCompression::Zstd.as_parquet_compression();
+
+        // Ingest a Tardis option_summary fixture as exchange-provided greeks.
+        let msg: OptionSummaryMsg =
+            serde_json::from_str(&load_test_json("option_summary.json")).unwrap();
+        let greeks_1 = parse_option_summary_msg(&msg, instrument_id);
+
+        // A later same-day update to assert time-ordered persistence.
+        let mut greeks_2 = greeks_1;
+        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000; // +1s
+        greeks_2.ts_init = greeks_1.ts_init + 1_000_000_000;
+        greeks_2.greeks.delta = 0.26;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_path = temp_dir.path().join("data");
+
+        // Drive the replay write path: per-instrument cursor plus a batched parquet write.
+        let mut greeks_map: AHashMap<InstrumentId, Vec<OptionGreeks>> = AHashMap::new();
+        let mut greeks_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
+
+        for greeks in [greeks_1, greeks_2] {
+            handle_option_greeks_msg(
+                greeks,
+                &mut greeks_map,
+                &mut greeks_cursors,
+                &data_path,
+                compression,
+            );
+        }
+
+        for (id, greeks) in &greeks_map {
+            let cursor = greeks_cursors.get(id).expect("Expected cursor");
+            batch_and_write_greeks(greeks, id, cursor.date_utc, &data_path, compression);
+        }
+
+        // Quotes for options already flow as `QuoteTick`; write a pair into the same catalog so
+        // the round-trip asserts quotes and greeks coexist. They use the catalog write path
+        // because the replay quote writer emits a legacy `quote_tick` prefix that diverges from
+        // the catalog `quotes` prefix (pre-existing, outside this milestone).
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let quotes = vec![
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.0350"),
+                Price::from("0.0400"),
+                Quantity::from(5),
+                Quantity::from(10),
+                greeks_1.ts_event,
+                greeks_1.ts_init,
+            ),
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.0360"),
+                Price::from("0.0410"),
+                Quantity::from(5),
+                Quantity::from(10),
+                greeks_2.ts_event,
+                greeks_2.ts_init,
+            ),
+        ];
+        catalog.write_to_parquet(quotes, None, None, None).unwrap();
+
+        let greeks_out = catalog.option_greeks(None, None, None).unwrap();
+        let quotes_out = catalog.quote_ticks(None, None, None).unwrap();
+
+        assert_eq!(greeks_out, vec![greeks_1, greeks_2]);
+        assert_eq!(greeks_out[0].instrument_id, instrument_id);
+        assert_eq!(greeks_out[0].mark_iv, Some(0.565));
+        assert_eq!(greeks_out[0].underlying_price, Some(63_500.0));
+        assert!(greeks_out[0].ts_init < greeks_out[1].ts_init);
+
+        assert_eq!(quotes_out.len(), 2);
+        assert_eq!(quotes_out[0].instrument_id, instrument_id);
+        assert!(quotes_out[0].ts_init < quotes_out[1].ts_init);
     }
 }

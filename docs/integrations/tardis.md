@@ -50,6 +50,7 @@ The following normalized Tardis formats are supported by NautilusTrader:
 | [trade_bar_*](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix)                            | `Bar`                                                                |
 | [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionContract` |
 | [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | `FundingRateUpdate`                                                  |
+| [option_summary](https://docs.tardis.dev/api/tardis-machine#option_summary)                                                 | `OptionGreeks`                                                       |
 | [disconnect](https://docs.tardis.dev/api/tardis-machine#disconnect)                                                         | *Not applicable*                                                     |
 
 **Notes:**
