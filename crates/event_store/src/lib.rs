@@ -48,6 +48,7 @@ pub mod hash;
 pub mod headers;
 pub mod kernel;
 pub mod manifest;
+pub mod markers;
 pub mod reader;
 pub mod replay;
 pub mod retention;
@@ -78,6 +79,10 @@ pub use kernel::{
     recover_predecessors,
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
+pub use markers::{
+    DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
+    StreamDictEntry, StreamSlot, compute_hifi_hash, compute_marker_hash,
+};
 pub use nautilus_system::{
     RegisteredComponents,
     event_store::{EventStoreConfig, RetentionMode, RunIdentity},
