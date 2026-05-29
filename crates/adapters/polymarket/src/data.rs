@@ -582,7 +582,7 @@ fn strict_winner_index(prices: &[f64]) -> Option<usize> {
 }
 
 fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMarket> {
-    if market.closed != Some(true) || market.accepting_orders != Some(false) {
+    if market.closed != Some(true) {
         return None;
     }
 
@@ -3358,6 +3358,19 @@ mod tests {
             Some(false),
         );
         assert!(build_strict_resolved_market(&ambiguous).is_none());
+
+        // Real Gamma/CLOB data contains some resolved markets with
+        // `closed=true` and `acceptingOrders=true`; these are still resolvable.
+        let accepting_true = make_gamma_market_with_outcome_prices(
+            "0xCOND",
+            "[\"0xYES\",\"0xNO\"]",
+            Some("[\"1\",\"0\"]"),
+            Some(true),
+            Some(true),
+        );
+        let resolved =
+            build_strict_resolved_market(&accepting_true).expect("expected resolved market");
+        assert_eq!(resolved.winning_asset_id, "0xYES");
 
         let not_final = make_gamma_market_with_outcome_prices(
             "0xCOND",
