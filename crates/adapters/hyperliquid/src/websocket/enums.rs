@@ -43,6 +43,8 @@ pub enum HyperliquidWsChannel {
     Candle,
     #[serde(rename = "allMids")]
     AllMids,
+    #[serde(rename = "allDexsAssetCtxs")]
+    AllDexsAssetCtxs,
     #[serde(rename = "notification")]
     Notification,
     #[serde(rename = "orderUpdates")]
@@ -88,6 +90,7 @@ impl HyperliquidWsChannel {
             Self::Bbo => "bbo",
             Self::Candle => "candle",
             Self::AllMids => "allMids",
+            Self::AllDexsAssetCtxs => "allDexsAssetCtxs",
             Self::Notification => "notification",
             Self::OrderUpdates => "orderUpdates",
             Self::UserEvents => "userEvents",
@@ -117,6 +120,7 @@ impl HyperliquidWsChannel {
                 | Self::Bbo
                 | Self::Candle
                 | Self::AllMids
+                | Self::AllDexsAssetCtxs
                 | Self::ActiveAssetCtx
                 | Self::ActiveSpotAssetCtx
                 | Self::Notification
@@ -225,12 +229,13 @@ mod tests {
     #[rstest]
     fn test_enum_iter() {
         let channels: Vec<HyperliquidWsChannel> = HyperliquidWsChannel::iter().collect();
-        assert_eq!(channels.len(), 22);
+        assert_eq!(channels.len(), 23);
         assert!(channels.contains(&HyperliquidWsChannel::Trades));
         assert!(channels.contains(&HyperliquidWsChannel::L2Book));
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));
         assert!(channels.contains(&HyperliquidWsChannel::Candle));
         assert!(channels.contains(&HyperliquidWsChannel::AllMids));
+        assert!(channels.contains(&HyperliquidWsChannel::AllDexsAssetCtxs));
         assert!(channels.contains(&HyperliquidWsChannel::Notification));
     }
 

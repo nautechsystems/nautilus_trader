@@ -22,8 +22,10 @@ import pytest
 import nautilus_trader.adapters.hyperliquid.data as hyperliquid_data_module
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllDexsAssetCtxs
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidDexAssetCtx
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
@@ -32,6 +34,7 @@ from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.hyperliquid.conftest import _create_ws_mock
 
 
@@ -53,6 +56,57 @@ class _FakePyo3HyperliquidAllMids:
 class _FakePyo3DataType:
     def __init__(self, metadata: dict[str, str]):
         self.metadata = metadata
+
+
+class _FakePyo3ImpactPrices:
+    def __init__(self, bid: str, ask: str) -> None:
+        self.bid = bid
+        self.ask = ask
+
+
+class _FakePyo3HyperliquidDexAssetCtx:
+    def __init__(
+        self,
+        dex: str,
+        instrument_id: str,
+        mark_price: str,
+        oracle_price: str,
+        prev_day_price: str,
+        mid_price: str | None,
+        impact_prices: _FakePyo3ImpactPrices | None,
+        funding_rate: str,
+        open_interest: str,
+        premium: str | None,
+        day_ntl_volume: str,
+        day_base_volume: str,
+    ) -> None:
+        self.dex = dex
+        self.instrument_id = instrument_id
+        self.mark_price = mark_price
+        self.oracle_price = oracle_price
+        self.prev_day_price = prev_day_price
+        self.mid_price = mid_price
+        self.impact_prices = impact_prices
+        self.funding_rate = funding_rate
+        self.open_interest = open_interest
+        self.premium = premium
+        self.day_ntl_volume = day_ntl_volume
+        self.day_base_volume = day_base_volume
+
+
+class _FakePyo3HyperliquidAllDexsAssetCtxs:
+    def __init__(self, entries: list[object], ts_event: int = 0, ts_init: int = 0) -> None:
+        self.entries = entries
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
 
 
 class _FakePyo3HyperliquidOpenInterest:
@@ -545,6 +599,37 @@ async def test_subscribe_custom_data_all_mids_with_dex(data_client_builder, monk
 
 
 @pytest.mark.asyncio
+async def test_subscribe_custom_data_all_dexs_asset_ctxs(data_client_builder, monkeypatch):
+    client, ws_client, http_client, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.subscribe_all_dexs_asset_ctxs.reset_mock()
+        http_client.load_instrument_definitions.reset_mock()
+        http_client.build_all_dex_asset_ctxs_instrument_ids.reset_mock()
+        ws_client.cache_all_dex_asset_ctxs_instrument_ids.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(type=HyperliquidAllDexsAssetCtxs),
+        )
+
+        await client._subscribe(command)
+        await client._subscribe(command)
+
+        http_client.load_instrument_definitions.assert_awaited_once_with(
+            include_spot=False,
+            include_perps=False,
+            include_perps_hip3=True,
+            include_outcomes=False,
+        )
+        http_client.build_all_dex_asset_ctxs_instrument_ids.assert_awaited_once_with()
+        ws_client.cache_all_dex_asset_ctxs_instrument_ids.assert_called_once_with({})
+        assert ws_client.subscribe_all_dexs_asset_ctxs.await_count == 2
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_subscribe_custom_data_open_interest(data_client_builder, monkeypatch):
     client, ws_client, _, _ = data_client_builder(monkeypatch)
 
@@ -591,6 +676,25 @@ async def test_unsubscribe_custom_data_open_interest(data_client_builder, monkey
 
 
 @pytest.mark.asyncio
+async def test_unsubscribe_custom_data_all_dexs_asset_ctxs(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.unsubscribe_all_dexs_asset_ctxs.reset_mock()
+
+        command = SimpleNamespace(
+            data_type=DataType(type=HyperliquidAllDexsAssetCtxs),
+        )
+
+        await client._unsubscribe(command)
+
+        ws_client.unsubscribe_all_dexs_asset_ctxs.assert_awaited_once_with()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_handle_msg_custom_data_all_mids_forwarded(data_client_builder, monkeypatch):
     client, _, _, _ = data_client_builder(monkeypatch)
     monkeypatch.setattr(
@@ -625,6 +729,69 @@ async def test_handle_msg_custom_data_all_mids_forwarded(data_client_builder, mo
     assert isinstance(forwarded.data, HyperliquidAllMids)
     assert forwarded.data.mids["BTC-USD-PERP.HYPERLIQUID"] == "80868.5"
     assert forwarded.data_type == DataType(HyperliquidAllMids, {"dex": "hyperliquid"})
+
+
+@pytest.mark.asyncio
+async def test_handle_msg_custom_data_all_dex_asset_ctxs_forwarded(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    monkeypatch.setattr(
+        hyperliquid_data_module,
+        "_PYO3HyperliquidAllDexsAssetCtxs",
+        _FakePyo3HyperliquidAllDexsAssetCtxs,
+    )
+    monkeypatch.setattr(
+        hyperliquid_data_module.nautilus_pyo3,
+        "CustomData",
+        _FakePyo3CustomData,
+    )
+
+    client._handle_data = MagicMock()
+
+    payload = _FakePyo3HyperliquidAllDexsAssetCtxs(
+        entries=[
+            _FakePyo3HyperliquidDexAssetCtx(
+                dex="xyz",
+                instrument_id="xyz:TSLA-USD-PERP.HYPERLIQUID",
+                mark_price="211.0",
+                oracle_price="210.5",
+                prev_day_price="205.0",
+                mid_price="210.75",
+                impact_prices=_FakePyo3ImpactPrices("210.2", "211.3"),
+                funding_rate="0.001",
+                open_interest="42.5",
+                premium="0.0025",
+                day_ntl_volume="98765.43",
+                day_base_volume="1234.56",
+            ),
+        ],
+        ts_event=3_000,
+        ts_init=3_001,
+    )
+    msg = _FakePyo3CustomData(
+        data_type=_FakePyo3DataType({}),
+        data=payload,
+    )
+
+    client._handle_msg(msg)
+
+    client._handle_data.assert_called_once()
+    forwarded = client._handle_data.call_args.args[0]
+    assert isinstance(forwarded, CustomData)
+    assert isinstance(forwarded.data, Data)
+    assert isinstance(forwarded.data, HyperliquidAllDexsAssetCtxs)
+    assert len(forwarded.data.entries) == 1
+    entry = forwarded.data.entries[0]
+    assert isinstance(entry, HyperliquidDexAssetCtx)
+    assert entry.dex == "xyz"
+    assert entry.instrument_id == InstrumentId.from_str("xyz:TSLA-USD-PERP.HYPERLIQUID")
+    assert entry.mark_price == Price.from_str("211.0")
+    assert entry.open_interest == Decimal("42.5")
+    assert entry.impact_prices is not None
+    assert entry.impact_prices.bid == Price.from_str("210.2")
+    assert forwarded.data_type == DataType(HyperliquidAllDexsAssetCtxs)
 
 
 @pytest.mark.asyncio

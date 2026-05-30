@@ -86,8 +86,9 @@ use crate::{
             HyperliquidExecPlaceOrderRequest, HyperliquidExecSplitOutcomeParams,
             HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
             HyperliquidExecUserOutcomeOp, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMeta, PerpMeta,
-            PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMeta, PerpDex,
+            PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta,
+            SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
@@ -365,6 +366,13 @@ impl HyperliquidRawHttpClient {
     /// Get metadata for all perp dexes (standard + HIP-3).
     pub(crate) async fn load_all_perp_metas(&self) -> Result<Vec<PerpMeta>> {
         let request = InfoRequest::all_perp_metas();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get the list of perp dex names aligned by dex index.
+    pub(crate) async fn load_perp_dexs(&self) -> Result<Vec<Option<PerpDex>>> {
+        let request = InfoRequest::perp_dexs();
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -1478,6 +1486,63 @@ impl HyperliquidHttpClient {
     pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
         let defs = self.request_instrument_defs().await?;
         Ok(self.convert_defs(defs))
+    }
+
+    /// Builds the `allDexsAssetCtxs` normalization map from dex name to ordered instrument IDs.
+    ///
+    /// The order of instrument IDs must match the venue universe ordering for each perp dex so
+    /// incoming `ctxs` arrays can be normalized without leaking raw positional payloads.
+    pub async fn build_all_dex_asset_ctxs_instrument_ids(
+        &self,
+    ) -> Result<AHashMap<String, Vec<Option<InstrumentId>>>> {
+        let all_metas = match self.inner.load_all_perp_metas().await {
+            Ok(all_metas) => all_metas,
+            Err(e) => {
+                log::warn!("Failed to load allPerpMetas, falling back to meta: {e}");
+                vec![self.inner.load_perp_meta().await?]
+            }
+        };
+
+        let perp_dexs = match self.inner.load_perp_dexs().await {
+            Ok(dexs) => Some(dexs),
+            Err(e) => {
+                log::warn!("Failed to load perpDexs, inferring dex names from metadata: {e}");
+                None
+            }
+        };
+
+        let raw_symbol_to_id =
+            self.instruments
+                .load()
+                .values()
+                .fold(AHashMap::new(), |mut acc, instrument| {
+                    acc.insert(instrument.raw_symbol().to_string(), instrument.id());
+                    acc
+                });
+
+        let mut mapping = AHashMap::new();
+
+        for (dex_index, meta) in all_metas.iter().enumerate() {
+            let dex_name = resolve_perp_dex_name(dex_index, meta, perp_dexs.as_deref());
+            let mut instrument_ids = Vec::with_capacity(meta.universe.len());
+
+            for asset in &meta.universe {
+                if let Some(instrument_id) = raw_symbol_to_id.get(&asset.name) {
+                    instrument_ids.push(Some(*instrument_id));
+                } else {
+                    log::warn!(
+                        "Missing cached Hyperliquid instrument for dex='{}' raw_symbol='{}'",
+                        dex_name,
+                        asset.name
+                    );
+                    instrument_ids.push(None);
+                }
+            }
+
+            mapping.insert(dex_name, instrument_ids);
+        }
+
+        Ok(mapping)
     }
 
     /// Get asset index for a symbol from the cached map.
@@ -3155,6 +3220,29 @@ impl HyperliquidHttpClient {
             _ => Err(Error::bad_request("Unexpected response format")),
         }
     }
+}
+
+fn resolve_perp_dex_name(
+    dex_index: usize,
+    meta: &PerpMeta,
+    perp_dexs: Option<&[Option<PerpDex>]>,
+) -> String {
+    if dex_index == 0 {
+        return String::new();
+    }
+
+    if let Some(dex_name) = perp_dexs
+        .and_then(|dexs| dexs.get(dex_index))
+        .and_then(|dex| dex.as_ref())
+        .map(|dex| dex.name.clone())
+    {
+        return dex_name;
+    }
+
+    meta.universe
+        .iter()
+        .find_map(|asset| asset.name.split_once(':').map(|(dex, _)| dex.to_string()))
+        .unwrap_or_default()
 }
 
 /// Returns the asset index base for a perp dex.

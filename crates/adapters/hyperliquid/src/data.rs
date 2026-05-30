@@ -214,7 +214,26 @@ impl HyperliquidDataClient {
         });
 
         for instrument in &instruments {
+            self.http_client.cache_instrument(instrument);
             self.ws_client.cache_instrument(instrument.clone());
+        }
+
+        match self
+            .http_client
+            .build_all_dex_asset_ctxs_instrument_ids()
+            .await
+        {
+            Ok(mapping) => {
+                let mapping = mapping
+                    .into_iter()
+                    .map(|(dex, instrument_ids)| (Ustr::from(dex.as_str()), instrument_ids))
+                    .collect();
+                self.ws_client
+                    .cache_all_dex_asset_ctxs_instrument_ids(mapping);
+            }
+            Err(e) => {
+                log::warn!("Failed to build Hyperliquid allDexsAssetCtxs mapping: {e}");
+            }
         }
 
         log::info!(
@@ -485,6 +504,16 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
+        if data_type == "HyperliquidAllDexsAssetCtxs" {
+            let ws = self.ws_client.clone();
+
+            self.spawn_task("subscribe_all_dexs_asset_ctxs", async move {
+                ws.subscribe_all_dexs_asset_ctxs().await
+            });
+
+            return Ok(());
+        }
+
         if data_type == "HyperliquidOpenInterest" {
             let ws = self.ws_client.clone();
             let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
@@ -521,6 +550,16 @@ impl DataClient for HyperliquidDataClient {
 
             self.spawn_task("unsubscribe_all_mids", async move {
                 ws.unsubscribe_all_mids_with_dex(dex.as_deref()).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidAllDexsAssetCtxs" {
+            let ws = self.ws_client.clone();
+
+            self.spawn_task("unsubscribe_all_dexs_asset_ctxs", async move {
+                ws.unsubscribe_all_dexs_asset_ctxs().await
             });
 
             return Ok(());

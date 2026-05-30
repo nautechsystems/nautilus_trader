@@ -210,6 +210,15 @@ pub struct MarginTier {
     pub max_leverage: u32,
 }
 
+/// Descriptor for a builder-deployed perp dex from `POST /info` with
+/// `{ "type": "perpDexs" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerpDex {
+    /// Dex identifier used by WebSocket `dex` metadata and subscription routing.
+    pub name: String,
+}
+
 /// Complete spot metadata response from `POST /info` with `{ "type": "spotMeta" }`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
