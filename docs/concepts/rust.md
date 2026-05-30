@@ -116,7 +116,7 @@ nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git"
 nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples"] }
 ```
 
-The minimum supported Rust version (MSRV) is **1.95.0**.
+The minimum supported Rust version (MSRV) is **1.96.0**.
 
 ### Feature flags
 

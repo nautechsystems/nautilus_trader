@@ -107,7 +107,11 @@ impl PostgresCacheDatabase {
 
         // Spawn a task to handle messages
         let handle = tokio::spawn(async move {
-            Self::process_commands(rx, pg_connect_options.clone().into()).await;
+            Box::pin(Self::process_commands(
+                rx,
+                pg_connect_options.clone().into(),
+            ))
+            .await;
         });
         Ok(Self { pool, tx, handle })
     }
@@ -136,12 +140,13 @@ impl PostgresCacheDatabase {
         loop {
             tokio::select! {
                 maybe_msg = rx.recv() => {
-                    let result = handle_query(
+                    let result = Box::pin(handle_query(
                         maybe_msg,
                         &mut buffer,
                         buffer_interval,
                         &pool,
-                    ).await;
+                    ))
+                    .await;
 
                     if result.is_break() {
                         break;

@@ -49,7 +49,7 @@ members = [
 [workspace.package]
 version = "0.58.0"
 edition = "2024"
-rust-version = "1.95.0"
+rust-version = "1.96.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
 readme = "README.md"

@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Optimized Derive signing and hot paths with benchmark report
 - Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
+- Upgraded Rust (MSRV) to 1.96.0
 - Upgraded `databento` crate to v0.52.0
 - Upgraded `redis` crate to v1.2.2
 - Upgraded `sqlx` crate to v0.9.0
