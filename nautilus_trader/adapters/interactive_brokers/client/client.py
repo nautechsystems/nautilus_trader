@@ -439,8 +439,7 @@ class InteractiveBrokersClient(
         if self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
-
-        self._last_disconnection_ns = self._clock.timestamp_ns()
+            self._last_disconnection_ns = self._clock.timestamp_ns()
         await self._clear_bar_tracking_state()
         await asyncio.sleep(5)
         await self._handle_reconnect()
