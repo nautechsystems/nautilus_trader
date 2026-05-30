@@ -33,7 +33,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use rust_decimal::Decimal;
-use sqlx::{PgPool, Row, postgres::PgConnectOptions};
+use sqlx::{AssertSqlSafe, PgPool, Row, postgres::PgConnectOptions};
 
 use crate::{
     cache::{
@@ -1212,7 +1212,7 @@ impl BlockchainCacheDatabase {
         let query = format!(
             "SELECT MAX(block) FROM {table_name} WHERE chain_id = $1 AND pool_identifier = $2"
         );
-        let result = sqlx::query_as::<_, (Option<i64>,)>(query.as_str())
+        let result = sqlx::query_as::<_, (Option<i64>,)>(AssertSqlSafe(query))
             .bind(chain_id as i32)
             .bind(pool_identifier.as_ref())
             .fetch_optional(&self.pool)

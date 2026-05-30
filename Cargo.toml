@@ -265,7 +265,7 @@ sockudo-ws = { version = "1.7.4", default-features = false, features = [
   "tokio-runtime",
   "rustls-webpki-roots",
 ] }
-sqlx = { version = "0.8.6", default-features = false, features = [
+sqlx = { version = "0.9.0", default-features = false, features = [
   "postgres",
   "runtime-tokio",
   "json",

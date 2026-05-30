@@ -48,7 +48,7 @@ pub struct AggregationSourceModel(pub AggregationSource);
 impl sqlx::Encode<'_, sqlx::Postgres> for CurrencyTypeModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let currency_type_str = match self.0 {
             CurrencyType::Crypto => "CRYPTO",
@@ -82,7 +82,7 @@ impl sqlx::Type<sqlx::Postgres> for CurrencyTypeModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for AssetClassModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let asset_type_str = match self.0 {
             AssetClass::FX => "FX",
@@ -120,7 +120,7 @@ impl sqlx::Type<sqlx::Postgres> for AssetClassModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for TrailingOffsetTypeModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let trailing_offset_type_str = match self.0 {
             TrailingOffsetType::NoTrailingOffset => "NO_TRAILING_OFFSET",
@@ -159,7 +159,7 @@ impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypeModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSideModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let aggressor_side_str = match self.0 {
             AggressorSide::NoAggressor => "NO_AGGRESSOR",
@@ -193,7 +193,7 @@ impl sqlx::Type<sqlx::Postgres> for AggressorSideModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for AggregationSourceModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let aggregation_source_str = match self.0 {
             AggregationSource::Internal => "INTERNAL",
@@ -229,7 +229,7 @@ impl sqlx::Type<sqlx::Postgres> for AggregationSourceModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let bar_aggregation_str = match self.0 {
             BarAggregation::Tick => "TICK",
@@ -278,7 +278,7 @@ impl sqlx::Type<sqlx::Postgres> for BarAggregationModel {
 impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypeModel {
     fn encode_by_ref(
         &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer<'_>,
+        buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let price_type_str = match self.0 {
             PriceType::Bid => "BID",

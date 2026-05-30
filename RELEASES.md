@@ -154,6 +154,7 @@ Released on TBD (UTC).
 - Optimized OKX hot paths with benchmark report
 - Upgraded `databento` crate to v0.52.0
 - Upgraded `redis` crate to v1.2.2
+- Upgraded `sqlx` crate to v0.9.0
 
 ### Documentation Updates
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration

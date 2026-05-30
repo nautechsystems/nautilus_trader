@@ -128,12 +128,14 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-03-25
+# Last reviewed: 2026-05-30
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
   { crate = "crypto-common" },
   { crate = "digest" },
+  { crate = "hmac" },
+  { crate = "md-5" },
   { crate = "sha2" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
