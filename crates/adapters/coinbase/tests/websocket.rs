@@ -168,7 +168,7 @@ async fn handle_ws_socket(socket: WebSocket, state: WsServerState) {
                 }
             }
             // Inner if consumes `data`, cannot hoist into a match guard
-            #[expect(clippy::collapsible_match)]
+            #[allow(clippy::collapsible_match)]
             Message::Ping(data) => {
                 if sink.send(Message::Pong(data)).await.is_err() {
                     break;

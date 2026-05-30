@@ -277,7 +277,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                 }
             }
             // Inner if consumes `data`, cannot hoist into a match guard
-            #[expect(clippy::collapsible_match)]
+            #[allow(clippy::collapsible_match)]
             Message::Ping(data) => {
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;

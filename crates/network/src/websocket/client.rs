@@ -2064,7 +2064,7 @@ mod tests {
 
                     task::spawn(async move {
                         // Inner if consumes `msg`, cannot hoist into a match guard
-                        #[expect(clippy::collapsible_match)]
+                        #[allow(clippy::collapsible_match)]
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 WsMessage::Text(txt) if txt == "close-now" => {
@@ -4153,7 +4153,7 @@ mod rust_tests {
             {
                 while let Some(Ok(msg)) = ws.next().await {
                     // Inner if consumes `msg`, cannot hoist into a match guard
-                    #[expect(clippy::collapsible_match)]
+                    #[allow(clippy::collapsible_match)]
                     match msg {
                         WsMessage::Text(_) | WsMessage::Binary(_) => {
                             if ws.send(msg).await.is_err() {

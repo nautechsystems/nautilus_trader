@@ -505,7 +505,7 @@ mod tests {
 
                     task::spawn(async move {
                         // Inner if consumes `msg`, cannot hoist into a match guard
-                        #[expect(clippy::collapsible_match)]
+                        #[allow(clippy::collapsible_match)]
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)

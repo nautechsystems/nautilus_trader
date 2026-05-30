@@ -1163,7 +1163,7 @@ pub fn dispatch_execution_reports(
                 if let Some(cid) = order_report.client_order_id {
                     match order_report.order_status {
                         // Guard form reformats awkwardly across multiple lines
-                        #[expect(clippy::collapsible_match)]
+                        #[allow(clippy::collapsible_match)]
                         OrderStatus::Accepted => {
                             if state.filled_orders.contains(&cid)
                                 || state.triggered_orders.contains(&cid)
