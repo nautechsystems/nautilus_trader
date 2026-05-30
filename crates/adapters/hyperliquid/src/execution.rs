@@ -69,7 +69,8 @@ use crate::{
         models::{
             ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecCancelByCloidRequest,
             HyperliquidExecCancelOrderRequest, HyperliquidExecGrouping,
-            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind, SpotClearinghouseState,
+            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
+            HyperliquidExecPlaceOrderRequest, SpotClearinghouseState,
         },
         parse::derive_outcome_settlements,
     },
@@ -1029,6 +1030,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Mark before the post await so an early CANCELED(old_voi) on the WS is suppressed.
         dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id, target_total_qty);
+        // Stashed so the cancel-replace promotion can reduce the replacement on an in-flight fill
+        dispatch_state.stash_modify_request(client_order_id, hyperliquid_order.clone());
 
         self.spawn_task("modify_order", async move {
             let action = HyperliquidExecAction::Modify {
@@ -1755,7 +1758,7 @@ impl HyperliquidExecutionClient {
                     Some(msg) => match msg {
                         NautilusWsMessage::ExecutionReports(reports) => {
                             for report in reports {
-                                handle_execution_report(
+                                if let Some((cid, oid, order)) = handle_execution_report(
                                     report,
                                     &dispatch_state,
                                     &emitter,
@@ -1763,7 +1766,16 @@ impl HyperliquidExecutionClient {
                                     &http_client,
                                     &mut pending_filled_cloids,
                                     clock.get_time_ns(),
-                                );
+                                ) {
+                                    spawn_corrective_reduce(
+                                        &ws_client,
+                                        &http_client,
+                                        &dispatch_state,
+                                        cid,
+                                        oid,
+                                        order,
+                                    );
+                                }
                             }
                         }
                         // Reconnected is handled by WS client internally
@@ -2141,7 +2153,7 @@ fn handle_execution_report(
     http_client: &HyperliquidHttpClient,
     pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
     ts_init: UnixNanos,
-) {
+) -> Option<(ClientOrderId, u64, HyperliquidExecPlaceOrderRequest)> {
     match report {
         ExecutionReport::Order(order_report) => {
             let is_filled_marker = matches!(order_report.order_status, OrderStatus::Filled);
@@ -2178,6 +2190,14 @@ fn handle_execution_report(
                     }
                 }
             }
+
+            // Hand any queued corrective reduce to the loop to post; this
+            // cache-free task cannot rebuild the order spec itself.
+            client_order_id.and_then(|id| {
+                dispatch_state
+                    .take_corrective(&id)
+                    .map(|(oid, order)| (id, oid, order))
+            })
         }
         ExecutionReport::Fill(fill_report) => {
             let client_order_id = fill_report.client_order_id;
@@ -2197,8 +2217,66 @@ fn handle_execution_report(
                 pending_filled_cloids.remove(&id);
                 remove_cloid_mapping_for_client_order_id(ws_client, http_client, &id);
             }
+
+            None
         }
     }
+}
+
+/// Posts a corrective reduce queued by the cancel-replace promotion.
+///
+/// Runs on the runtime (not the WS receive loop) so the post does not block
+/// event processing. Keeps the re-armed pending-modify marker only while the
+/// reduce may still be live (a clean ack, or a transport failure the WS may
+/// reconcile); clears it otherwise so a stale marker cannot suppress a later
+/// real `CANCELED(oid)` as a cancel-before-accept leg.
+fn spawn_corrective_reduce(
+    ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
+    dispatch_state: &Arc<WsDispatchState>,
+    client_order_id: ClientOrderId,
+    oid: u64,
+    order: HyperliquidExecPlaceOrderRequest,
+) {
+    let ws_client = ws_client.clone();
+    let http_client = http_client.clone();
+    let dispatch_state = dispatch_state.clone();
+
+    get_runtime().spawn(async move {
+        let action = HyperliquidExecAction::Modify {
+            modify: HyperliquidExecModifyOrderRequest { oid, order },
+        };
+
+        let keep_marker = match ws_client.post_action_exec(&http_client, &action).await {
+            Ok(resp) if resp.is_ok() && extract_inner_error(&resp).is_none() => {
+                log::info!("Corrective reduce acknowledged for {client_order_id} on oid {oid}");
+                true
+            }
+            Ok(resp) => {
+                let reason =
+                    extract_inner_error(&resp).unwrap_or_else(|| extract_error_message(&resp));
+                log::warn!(
+                    "Corrective reduce rejected for {client_order_id} on oid {oid}: {reason}"
+                );
+                false
+            }
+            Err(e) if e.is_transport_error() => {
+                log::warn!(
+                    "Corrective reduce transport failure for {client_order_id} on oid {oid}: \
+                     {e}; awaiting WS reconciliation",
+                );
+                true
+            }
+            Err(e) => {
+                log::warn!("Corrective reduce failed for {client_order_id} on oid {oid}: {e}");
+                false
+            }
+        };
+
+        if !keep_marker {
+            dispatch_state.clear_pending_modify(&client_order_id);
+        }
+    });
 }
 
 fn remove_cloid_mapping_for_client_order_id(
@@ -2241,6 +2319,7 @@ mod tests {
     };
     use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::{
@@ -2250,7 +2329,10 @@ mod tests {
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
-        http::models::{Cloid, HyperliquidExecGrouping},
+        http::models::{
+            Cloid, HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+            HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        },
     };
 
     const TEST_INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
@@ -2353,13 +2435,27 @@ mod tests {
         venue_order_id: &str,
         trade_id: &str,
     ) -> FillReport {
+        make_fill_report_with_qty(
+            client_order_id,
+            venue_order_id,
+            trade_id,
+            Quantity::from("0.0001"),
+        )
+    }
+
+    fn make_fill_report_with_qty(
+        client_order_id: Option<&str>,
+        venue_order_id: &str,
+        trade_id: &str,
+        last_qty: Quantity,
+    ) -> FillReport {
         FillReport::new(
             AccountId::from("HYPERLIQUID-001"),
             InstrumentId::from(TEST_INSTRUMENT_ID),
             VenueOrderId::new(venue_order_id),
             TradeId::new(trade_id),
             OrderSide::Buy,
-            Quantity::from("0.0001"),
+            last_qty,
             Price::from("56730.0"),
             Money::new(0.0, Currency::USD()),
             LiquiditySide::Taker,
@@ -2983,6 +3079,279 @@ mod tests {
             }
             other => panic!("expected OrderUpdated, found {other:?}"),
         }
+    }
+
+    fn limit_request(size: Decimal) -> HyperliquidExecPlaceOrderRequest {
+        HyperliquidExecPlaceOrderRequest {
+            asset: 0,
+            is_buy: true,
+            price: "88.949".parse::<Decimal>().unwrap(),
+            size,
+            reduce_only: false,
+            kind: HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Gtc,
+                },
+            },
+            cloid: None,
+        }
+    }
+
+    /// A partial fill landing mid-modify leaves the cancel-replace replacement
+    /// oversized (sized at the full target). The promotion must queue a
+    /// corrective reduce to `target - filled` and re-arm the marker.
+    #[rstest]
+    fn test_cancel_replace_queues_corrective_reduce_on_in_flight_fill() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-4154");
+        let target_total = Quantity::from("1.000");
+        let old_voi = "445117664938";
+        let new_voi = "445117686214";
+
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new(old_voi));
+
+        // Modify dispatched while nothing had filled: marker plus the exact
+        // request sent to the venue, sized at the full target.
+        state.mark_pending_modify(cid, VenueOrderId::new(old_voi), target_total);
+        state.stash_modify_request(cid, limit_request(Decimal::from(1)));
+
+        // A 0.165 fill lands on the old leg after the modify was dispatched
+        state.record_filled_qty(cid, Quantity::from("0.165"));
+
+        // Replacement ACCEPTED(new_voi) arrives: promotion runs
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-4154"),
+            new_voi,
+            OrderStatus::Accepted,
+            Quantity::from("0.835"),
+        );
+        let corrective = handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        // OrderUpdated still carries the absolute target total
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, target_total);
+                assert_eq!(updated.venue_order_id, Some(VenueOrderId::new(new_voi)));
+            }
+            other => panic!("expected OrderUpdated, found {other:?}"),
+        }
+
+        let (corr_cid, oid, request) =
+            corrective.expect("oversized replacement must queue a corrective reduce");
+        assert_eq!(corr_cid, cid);
+        assert_eq!(oid, 445_117_686_214);
+        assert_eq!(request.size, "0.835".parse::<Decimal>().unwrap());
+        // Marker re-armed on the new voi so the corrective's own cancel leg
+        // is suppressed and a further in-flight fill chains another reduce.
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new(new_voi)));
+        assert_eq!(state.pending_modify_target_qty(&cid), Some(target_total));
+    }
+
+    /// Without an in-flight fill the replacement is correctly sized, so the
+    /// promotion must not queue a corrective reduce and must clear the marker.
+    #[rstest]
+    fn test_cancel_replace_no_corrective_without_in_flight_fill() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-4154-NOFILL");
+        let target_total = Quantity::from("1.000");
+
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
+        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.stash_modify_request(cid, limit_request(Decimal::from(1)));
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-4154-NOFILL"),
+            "445117686214",
+            OrderStatus::Accepted,
+            target_total,
+        );
+        let corrective = handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let _ = drain_events(&mut rx);
+        assert!(corrective.is_none());
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(state.take_corrective(&cid).is_none());
+        // Promotion clears the stashed request along with the marker
+        assert!(state.modify_request(&cid).is_none());
+    }
+
+    /// A fill buffered during the in-flight cancel-replace is drained before
+    /// the corrective is computed, so the corrective must size from the
+    /// post-drain cumulative. A pre-drain read would see 0 filled and skip it.
+    #[rstest]
+    fn test_cancel_replace_corrective_uses_post_drain_buffered_fill() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-4154-BUF");
+        let target_total = Quantity::from("1.000");
+        let new_voi = "445117686214";
+
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
+        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.stash_modify_request(cid, limit_request(Decimal::from(1)));
+
+        // Nothing recorded yet; the only fill arrives buffered on the new leg
+        let buffered = make_fill_report_with_qty(
+            Some("O-HER-4154-BUF"),
+            new_voi,
+            "trade-buf-4154",
+            Quantity::from("0.165"),
+        );
+        state.buffer_fill(cid, buffered);
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-4154-BUF"),
+            new_voi,
+            OrderStatus::Accepted,
+            Quantity::from("0.835"),
+        );
+        let corrective = handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let _ = drain_events(&mut rx);
+        let (_, _, request) =
+            corrective.expect("buffered fill drained before compute must still queue a corrective");
+        assert_eq!(request.size, "0.835".parse::<Decimal>().unwrap());
+    }
+
+    /// When an in-flight fill brings cumulative filled to exactly the target,
+    /// the remaining is zero, so no corrective (a reduce-to-zero is not valid)
+    /// must be queued and the marker is cleared.
+    #[rstest]
+    fn test_cancel_replace_no_corrective_when_filled_equals_target() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-4154-EXACT");
+        let target_total = Quantity::from("1.000");
+
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
+        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.stash_modify_request(cid, limit_request(Decimal::from(1)));
+        state.record_filled_qty(cid, target_total);
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-4154-EXACT"),
+            "445117686214",
+            OrderStatus::Accepted,
+            target_total,
+        );
+        let corrective = handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let _ = drain_events(&mut rx);
+        assert!(corrective.is_none());
+        assert!(state.pending_modify(&cid).is_none());
+    }
+
+    /// A further in-flight fill during the corrective's own modify chains
+    /// another reduce: the second promotion sizes from the new cumulative.
+    #[rstest]
+    fn test_cancel_replace_chains_second_corrective_reduce() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-4154-CHAIN");
+        let target_total = Quantity::from("1.000");
+        let voi3 = "445117699999";
+
+        // State after the first corrective: marker re-armed on the prior
+        // replacement, stashed request reduced to 0.835, 0.165 already filled.
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("445117686214"));
+        state.mark_pending_modify(cid, VenueOrderId::new("445117686214"), target_total);
+        state.stash_modify_request(cid, limit_request("0.835".parse::<Decimal>().unwrap()));
+        // A further 0.300 lands in-flight: cumulative now 0.465
+        state.record_filled_qty(cid, Quantity::from("0.465"));
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-4154-CHAIN"),
+            voi3,
+            OrderStatus::Accepted,
+            Quantity::from("0.535"),
+        );
+        let corrective = handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let _ = drain_events(&mut rx);
+        let (_, oid, request) =
+            corrective.expect("a further in-flight fill must chain another corrective");
+        assert_eq!(oid, 445_117_699_999);
+        assert_eq!(request.size, "0.535".parse::<Decimal>().unwrap());
+        assert_eq!(state.pending_modify(&cid), Some(VenueOrderId::new(voi3)));
     }
 
     #[rstest]

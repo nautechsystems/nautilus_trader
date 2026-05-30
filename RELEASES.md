@@ -109,6 +109,7 @@ Released on TBD (UTC).
 - Fixed Deribit `DeribitExecutionClient` not forwarding config credentials to the WebSocket client
 - Fixed dYdX rate limiter being skipped due to missing keys (#4091), thanks @filipmacek
 - Fixed Hyperliquid `Alo` limit order status reports being parsed as trigger orders
+- Fixed Hyperliquid cancel-replace modify overfill on an in-flight fill (#4154), thanks for reporting @AlphaTraderK
 - Fixed Interactive Brokers order submit to guard on client readiness (#4100), thanks @honvl
 - Fixed Interactive Brokers order requests to guard on client readiness (Rust) (#4125), thanks @faysou
 - Fixed Interactive Brokers `request_instruments` returning cumulative cache (Rust) (#4114), thanks @faysou

@@ -1305,6 +1305,24 @@ Use this in the execution client to track trade IDs (typically as `(Ustr, i64)` 
 of symbol and trade ID). A capacity of 10,000 provides sufficient coverage for most
 venues without unbounded memory growth.
 
+#### Cancel-replace modifies and in-flight fills
+
+Some venues (e.g. Hyperliquid) implement a modify as a cancel-replace: the venue assigns a new
+venue order ID and emits `ACCEPTED(new_voi)` with `CANCELED(old_voi)`. The dispatch promotes the
+new leg to `OrderUpdated` and suppresses the stale cancel. Fills on the old venue order ID count
+separately, so the replacement is sized at the remaining (`target - filled`), not the total.
+
+That subtraction runs when the modify is dispatched, so a fill landing after the request is sent
+leaves the replacement oversized and the venue can overfill the order. To prevent this, the
+cancel-replace promotion:
+
+- re-reads the cumulative filled quantity;
+- queues a corrective reduce of the new venue order to the true remaining when oversized;
+- re-arms the in-flight marker on the new venue order ID to suppress the corrective's cancel leg.
+
+The reduce posts off the receive loop. It narrows but does not close the race: if the replacement
+fills before the reduce lands, the engine's overfill guard is the backstop.
+
 ### Error handling
 
 #### Order command outcome policy

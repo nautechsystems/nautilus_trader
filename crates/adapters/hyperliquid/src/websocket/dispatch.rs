@@ -76,6 +76,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+use crate::http::models::HyperliquidExecPlaceOrderRequest;
+
 pub const DEDUP_CAPACITY: usize = 10_000;
 
 /// Identity metadata captured when an order is submitted through this client.
@@ -224,6 +226,12 @@ pub struct WsDispatchState {
     /// Cumulative filled quantity per tracked order. Compared against
     /// `OrderIdentity::quantity` to decide when to clean up tracked state.
     pub order_filled_qty: DashMap<ClientOrderId, Quantity>,
+    /// Exact venue request sent for an in-flight modify, used by the
+    /// cancel-replace promotion to build a corrective reduce.
+    pub pending_modify_request: DashMap<ClientOrderId, HyperliquidExecPlaceOrderRequest>,
+    /// Corrective reduce queued by the cancel-replace promotion: client order
+    /// id to (new venue order id, reduced request). Drained by the WS loop.
+    pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExecPlaceOrderRequest)>,
     clearing: AtomicBool,
 }
 
@@ -240,6 +248,8 @@ impl Default for WsDispatchState {
             pending_modify_target_qty: DashMap::new(),
             buffered_fills: DashMap::new(),
             order_filled_qty: DashMap::new(),
+            pending_modify_request: DashMap::new(),
+            pending_corrective: DashMap::new(),
             clearing: AtomicBool::new(false),
         }
     }
@@ -372,6 +382,49 @@ impl WsDispatchState {
     pub fn clear_pending_modify(&self, client_order_id: &ClientOrderId) {
         self.pending_modify_keys.remove(client_order_id);
         self.pending_modify_target_qty.remove(client_order_id);
+        self.pending_modify_request.remove(client_order_id);
+    }
+
+    /// Stashes the exact venue request sent for an in-flight modify.
+    pub fn stash_modify_request(
+        &self,
+        client_order_id: ClientOrderId,
+        request: HyperliquidExecPlaceOrderRequest,
+    ) {
+        self.pending_modify_request.insert(client_order_id, request);
+    }
+
+    /// Returns a clone of the stashed in-flight modify request, if any.
+    #[must_use]
+    pub fn modify_request(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<HyperliquidExecPlaceOrderRequest> {
+        self.pending_modify_request
+            .get(client_order_id)
+            .map(|r| r.clone())
+    }
+
+    /// Queues a corrective reduce for the WebSocket consumer loop to post.
+    pub fn queue_corrective(
+        &self,
+        client_order_id: ClientOrderId,
+        oid: u64,
+        request: HyperliquidExecPlaceOrderRequest,
+    ) {
+        self.pending_corrective
+            .insert(client_order_id, (oid, request));
+    }
+
+    /// Removes and returns a queued corrective reduce, if any.
+    #[must_use]
+    pub fn take_corrective(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<(u64, HyperliquidExecPlaceOrderRequest)> {
+        self.pending_corrective
+            .remove(client_order_id)
+            .map(|(_, v)| v)
     }
 
     /// Returns the pending modify marker for a client order id, if any.
@@ -434,6 +487,8 @@ impl WsDispatchState {
         self.cached_venue_order_ids.remove(client_order_id);
         self.pending_modify_keys.remove(client_order_id);
         self.pending_modify_target_qty.remove(client_order_id);
+        self.pending_modify_request.remove(client_order_id);
+        self.pending_corrective.remove(client_order_id);
         self.buffered_fills.remove(client_order_id);
         self.order_filled_qty.remove(client_order_id);
     }
@@ -683,9 +738,9 @@ fn handle_accepted(
 
         // Prefer user target over venue's remaining-only `report.quantity`;
         // fall back when no marker (external modify).
-        let updated_quantity = state
-            .pending_modify_target_qty(&client_order_id)
-            .unwrap_or(report.quantity);
+        let target_total_qty = state.pending_modify_target_qty(&client_order_id);
+        let updated_quantity = target_total_qty.unwrap_or(report.quantity);
+        let sent_request = state.modify_request(&client_order_id);
 
         state.record_venue_order_id(client_order_id, venue_order_id);
         state.update_identity_quantity(&client_order_id, updated_quantity);
@@ -717,6 +772,36 @@ fn handle_accepted(
         for fill in buffered {
             dispatch_order_fill(&fill, state, emitter, ts_init);
         }
+
+        // In-flight-fill overfill guard: reduce a replacement left oversized by
+        // a fill that raced the modify (mechanism in the integration guide).
+        // Not covered (engine overfill guard backstops both): reverse WS
+        // ordering, and filled reaching target (remaining zero).
+        if let (Some(target), Some(sent_request)) = (target_total_qty, sent_request)
+            && let Ok(new_oid) = venue_order_id.as_str().parse::<u64>()
+        {
+            let filled = state
+                .previous_filled_qty(&client_order_id)
+                .unwrap_or_else(|| Quantity::zero(target.precision));
+            if filled < target {
+                let remaining = (target - filled).as_decimal().normalize();
+                let sent_size = sent_request.size;
+                if sent_size > remaining {
+                    let mut corrective = sent_request;
+                    corrective.size = remaining;
+
+                    state.mark_pending_modify(client_order_id, venue_order_id, target);
+                    state.stash_modify_request(client_order_id, corrective.clone());
+                    state.queue_corrective(client_order_id, new_oid, corrective);
+
+                    log::info!(
+                        "Cancel-replace left {client_order_id} oversized on {venue_order_id} \
+                         (sent {sent_size}, remaining {remaining}); queuing corrective reduce",
+                    );
+                }
+            }
+        }
+
         return DispatchOutcome::Tracked;
     }
 
@@ -1007,8 +1092,12 @@ fn ensure_accepted_emitted(
 mod tests {
     use nautilus_model::identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId};
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
+    use crate::http::models::{
+        HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecTif,
+    };
 
     fn make_identity() -> OrderIdentity {
         OrderIdentity {
@@ -1109,5 +1198,34 @@ mod tests {
         assert!(state.pending_modify_target_qty(&cid).is_none());
         // `filled_orders` outlives `cleanup_terminal` so replays stay suppressed.
         assert!(state.filled_orders.contains(&cid));
+    }
+
+    #[rstest]
+    fn test_cleanup_terminal_clears_corrective_state() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-021");
+        let request = HyperliquidExecPlaceOrderRequest {
+            asset: 0,
+            is_buy: true,
+            price: "100".parse::<Decimal>().unwrap(),
+            size: Decimal::from(1),
+            reduce_only: false,
+            kind: HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Gtc,
+                },
+            },
+            cloid: None,
+        };
+        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("1"));
+        state.stash_modify_request(cid, request.clone());
+        state.queue_corrective(cid, 1, request);
+        assert!(state.modify_request(&cid).is_some());
+
+        state.cleanup_terminal(&cid);
+
+        assert!(state.modify_request(&cid).is_none());
+        assert!(state.take_corrective(&cid).is_none());
+        assert!(state.pending_modify(&cid).is_none());
     }
 }
