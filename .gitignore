@@ -176,6 +176,7 @@ claude.config.json
 .cursor/
 .aider*
 .continue/
+.review_scratch/
 superpowers/
 
 AGENTS.md

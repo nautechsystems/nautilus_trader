@@ -213,6 +213,12 @@ criteria = "safe-to-deploy"
 delta = "0.49.0 -> 0.50.0"
 notes = "Crate code only bumps dbn to 0.57.0 and updates changelog entries. No source logic, build script, feature, or network behavior changes in databento itself."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.51.0 -> 0.52.0"
+notes = "Adds logging of gateway ErrorMsg/SystemMsg records in the live Client (suppressible via tracing level filter). Single additive logging change."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -338,6 +344,12 @@ criteria = "safe-to-deploy"
 delta = "1.1.0 -> 1.2.0"
 notes = "Read routing strategies for cluster replicas, lazy connection manager instantiation, sentinel TcpSettings. No new unsafe, no suspicious patterns."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.1 -> 1.2.2"
+notes = "Additive feature/fix release: new HOTKEYS command module, TLS certificate auth, SO_LINGER socket option, connection-manager concurrency limit, bb8 sentinel pool. New code plus tests; no build-script or existing-behavior changes."
+
 [[audits.rustls-webpki]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -373,6 +385,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.38.3 -> 0.38.4"
 notes = "Unpins objc2-* deps, fixes Linux disk size (f_frsize vs f_bsize), adapts to updated objc2-io-kit APIs. No new unsafe."
+
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.39.2 -> 0.39.3"
+notes = "Two bug fixes: Unix Network::mac_addr retrieval; Linux process-info retrieval race when a process terminates mid-read."
 
 [[audits.tempfile]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -431,6 +449,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.21.0 -> 1.22.0"
 notes = "Version bump only: doc updates, bytemuck/rand dep bumps. No code changes."
+
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.23.1 -> 1.23.2"
+notes = "Parser error-message refactor (RequestedUuid enum, 0-based indices, ParseLength variant). No new deps, network, or unsafe beyond pre-existing from_utf8_unchecked."
 
 [[audits.winnow]]
 who = "Nautech Systems <info@nautechsystems.io>"
