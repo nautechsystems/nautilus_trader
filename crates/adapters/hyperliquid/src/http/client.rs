@@ -3086,10 +3086,13 @@ impl HyperliquidHttpClient {
             )));
         }
 
+        // `Tag` rows (deferred trigger children) return `None` and are elided
+        // here — those orders stay SUBMITTED until the user-events WS stream
+        // delivers an `OrderAccepted` with the real oid.
         let mut reports = Vec::with_capacity(order_response.statuses.len());
 
         for (order, order_status) in orders.iter().zip(order_response.statuses.iter()) {
-            reports.push(self.build_status_report(
+            if let Some(report) = self.build_status_report(
                 order.instrument_id(),
                 order.client_order_id(),
                 order.order_side(),
@@ -3101,20 +3104,25 @@ impl HyperliquidHttpClient {
                 order_status,
                 account_id,
                 ts_init,
-            )?);
+            )? {
+                reports.push(report);
+            }
         }
 
         Ok(reports)
     }
 
     /// Parse a Hyperliquid exchange `Order` response for a single-order submit
-    /// into an `OrderStatusReport`. Returns `Ok(None)` only if the venue
-    /// returned an empty `statuses` array.
+    /// into an `OrderStatusReport`.
+    ///
+    /// Returns `Ok(None)` when the venue returned an empty `statuses` array
+    /// OR when the only status is a deferred `Tag` (e.g. `waitingForFill`):
+    /// the venue accepted the order but hasn't assigned an oid yet, so we
+    /// leave the order in `SUBMITTED` and let the user-events WS stream
+    /// drive the first `OrderAccepted` with the real oid.
     ///
     /// Shared by both the HTTP and WebSocket single-submit paths. Reuses the
-    /// same per-status mapping as the batch helper, so a `filled` immediate
-    /// fill, a `resting` accept, and a `Tag` (`waitingForFill`) all surface as
-    /// the corresponding `OrderStatusReport` instead of being dropped.
+    /// same per-status mapping as the batch helper.
     ///
     /// # Errors
     ///
@@ -3164,7 +3172,10 @@ impl HyperliquidHttpClient {
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let ts_init = self.clock.get_time_ns();
 
-        Ok(Some(self.build_status_report(
+        // `Tag` statuses return `Ok(None)` from `build_status_report` so the
+        // caller leaves the order in SUBMITTED until the user-events WS stream
+        // confirms a real oid.
+        self.build_status_report(
             instrument_id,
             client_order_id,
             order_side,
@@ -3176,18 +3187,28 @@ impl HyperliquidHttpClient {
             order_status,
             account_id,
             ts_init,
-        )?))
+        )
     }
 
     /// Build a single `OrderStatusReport` from one venue status entry.
     ///
     /// Looks up the instrument (creating it if needed for outcome aliases),
     /// then maps the venue status to NT's `OrderStatus` + venue oid:
-    ///   * `resting` -> `Accepted` with real oid
-    ///   * `filled`  -> `Filled` with real oid and totalSz
-    ///   * `Tag`     -> `Accepted` with `pending-cloid:<client_order_id>`
-    ///                  placeholder (real oid arrives via user-events WS)
+    ///   * `resting` -> `Some(Accepted)` with real oid
+    ///   * `filled`  -> `Some(Filled)` with real oid and totalSz
+    ///   * `Tag`     -> `None` — the venue hasn't assigned an oid yet (e.g.
+    ///                  a `waitingForFill` trigger child of a `normalTpsl`
+    ///                  bracket). The caller should leave the order in
+    ///                  `SUBMITTED` and let the user-events WS stream drive
+    ///                  the first `OrderAccepted` with the real oid.
     ///   * `error`   -> `Err`
+    ///
+    /// Earlier revisions emitted a synthetic `pending-cloid:<client_order_id>`
+    /// venue id for `Tag` rows, but the subsequent user-events `OrderAccepted`
+    /// was deduped against the placeholder accept and the cache never picked
+    /// up the real oid — leaving cancel/modify by venue id broken on bracket
+    /// children. Eliding the row keeps the order honest until the venue
+    /// confirms an oid.
     #[expect(clippy::too_many_arguments)]
     fn build_status_report(
         &self,
@@ -3202,7 +3223,13 @@ impl HyperliquidHttpClient {
         order_status: &HyperliquidExecOrderStatus,
         account_id: AccountId,
         ts_init: UnixNanos,
-    ) -> Result<OrderStatusReport> {
+    ) -> Result<Option<OrderStatusReport>> {
+        // Tag rows carry no oid — return None so the caller can leave the
+        // order in SUBMITTED and defer to the user-events WS stream.
+        if matches!(order_status, HyperliquidExecOrderStatus::Tag(_)) {
+            return Ok(None);
+        }
+
         let symbol = instrument_id.symbol.as_str();
         let product_type = HyperliquidProductType::from_symbol(symbol).ok();
 
@@ -3257,34 +3284,10 @@ impl HyperliquidHttpClient {
                     "Order {client_order_id} rejected: {error}"
                 )));
             }
-            HyperliquidExecOrderStatus::Tag(_) => {
-                // Deferred status (e.g. `waitingForFill` trigger child of a
-                // `normalTpsl` bracket): venue accepted the order but has not
-                // assigned an oid yet. Use a `pending-cloid:` placeholder —
-                // the real oid arrives via the user-events WS stream and is
-                // reconciled via the cloid mapping.
-                let placeholder =
-                    VenueOrderId::new(format!("pending-cloid:{}", client_order_id.as_str()));
-                self.create_order_status_report(
-                    instrument_id,
-                    Some(client_order_id),
-                    placeholder,
-                    order_side,
-                    order_type,
-                    quantity,
-                    time_in_force,
-                    price,
-                    trigger_price,
-                    OrderStatus::Accepted,
-                    Quantity::new(0.0, instrument.size_precision()),
-                    &instrument,
-                    account_id,
-                    ts_init,
-                )
-            }
+            HyperliquidExecOrderStatus::Tag(_) => unreachable!("handled above"),
         };
 
-        Ok(report)
+        Ok(Some(report))
     }
 }
 
@@ -3329,7 +3332,10 @@ mod tests {
             consts::HYPERLIQUID_VENUE,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
-        http::{models::Cloid, query::InfoRequest},
+        http::{
+            models::{Cloid, HyperliquidExchangeResponse},
+            query::InfoRequest,
+        },
     };
 
     const TEST_PRIVATE_KEY: &str =
@@ -3410,6 +3416,51 @@ mod tests {
         let pretty = serde_json::to_string_pretty(&val).unwrap();
         assert!(pretty.contains("\"type\": \"l2Book\""));
         assert!(pretty.contains("\"coin\": \"BTC\""));
+    }
+
+    #[rstest]
+    fn test_build_submit_order_report_elides_waiting_for_fill_tag() {
+        // A `Tag` status (e.g. `waitingForFill` trigger child of a normalTpsl
+        // bracket) must surface as `Ok(None)` so the caller leaves the order
+        // in SUBMITTED until the user-events WS stream confirms a real oid.
+        // Earlier revisions returned a synthetic `pending-cloid:<cid>` venue
+        // id that the WS path then failed to overwrite due to the
+        // `_accepted_orders` dedup short-circuit.
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        client.set_account_id(nautilus_model::identifiers::AccountId::from(
+            "HYPERLIQUID-001",
+        ));
+
+        let response: HyperliquidExchangeResponse = serde_json::from_value(json!({
+            "status": "ok",
+            "response": {
+                "type": "order",
+                "data": {
+                    "statuses": ["waitingForFill"]
+                }
+            }
+        }))
+        .unwrap();
+
+        let result = client
+            .build_submit_order_report(
+                InstrumentId::from("ARB-USD-PERP.HYPERLIQUID"),
+                ClientOrderId::from("O-WAITING-CHILD"),
+                nautilus_model::enums::OrderSide::Buy,
+                nautilus_model::enums::OrderType::StopMarket,
+                Quantity::new(100.0, 0),
+                nautilus_model::enums::TimeInForce::Gtc,
+                None,
+                Some(Price::new(0.16136, 5)),
+                response,
+            )
+            .unwrap();
+
+        assert!(
+            result.is_none(),
+            "Tag status must elide so the order stays SUBMITTED; got {result:?}",
+        );
     }
 
     #[rstest]

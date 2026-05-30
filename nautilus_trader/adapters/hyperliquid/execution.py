@@ -782,8 +782,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         # Drive each order through the same handler the WS uses so the state
         # machine transitions SUBMITTED -> ACCEPTED|FILLED|REJECTED at submit
-        # time. Trigger children carry a `pending-cloid:` placeholder venue id
-        # that is overwritten when the userEvents stream delivers the real oid.
+        # time. Deferred trigger children (waitingForFill / waitingForTrigger)
+        # are intentionally absent from `pyo3_reports` — they stay SUBMITTED
+        # until the user-events WS stream delivers an OrderAccepted with the
+        # real venue oid.
         for pyo3_report in pyo3_reports or ():
             try:
                 self._handle_order_status_report_pyo3(pyo3_report)
