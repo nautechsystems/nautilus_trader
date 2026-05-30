@@ -34,6 +34,8 @@ Released on TBD (UTC).
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added native `OptionGreeks` persistence and backtest replay support (#4132), thanks @Jonah-Chan
+- Added deterministic liquidation engine for backtests (#4077), thanks @abhishektang
+- Added configurable logging IO policies (#4158), thanks @sunlei
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
 - Added Binance Futures open interest request custom data (Rust) (#4109), thanks @graceyangfan
 - Added pending-resolution settlement pipeline for binary options (Rust) (#4101), thanks @graceyangfan
@@ -51,6 +53,7 @@ Released on TBD (UTC).
 - Added Hyperliquid HIP-4 outcome `BinaryOption.info` with parsed venue description and question metadata
 - Added Hyperliquid `HYPERLIQUID_ACCOUNT_ADDRESS` env var fallback for `HyperliquidExecClientConfig.account_address`
 - Added Hyperliquid live open interest custom data from `activeAssetCtx` (Rust) (#4120), thanks @graceyangfan
+- Added Hyperliquid `allDexsAssetCtxs` custom data subscriptions (#4136), thanks @graceyangfan
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
@@ -66,6 +69,7 @@ Released on TBD (UTC).
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 - Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
 - Changed Deribit combos to land as `CryptoOptionSpread`/`CryptoFuturesSpread` instead of `OptionSpread`/`FuturesSpread`; `FuturesSpread`/`OptionSpread` once again guarantee whole-contract sizing
+- Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
 
 ### Security
 - Fixed DataFFI PyCapsules to reject mismatched types and prevent repeated `CVec` drops
@@ -74,15 +78,17 @@ Released on TBD (UTC).
 - Fixed `StackStr::from_c_ptr_checked` to return `None` for null C string pointers
 
 ### Fixes
-- Fixed `PortfolioStatistic.downsample_to_daily_bins` arithmetic-sum aggregation producing incorrect `SharpeRatio`/`SortinoRatio`/`ReturnsVolatility`/`RiskReturnRatio`/`CAGR` for sub-daily returns; now compounds geometrically (Rust + Python)
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
+- Fixed `Cache.reset` clearing FX rate lookup for retained instruments (#4159), thanks for reporting @dfjmax
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
 - Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax
+- Fixed `PortfolioStatistic.downsample_to_daily_bins` to compound sub-daily returns (#4141), thanks @mahimn01
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
 - Fixed HEDGING margin scaling with fill count instead of net exposure (#4110), thanks for reporting @qaxayuan
+- Fixed multi-currency balance update violating `total == locked + free` (#4165), thanks for reporting @qaxayuan
 - Fixed `ExecTester` on_stop leaving INITIALIZED orders and bracket legs live across all cancel modes (Rust)
 - Fixed Aerodrome Slipstream `AmmType` from `StableSwap` to `CLAMM`
 - Fixed `PoolProfiler::update_position` to pre-validate active liquidity so failures leave pool state unchanged
@@ -107,6 +113,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers order requests to guard on client readiness (Rust) (#4125), thanks @faysou
 - Fixed Interactive Brokers `request_instruments` returning cumulative cache (Rust) (#4114), thanks @faysou
 - Fixed Interactive Brokers Rust orders routing to exchange MIC venues (#4129), thanks @faysou
+- Fixed Interactive Brokers live bar reconnect tracking cleanup (#4169), thanks @faysou
 - Fixed Kraken Futures `feeScheduleUid` deserialization to tolerate absence ahead of the 2026-06-22 Fee Schedules deprecation
 - Fixed OKX `OKXExecutionClient` not forwarding config credentials to WebSocket clients (#4115), thanks @pusteckiy
 - Fixed OKX adapter to validate `clOrdId` rules before submission (#4116), thanks for reporting @pusteckiy
@@ -140,8 +147,13 @@ Released on TBD (UTC).
 - Removed dead Hyperliquid WebSocket codec module
 - Removed unused `async-stream` and `indexmap` from `nautilus-interactive-brokers` dependencies
 - Optimized common logging hot paths (#4150), thanks @sunlei
+- Optimized datetime and UUID formatting (#4161), thanks @sunlei
+- Optimized `AtomicMap` snapshot borrowing (#4162), thanks @sunlei
+- Optimized Derive signing and hot paths with benchmark report
 - Optimized Hyperliquid signing and hot paths with benchmark report
 - Optimized OKX hot paths with benchmark report
+- Upgraded `databento` crate to v0.52.0
+- Upgraded `redis` crate to v1.2.2
 
 ### Documentation Updates
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
@@ -152,6 +164,7 @@ Released on TBD (UTC).
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Refined OKX integration guide with product capabilities and Nitro spread order notes
 - Fixed `NautilusKernelConfig` state flag default docs (#4144), thanks for reporting @trikafi
+- Fixed `LatencyModelConfig` base latency unit comment (1 second) (#4170), thanks for reporting @phx000
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 
