@@ -16,6 +16,10 @@
 //! Malformed plug-in fixture with invalid manifest fields.
 
 #![allow(unsafe_code)]
+#![allow(
+    clippy::missing_safety_doc,
+    reason = "FFI entry symbol mirrors the macro-generated nautilus_plugin_init export"
+)]
 
 use std::{marker::PhantomData, sync::LazyLock};
 
@@ -57,7 +61,7 @@ static MANIFEST: LazyLock<PluginManifest> = LazyLock::new(|| PluginManifest {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nautilus_plugin_init(_host: *const HostVTable) -> *const PluginManifest {
-    &*MANIFEST as *const _
+    &raw const *MANIFEST
 }
 
 #[repr(C)]

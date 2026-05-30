@@ -22,7 +22,7 @@ async fn main() {
     dotenvy::dotenv().ok();
     ensure_logging_initialized();
 
-    if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
+    if let Err(e) = Box::pin(nautilus_cli::run(NautilusCli::parse())).await {
         log::error!("Error executing Nautilus CLI: {e}");
     }
 }

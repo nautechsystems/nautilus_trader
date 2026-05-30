@@ -142,7 +142,7 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
     c.bench_function("plugin_normalize/large_instrument_any", |b| {
         b.iter(|| {
             // SAFETY: handle comes from this vtable and instrument lives for the call.
-            unsafe { on_instrument(handle, black_box(&instrument)) }
+            unsafe { on_instrument(handle, black_box(&raw const instrument)) }
                 .into_result()
                 .expect("instrument callback succeeds");
         });
@@ -155,7 +155,7 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
     c.bench_function("plugin_normalize/order_book_deltas_100", |b| {
         b.iter(|| {
             // SAFETY: handle comes from this vtable and deltas lives for the call.
-            unsafe { on_book_deltas(handle, black_box(&deltas)) }
+            unsafe { on_book_deltas(handle, black_box(&raw const deltas)) }
                 .into_result()
                 .expect("book deltas callback succeeds");
         });
@@ -167,7 +167,7 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
         b.iter(|| {
             let book_handle = OrderBookHandle::new(black_box(book.clone()));
             // SAFETY: handle comes from this vtable and book_handle lives for the call.
-            unsafe { on_book(handle, black_box(&book_handle)) }
+            unsafe { on_book(handle, black_box(&raw const book_handle)) }
                 .into_result()
                 .expect("order book callback succeeds");
         });
@@ -178,7 +178,7 @@ fn bench_actor_boundary_normalization(c: &mut Criterion) {
     c.bench_function("plugin_normalize/quote_tick", |b| {
         b.iter(|| {
             // SAFETY: handle comes from this vtable and quote lives for the call.
-            unsafe { on_quote(handle, black_box(&quote)) }
+            unsafe { on_quote(handle, black_box(&raw const quote)) }
                 .into_result()
                 .expect("quote callback succeeds");
         });

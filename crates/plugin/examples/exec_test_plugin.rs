@@ -15,6 +15,11 @@
 
 //! Strategy cdylib used by live plug-in execution-boundary tests.
 
+#![allow(
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "each host-command block derefs the host vtable and performs the FFI call as one boundary crossing"
+)]
+
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::QuoteTick,

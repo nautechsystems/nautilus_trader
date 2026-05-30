@@ -107,10 +107,10 @@ impl InstrumentSetup {
         let kind = instrument_type_from_env()?;
         let mut setup = Self::resolve(kind, token);
 
-        if let Ok(symbol) = std::env::var("DERIVE_DATA_TESTER_SYMBOL") {
-            if !symbol.trim().is_empty() {
-                setup.symbol = symbol.trim().to_string();
-            }
+        if let Ok(symbol) = std::env::var("DERIVE_DATA_TESTER_SYMBOL")
+            && !symbol.trim().is_empty()
+        {
+            setup.symbol = symbol.trim().to_string();
         }
 
         Ok(setup)

@@ -16,6 +16,10 @@
 //! Malformed plug-in fixture that returns a null manifest.
 
 #![allow(unsafe_code)]
+#![allow(
+    clippy::missing_safety_doc,
+    reason = "FFI entry symbol mirrors the macro-generated nautilus_plugin_init export"
+)]
 
 use nautilus_plugin::{HostVTable, PluginManifest};
 

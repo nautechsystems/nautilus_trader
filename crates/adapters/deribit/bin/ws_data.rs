@@ -95,17 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Resolve target instrument early so we can fetch it explicitly if it's
     // outside the default BTC preload set (e.g., an ETH instrument, or a future
     // combo not returned by the unfiltered BTC query on some venues).
-    let target_instrument_id = instrument_override
-        .as_deref()
-        .map(|s| {
+    let target_instrument_id = instrument_override.as_deref().map_or_else(
+        || InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+        |s| {
             let with_venue = if s.contains('.') {
                 s.to_string()
             } else {
                 format!("{s}.DERIBIT")
             };
             InstrumentId::from(with_venue.as_str())
-        })
-        .unwrap_or_else(|| InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
+        },
+    );
 
     log::info!("Fetching BTC instruments from Deribit...");
     let mut instruments = http_client
@@ -201,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ws_client.close().await?;
                 break;
             }
-            _ = &mut timeout => {
+            () = &mut timeout => {
                 log::info!("Duration elapsed, closing connection...");
                 ws_client.close().await?;
                 break;

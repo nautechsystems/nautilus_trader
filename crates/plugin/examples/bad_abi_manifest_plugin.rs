@@ -16,6 +16,10 @@
 //! Malformed plug-in fixture that advertises an unsupported ABI.
 
 #![allow(unsafe_code)]
+#![allow(
+    clippy::missing_safety_doc,
+    reason = "FFI entry symbol mirrors the macro-generated nautilus_plugin_init export"
+)]
 
 use nautilus_plugin::{
     BorrowedStr, HostVTable, NAUTILUS_PLUGIN_ABI_VERSION, PluginBuildId, PluginManifest, Slice,
