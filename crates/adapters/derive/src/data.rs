@@ -265,7 +265,7 @@ impl DeriveDataClient {
                     // Include channel and a truncated payload snippet so the
                     // wire shape that broke the parser is actionable from the
                     // log alone.
-                    let snippet = truncated_payload_snippet(&payload.data);
+                    let snippet = truncated_payload_snippet(payload.data.get());
                     log::warn!(
                         "Failed to parse Derive public WS data on channel `{}`: {e}; payload: {snippet}",
                         payload.channel,
@@ -1940,11 +1940,10 @@ fn active_trade_channel_count(
 // Caps the rendered JSON at ~512 bytes for log grep-ability and backs the
 // slice off to a UTF-8 char boundary so a multi-byte codepoint near the cap
 // can never produce a panicking slice.
-fn truncated_payload_snippet(data: &serde_json::Value) -> String {
+fn truncated_payload_snippet(raw: &str) -> String {
     const MAX_LEN: usize = 512;
-    let raw = data.to_string();
     if raw.len() <= MAX_LEN {
-        return raw;
+        return raw.to_string();
     }
     let mut end = MAX_LEN;
     while end > 0 && !raw.is_char_boundary(end) {
@@ -1987,13 +1986,13 @@ mod tests {
 
     #[rstest]
     fn test_truncated_payload_snippet_short_payload_is_unchanged() {
-        let short = json!({"ok": true});
+        let short = json!({"ok": true}).to_string();
         assert_eq!(truncated_payload_snippet(&short), r#"{"ok":true}"#);
     }
 
     #[rstest]
     fn test_truncated_payload_snippet_truncates_long_ascii_payload() {
-        let big = json!({"msg": "x".repeat(1024)});
+        let big = json!({"msg": "x".repeat(1024)}).to_string();
         let snippet = truncated_payload_snippet(&big);
         assert!(snippet.ends_with("...(truncated)"));
         // Body before the suffix capped near the 512-byte target.
@@ -2017,7 +2016,7 @@ mod tests {
             "test premise: 512 must be mid-codepoint",
         );
 
-        let snippet = truncated_payload_snippet(&big);
+        let snippet = truncated_payload_snippet(&raw);
         assert!(snippet.ends_with("...(truncated)"));
         let body_len = snippet.len() - "...(truncated)".len();
         assert!(body_len <= 512);

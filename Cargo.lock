@@ -5910,6 +5910,7 @@ dependencies = [
  "bon",
  "bytes",
  "chrono",
+ "criterion",
  "dashmap",
  "dotenvy",
  "futures-util",

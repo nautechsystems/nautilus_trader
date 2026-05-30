@@ -543,6 +543,8 @@ async fn test_subscription_notification_yields_message() {
     .expect("notification arrived in time");
 
     let WsSubscriptionPayload { channel, data } = payload;
+    let data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
+
     assert_eq!(channel.as_str(), "ticker_slim.ETH-PERP.1000");
     assert_eq!(data["instrument_name"], "ETH-PERP");
     assert_eq!(data["mark_price"], "3500.5");

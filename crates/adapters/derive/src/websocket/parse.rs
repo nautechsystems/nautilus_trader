@@ -74,7 +74,7 @@ pub fn parse_public_ws_data(payload: &WsSubscriptionPayload) -> anyhow::Result<D
 ///
 /// Returns an error when `params.data` is not a Derive order book snapshot.
 pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveOrderbookMsg> {
-    let data = serde_json::from_value::<DeriveOrderbookData>(payload.data.clone())
+    let data = serde_json::from_str::<DeriveOrderbookData>(payload.data.get())
         .context("failed to decode Derive orderbook data")?;
     Ok(DeriveOrderbookMsg {
         channel: Ustr::from(payload.channel.as_str()),
@@ -88,7 +88,7 @@ pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<De
 ///
 /// Returns an error when `params.data` is not a list of Derive public trades.
 pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveTradesMsg> {
-    let trades = serde_json::from_value::<Vec<DerivePublicTrade>>(payload.data.clone())
+    let trades = serde_json::from_str::<Vec<DerivePublicTrade>>(payload.data.get())
         .context("failed to decode Derive trades data")?;
     Ok(DeriveTradesMsg {
         channel: Ustr::from(payload.channel.as_str()),
@@ -102,7 +102,7 @@ pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
 ///
 /// Returns an error when `params.data` is not a Derive ticker payload.
 pub fn parse_ticker_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveTickerMsg> {
-    let mut data = serde_json::from_value::<DeriveTickerData>(payload.data.clone())
+    let mut data = serde_json::from_str::<DeriveTickerData>(payload.data.get())
         .context("failed to decode Derive ticker data")?;
     data.apply_channel_context(payload.channel.as_str())
         .map_err(anyhow::Error::msg)?;
@@ -1310,7 +1310,7 @@ mod tests {
     fn test_parse_public_ws_data_rejects_unknown_channel() {
         let payload = WsSubscriptionPayload {
             channel: Ustr::from("wallet.ETH"),
-            data: json!({}),
+            data: serde_json::value::to_raw_value(&json!({})).unwrap(),
         };
 
         let err = parse_public_ws_data(&payload).expect_err("must reject unknown channel");

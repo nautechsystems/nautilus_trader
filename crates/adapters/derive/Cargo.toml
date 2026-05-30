@@ -91,8 +91,25 @@ nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 bytes = { workspace = true }
+criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
+
+[[bench]]
+name = "signing"
+harness = false
+
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "exec"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
 
 # Run with `cargo run --bin derive-flatten -p nautilus-derive`.
 [[bin]]

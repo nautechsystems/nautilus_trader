@@ -1576,13 +1576,13 @@ fn handle_ws_message(
     let is_trades_channel = payload.channel.as_str().ends_with(".trades");
 
     if is_orders_channel {
-        let data = match serde_json::from_value::<DeriveOrdersSubscriptionData>(payload.data) {
+        let data = match serde_json::from_str::<DeriveOrdersSubscriptionData>(payload.data.get()) {
             Ok(data) => data,
             Err(_) => return,
         };
         dispatch_orders_payload(data, emitter, account_id, clock, dispatch_state);
     } else if is_trades_channel {
-        let data = match serde_json::from_value::<DeriveTradesSubscriptionData>(payload.data) {
+        let data = match serde_json::from_str::<DeriveTradesSubscriptionData>(payload.data.get()) {
             Ok(data) => data,
             Err(_) => return,
         };
@@ -1590,7 +1590,13 @@ fn handle_ws_message(
     }
 }
 
-fn dispatch_orders_payload(
+/// Dispatches a parsed `{subaccount_id}.orders` payload to the execution event
+/// emitter.
+///
+/// Emits tracked order events when an order's client order id resolves to a
+/// registered identity in `dispatch_state`, and forwards a raw status report
+/// otherwise.
+pub fn dispatch_orders_payload(
     data: DeriveOrdersSubscriptionData,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
@@ -1626,7 +1632,13 @@ fn dispatch_orders_payload(
     }
 }
 
-fn dispatch_trades_payload(
+/// Dispatches a parsed `{subaccount_id}.trades` payload to the execution event
+/// emitter.
+///
+/// Deduplicates by trade id, then emits a tracked fill when the trade's client
+/// order id resolves to a registered identity in `dispatch_state`, and forwards
+/// a raw fill report otherwise.
+pub fn dispatch_trades_payload(
     data: DeriveTradesSubscriptionData,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
