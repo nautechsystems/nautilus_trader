@@ -34,10 +34,15 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::enums::IbHistoricalTickType,
+    common::{
+        enums::IbHistoricalTickType,
+        shared_client::{self, SharedClientHandle},
+    },
+    config::InteractiveBrokersDataClientConfig,
     data::convert::{
-        bar_type_to_ib_bar_size, chrono_to_ib_datetime, ib_bar_to_nautilus_bar,
-        ib_timestamp_to_unix_nanos, price_type_to_ib_what_to_show,
+        apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
+        chrono_to_ib_datetime, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos,
+        price_type_to_ib_what_to_show,
     },
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
@@ -59,6 +64,8 @@ pub struct HistoricalInteractiveBrokersClient {
     ib_client: Arc<Client>,
     /// Instrument provider.
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
+    /// Shared client handle, when this client owns the connection lifecycle.
+    _shared_client: Option<Arc<SharedClientHandle>>,
 }
 
 impl Clone for HistoricalInteractiveBrokersClient {
@@ -66,6 +73,7 @@ impl Clone for HistoricalInteractiveBrokersClient {
         Self {
             ib_client: Arc::clone(&self.ib_client),
             instrument_provider: Arc::clone(&self.instrument_provider),
+            _shared_client: self._shared_client.clone(),
         }
     }
 }
@@ -93,7 +101,91 @@ impl HistoricalInteractiveBrokersClient {
         Self {
             ib_client,
             instrument_provider,
+            _shared_client: None,
         }
+    }
+
+    /// Connect to Interactive Brokers and create a historical data client.
+    ///
+    /// This initializes an instrument provider from `config.instrument_provider` and acquires the
+    /// shared IB client for the configured host, port, and client ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if provider initialization or the IB connection fails.
+    pub async fn connect(config: InteractiveBrokersDataClientConfig) -> anyhow::Result<Self> {
+        let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            config.instrument_provider.clone(),
+        ));
+        let shared_client = shared_client::get_or_connect(
+            &config.host,
+            config.port,
+            config.client_id,
+            config.connection_timeout,
+        )
+        .await?;
+        let client = shared_client.as_arc();
+
+        if config.market_data_type != crate::config::MarketDataType::Realtime {
+            let market_data_type: ibapi::market_data::MarketDataType =
+                config.market_data_type.into();
+            client.switch_market_data_type(market_data_type).await?;
+        }
+        instrument_provider
+            .initialize_with_client(client.as_ref())
+            .await?;
+
+        Ok(Self::from_shared_client(shared_client, instrument_provider))
+    }
+
+    pub(crate) fn from_shared_client(
+        shared_client: SharedClientHandle,
+        instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
+    ) -> Self {
+        let ib_client = Arc::clone(shared_client.as_arc());
+
+        Self {
+            ib_client,
+            instrument_provider,
+            _shared_client: Some(Arc::new(shared_client)),
+        }
+    }
+
+    /// Connect a historical data client with a supplied provider using the shared IB client registry.
+    ///
+    /// This keeps standalone Rust callers from needing to acquire `common::shared_client`
+    /// directly before requesting instruments or historical data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shared client cannot connect or the instrument provider cannot
+    /// initialize.
+    pub async fn connect_with_provider(
+        instrument_provider: InteractiveBrokersInstrumentProvider,
+        config: InteractiveBrokersDataClientConfig,
+    ) -> anyhow::Result<Self> {
+        let shared_client = shared_client::get_or_connect(
+            &config.host,
+            config.port,
+            config.client_id,
+            config.connection_timeout,
+        )
+        .await?;
+        let client = shared_client.as_arc();
+
+        if config.market_data_type != crate::config::MarketDataType::Realtime {
+            let market_data_type: ibapi::market_data::MarketDataType =
+                config.market_data_type.into();
+            client.switch_market_data_type(market_data_type).await?;
+        }
+        instrument_provider
+            .initialize_with_client(client.as_ref())
+            .await?;
+
+        Ok(Self::from_shared_client(
+            shared_client,
+            Arc::new(instrument_provider),
+        ))
     }
 
     /// Request historical bars.
@@ -135,6 +227,12 @@ impl HistoricalInteractiveBrokersClient {
             anyhow::bail!("Start date must be before end date");
         }
 
+        if let Some(duration) = duration {
+            duration.parse::<historical::Duration>().with_context(|| {
+                format!("duration must be in format: 'int S|D|W|M|Y', was '{duration}'")
+            })?;
+        }
+
         let contracts = contracts.unwrap_or_default();
         let instrument_ids = instrument_ids.unwrap_or_default();
 
@@ -165,7 +263,8 @@ impl HistoricalInteractiveBrokersClient {
             // Try to convert instrument ID to contract
             if let Ok(contract) = self
                 .instrument_provider
-                .resolve_contract_for_instrument(instrument_id)
+                .resolve_contract_for_instrument_async(&self.ib_client, instrument_id)
+                .await
             {
                 all_contracts.push(contract);
             } else {
@@ -291,11 +390,14 @@ impl HistoricalInteractiveBrokersClient {
                         } else {
                             (5, 0) // Default fallback
                         };
+                    let price_magnifier =
+                        self.instrument_provider.get_price_magnifier(&instrument_id);
 
                     // Create new bar_type with correct instrument_id
                     for ib_bar in &historical_data.bars {
+                        let ib_bar = apply_bar_price_magnifier(ib_bar, price_magnifier);
                         let nautilus_bar = ib_bar_to_nautilus_bar(
-                            ib_bar,
+                            &ib_bar,
                             bar_type_with_id,
                             price_precision,
                             size_precision,
@@ -325,6 +427,7 @@ impl HistoricalInteractiveBrokersClient {
     /// * `instrument_ids` - List of instrument IDs
     /// * `use_rth` - Use regular trading hours only
     /// * `timeout` - Request timeout in seconds
+    /// * `limit` - Maximum number of ticks to return, or 0 for no explicit limit
     ///
     /// # Errors
     ///
@@ -338,10 +441,19 @@ impl HistoricalInteractiveBrokersClient {
         contracts: Option<Vec<Contract>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
-        _timeout: u64,
+        timeout: u64,
+        limit: usize,
     ) -> anyhow::Result<Vec<Data>> {
         if start_date_time >= end_date_time {
             anyhow::bail!("Start date must be before end date");
+        }
+
+        let limit = (limit > 0).then_some(limit);
+
+        if end_date_time.signed_duration_since(start_date_time) > chrono::Duration::days(1) {
+            tracing::warn!(
+                "Requesting tick data for more than 1 day may take a long time, particularly for liquid instruments"
+            );
         }
 
         let contracts = contracts.unwrap_or_default();
@@ -377,7 +489,8 @@ impl HistoricalInteractiveBrokersClient {
 
             if let Ok(contract) = self
                 .instrument_provider
-                .resolve_contract_for_instrument(instrument_id)
+                .resolve_contract_for_instrument_async(&self.ib_client, instrument_id)
+                .await
             {
                 all_contracts.push(contract);
             } else {
@@ -423,10 +536,18 @@ impl HistoricalInteractiveBrokersClient {
                 } else {
                     (5, 0) // Default fallback
                 };
+            let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
+            let contract_start_len = all_ticks.len();
 
             // Pagination loop for ticks (similar to Python _handle_timestamp_iteration)
             let mut current_end_date = end_date_time;
             let current_start_date = start_date_time;
+            let start_date_time_ns = UnixNanos::from(
+                start_date_time
+                    .timestamp_nanos_opt()
+                    .unwrap_or_else(|| start_date_time.timestamp() * 1_000_000_000)
+                    as u64,
+            );
             let end_date_time_ns = UnixNanos::from(
                 end_date_time
                     .timestamp_nanos_opt()
@@ -438,30 +559,36 @@ impl HistoricalInteractiveBrokersClient {
                 IbHistoricalTickType::Trades => {
                     loop {
                         // Make request for this batch
-                        let mut subscription = self
-                            .ib_client
-                            .historical_ticks_trade(
+                        let mut subscription = tokio::time::timeout(
+                            std::time::Duration::from_secs(timeout),
+                            self.ib_client.historical_ticks_trade(
                                 &contract,
                                 Some(chrono_to_ib_datetime(&current_start_date)),
                                 Some(chrono_to_ib_datetime(&current_end_date)),
-                                1000, // Number of ticks per request
+                                1000,
                                 trading_hours,
-                            )
-                            .await?;
+                            ),
+                        )
+                        .await
+                        .context(format!(
+                            "Historical trades request timed out after {} seconds",
+                            timeout
+                        ))??;
 
                         let mut batch_ticks = Vec::new();
 
                         while let Some(tick) = subscription.next().await {
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
-                            // Filter out ticks after end_date_time
-                            if ts_event > end_date_time_ns {
+                            if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
                                 continue;
                             }
 
                             let ts_init = ts_event;
 
-                            let price = Price::new(tick.price, price_precision);
+                            let converted_price =
+                                apply_price_magnifier(tick.price, price_magnifier);
+                            let price = Price::new(converted_price, price_precision);
                             let size = Quantity::new(tick.size as f64, size_precision);
 
                             let trade_tick = TradeTick::new(
@@ -471,7 +598,7 @@ impl HistoricalInteractiveBrokersClient {
                                 AggressorSide::NoAggressor,
                                 crate::common::parse::generate_ib_trade_id(
                                     ts_event,
-                                    tick.price,
+                                    converted_price,
                                     tick.size as f64,
                                 ),
                                 ts_event,
@@ -505,6 +632,12 @@ impl HistoricalInteractiveBrokersClient {
 
                         all_ticks.extend(batch_ticks);
 
+                        if let Some(limit) = limit
+                            && all_ticks.len() - contract_start_len >= limit
+                        {
+                            break;
+                        }
+
                         // Check if we should continue - need current_end > current_start
                         if !should_continue_backward_pagination(
                             current_end_date,
@@ -513,10 +646,14 @@ impl HistoricalInteractiveBrokersClient {
                             break;
                         }
 
-                        // Filter out ticks after end_date_time if needed
+                        // Filter out ticks outside the requested range if needed
                         all_ticks.retain(|t| match t {
-                            Data::Trade(t) => t.ts_event <= end_date_time_ns,
-                            Data::Quote(q) => q.ts_event <= end_date_time_ns,
+                            Data::Trade(t) => {
+                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
+                            }
+                            Data::Quote(q) => {
+                                q.ts_event >= start_date_time_ns && q.ts_event <= end_date_time_ns
+                            }
                             _ => true,
                         });
                     }
@@ -524,33 +661,43 @@ impl HistoricalInteractiveBrokersClient {
                 IbHistoricalTickType::BidAsk => {
                     loop {
                         // Make request for this batch
-                        let mut subscription = self
-                            .ib_client
-                            .historical_ticks_bid_ask(
+                        let mut subscription = tokio::time::timeout(
+                            std::time::Duration::from_secs(timeout),
+                            self.ib_client.historical_ticks_bid_ask(
                                 &contract,
                                 Some(chrono_to_ib_datetime(&current_start_date)),
                                 Some(chrono_to_ib_datetime(&current_end_date)),
                                 1000,
                                 trading_hours,
                                 false, // ignore_size
-                            )
-                            .await?;
+                            ),
+                        )
+                        .await
+                        .context(format!(
+                            "Historical bid/ask ticks request timed out after {} seconds",
+                            timeout
+                        ))??;
 
                         let mut batch_ticks = Vec::new();
 
                         while let Some(tick) = subscription.next().await {
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
-                            // Filter out ticks after end_date_time
-                            if ts_event > end_date_time_ns {
+                            if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
                                 continue;
                             }
 
                             let ts_init = ts_event;
 
-                            let bid_price = Price::new(tick.price_bid, price_precision);
+                            let bid_price = Price::new(
+                                apply_price_magnifier(tick.price_bid, price_magnifier),
+                                price_precision,
+                            );
                             let bid_size = Quantity::new(tick.size_bid as f64, size_precision);
-                            let ask_price = Price::new(tick.price_ask, price_precision);
+                            let ask_price = Price::new(
+                                apply_price_magnifier(tick.price_ask, price_magnifier),
+                                price_precision,
+                            );
                             let ask_size = Quantity::new(tick.size_ask as f64, size_precision);
 
                             let quote_tick = QuoteTick::new(
@@ -589,6 +736,12 @@ impl HistoricalInteractiveBrokersClient {
 
                         all_ticks.extend(batch_ticks);
 
+                        if let Some(limit) = limit
+                            && all_ticks.len() - contract_start_len >= limit
+                        {
+                            break;
+                        }
+
                         // Check if we should continue
                         if !should_continue_backward_pagination(
                             current_end_date,
@@ -597,14 +750,32 @@ impl HistoricalInteractiveBrokersClient {
                             break;
                         }
 
-                        // Filter out ticks after end_date_time if needed
+                        // Filter out ticks outside the requested range if needed
                         all_ticks.retain(|t| match t {
-                            Data::Trade(t) => t.ts_event <= end_date_time_ns,
-                            Data::Quote(q) => q.ts_event <= end_date_time_ns,
+                            Data::Trade(t) => {
+                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
+                            }
+                            Data::Quote(q) => {
+                                q.ts_event >= start_date_time_ns && q.ts_event <= end_date_time_ns
+                            }
                             _ => true,
                         });
                     }
                 }
+            }
+
+            if let Some(limit) = limit {
+                let mut contract_ticks = all_ticks.split_off(contract_start_len);
+                contract_ticks.sort_by_key(|tick| match tick {
+                    Data::Trade(t) => t.ts_event,
+                    Data::Quote(q) => q.ts_event,
+                    _ => UnixNanos::default(),
+                });
+
+                if contract_ticks.len() > limit {
+                    contract_ticks = contract_ticks.split_off(contract_ticks.len() - limit);
+                }
+                all_ticks.extend(contract_ticks);
             }
         }
 

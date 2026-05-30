@@ -216,6 +216,10 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     /// Security types to filter out.
     #[builder(default)]
     pub filter_sec_types: HashSet<String>,
+    /// Fully-qualified Python callable path for custom instrument filtering.
+    ///
+    /// Configuring this without the Python feature enabled is an error.
+    pub filter_callable: Option<String>,
     /// Path to cache file for persistent instrument caching (equivalent to pickle_path in Python).
     /// If provided, instruments will be cached to disk and loaded from cache if still valid.
     pub cache_path: Option<String>,

@@ -22,7 +22,6 @@ Brokers adapter, providing the same API as the Python adapter but with Rust perf
 
 from __future__ import annotations
 
-from datetime import UTC
 from datetime import datetime
 
 from nautilus_trader.adapters.interactive_brokers_pyo3._contracts import IBContractSpec
@@ -108,19 +107,6 @@ class HistoricalInteractiveBrokersClient:
 
         return data
 
-    @staticmethod
-    def _normalize_request_datetime(value: datetime, field_name: str) -> datetime:
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-
-        offset = value.utcoffset()
-        if offset is None or offset.total_seconds() != 0:
-            raise ValueError(
-                f"{field_name} must be UTC. Configure TWS / IB Gateway to use UTC timestamps.",
-            )
-
-        return value.astimezone(UTC)
-
     async def request_instruments(
         self,
         instrument_ids: list[str] | None = None,
@@ -199,21 +185,11 @@ class HistoricalInteractiveBrokersClient:
         # Convert instrument ID strings to InstrumentId objects
         instrument_id_objs = self._normalize_instrument_ids(instrument_ids)
 
-        end_date_time = self._normalize_request_datetime(end_date_time, "end_date_time")
-
-        start_dt_utc = None
-
-        if start_date_time:
-            start_dt_utc = self._normalize_request_datetime(
-                start_date_time,
-                "start_date_time",
-            )
-
         # Call Rust client method
         result = await self._rust_client.request_bars(
             bar_specifications=bar_specifications,
             end_date_time=end_date_time,
-            start_date_time=start_dt_utc,
+            start_date_time=start_date_time,
             duration=duration,
             contracts=contracts_dicts,
             instrument_ids=instrument_id_objs,
@@ -232,6 +208,7 @@ class HistoricalInteractiveBrokersClient:
         instrument_ids: list[str] | None = None,
         use_rth: bool = True,
         timeout: int = 120,
+        limit: int = 0,
     ) -> list[Data]:
         """
         Request historical ticks from Interactive Brokers.
@@ -252,6 +229,8 @@ class HistoricalInteractiveBrokersClient:
             Use regular trading hours only.
         timeout : int, default 120
             Request timeout in seconds.
+        limit : int, default 0
+            Maximum number of ticks to return. Zero means no explicit limit.
 
         Returns
         -------
@@ -264,9 +243,6 @@ class HistoricalInteractiveBrokersClient:
         # Convert instrument ID strings to InstrumentId objects
         instrument_id_objs = self._normalize_instrument_ids(instrument_ids)
 
-        start_date_time = self._normalize_request_datetime(start_date_time, "start_date_time")
-        end_date_time = self._normalize_request_datetime(end_date_time, "end_date_time")
-
         # Call Rust client method
         result = await self._rust_client.request_ticks(
             tick_type=tick_type,
@@ -276,6 +252,7 @@ class HistoricalInteractiveBrokersClient:
             instrument_ids=instrument_id_objs,
             use_rth=use_rth,
             timeout=timeout,
+            limit=limit,
         )
 
         return self._normalize_data(result)

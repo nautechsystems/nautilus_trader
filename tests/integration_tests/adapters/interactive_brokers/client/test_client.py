@@ -75,6 +75,22 @@ async def test_stop(ib_client_running):
     assert len(ib_client_running.registered_nautilus_clients) == 0
 
 
+@pytest.mark.asyncio
+async def test_stop_clears_bar_tracking_state(ib_client_running):
+    # Arrange
+    task = asyncio.create_task(asyncio.sleep(60))
+    ib_client_running._bar_timeout_tasks["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = task
+    ib_client_running._bar_type_to_last_bar["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = object()
+
+    # Act
+    await ib_client_running._stop_async()
+
+    # Assert
+    assert task.cancelled()
+    assert ib_client_running._bar_timeout_tasks == {}
+    assert ib_client_running._bar_type_to_last_bar == {}
+
+
 def test_dispose_sets_shutdown_flag(ib_client):
     # Arrange
 
@@ -210,6 +226,25 @@ async def test_run_connection_watchdog_reconnect(ib_client):
 
     # Assert
     ib_client._handle_disconnection.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_clears_bar_tracking_state(ib_client_running):
+    # Arrange
+    task = asyncio.create_task(asyncio.sleep(60))
+    ib_client_running._bar_timeout_tasks["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = task
+    ib_client_running._bar_type_to_last_bar["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL"] = object()
+    ib_client_running._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client_running._handle_disconnection()
+
+    # Assert
+    assert task.cancelled()
+    assert ib_client_running._bar_timeout_tasks == {}
+    assert ib_client_running._bar_type_to_last_bar == {}
+    ib_client_running._handle_reconnect.assert_awaited_once()
 
 
 @pytest.mark.asyncio

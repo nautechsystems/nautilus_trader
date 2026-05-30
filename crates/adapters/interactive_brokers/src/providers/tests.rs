@@ -17,17 +17,24 @@
 
 #[cfg(test)]
 mod tests {
-    use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
+    use ibapi::contracts::{
+        ComboLeg, ComboLegOpenClose, Contract, Currency, Exchange, SecurityType, Symbol,
+    };
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
+        enums::AssetClass,
         identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
         instruments::{
-            Instrument, InstrumentAny,
+            Instrument, InstrumentAny, OptionSpread,
             stubs::{audusd_sim, equity_aapl, gbpusd_sim},
         },
+        types::{Currency as ModelCurrency, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use crate::{
+        common::parse::create_spread_instrument_id,
         config::InteractiveBrokersInstrumentProviderConfig,
         providers::instruments::InteractiveBrokersInstrumentProvider,
     };
@@ -35,6 +42,35 @@ mod tests {
     fn create_test_provider() -> InteractiveBrokersInstrumentProvider {
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         InteractiveBrokersInstrumentProvider::new(config)
+    }
+
+    fn create_test_option_spread(instrument_id: InstrumentId) -> OptionSpread {
+        OptionSpread::new(
+            instrument_id,
+            NautilusSymbol::from(instrument_id.symbol.as_str()),
+            AssetClass::Equity,
+            Some(Ustr::from("XNAS")),
+            Ustr::from("SPY"),
+            Ustr::from("SPY"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            ModelCurrency::USD(),
+            2,
+            Price::from("0.01"),
+            Quantity::from(1),
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
     }
 
     // Note: Tests for load_async, load_with_return_async, load_ids_async, and load_ids_with_return_async
@@ -53,6 +89,98 @@ mod tests {
                 .get_instrument_id_by_contract_id(contract_id)
                 .is_none()
         );
+    }
+
+    #[rstest]
+    fn test_resolve_instrument_id_for_contract_uses_cached_contract_id() {
+        let provider = create_test_provider();
+        let instrument = equity_aapl();
+        let expected_id = instrument.id();
+        provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+        let contract = Contract {
+            contract_id: 265598,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+
+        let instrument_id = provider
+            .resolve_instrument_id_for_contract(&contract)
+            .unwrap();
+
+        assert_eq!(instrument_id, expected_id);
+    }
+
+    #[rstest]
+    fn test_resolve_instrument_id_for_contract_reuses_cached_stock_venue() {
+        let provider = create_test_provider();
+        let instrument = equity_aapl();
+        let expected_id = instrument.id();
+        provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+
+        let instrument_id = provider
+            .resolve_instrument_id_for_contract(&contract)
+            .unwrap();
+
+        assert_eq!(instrument_id, expected_id);
+    }
+
+    #[rstest]
+    fn test_resolve_instrument_id_for_bag_contract_uses_cached_combo_legs() {
+        let provider = create_test_provider();
+        let long_leg = InstrumentId::from("SPY C400.SMART");
+        let short_leg = InstrumentId::from("SPY C410.SMART");
+        let expected_id = create_spread_instrument_id(&[(long_leg, 1), (short_leg, -1)]).unwrap();
+        let spread = create_test_option_spread(expected_id);
+        provider.insert_test_instrument(InstrumentAny::from(spread), 9000, 1);
+        provider.insert_test_contract_id_mapping(1001, long_leg);
+        provider.insert_test_contract_id_mapping(1002, short_leg);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("SPY"),
+            security_type: SecurityType::Spread,
+            exchange: Exchange::from("SMART"),
+            currency: Currency::from("USD"),
+            combo_legs: vec![
+                ComboLeg {
+                    contract_id: 1001,
+                    ratio: 1,
+                    action: String::from("BUY"),
+                    exchange: String::from("SMART"),
+                    open_close: ComboLegOpenClose::Same,
+                    short_sale_slot: 0,
+                    designated_location: String::new(),
+                    exempt_code: 0,
+                },
+                ComboLeg {
+                    contract_id: 1002,
+                    ratio: 1,
+                    action: String::from("SELL"),
+                    exchange: String::from("SMART"),
+                    open_close: ComboLegOpenClose::Same,
+                    short_sale_slot: 0,
+                    designated_location: String::new(),
+                    exempt_code: 0,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let instrument_id = provider
+            .resolve_instrument_id_for_contract(&contract)
+            .unwrap();
+
+        assert_eq!(instrument_id, expected_id);
     }
 
     #[rstest]

@@ -96,10 +96,7 @@ pub(super) fn apply_display_quantity_policy(ib_order: &mut IBOrder, order: &Orde
     }
 }
 
-pub(super) fn apply_order_list_policy(ib_order: &mut IBOrder, order: &OrderAny) {
-    if let Some(order_list_id) = order.order_list_id()
-        && ib_order.oca_group.is_empty()
-    {
-        ib_order.oca_group = order_list_id.to_string();
-    }
+pub(super) fn apply_order_list_policy(_ib_order: &mut IBOrder, _order: &OrderAny) {
+    // Order lists only control parent/transmit behavior at the execution client layer.
+    // IB OCA groups must be requested explicitly through IB order tags.
 }
