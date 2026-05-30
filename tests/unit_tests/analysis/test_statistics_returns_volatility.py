@@ -81,4 +81,7 @@ class TestReturnsAnnualVolatilityPortfolioStatistic:
         result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
-        assert result == 57.23635208501674
+        # Intraday returns are geometrically compounded into daily bins before
+        # the std/annualization step; value reflects the corrected downsampling
+        # rather than the previous arithmetic-sum behavior.
+        assert result == 114.83901775964475

@@ -86,5 +86,8 @@ class TestSharpeRatioPortfolioStatistic:
         result = stat.calculate_from_returns(convert_series_to_dict(data))
 
         # Assert
+        # Intraday returns are geometrically compounded into daily bins before
+        # the Sharpe calculation; value reflects the corrected downsampling
+        # rather than the previous arithmetic-sum behavior.
         assert result
-        assert math.isclose(result, 27.6097808756245, rel_tol=1e-9)
+        assert math.isclose(result, 23.89673625674424, rel_tol=1e-9)
