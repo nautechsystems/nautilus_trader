@@ -482,7 +482,7 @@ impl HyperliquidWebSocketClient {
         trigger_price: Option<Price>,
         post_only: bool,
         reduce_only: bool,
-    ) -> HyperliquidResult<()> {
+    ) -> HyperliquidResult<Option<OrderStatusReport>> {
         let symbol = instrument_id.symbol.as_str();
         let asset = signer.get_asset_index(symbol).ok_or_else(|| {
             HyperliquidError::bad_request(format!(
@@ -553,7 +553,20 @@ impl HyperliquidWebSocketClient {
         };
         let response = self.post_action_exec(signer, &action).await?;
 
-        ensure_ws_action_accepted(&response, "Order submission")
+        // `build_submit_order_report` parses the same envelope as
+        // `ensure_ws_action_accepted` did previously, and turns per-order
+        // `error` statuses into Err — so the rejection cascade is preserved.
+        signer.build_submit_order_report(
+            instrument_id,
+            client_order_id,
+            order_side,
+            order_type,
+            quantity,
+            time_in_force,
+            price,
+            trigger_price,
+            response,
+        )
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.

@@ -672,7 +672,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
             self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
 
-            await self._ws_client.submit_order(
+            pyo3_report = await self._ws_client.submit_order(
                 self._client,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
@@ -706,6 +706,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
                 due_post_only=due_post_only,
             )
+            return
+
+        if pyo3_report is not None:
+            try:
+                self._handle_order_status_report_pyo3(pyo3_report)
+            except Exception as e:
+                self._log.warning(
+                    f"Failed to process submit response report "
+                    f"({type(e).__name__}: {e}); awaiting WS reconciliation",
+                )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         order_list = command.order_list

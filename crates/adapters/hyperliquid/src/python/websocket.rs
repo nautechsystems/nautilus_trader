@@ -103,6 +103,11 @@ impl HyperliquidWebSocketClient {
     ///
     /// The HTTP client supplies signing credentials, builder attribution, and
     /// cached instrument metadata. The action itself is sent over WebSocket.
+    ///
+    /// Returns an `OrderStatusReport` describing the venue's response (a
+    /// `filled` for an immediate IOC fill, `resting` for a resting LIMIT, or
+    /// `Accepted` with a `pending-cloid:` placeholder for a `waitingForFill`
+    /// trigger child), or `None` if the venue returned no statuses.
     #[pyo3(name = "submit_order", signature = (
         signer,
         instrument_id,
@@ -136,7 +141,7 @@ impl HyperliquidWebSocketClient {
         let signer = signer.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
+            let report = client
                 .submit_order(
                     &signer,
                     instrument_id,
@@ -152,7 +157,11 @@ impl HyperliquidWebSocketClient {
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
-            Ok(())
+
+            Python::attach(|py| match report {
+                Some(r) => Ok(r.into_py_any_unwrap(py)),
+                None => Ok(py.None()),
+            })
         })
     }
 
