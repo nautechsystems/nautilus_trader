@@ -146,6 +146,32 @@ For Uniswap V3 snapshots, bootstrap uses a two-stage process:
 If final RPC hydration fails, the adapter must fail closed. It must not emit a snapshot built from
 replayed events with stale price state.
 
+### Backtest replay
+
+In backtest mode the adapter does not service live snapshot requests, so the pool profiler must
+initialize from a snapshot supplied in the replay data. `load_pool_snapshot` reads a pool snapshot
+from the Postgres cache, reconstructed with its full position and tick state, as of a chosen block:
+
+```python
+from nautilus_trader.adapters.blockchain import load_pool_snapshot
+
+snapshot = load_pool_snapshot(
+    pg_config=postgres_config,
+    chain_id=chain_id,
+    pool_address=pool_address,
+    before_block=replay_start_block,  # latest snapshot at or before this block
+)
+```
+
+By default only snapshots validated against on-chain state are returned; pass `require_valid=False`
+to accept unvalidated snapshots. The function returns `None` when the cache holds no matching
+snapshot, which should be treated as a setup error rather than replayed without profiler state. Wrap
+the snapshot as `DefiData.PoolSnapshot(snapshot)` and pass it to `BacktestEngine.add_defi_data`
+alongside the events to replay. The data engine restores the profiler from the snapshot, buffering
+any pool events that precede it in the stream and applying them once the profiler is ready. Replay
+every pool event from the snapshot's block forward: a snapshot earlier than the first replayed event
+leaves the profiler stale.
+
 ## Contracts
 
 ### Base contract and Multicall3
