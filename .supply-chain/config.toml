@@ -1545,7 +1545,7 @@ version = "0.2.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.libsqlite3-sys]]
-version = "0.30.1"
+version = "0.37.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.linux-raw-sys]]
