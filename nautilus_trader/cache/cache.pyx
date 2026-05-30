@@ -1282,17 +1282,18 @@ cdef class Cache(CacheFacade):
         Reset the cache.
 
         All stateful fields are reset to their initial value.
+
+        Instruments, currencies and synthetic instruments are retained when
+        `drop_instruments_on_reset` is `False` so that repeated backtest runs
+        can reuse the same dataset.
         """
         self._log.debug("Resetting cache")
 
         self._general.clear()
-        self._currencies.clear()
-        self._synthetics.clear()
         self._order_books.clear()
         self._own_order_books.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
-        self._xrate_symbols.clear()
         self._mark_xrates.clear()
         self._mark_prices.clear()
         self._index_prices.clear()
@@ -1311,7 +1312,10 @@ cdef class Cache(CacheFacade):
         self.clear_index()
 
         if self._drop_instruments_on_reset:
+            self._currencies.clear()
             self._instruments.clear()
+            self._xrate_symbols.clear()
+            self._synthetics.clear()
 
         self._log.info(f"Reset")
 

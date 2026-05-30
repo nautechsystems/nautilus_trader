@@ -79,6 +79,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed unbounded Cache `VecDeque` memory leak (Rust) (#4107), thanks @filipmacek
+- Fixed `Cache.reset` clearing FX rate lookup for retained instruments (#4159), thanks for reporting @dfjmax
 - Fixed `BacktestEngine` option positions remaining open when data stops before expiry
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
 - Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax

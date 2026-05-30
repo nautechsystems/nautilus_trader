@@ -287,6 +287,68 @@ fn test_reset_honors_drop_instruments_on_reset(
 }
 
 #[rstest]
+#[case(false, true)]
+#[case(true, false)]
+fn test_get_xrate_after_reset_follows_instrument_lifecycle(
+    audusd_sim: CurrencyPair,
+    #[case] drop_on_reset: bool,
+    #[case] xrate_available: bool,
+) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(drop_on_reset)
+        .build();
+    let mut cache = Cache::new(Some(config), None);
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    cache.reset();
+
+    let quote = QuoteTick {
+        instrument_id: audusd_sim.id,
+        bid_price: Price::from("0.80000"),
+        ask_price: Price::from("0.80010"),
+        bid_size: Quantity::from(1),
+        ask_size: Quantity::from(1),
+        ..Default::default()
+    };
+    cache.add_quote(quote).unwrap();
+
+    let rate = cache.get_xrate(
+        audusd_sim.id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Mid,
+    );
+
+    assert_eq!(rate.is_some(), xrate_available);
+}
+
+#[rstest]
+fn test_reset_clears_mark_xrate_even_when_instruments_retained(audusd_sim: CurrencyPair) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(false)
+        .build();
+    let mut cache = Cache::new(Some(config), None);
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache.set_mark_xrate(Currency::AUD(), Currency::USD(), 0.80000);
+
+    cache.reset();
+
+    // Instruments are retained, but mark xrates are market state and always cleared
+    assert!(cache.instrument(&audusd_sim.id).is_some());
+    assert!(
+        cache
+            .get_mark_xrate(Currency::AUD(), Currency::USD())
+            .is_none()
+    );
+}
+
+#[rstest]
 fn test_dispose_when_empty(mut cache: Cache) {
     cache.dispose();
 }

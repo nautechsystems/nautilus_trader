@@ -17,6 +17,8 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
@@ -1331,6 +1333,65 @@ class TestCache:
 
         # Assert
         assert result == 0.80005
+
+    @pytest.mark.parametrize(
+        ("drop_instruments_on_reset", "expected"),
+        [
+            [False, 0.80005],
+            [True, None],
+        ],
+    )
+    def test_get_xrate_after_reset_follows_instrument_lifecycle(
+        self,
+        drop_instruments_on_reset,
+        expected,
+    ):
+        # Arrange
+        cache = Cache(config=CacheConfig(drop_instruments_on_reset=drop_instruments_on_reset))
+        cache.add_instrument(AUDUSD_SIM)
+        cache.reset()
+
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        cache.add_quote_tick(tick)
+
+        # Act
+        result = cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("drop_instruments_on_reset", "retained"),
+        [
+            [False, True],
+            [True, False],
+        ],
+    )
+    def test_reset_retains_instruments_and_synthetics_per_config(
+        self,
+        drop_instruments_on_reset,
+        retained,
+    ):
+        # Arrange
+        cache = Cache(config=CacheConfig(drop_instruments_on_reset=drop_instruments_on_reset))
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        cache.add_instrument(AUDUSD_SIM)
+        cache.add_synthetic(synthetic)
+
+        # Act
+        cache.reset()
+
+        # Assert
+        assert (cache.instrument(AUDUSD_SIM.id) is not None) == retained
+        assert (cache.synthetic(synthetic.id) is not None) == retained
 
     def test_get_mark_xrate_returns_none_when_not_set(self):
         """
