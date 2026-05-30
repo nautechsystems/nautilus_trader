@@ -938,21 +938,6 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
-        if self._is_demo and (
-            tp_sl.get("take_profit")
-            or tp_sl.get("stop_loss")
-            or tp_sl.get("order_iv") is not None
-            or tp_sl.get("mmp") is not None
-        ):
-            self.generate_order_denied(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason="Native TP/SL and option params are not supported in demo mode",
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
         # Generate OrderSubmitted event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -1014,6 +999,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     position_idx=position_idx,
                     bbo_side_type=tp_sl.get("bbo_side_type"),
                     bbo_level=tp_sl.get("bbo_level"),
+                    native_tp_sl=_build_native_tp_sl_params(tp_sl),
                 )
             elif (
                 tp_sl.get("take_profit")
@@ -1124,22 +1110,6 @@ class BybitExecutionClient(LiveExecutionClient):
             return
 
         if self._is_demo:
-            if (
-                tp_sl.get("take_profit")
-                or tp_sl.get("stop_loss")
-                or tp_sl.get("order_iv") is not None
-                or tp_sl.get("mmp") is not None
-            ):
-                now_ns = self._clock.timestamp_ns()
-                for order in command.order_list.orders:
-                    self.generate_order_denied(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        reason="Native TP/SL and option params are not supported in demo mode",
-                        ts_event=now_ns,
-                    )
-                return
             await self._submit_order_list_http(command, tp_sl)
             return
 
@@ -1222,6 +1192,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     position_idx=position_idx,
                     bbo_side_type=tp_sl.get("bbo_side_type"),
                     bbo_level=tp_sl.get("bbo_level"),
+                    native_tp_sl=_build_native_tp_sl_params(tp_sl),
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -2238,3 +2209,30 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
         val = tp_sl.get(attr)
         if val is not None:
             setattr(order_params, attr, val)
+
+
+def _build_native_tp_sl_params(tp_sl: dict) -> object | None:
+    """Bundle native TP/SL + option fields for the HTTP `submit_order` path.
+
+    Returns ``None`` when no TP/SL or option field is set so the binding can
+    skip the conversion entirely. `tp/sl_trigger_price` are not threaded
+    through — the HTTP create-order entry doesn't carry them (mainnet's WS
+    Trade API does, via a separate field).
+    """
+    fields = (
+        "take_profit",
+        "stop_loss",
+        "tp_trigger_by",
+        "sl_trigger_by",
+        "tp_order_type",
+        "sl_order_type",
+        "tp_limit_price",
+        "sl_limit_price",
+        "close_on_trigger",
+        "order_iv",
+        "mmp",
+    )
+    kwargs = {f: tp_sl[f] for f in fields if tp_sl.get(f) is not None}
+    if not kwargs:
+        return None
+    return nautilus_pyo3.BybitNativeTpSlParams(**kwargs)

@@ -159,10 +159,13 @@ use crate::{
         },
         symbol::BybitSymbol,
     },
-    http::models::{
-        BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse, BybitInstrumentLinear,
-        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitOrderbookResult,
-        BybitPosition, BybitTrade, BybitWalletBalance,
+    http::{
+        models::{
+            BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse,
+            BybitInstrumentLinear, BybitInstrumentOption, BybitInstrumentSpot, BybitKline,
+            BybitOrderbookResult, BybitPosition, BybitTrade, BybitWalletBalance,
+        },
+        query::BybitNativeTpSlParams,
     },
     websocket::parse::parse_millis_i64,
 };
@@ -1547,6 +1550,26 @@ impl BybitTpSlParams {
 
     pub fn has_bbo(&self) -> bool {
         self.bbo_side_type.is_some()
+    }
+
+    /// Projects the native TP/SL + option fields onto the bundle the HTTP
+    /// submit_order entry expects. BBO + position_idx + leverage stay separate
+    /// because they're already first-class args on the submit signature.
+    pub fn to_native_tp_sl(&self) -> BybitNativeTpSlParams {
+        BybitNativeTpSlParams {
+            take_profit: self.take_profit.map(|p| p.to_string()),
+            stop_loss: self.stop_loss.map(|p| p.to_string()),
+            tp_trigger_by: self.tp_trigger_by,
+            sl_trigger_by: self.sl_trigger_by,
+            tp_order_type: self.tp_order_type,
+            sl_order_type: self.sl_order_type,
+            tp_limit_price: self.tp_limit_price.clone(),
+            sl_limit_price: self.sl_limit_price.clone(),
+            tpsl_mode: None,
+            close_on_trigger: self.close_on_trigger,
+            order_iv: self.order_iv.clone(),
+            mmp: self.mmp,
+        }
     }
 }
 

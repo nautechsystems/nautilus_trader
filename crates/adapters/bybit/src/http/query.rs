@@ -473,6 +473,49 @@ pub struct BybitBatchPlaceOrderParams {
     pub request: Vec<BybitBatchPlaceOrderEntry>,
 }
 
+/// Native TP/SL + option-specific fields that map onto the `POST /v5/order/create`
+/// (and batch) entry. Bundled to keep `submit_order` signatures manageable, and
+/// to give the demo HTTP path access to the same fields the mainnet WS path
+/// supports via [`crate::websocket::messages::BybitWsPlaceOrderParams`].
+///
+/// All fields are optional; populated fields are written onto the entry builder
+/// as-is. `tpsl_mode` defaults to `Full` upstream when only `take_profit` /
+/// `stop_loss` are set without an explicit mode.
+#[derive(Default, Clone, Debug)]
+pub struct BybitNativeTpSlParams {
+    pub take_profit: Option<String>,
+    pub stop_loss: Option<String>,
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    pub sl_trigger_by: Option<BybitTriggerType>,
+    pub tp_order_type: Option<BybitOrderType>,
+    pub sl_order_type: Option<BybitOrderType>,
+    pub tp_limit_price: Option<String>,
+    pub sl_limit_price: Option<String>,
+    pub tpsl_mode: Option<BybitTpSlMode>,
+    pub close_on_trigger: Option<bool>,
+    pub order_iv: Option<String>,
+    pub mmp: Option<bool>,
+}
+
+impl BybitNativeTpSlParams {
+    /// Returns true if any TP/SL or option-specific field is set.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.take_profit.is_none()
+            && self.stop_loss.is_none()
+            && self.tp_trigger_by.is_none()
+            && self.sl_trigger_by.is_none()
+            && self.tp_order_type.is_none()
+            && self.sl_order_type.is_none()
+            && self.tp_limit_price.is_none()
+            && self.sl_limit_price.is_none()
+            && self.tpsl_mode.is_none()
+            && self.close_on_trigger.is_none()
+            && self.order_iv.is_none()
+            && self.mmp.is_none()
+    }
+}
+
 /// Body parameters for `POST /v5/order/create`.
 ///
 /// # References

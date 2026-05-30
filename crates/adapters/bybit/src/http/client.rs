@@ -77,7 +77,7 @@ use super::{
         BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
         BybitFeeRateParamsBuilder, BybitFundingParams, BybitFundingParamsBuilder,
         BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
-        BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
+        BybitNativeTpSlParams, BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
         BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
         BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
         BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSubApiKeysParams,
@@ -92,7 +92,7 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
         BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType,
+        BybitPositionMode, BybitProductType, BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2424,6 +2424,7 @@ impl BybitHttpClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        native_tp_sl: Option<&BybitNativeTpSlParams>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2480,6 +2481,51 @@ impl BybitHttpClient {
 
         order_entry.bbo_side_type(bbo_side_type);
         order_entry.bbo_level(bbo_level);
+
+        if let Some(tp_sl) = native_tp_sl {
+            if let Some(ref tp) = tp_sl.take_profit {
+                order_entry.take_profit(Some(tp.clone()));
+            }
+            if let Some(ref sl) = tp_sl.stop_loss {
+                order_entry.stop_loss(Some(sl.clone()));
+            }
+            if let Some(tp_trigger) = tp_sl.tp_trigger_by {
+                order_entry.tp_trigger_by(Some(tp_trigger));
+            }
+            if let Some(sl_trigger) = tp_sl.sl_trigger_by {
+                order_entry.sl_trigger_by(Some(sl_trigger));
+            }
+            if let Some(tp_ot) = tp_sl.tp_order_type {
+                order_entry.tp_order_type(Some(tp_ot));
+            }
+            if let Some(sl_ot) = tp_sl.sl_order_type {
+                order_entry.sl_order_type(Some(sl_ot));
+            }
+            if let Some(ref tp_lp) = tp_sl.tp_limit_price {
+                order_entry.tp_limit_price(Some(tp_lp.clone()));
+            }
+            if let Some(ref sl_lp) = tp_sl.sl_limit_price {
+                order_entry.sl_limit_price(Some(sl_lp.clone()));
+            }
+            // Mirror the WS path: default to `Full` when TP or SL is set
+            // without an explicit mode, so Bybit doesn't reject the field.
+            let mode = tp_sl.tpsl_mode.or_else(|| {
+                (tp_sl.take_profit.is_some() || tp_sl.stop_loss.is_some())
+                    .then_some(BybitTpSlMode::Full)
+            });
+            if let Some(m) = mode {
+                order_entry.tpsl_mode(Some(m));
+            }
+            if let Some(close) = tp_sl.close_on_trigger {
+                order_entry.close_on_trigger(Some(close));
+            }
+            if let Some(ref iv) = tp_sl.order_iv {
+                order_entry.order_iv(Some(iv.clone()));
+            }
+            if let Some(mmp) = tp_sl.mmp {
+                order_entry.mmp(Some(mmp));
+            }
+        }
 
         let order_entry = order_entry.build().build_anyhow()?;
 

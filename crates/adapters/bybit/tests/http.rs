@@ -2653,6 +2653,7 @@ async fn test_submit_order_stop_market_with_trigger_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -2740,6 +2741,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -2828,6 +2830,7 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -2899,6 +2902,7 @@ async fn test_submit_order_post_only() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -2963,6 +2967,7 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
             None,
             Some(BybitBboSideType::Queue),
             Some("3".to_string()),
+            None,
         )
         .await;
 
@@ -3030,6 +3035,7 @@ async fn test_submit_order_spot_market_base_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3105,6 +3111,7 @@ async fn test_submit_order_spot_market_quote_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3180,6 +3187,7 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3252,6 +3260,7 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -3336,6 +3345,7 @@ async fn test_submit_order_serializes_position_idx(
             false,
             false,
             position_idx,
+            None,
             None,
             None,
         )
