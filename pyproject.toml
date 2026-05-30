@@ -47,7 +47,7 @@ requires = [
   "setuptools>=82",
   "poetry-core==2.3.1", # Pinned to 2.3.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.4", # Pinned to 3.2.4 for stability
+  "cython==3.2.5", # Pinned to 3.2.5 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -90,7 +90,7 @@ visualization = [
 
 [dependency-groups]
 dev = [
-  "cython==3.2.4", # Pinned to 3.2.4 for stability
+  "cython==3.2.5", # Pinned to 3.2.5 for stability
   "jupytext>=1.19.2,<2.0.0",
   "setuptools>=82",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
