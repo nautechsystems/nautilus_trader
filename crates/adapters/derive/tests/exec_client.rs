@@ -101,6 +101,7 @@ struct RestState {
     order_history_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_history_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     positions_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    get_instrument_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subaccount_response: Arc<tokio::sync::Mutex<Value>>,
     open_orders_response: Arc<tokio::sync::Mutex<Value>>,
     order_history_response: Arc<tokio::sync::Mutex<Value>>,
@@ -294,8 +295,10 @@ async fn handle_get_positions(State(state): State<RestState>, body: axum::body::
 
 async fn handle_get_instrument(
     State(state): State<RestState>,
-    _body: axum::body::Bytes,
+    body: axum::body::Bytes,
 ) -> Response {
+    let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    state.get_instrument_calls.lock().await.push(parsed);
     let response = state.get_instrument_response.lock().await.clone();
     let body = if response.is_null() {
         json!({"id": 1, "result": sample_instrument_json()})
@@ -4916,6 +4919,74 @@ async fn test_submit_option_order_resolves_option_instrument_for_signing() {
     // the option record were not used.
     assert!(body["signature"].as_str().unwrap().starts_with("0x"));
     assert!(body["nonce"].as_u64().unwrap() > 0);
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_second_submit_resolves_instrument_from_cache_without_refetch() {
+    // The instrument cache is keyed by InstrumentId over an AtomicMap: once an
+    // order resolves an instrument via public/get_instrument, a later order for
+    // the same instrument must be served from the cache rather than re-fetched.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.expect("connect");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    let first = build_limit_order(
+        instrument_id,
+        ClientOrderId::from("STRAT-CACHE-1"),
+        OrderSide::Buy,
+        Price::from("100"),
+        Quantity::from("1.0"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(first.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(&first))
+        .expect("submit Ok");
+
+    // Insert precedes the signed POST, so once the first order is on the wire
+    // the cache is populated and the second submit cannot race the fetch.
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { state.submitted_orders.lock().await.len() == 1 }
+        },
+        "first private/order posted",
+    )
+    .await;
+
+    let second = build_limit_order(
+        instrument_id,
+        ClientOrderId::from("STRAT-CACHE-2"),
+        OrderSide::Buy,
+        Price::from("100"),
+        Quantity::from("1.0"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(second.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(&second))
+        .expect("submit Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { state.submitted_orders.lock().await.len() == 2 }
+        },
+        "second private/order posted",
+    )
+    .await;
+
+    assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 1);
 
     tc.client.disconnect().await.expect("disconnect");
 }

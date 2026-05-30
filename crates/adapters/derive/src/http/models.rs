@@ -55,7 +55,7 @@ pub struct JsonRpcRequest<P> {
     /// Correlator chosen by the client.
     pub id: u64,
     /// Method name (e.g. `public/get_instruments`).
-    pub method: String,
+    pub method: &'static str,
     /// Method-specific params payload.
     pub params: P,
 }
@@ -63,11 +63,11 @@ pub struct JsonRpcRequest<P> {
 impl<P> JsonRpcRequest<P> {
     /// Constructs a `2.0` request with the given correlator, method, and params.
     #[must_use]
-    pub fn new(id: u64, method: impl Into<String>, params: P) -> Self {
+    pub fn new(id: u64, method: &'static str, params: P) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
-            method: method.into(),
+            method,
             params,
         }
     }

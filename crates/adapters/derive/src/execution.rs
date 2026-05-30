@@ -31,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -44,7 +44,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -71,7 +71,7 @@ use crate::{
         consts::{DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS, DERIVE_VENUE},
         credential::DeriveCredential,
         enums::{DeriveInstrumentType, DeriveOrderSide},
-        parse::{derive_rejection_due_post_only, format_venue_symbol},
+        parse::{derive_rejection_due_post_only, format_instrument_id, format_venue_symbol},
         retry::{http_retry_config, is_write_outcome_ambiguous_ws},
     },
     config::DeriveExecClientConfig,
@@ -116,7 +116,7 @@ pub struct DeriveExecutionClient {
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
     ws_exec: DeriveWsExecutionHandle,
-    instruments: Arc<Mutex<AHashMap<Ustr, DeriveInstrument>>>,
+    instruments: Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
     is_connected: AtomicBool,
@@ -204,7 +204,7 @@ impl DeriveExecutionClient {
             http_client,
             ws_client,
             ws_exec,
-            instruments: Arc::new(Mutex::new(AHashMap::new())),
+            instruments: Arc::new(AtomicMap::new()),
             nonce_manager: Arc::new(NonceManager::new()),
             signing,
             is_connected: AtomicBool::new(false),
@@ -233,17 +233,12 @@ impl DeriveExecutionClient {
         &self.http_client
     }
 
-    /// Caches a Derive instrument by venue symbol so order submission can
+    /// Caches a Derive instrument by instrument ID so order submission can
     /// resolve `base_asset_address` and `base_asset_sub_id` without
     /// re-querying the venue.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal instrument-cache mutex is poisoned, which only
-    /// occurs after a panic in another thread holding the lock.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) {
-        let mut guard = self.instruments.lock().expect(MUTEX_POISONED);
-        guard.insert(instrument.instrument_name, instrument);
+        let instrument_id = format_instrument_id(instrument.instrument_name);
+        self.instruments.insert(instrument_id, instrument);
     }
 
     /// Spawns a fire-and-forget task tracked in `pending_tasks` for teardown.
@@ -986,6 +981,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let instruments = self.instruments.clone();
+        let instrument_id = cmd.instrument_id;
         let order_for_task = order.clone();
 
         // Capture identity so the WS dispatch can route subsequent updates
@@ -1009,6 +1005,7 @@ impl ExecutionClient for DeriveExecutionClient {
             let instrument = match cached_or_fetch_instrument(
                 &http_client,
                 &instruments,
+                &instrument_id,
                 &venue_symbol,
             )
             .await
@@ -1349,6 +1346,7 @@ impl ExecutionClient for DeriveExecutionClient {
             let instrument = match cached_or_fetch_instrument(
                 &http_client,
                 &instruments,
+                &instrument_id,
                 &venue_symbol,
             )
             .await
@@ -1966,21 +1964,18 @@ fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal
 
 async fn cached_or_fetch_instrument(
     http_client: &DeriveHttpClient,
-    instruments: &Arc<Mutex<AHashMap<Ustr, DeriveInstrument>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instrument_id: &InstrumentId,
     venue_symbol: &str,
 ) -> anyhow::Result<DeriveInstrument> {
-    let key = Ustr::from(venue_symbol);
-    if let Some(cached) = instruments.lock().expect(MUTEX_POISONED).get(&key).cloned() {
+    if let Some(cached) = instruments.get_cloned(instrument_id) {
         return Ok(cached);
     }
     let instrument = http_client
         .get_instrument(venue_symbol)
         .await
         .with_context(|| format!("failed to fetch instrument {venue_symbol}"))?;
-    instruments
-        .lock()
-        .expect(MUTEX_POISONED)
-        .insert(key, instrument.clone());
+    instruments.insert(*instrument_id, instrument.clone());
     Ok(instrument)
 }
 
