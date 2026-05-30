@@ -544,7 +544,7 @@ class LatencyModelConfig(NautilusConfig, frozen=True):
 
     """
 
-    base_latency_nanos: NonNegativeInt = 1_000_000_000  # 1 millisecond in nanoseconds
+    base_latency_nanos: NonNegativeInt = 1_000_000_000  # 1 second in nanoseconds
     insert_latency_nanos: NonNegativeInt = 0
     update_latency_nanos: NonNegativeInt = 0
     cancel_latency_nanos: NonNegativeInt = 0
