@@ -38,8 +38,7 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    data_types::HyperliquidAllDexsAssetCtxs,
-    data_types::HyperliquidAllMids,
+    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidAllMids},
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 use nautilus_model::{

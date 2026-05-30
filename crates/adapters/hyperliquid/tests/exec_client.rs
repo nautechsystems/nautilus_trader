@@ -368,6 +368,13 @@ async fn handle_exchange(
             .into_response();
     }
 
+    // Gate before the reject/inner-error returns (not just the success path)
+    // so a test can hold any response shape while it asserts on state the
+    // calling thread set synchronously, before the spawned task sees the reply.
+    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
+        state.pause_release.notified().await;
+    }
+
     if state.reject_next_order.swap(false, Ordering::Relaxed) {
         return Json(json!({
             "status": "err",
@@ -402,10 +409,6 @@ async fn handle_exchange(
             }
         }))
         .into_response();
-    }
-
-    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
-        state.pause_release.notified().await;
     }
 
     match action_type {
@@ -524,6 +527,13 @@ async fn handle_ws_post(socket: &mut WebSocket, state: &TestServerState, payload
         return send_ws_post_error_response(socket, id, "503 Service Unavailable").await;
     }
 
+    // Gate before the reject/inner-error returns (not just the success path)
+    // so a test can hold any response shape while it asserts on state the
+    // calling thread set synchronously, before the spawned task sees the reply.
+    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
+        state.pause_release.notified().await;
+    }
+
     if state.reject_next_order.swap(false, Ordering::Relaxed) {
         let response = json!({
             "status": "err",
@@ -555,10 +565,6 @@ async fn handle_ws_post(socket: &mut WebSocket, state: &TestServerState, payload
             }
         });
         return send_ws_post_action_response(socket, id, response).await;
-    }
-
-    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
-        state.pause_release.notified().await;
     }
 
     let response = match action_type {
@@ -1955,6 +1961,13 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     // still have accepted the order (periodic reconciliation resolves it).
     let state = TestServerState::default();
     state.inner_order_error_next.store(true, Ordering::Relaxed);
+    // Hold the exchange response so the spawned submit task stays parked in
+    // `post_action_exec` while we assert the identity was registered. Without
+    // the gate the rejection path can run `cleanup_terminal` before the
+    // assertion observes the registration, racing the spawn task.
+    state.pause_next_exchange.store(true, Ordering::Relaxed);
+    let pause_release = state.pause_release.clone();
+    let exchange_request_count = state.exchange_request_count.clone();
     let addr = start_mock_server(state).await;
 
     let (mut client, _rx, cache) = create_test_execution_client(addr);
@@ -1986,8 +1999,19 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
 
     client.submit_order(cmd).unwrap();
 
-    // Identity is registered synchronously inside submit_order before the
-    // spawn_task fires.
+    // Wait until the mock has received the submit, proving the spawned task is
+    // parked at the post await behind the pause. The rejection/cleanup cannot
+    // have run yet, so the identity registered synchronously inside
+    // `submit_order` is deterministically still present here.
+    wait_until_async(
+        move || {
+            let count = exchange_request_count.clone();
+            async move { *count.lock().await >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     assert!(
         client
             .ws_dispatch_state()
@@ -1996,8 +2020,10 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
         "identity should be registered immediately on submit",
     );
 
-    // The spawn task runs the action call and, on rejection, invokes
-    // `cleanup_terminal`. Poll until the identity is gone.
+    // Release the held response: the spawn task processes the inner error and
+    // invokes `cleanup_terminal`. Poll until the identity is gone.
+    pause_release.notify_one();
+
     let dispatch = client.ws_dispatch_state().clone();
     let cid = order.client_order_id();
     wait_until_async(

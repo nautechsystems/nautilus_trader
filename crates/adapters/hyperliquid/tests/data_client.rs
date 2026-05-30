@@ -56,8 +56,7 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
-    data_types::HyperliquidAllDexsAssetCtxs,
-    data_types::HyperliquidOpenInterest,
+    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
     http::{
         models::{HyperliquidL2Book, PerpMeta},
         query::InfoRequest,
