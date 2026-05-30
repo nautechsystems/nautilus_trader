@@ -794,6 +794,74 @@ async def test_handle_msg_custom_data_all_dex_asset_ctxs_forwarded(
     assert forwarded.data_type == DataType(HyperliquidAllDexsAssetCtxs)
 
 
+def test_hyperliquid_all_dexs_asset_ctxs_from_pyo3_dict_entries():
+    # Real pyo3 `entries` are json.loads dicts, not attribute objects; cover that path
+    entry = {
+        "dex": "xyz",
+        "instrument_id": "xyz:TSLA-USD-PERP.HYPERLIQUID",
+        "mark_price": "211.0",
+        "oracle_price": "210.5",
+        "prev_day_price": "205.0",
+        "mid_price": "210.75",
+        "impact_prices": {"bid": "210.2", "ask": "211.3"},
+        "funding_rate": "0.001",
+        "open_interest": "42.5",
+        "premium": "0.0025",
+        "day_ntl_volume": "98765.43",
+        "day_base_volume": "1234.56",
+    }
+    payload = _FakePyo3HyperliquidAllDexsAssetCtxs(entries=[entry], ts_event=7, ts_init=9)
+
+    result = HyperliquidAllDexsAssetCtxs.from_pyo3(payload)
+
+    assert result.ts_event == 7
+    assert result.ts_init == 9
+    assert len(result.entries) == 1
+    ctx = result.entries[0]
+    assert isinstance(ctx, HyperliquidDexAssetCtx)
+    assert ctx.dex == "xyz"
+    assert ctx.instrument_id == InstrumentId.from_str("xyz:TSLA-USD-PERP.HYPERLIQUID")
+    assert ctx.mark_price == Price.from_str("211.0")
+    assert ctx.oracle_price == Price.from_str("210.5")
+    assert ctx.prev_day_price == Price.from_str("205.0")
+    assert ctx.mid_price == Price.from_str("210.75")
+    assert ctx.impact_prices is not None
+    assert ctx.impact_prices.bid == Price.from_str("210.2")
+    assert ctx.impact_prices.ask == Price.from_str("211.3")
+    assert ctx.funding_rate == Decimal("0.001")
+    assert ctx.open_interest == Decimal("42.5")
+    assert ctx.premium == Decimal("0.0025")
+    assert ctx.day_ntl_volume == Decimal("98765.43")
+    assert ctx.day_base_volume == Decimal("1234.56")
+
+
+def test_hyperliquid_dex_asset_ctx_from_pyo3_dict_optional_fields_none():
+    entry = {
+        "dex": "",
+        "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+        "mark_price": "77562.0",
+        "oracle_price": "77605.0",
+        "prev_day_price": "76317.0",
+        "mid_price": None,
+        "impact_prices": None,
+        "funding_rate": "-0.0000015186",
+        "open_interest": "27353.17682",
+        "premium": None,
+        "day_ntl_volume": "1516669192.1953897476",
+        "day_base_volume": "19707.77457",
+    }
+
+    ctx = HyperliquidDexAssetCtx.from_pyo3(entry)
+
+    assert ctx.dex == ""
+    assert ctx.instrument_id == InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+    assert ctx.mid_price is None
+    assert ctx.impact_prices is None
+    assert ctx.premium is None
+    assert ctx.funding_rate == Decimal("-0.0000015186")
+    assert ctx.day_base_volume == Decimal("19707.77457")
+
+
 @pytest.mark.asyncio
 async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builder, monkeypatch):
     client, _, _, _ = data_client_builder(monkeypatch)

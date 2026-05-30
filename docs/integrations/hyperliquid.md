@@ -659,22 +659,22 @@ def on_data(self, data) -> None:
 topic per instrument, so strategies subscribe once and filter the normalized
 entries they need:
 
-| Field             | Type             | Description                                                                 |
-|------------------|------------------|-----------------------------------------------------------------------------|
-| `dex`            | `str`            | Perp dex identifier from Hyperliquid `perpDexs`. `""` is the default dex. |
-| `instrument_id`  | `InstrumentId`   | Canonical Nautilus instrument ID for the entry.                             |
-| `mark_price`     | `Price`          | Current mark price.                                                         |
-| `oracle_price`   | `Price`          | Current oracle / index reference price.                                     |
-| `prev_day_price` | `Price`          | Previous day reference price from the venue payload.                        |
-| `mid_price`      | `Price \| None`  | Mid price when present in the venue payload.                                |
-| `impact_prices`  | helper \| `None` | Best bid / ask impact prices when present.                                  |
-| `funding_rate`   | `Decimal`        | Funding rate parsed for direct arithmetic use.                              |
-| `open_interest`  | `Decimal`        | Open interest parsed for direct arithmetic use.                             |
-| `premium`        | `Decimal \| None`| Premium when present in the venue payload.                                  |
-| `day_ntl_volume` | `Decimal`        | 24h notional volume.                                                        |
-| `day_base_volume`| `Decimal`        | 24h base volume.                                                            |
-| `ts_event`       | `int`            | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`.  |
-| `ts_init`        | `int`            | UNIX timestamp in nanoseconds when the object was built.                    |
+| Field             | Type                              | Description                                                                |
+|-------------------|-----------------------------------|----------------------------------------------------------------------------|
+| `dex`             | `str`                             | Perp dex identifier from Hyperliquid `perpDexs`. `""` is the default dex.  |
+| `instrument_id`   | `InstrumentId`                    | Canonical Nautilus instrument ID for the entry.                            |
+| `mark_price`      | `Price`                           | Current mark price.                                                        |
+| `oracle_price`    | `Price`                           | Current oracle / index reference price.                                    |
+| `prev_day_price`  | `Price`                           | Previous day reference price from the venue payload.                       |
+| `mid_price`       | `Price \| None`                   | Mid price when present in the venue payload.                               |
+| `impact_prices`   | `HyperliquidImpactPrices \| None` | Best bid / ask impact prices when present.                                 |
+| `funding_rate`    | `Decimal`                         | Funding rate parsed for direct arithmetic use.                             |
+| `open_interest`   | `Decimal`                         | Open interest parsed for direct arithmetic use.                            |
+| `premium`         | `Decimal \| None`                 | Premium when present in the venue payload.                                 |
+| `day_ntl_volume`  | `Decimal`                         | 24h notional volume.                                                       |
+| `day_base_volume` | `Decimal`                         | 24h base volume.                                                           |
+| `ts_event`        | `int`                             | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`. |
+| `ts_init`         | `int`                             | UNIX timestamp in nanoseconds when the object was built.                   |
 
 The underlying Hyperliquid wire payload arrives as
 `ctxs: [[dex, ctxs[]], ...]`. The adapter decodes that live venue format and
@@ -686,6 +686,11 @@ universe from Hyperliquid `meta` / `allPerpMetas` and resolves builder dex
 identifiers from the live `perpDexs` info endpoint. The empty string `""`
 represents Hyperliquid's default perp dex; non-empty values such as `xyz`,
 `flx`, or `vntl` are venue-defined builder dex identifiers.
+
+The mapping is resolved from the instruments loaded at connect, and the feed is
+positional (no per-entry coin name), so perps listed later only appear after a
+reconnect. A context-count mismatch for a dex logs a warning to reconnect;
+entries stay aligned positionally, which is correct for appended listings.
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID

@@ -153,7 +153,7 @@ class HyperliquidOpenInterest(Data):
 
 class HyperliquidImpactPrices:
     """
-    Python helper object for normalized Hyperliquid impact prices.
+    Normalized Hyperliquid impact prices (best bid and ask).
     """
 
     def __init__(self, bid: Price, ask: Price) -> None:
@@ -163,7 +163,7 @@ class HyperliquidImpactPrices:
 
 class HyperliquidDexAssetCtx:
     """
-    Python helper object for one normalized `allDexsAssetCtxs` entry.
+    One normalized `allDexsAssetCtxs` entry for a single instrument.
     """
 
     def __init__(

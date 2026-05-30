@@ -989,6 +989,16 @@ impl FeedHandler {
                 continue;
             };
 
+            if ctxs.len() != instrument_ids.len() {
+                // Mapping is built once at bootstrap, so a count change means the universe
+                // drifted and positional alignment can no longer be trusted.
+                log::warn!(
+                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (reconnect to refresh)",
+                    ctxs.len(),
+                    instrument_ids.len()
+                );
+            }
+
             for (index, ctx) in ctxs.into_iter().enumerate() {
                 let Some(Some(instrument_id)) = instrument_ids.get(index).copied() else {
                     log::warn!(

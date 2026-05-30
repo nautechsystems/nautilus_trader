@@ -3280,17 +3280,57 @@ mod tests {
     use serde_json::{Value, json};
     use ustr::Ustr;
 
-    use super::HyperliquidHttpClient;
+    use super::{HyperliquidHttpClient, resolve_perp_dex_name};
     use crate::{
         common::{
             consts::HYPERLIQUID_VENUE,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
-        http::{models::Cloid, query::InfoRequest},
+        http::{
+            models::{Cloid, PerpAsset, PerpDex, PerpMeta},
+            query::InfoRequest,
+        },
     };
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    fn perp_meta_with_assets(names: &[&str]) -> PerpMeta {
+        PerpMeta {
+            universe: names
+                .iter()
+                .map(|name| PerpAsset {
+                    name: (*name).to_string(),
+                    ..Default::default()
+                })
+                .collect(),
+            margin_tables: Vec::new(),
+        }
+    }
+
+    #[rstest]
+    fn resolve_perp_dex_name_uses_empty_string_for_default_dex() {
+        let meta = perp_meta_with_assets(&["BTC", "ETH"]);
+        assert_eq!(resolve_perp_dex_name(0, &meta, None), "");
+    }
+
+    #[rstest]
+    fn resolve_perp_dex_name_prefers_perp_dexs_entry() {
+        let meta = perp_meta_with_assets(&["xyz:TSLA"]);
+        let perp_dexs = vec![
+            None,
+            Some(PerpDex {
+                name: "xyz".to_string(),
+            }),
+        ];
+        assert_eq!(resolve_perp_dex_name(1, &meta, Some(&perp_dexs)), "xyz");
+    }
+
+    #[rstest]
+    fn resolve_perp_dex_name_infers_from_asset_name_when_perp_dexs_missing() {
+        let meta = perp_meta_with_assets(&["abc:TSLA", "abc:NVDA"]);
+        assert_eq!(resolve_perp_dex_name(1, &meta, None), "abc");
+    }
 
     #[derive(Clone, Default)]
     struct OutcomeMetaServerState {

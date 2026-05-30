@@ -31,6 +31,8 @@ from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllDexsAssetCtxs
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidDexAssetCtx
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidImpactPrices
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
@@ -45,7 +47,9 @@ __all__ = [
     "HyperliquidAllDexsAssetCtxs",
     "HyperliquidAllMids",
     "HyperliquidDataClientConfig",
+    "HyperliquidDexAssetCtx",
     "HyperliquidExecClientConfig",
+    "HyperliquidImpactPrices",
     "HyperliquidInstrumentProvider",
     "HyperliquidLiveDataClientFactory",
     "HyperliquidLiveExecClientFactory",
