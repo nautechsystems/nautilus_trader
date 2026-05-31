@@ -1132,6 +1132,9 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     use nautilus_model::data::Data;
 
     let state = TestServerState::default();
+    let product_stall_enabled = state.product_stall_enabled.clone();
+    let product_release = state.product_release.clone();
+    let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -1168,9 +1171,26 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
 
     while rx.try_recv().is_ok() {}
 
+    let reconnect_baseline_hits = product_hits.load(Ordering::SeqCst);
+    product_stall_enabled.store(true, Ordering::SeqCst);
+
     client.connect().await.unwrap();
 
+    wait_until_async(
+        || {
+            let done = product_hits.load(Ordering::SeqCst) > reconnect_baseline_hits;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // The resumed REST request is parked in the mock handler, so no resumed
+    // index update can be queued before this drain.
     while rx.try_recv().is_ok() {}
+
+    product_release.add_permits(1);
+    product_stall_enabled.store(false, Ordering::SeqCst);
 
     let mut resumed = false;
     wait_until_async(
