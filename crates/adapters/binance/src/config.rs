@@ -25,6 +25,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
 
+/// Spot market-data transport mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpotMarketDataMode {
+    /// Automatically select the best mode:
+    /// - Ed25519 credentials available -> SBE
+    /// - otherwise -> public JSON streams
+    #[default]
+    Auto,
+    /// Force Spot SBE streams (requires Ed25519 credentials).
+    Sbe,
+    /// Force Spot public JSON streams (does not require credentials).
+    JsonPublic,
+}
+
 /// Configuration for Binance data client.
 ///
 /// Ed25519 API keys are required for SBE WebSocket streams.
@@ -56,6 +70,14 @@ pub struct BinanceDataClientConfig {
     pub api_key: Option<String>,
     /// API secret (Ed25519 base64-encoded or PEM).
     pub api_secret: Option<String>,
+    /// Spot market-data transport mode.
+    ///
+    /// - `Auto` selects SBE when Ed25519 credentials are available and
+    ///   falls back to public JSON streams otherwise.
+    /// - `Sbe` forces SBE streams and requires Ed25519 credentials.
+    /// - `JsonPublic` forces public JSON streams with no credentials.
+    #[builder(default)]
+    pub spot_market_data_mode: SpotMarketDataMode,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
@@ -189,6 +211,7 @@ instrument_status_poll_secs = 600
             config.product_types,
             vec![BinanceProductType::Spot, BinanceProductType::UsdM]
         );
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Auto);
         assert_eq!(config.instrument_status_poll_secs, 600);
     }
 
