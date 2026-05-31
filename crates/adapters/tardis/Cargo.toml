@@ -56,7 +56,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["python"] }
+nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-system = { workspace = true, optional = true }

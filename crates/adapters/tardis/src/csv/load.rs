@@ -163,7 +163,7 @@ pub fn load_deltas<P: AsRef<Path>>(
             if last_ts_event != ts_event
                 && let Some(last_delta) = deltas.last_mut()
             {
-                last_delta.flags = RecordFlag::F_LAST.value();
+                last_delta.flags = RecordFlag::F_LAST as u8;
             }
             last_ts_event = ts_event;
 
@@ -195,7 +195,7 @@ pub fn load_deltas<P: AsRef<Path>>(
         if last_ts_event != ts_event
             && let Some(last_delta) = deltas.last_mut()
         {
-            last_delta.flags = RecordFlag::F_LAST.value();
+            last_delta.flags = RecordFlag::F_LAST as u8;
         }
 
         last_ts_event = ts_event;
@@ -205,7 +205,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
     // Set F_LAST flag for final delta
     if let Some(last_delta) = deltas.last_mut() {
-        last_delta.flags = RecordFlag::F_LAST.value();
+        last_delta.flags = RecordFlag::F_LAST as u8;
     }
 
     // Update all deltas to use the final (maximum) precision discovered
@@ -297,7 +297,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
         // Mark as both snapshot and last (consistent with streaming implementation)
-        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
+        let flags = RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -455,7 +455,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
         // Mark as both snapshot and last (consistent with streaming implementation)
-        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
+        let flags = RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -903,7 +903,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
@@ -947,7 +947,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
@@ -1190,7 +1190,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             first.flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
@@ -1290,7 +1290,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             first.flags,
-            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
@@ -1417,10 +1417,10 @@ hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[3].action, BookAction::Clear);
         assert_eq!(
-            deltas[2].flags & RecordFlag::F_LAST.value(),
-            RecordFlag::F_LAST.value()
+            deltas[2].flags & RecordFlag::F_LAST as u8,
+            RecordFlag::F_LAST as u8
         );
-        assert_eq!(deltas[3].flags & RecordFlag::F_LAST.value(), 0);
+        assert_eq!(deltas[3].flags & RecordFlag::F_LAST as u8, 0);
 
         std::fs::remove_file(&temp_file).ok();
     }

@@ -282,7 +282,7 @@ pub fn parse_book_snapshot_msg_as_depth10(
         asks,
         bid_counts,
         ask_counts,
-        RecordFlag::F_SNAPSHOT.value(),
+        RecordFlag::F_SNAPSHOT as u8,
         0, // Sequence not available from Tardis
         ts_event,
         ts_init,
@@ -367,7 +367,7 @@ pub fn parse_book_msg_as_deltas(
     }
 
     if let Some(last_delta) = deltas.last_mut() {
-        last_delta.flags |= RecordFlag::F_LAST.value();
+        last_delta.flags |= RecordFlag::F_LAST as u8;
     }
 
     // TODO: Opaque pointer wrapper necessary for Cython (remove once Cython gone)
@@ -400,7 +400,7 @@ pub fn parse_book_level(
     let order_id = 0; // Not applicable for L2 data
     let order = BookOrder::new(side, price, size, order_id);
     let flags = if is_snapshot {
-        RecordFlag::F_SNAPSHOT.value()
+        RecordFlag::F_SNAPSHOT as u8
     } else {
         0
     };
@@ -659,7 +659,7 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 1);
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.flags, RecordFlag::F_LAST.value());
+        assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 0);
         assert_eq!(deltas.ts_event, UnixNanos::from(1571830193469000000));
         assert_eq!(deltas.ts_init, UnixNanos::from(1571830193469000000));
@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(deltas.deltas[0].order.price, Price::from("7985"));
         assert_eq!(deltas.deltas[0].order.size, Quantity::from(283318));
         assert_eq!(deltas.deltas[0].order.order_id, 0);
-        assert_eq!(deltas.deltas[0].flags, RecordFlag::F_LAST.value());
+        assert_eq!(deltas.deltas[0].flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.deltas[0].sequence, 0);
         assert_eq!(
             deltas.deltas[0].ts_event,
@@ -703,7 +703,7 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(
             deltas.flags,
-            RecordFlag::F_LAST.value() + RecordFlag::F_SNAPSHOT.value()
+            RecordFlag::F_LAST as u8 + RecordFlag::F_SNAPSHOT as u8
         );
         assert_eq!(deltas.sequence, 0);
         assert_eq!(deltas.ts_event, UnixNanos::from(1572010786950000000));
@@ -712,7 +712,7 @@ mod tests {
         // CLEAR delta
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
-        assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT.value());
+        assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(clear_delta.sequence, 0);
         assert_eq!(clear_delta.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(clear_delta.ts_init, UnixNanos::from(1572010786961000000));
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(bid_delta.order.price, Price::from("7633.5"));
         assert_eq!(bid_delta.order.size, Quantity::from(1906067));
         assert_eq!(bid_delta.order.order_id, 0);
-        assert_eq!(bid_delta.flags, RecordFlag::F_SNAPSHOT.value());
+        assert_eq!(bid_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(bid_delta.sequence, 0);
         assert_eq!(bid_delta.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(bid_delta.ts_init, UnixNanos::from(1572010786961000000));
@@ -736,7 +736,7 @@ mod tests {
         assert_eq!(ask_delta.order.price, Price::from("7634.0"));
         assert_eq!(ask_delta.order.size, Quantity::from(1467849));
         assert_eq!(ask_delta.order.order_id, 0);
-        assert_eq!(ask_delta.flags, RecordFlag::F_SNAPSHOT.value());
+        assert_eq!(ask_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(ask_delta.sequence, 0);
         assert_eq!(ask_delta.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(ask_delta.ts_init, UnixNanos::from(1572010786961000000));
@@ -760,7 +760,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT.value());
+        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(depth10.sequence, 0);
         assert_eq!(depth10.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(depth10.ts_init, UnixNanos::from(1572010786961000000));
