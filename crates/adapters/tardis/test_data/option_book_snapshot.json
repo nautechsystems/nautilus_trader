@@ -1,0 +1,22 @@
+{
+  "type": "book_snapshot",
+  "symbol": "BTC-28JUN24-70000-C",
+  "exchange": "deribit",
+  "name": "book_snapshot_1_100ms",
+  "depth": 1,
+  "interval": 100,
+  "bids": [
+    {
+      "price": 0.035,
+      "amount": 5
+    }
+  ],
+  "asks": [
+    {
+      "price": 0.04,
+      "amount": 10
+    }
+  ],
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "localTimestamp": "2024-01-15T10:30:00.234Z"
+}

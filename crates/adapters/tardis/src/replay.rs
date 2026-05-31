@@ -26,8 +26,8 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10,
-        QuoteTick, TradeTick,
+        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas_API,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
 };
@@ -513,7 +513,14 @@ fn batch_and_write_quotes(
     compression: Compression,
 ) {
     match quotes_to_arrow_record_batch_bytes(quotes) {
-        Ok(batch) => write_batch(&batch, "quote_tick", instrument_id, date, path, compression),
+        Ok(batch) => write_batch(
+            &batch,
+            QuoteTick::path_prefix(),
+            instrument_id,
+            date,
+            path,
+            compression,
+        ),
         Err(e) => {
             log::error!("Error converting QuoteTick to Arrow: {e:?}");
         }
@@ -568,7 +575,7 @@ fn batch_and_write_greeks(
     match option_greeks_to_arrow_record_batch_bytes(greeks) {
         Ok(batch) => write_batch(
             &batch,
-            "option_greeks",
+            OptionGreeks::path_prefix(),
             instrument_id,
             date,
             path,
@@ -701,10 +708,22 @@ fn write_parquet_local(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use chrono::{TimeZone, Utc};
+    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::{enums::TardisExchange, testing::load_test_json},
+        config::BookSnapshotOutput,
+        machine::{
+            message::{BookSnapshotMsg, OptionSummaryMsg, WsMessage},
+            parse::parse_tardis_ws_message,
+            types::TardisInstrumentMiniInfo,
+        },
+    };
 
     #[rstest]
     #[case(
@@ -745,34 +764,62 @@ mod tests {
 
     #[rstest]
     fn test_option_greeks_replay_catalog_round_trip() {
-        use nautilus_model::types::{Price, Quantity};
-        use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-
-        use crate::{
-            common::testing::load_test_json,
-            machine::{message::OptionSummaryMsg, parse::parse_option_summary_msg},
-        };
-
         let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
         let compression = ParquetCompression::Zstd.as_parquet_compression();
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Deribit,
+            4,
+            1,
+        ));
 
-        // Ingest a Tardis option_summary fixture as exchange-provided greeks.
-        let msg: OptionSummaryMsg =
+        let option_summary: OptionSummaryMsg =
             serde_json::from_str(&load_test_json("option_summary.json")).unwrap();
-        let greeks_1 = parse_option_summary_msg(&msg, instrument_id);
+        let Some(Data::OptionGreeks(greeks_1)) = parse_tardis_ws_message(
+            WsMessage::OptionSummary(option_summary),
+            &info,
+            &BookSnapshotOutput::Deltas,
+        ) else {
+            panic!("Expected option_summary to route to Data::OptionGreeks");
+        };
 
-        // A later same-day update to assert time-ordered persistence.
         let mut greeks_2 = greeks_1;
-        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000; // +1s
+        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000;
         greeks_2.ts_init = greeks_1.ts_init + 1_000_000_000;
         greeks_2.greeks.delta = 0.26;
+
+        let option_quote: BookSnapshotMsg =
+            serde_json::from_str(&load_test_json("option_book_snapshot.json")).unwrap();
+        let Some(Data::Quote(quote_1)) = parse_tardis_ws_message(
+            WsMessage::BookSnapshot(option_quote),
+            &info,
+            &BookSnapshotOutput::Deltas,
+        ) else {
+            panic!("Expected depth-1 option book snapshot to route to Data::Quote");
+        };
+
+        let mut quote_2 = quote_1;
+        quote_2.ts_event = quote_1.ts_event + 1_000_000_000;
+        quote_2.ts_init = quote_1.ts_init + 1_000_000_000;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
 
-        // Drive the replay write path: per-instrument cursor plus a batched parquet write.
+        let mut quotes_map: AHashMap<InstrumentId, Vec<QuoteTick>> = AHashMap::new();
+        let mut quotes_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
         let mut greeks_map: AHashMap<InstrumentId, Vec<OptionGreeks>> = AHashMap::new();
         let mut greeks_cursors: AHashMap<InstrumentId, DateCursor> = AHashMap::new();
+
+        for quote in [quote_1, quote_2] {
+            handle_quote_msg(
+                quote,
+                &mut quotes_map,
+                &mut quotes_cursors,
+                &data_path,
+                compression,
+            );
+        }
 
         for greeks in [greeks_1, greeks_2] {
             handle_option_greeks_msg(
@@ -784,40 +831,23 @@ mod tests {
             );
         }
 
+        for (id, quotes) in &quotes_map {
+            let cursor = quotes_cursors.get(id).expect("Expected cursor");
+            batch_and_write_quotes(quotes, id, cursor.date_utc, &data_path, compression);
+        }
+
         for (id, greeks) in &greeks_map {
             let cursor = greeks_cursors.get(id).expect("Expected cursor");
             batch_and_write_greeks(greeks, id, cursor.date_utc, &data_path, compression);
         }
 
-        // Quotes for options already flow as `QuoteTick`; write a pair into the same catalog so
-        // the round-trip asserts quotes and greeks coexist. They use the catalog write path
-        // because the replay quote writer emits a legacy `quote_tick` prefix that diverges from
-        // the catalog `quotes` prefix (pre-existing, outside this milestone).
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
-        let quotes = vec![
-            QuoteTick::new(
-                instrument_id,
-                Price::from("0.0350"),
-                Price::from("0.0400"),
-                Quantity::from(5),
-                Quantity::from(10),
-                greeks_1.ts_event,
-                greeks_1.ts_init,
-            ),
-            QuoteTick::new(
-                instrument_id,
-                Price::from("0.0360"),
-                Price::from("0.0410"),
-                Quantity::from(5),
-                Quantity::from(10),
-                greeks_2.ts_event,
-                greeks_2.ts_init,
-            ),
-        ];
-        catalog.write_to_parquet(quotes, None, None, None).unwrap();
+        let identifiers = Some(vec![instrument_id.to_string()]);
 
-        let greeks_out = catalog.option_greeks(None, None, None).unwrap();
-        let quotes_out = catalog.quote_ticks(None, None, None).unwrap();
+        let quotes_out = catalog
+            .quote_ticks(identifiers.clone(), None, None)
+            .unwrap();
+        let greeks_out = catalog.option_greeks(identifiers, None, None).unwrap();
 
         assert_eq!(greeks_out, vec![greeks_1, greeks_2]);
         assert_eq!(greeks_out[0].instrument_id, instrument_id);
@@ -825,7 +855,7 @@ mod tests {
         assert_eq!(greeks_out[0].underlying_price, Some(63_500.0));
         assert!(greeks_out[0].ts_init < greeks_out[1].ts_init);
 
-        assert_eq!(quotes_out.len(), 2);
+        assert_eq!(quotes_out, vec![quote_1, quote_2]);
         assert_eq!(quotes_out[0].instrument_id, instrument_id);
         assert!(quotes_out[0].ts_init < quotes_out[1].ts_init);
     }
