@@ -23,6 +23,8 @@ pub mod backend;
 pub mod capture;
 pub mod cursor;
 pub mod extractor;
+#[cfg(feature = "persistence")]
+pub mod join;
 pub mod marker;
 pub mod reader;
 pub mod redb;
@@ -33,6 +35,8 @@ pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend, StoredMark
 pub use capture::DataMarkerCapture;
 pub use cursor::CursorState;
 pub use extractor::{DataMarkerExtractor, DataMarkerExtractorRegistry};
+#[cfg(feature = "persistence")]
+pub use join::{JoinedStream, join_at_entry};
 pub use marker::{
     DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
     StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,

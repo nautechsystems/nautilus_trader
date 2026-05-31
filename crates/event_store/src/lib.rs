@@ -88,6 +88,8 @@ pub use markers::{
     MemoryMarkerBackend, RedbMarkerBackend, StoredMarkerRecord, StreamCursor, StreamDictEntry,
     StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash, compute_marker_hash,
 };
+#[cfg(feature = "persistence")]
+pub use markers::{JoinedStream, join_at_entry};
 pub use nautilus_system::{
     RegisteredComponents,
     event_store::{

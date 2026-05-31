@@ -484,6 +484,9 @@ pub trait ReplayCatalog {
 
     /// Loads records for one planned catalog slice without live venue access.
     ///
+    /// Implementations return records in catalog order so marker cursor joins can take a
+    /// deterministic prefix from a cumulative stream slice.
+    ///
     /// # Errors
     ///
     /// Returns the catalog implementation's error when slice loading fails.
