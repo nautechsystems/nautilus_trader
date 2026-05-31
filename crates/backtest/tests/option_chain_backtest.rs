@@ -196,7 +196,14 @@ fn make_greeks(index: usize, instrument_id: InstrumentId, kind: OptionKind) -> O
 ///
 /// The first event (lowest `ts_init`) is a call quote, so the aggregator buffer is non-empty for
 /// every later update; raw mode therefore publishes exactly one slice per update.
-fn build_catalog() -> (TempDir, String, InstrumentId, InstrumentId, Vec<QuoteTick>) {
+fn build_catalog() -> (
+    TempDir,
+    String,
+    InstrumentId,
+    InstrumentId,
+    Vec<QuoteTick>,
+    Vec<OptionGreeks>,
+) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
@@ -245,7 +252,7 @@ fn build_catalog() -> (TempDir, String, InstrumentId, InstrumentId, Vec<QuoteTic
             .unwrap();
     }
 
-    (temp_dir, catalog_path, call_id, put_id, quotes)
+    (temp_dir, catalog_path, call_id, put_id, quotes, greeks)
 }
 
 #[derive(Debug)]
@@ -404,12 +411,13 @@ fn assert_one_slice_per_update(slices: &[OptionChainSlice]) {
     );
 }
 
-/// Asserts that the assembled slice contents trace back to the replayed quotes: every quote in
-/// every slice is one of the inputs, and the final slice carries both a call and a put at the
-/// strike with the correct instrument on each side.
+/// Asserts that assembled slice contents trace back to replayed inputs: every quote and attached
+/// greeks payload in every slice is one of the inputs, and the final slice carries both a call and
+/// a put at the strike with the correct quote and greeks on each side.
 fn assert_contents_trace_inputs(
     slices: &[OptionChainSlice],
     quotes: &[QuoteTick],
+    greeks: &[OptionGreeks],
     call_id: InstrumentId,
     put_id: InstrumentId,
 ) {
@@ -422,6 +430,13 @@ fn assert_contents_trace_inputs(
                 "every slice quote must be a replayed input, found {:?}",
                 data.quote,
             );
+
+            if let Some(option_greeks) = data.greeks {
+                assert!(
+                    greeks.contains(&option_greeks),
+                    "every slice greeks must be a replayed input, found {option_greeks:?}",
+                );
+            }
         }
     }
 
@@ -430,11 +445,27 @@ fn assert_contents_trace_inputs(
     let put = last.get_put(&strike).expect("expected a put entry");
     assert_eq!(call.quote.instrument_id, call_id);
     assert_eq!(put.quote.instrument_id, put_id);
+
+    let call_greeks = call.greeks.expect("expected call greeks");
+    assert!(
+        greeks.contains(&call_greeks),
+        "final call greeks must be a replayed input, found {call_greeks:?}",
+    );
+    assert_eq!(call_greeks.instrument_id, call_id);
+    assert_eq!(call_greeks.delta, 0.55);
+
+    let put_greeks = put.greeks.expect("expected put greeks");
+    assert!(
+        greeks.contains(&put_greeks),
+        "final put greeks must be a replayed input, found {put_greeks:?}",
+    );
+    assert_eq!(put_greeks.instrument_id, put_id);
+    assert_eq!(put_greeks.delta, -0.45);
 }
 
 #[rstest]
 fn test_raw_mode_oneshot_publishes_one_slice_per_update() {
-    let (_temp_dir, catalog_path, call_id, put_id, quotes) = build_catalog();
+    let (_temp_dir, catalog_path, call_id, put_id, quotes, _greeks) = build_catalog();
 
     let slices = run_chain_backtest(&catalog_path, call_id, put_id, None, None);
 
@@ -468,7 +499,7 @@ fn test_raw_mode_oneshot_publishes_one_slice_per_update() {
 
 #[rstest]
 fn test_raw_mode_streaming_publishes_one_slice_per_update() {
-    let (_temp_dir, catalog_path, call_id, put_id, _quotes) = build_catalog();
+    let (_temp_dir, catalog_path, call_id, put_id, _quotes, _greeks) = build_catalog();
 
     // chunk_size = 7 does not divide the 40 events evenly, forcing mid-stream chunk boundaries
     let slices = run_chain_backtest(&catalog_path, call_id, put_id, None, Some(7));
@@ -480,7 +511,7 @@ fn test_raw_mode_streaming_publishes_one_slice_per_update() {
 
 #[rstest]
 fn test_thinned_mode_oneshot_publishes_on_timer() {
-    let (_temp_dir, catalog_path, call_id, put_id, quotes) = build_catalog();
+    let (_temp_dir, catalog_path, call_id, put_id, quotes, greeks) = build_catalog();
 
     let slices = run_chain_backtest(&catalog_path, call_id, put_id, Some(500), None);
 
@@ -498,13 +529,13 @@ fn test_thinned_mode_oneshot_publishes_on_timer() {
         assert!(!slice.is_empty());
     }
 
-    // The thinned snapshots assemble from the same replayed quotes as raw mode
-    assert_contents_trace_inputs(&slices, &quotes, call_id, put_id);
+    // The thinned snapshots assemble from the same replayed quotes and greeks as raw mode
+    assert_contents_trace_inputs(&slices, &quotes, &greeks, call_id, put_id);
 }
 
 #[rstest]
 fn test_thinned_mode_streaming_matches_oneshot_across_chunk_boundaries() {
-    let (_temp_dir, catalog_path, call_id, put_id, quotes) = build_catalog();
+    let (_temp_dir, catalog_path, call_id, put_id, quotes, greeks) = build_catalog();
 
     // chunk_size = 7 places several interval boundaries inside later chunks, so the recurring
     // timer must fire correctly after each chunk's clock is carried forward.
@@ -514,6 +545,6 @@ fn test_thinned_mode_streaming_matches_oneshot_across_chunk_boundaries() {
     // Identical to the oneshot cadence: chunk boundaries do not drop, duplicate, or shift fires
     assert_eq!(ts_inits, expected_timer_boundaries());
 
-    // Chunked replay assembles the same input-derived contents as oneshot
-    assert_contents_trace_inputs(&slices, &quotes, call_id, put_id);
+    // Chunked replay assembles the same input-derived quotes and greeks as oneshot
+    assert_contents_trace_inputs(&slices, &quotes, &greeks, call_id, put_id);
 }
