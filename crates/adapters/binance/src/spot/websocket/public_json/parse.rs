@@ -40,6 +40,10 @@ use crate::common::{
 };
 
 /// Parses a trade message into a `TradeTick`.
+///
+/// # Errors
+///
+/// Returns an error if price or quantity fields cannot be parsed.
 pub fn parse_trade(
     msg: &BinanceSpotTradeMsg,
     instrument: &InstrumentAny,
@@ -78,6 +82,10 @@ pub fn parse_trade(
 }
 
 /// Parses a book ticker message into a `QuoteTick`.
+///
+/// # Errors
+///
+/// Returns an error if price or quantity fields cannot be parsed.
 pub fn parse_book_ticker(
     msg: &BinanceSpotBookTickerMsg,
     instrument: &InstrumentAny,
@@ -248,6 +256,10 @@ fn interval_to_bar_spec(interval: BinanceKlineInterval) -> BarSpecification {
 /// Parses a kline message into a closed `Bar`.
 ///
 /// Returns `None` if the kline is not closed yet.
+///
+/// # Errors
+///
+/// Returns an error if any OHLCV field cannot be parsed.
 pub fn parse_kline(
     msg: &BinanceSpotKlineMsg,
     instrument: &InstrumentAny,

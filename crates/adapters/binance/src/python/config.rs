@@ -59,6 +59,7 @@ impl BinanceDataClientConfig {
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
             api_key: api_key.or(defaults.api_key),
             api_secret: api_secret.or(defaults.api_secret),
+            spot_market_data_mode: defaults.spot_market_data_mode,
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
             transport_backend: defaults.transport_backend,
@@ -163,6 +164,7 @@ mod tests {
         assert_eq!(config.base_url_ws, defaults.base_url_ws);
         assert_eq!(config.api_key, defaults.api_key);
         assert_eq!(config.api_secret, defaults.api_secret);
+        assert_eq!(config.spot_market_data_mode, defaults.spot_market_data_mode);
         assert_eq!(
             config.instrument_status_poll_secs,
             defaults.instrument_status_poll_secs
@@ -190,6 +192,10 @@ mod tests {
         assert_eq!(config.base_url_ws.as_deref(), Some("wss://ws.example"));
         assert_eq!(config.api_key.as_deref(), Some("api-key"));
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
+        assert_eq!(
+            config.spot_market_data_mode,
+            BinanceDataClientConfig::default().spot_market_data_mode
+        );
         assert_eq!(config.instrument_status_poll_secs, 15);
     }
 

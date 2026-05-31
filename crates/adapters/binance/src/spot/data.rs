@@ -198,6 +198,12 @@ impl BinanceSpotDataClient {
         };
         let data_sender = get_data_event_sender();
 
+        log::info!(
+            "Resolved Spot market data mode: configured={:?}, resolved={:?}",
+            config.spot_market_data_mode,
+            spot_market_data_mode,
+        );
+
         Ok(Self {
             clock,
             client_id,
@@ -305,6 +311,7 @@ impl BinanceSpotDataClient {
         clock: &'static AtomicTime,
     ) {
         let ts_init = clock.get_time_ns();
+
         match msg {
             BinanceSpotPublicWsMessage::Trade(ref event) => {
                 let symbol = event.symbol;
@@ -730,10 +737,11 @@ impl DataClient for BinanceSpotDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let stream = format!(
-            "{}@bestBidAsk",
-            instrument_id.symbol.as_str().to_lowercase()
-        );
+        let suffix = match self.spot_market_data_mode {
+            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
+            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
+        };
+        let stream = format!("{}@{suffix}", instrument_id.symbol.as_str().to_lowercase());
 
         self.spawn_subscribe(vec![stream], "quotes subscription");
         Ok(())
@@ -788,10 +796,11 @@ impl DataClient for BinanceSpotDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let stream = format!(
-            "{}@bestBidAsk",
-            instrument_id.symbol.as_str().to_lowercase()
-        );
+        let suffix = match self.spot_market_data_mode {
+            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
+            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
+        };
+        let stream = format!("{}@{suffix}", instrument_id.symbol.as_str().to_lowercase());
 
         self.spawn_unsubscribe(vec![stream], "quotes unsubscribe");
         Ok(())

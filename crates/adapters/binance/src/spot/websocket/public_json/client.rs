@@ -161,6 +161,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
     }
 
     /// Closes all WebSocket connections and tasks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if command delivery fails while shutting down.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn close(&mut self) -> anyhow::Result<()> {
         self.signal.store(true, Ordering::Relaxed);
@@ -185,6 +189,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
     }
 
     /// Subscribes to stream names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if command delivery fails or if the connection pool is exhausted.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
         if streams.is_empty() {
@@ -211,9 +219,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 } else {
                     if slots.len() >= MAX_CONNECTIONS {
                         anyhow::bail!(
-                            "Spot public JSON stream pool exhausted ({} connections x {} streams)",
-                            MAX_CONNECTIONS,
-                            MAX_STREAMS_PER_CONNECTION,
+                            "Spot public JSON stream pool exhausted ({MAX_CONNECTIONS} connections x {MAX_STREAMS_PER_CONNECTION} streams)",
                         );
                     }
                     true
@@ -239,6 +245,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
     }
 
     /// Unsubscribes from stream names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if command delivery fails.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
         if streams.is_empty() {
@@ -265,7 +275,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
     }
 
     /// Returns a stream of output messages.
-    #[must_use]
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn stream(&self) -> impl Stream<Item = BinanceSpotPublicWsMessage> + 'static {
         let mut guard = self.out_rx.lock().expect("out_rx lock poisoned");
@@ -377,7 +386,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         let signal = self.signal.clone();
         let token = cancellation_token.clone();
-        let subs = subscriptions_state.clone();
         let resubscribe_tx = cmd_tx.clone();
 
         let handler_task = get_runtime().spawn(async move {
@@ -391,12 +399,12 @@ impl BinanceSpotPublicJsonWebSocketClient {
                         match result {
                             Some(BinanceSpotPublicWsMessage::Reconnected) => {
                                 log::info!("Spot public JSON WebSocket reconnected, restoring subscriptions");
-                                let topics = subs.all_topics();
+                                let topics = subscriptions_state.all_topics();
                                 for topic in &topics {
-                                    subs.mark_failure(topic);
+                                    subscriptions_state.mark_failure(topic);
                                 }
 
-                                let streams = subs.all_topics();
+                                let streams = subscriptions_state.all_topics();
                                 if !streams.is_empty()
                                     && let Err(e) = resubscribe_tx.send(BinanceSpotPublicWsCommand::Subscribe { streams }) {
                                         log::error!("Failed to resubscribe after reconnect: {e}");

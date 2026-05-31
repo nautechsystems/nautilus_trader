@@ -99,6 +99,7 @@ impl BinanceSpotPublicWsHandler {
                         let mut iter = out.into_iter();
                         let first = iter.next();
                         self.pending_messages.extend(iter);
+
                         if let Some(msg) = first {
                             return Some(msg);
                         }
@@ -161,7 +162,7 @@ impl BinanceSpotPublicWsHandler {
         }
     }
 
-    async fn send_unsubscribe(&mut self, streams: Vec<String>) {
+    async fn send_unsubscribe(&self, streams: Vec<String>) {
         let Some(client) = &self.inner else {
             log::warn!("Cannot unsubscribe: no client connected");
             return;
@@ -335,7 +336,7 @@ fn parse_partial_depth_with_symbol(
 
     let symbol = stream_name
         .and_then(|stream| stream.split('@').next())
-        .map(Ustr::from)?;
+        .map(|s| Ustr::from(s.to_uppercase().as_str()))?;
 
     Some(BinanceSpotPartialDepthMsg {
         symbol,
