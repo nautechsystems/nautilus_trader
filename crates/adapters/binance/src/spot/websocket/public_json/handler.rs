@@ -345,3 +345,29 @@ fn parse_partial_depth_with_symbol(
         asks: parsed.asks,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+    use ustr::Ustr;
+
+    use super::*;
+
+    #[rstest]
+    fn test_parse_partial_depth_with_symbol_uppercases_symbol_from_stream_name() {
+        let payload = json!({
+            "lastUpdateId": 12345,
+            "bids": [["42000.1", "0.5"]],
+            "asks": [["42000.2", "0.8"]]
+        });
+
+        let parsed = parse_partial_depth_with_symbol(&payload, Some("btcusdt@depth20"))
+            .expect("depth payload should parse");
+
+        assert_eq!(parsed.symbol, Ustr::from("BTCUSDT"));
+        assert_eq!(parsed.last_update_id, 12345);
+        assert_eq!(parsed.bids.len(), 1);
+        assert_eq!(parsed.asks.len(), 1);
+    }
+}

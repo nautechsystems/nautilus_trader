@@ -457,3 +457,166 @@ fn normalize_spot_json_stream_url(base_url: &str) -> String {
 
     format!("{trimmed}/stream")
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicU8;
+
+    use nautilus_network::mode::ConnectionMode;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn make_slot_with_streams(
+        streams: Vec<String>,
+    ) -> (
+        ConnectionSlot,
+        tokio::sync::mpsc::UnboundedReceiver<BinanceSpotPublicWsCommand>,
+    ) {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let handler_task = tokio::spawn(async {});
+
+        let bytes_task = tokio::spawn(async {});
+
+        let slot = ConnectionSlot {
+            cmd_tx,
+            streams,
+            handler_task,
+            bytes_task,
+            cancellation_token: CancellationToken::new(),
+            connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
+        };
+
+        (slot, cmd_rx)
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_reuses_existing_stream_and_only_subscribes_new_one() {
+        let client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (slot, mut cmd_rx) = make_slot_with_streams(vec!["btcusdt@trade".to_string()]);
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        client
+            .subscribe(vec![
+                "btcusdt@trade".to_string(),
+                "ethusdt@trade".to_string(),
+            ])
+            .await
+            .expect("subscribe should succeed");
+
+        match cmd_rx
+            .try_recv()
+            .expect("one subscribe command should be sent")
+        {
+            BinanceSpotPublicWsCommand::Subscribe { streams } => {
+                assert_eq!(streams, vec!["ethusdt@trade".to_string()]);
+            }
+            _ => panic!("unexpected command type"),
+        }
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        assert_eq!(slots.len(), 1);
+        assert_eq!(
+            slots[0].streams,
+            vec!["btcusdt@trade".to_string(), "ethusdt@trade".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_removes_only_target_stream_when_sibling_still_subscribed() {
+        let client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (slot, mut cmd_rx) = make_slot_with_streams(vec![
+            "btcusdt@trade".to_string(),
+            "btcusdt@bookTicker".to_string(),
+        ]);
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        client
+            .unsubscribe(vec!["btcusdt@bookTicker".to_string()])
+            .await
+            .expect("unsubscribe should succeed");
+
+        match cmd_rx
+            .try_recv()
+            .expect("one unsubscribe command should be sent")
+        {
+            BinanceSpotPublicWsCommand::Unsubscribe { streams } => {
+                assert_eq!(streams, vec!["btcusdt@bookTicker".to_string()]);
+            }
+            _ => panic!("unexpected command type"),
+        }
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].streams, vec!["btcusdt@trade".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_all_streams_clears_slot_state() {
+        let client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (slot, mut cmd_rx) = make_slot_with_streams(vec![
+            "btcusdt@trade".to_string(),
+            "ethusdt@trade".to_string(),
+        ]);
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        client
+            .unsubscribe(vec![
+                "btcusdt@trade".to_string(),
+                "ethusdt@trade".to_string(),
+            ])
+            .await
+            .expect("unsubscribe should succeed");
+
+        let first = cmd_rx
+            .try_recv()
+            .expect("first unsubscribe command should be sent");
+        let second = cmd_rx
+            .try_recv()
+            .expect("second unsubscribe command should be sent");
+        let mut sent = vec![];
+
+        for cmd in [first, second] {
+            match cmd {
+                BinanceSpotPublicWsCommand::Unsubscribe { streams } => {
+                    sent.extend(streams);
+                }
+                _ => panic!("unexpected command type"),
+            }
+        }
+
+        sent.sort();
+        assert_eq!(
+            sent,
+            vec!["btcusdt@trade".to_string(), "ethusdt@trade".to_string()]
+        );
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        assert_eq!(slots.len(), 1);
+        assert!(slots[0].streams.is_empty());
+    }
+
+    #[rstest]
+    #[case("wss://stream.binance.com/ws", "wss://stream.binance.com/stream")]
+    #[case("wss://stream.binance.com/stream", "wss://stream.binance.com/stream")]
+    #[case("wss://stream.binance.com/stream/", "wss://stream.binance.com/stream")]
+    fn test_normalize_spot_json_stream_url(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalize_spot_json_stream_url(input), expected);
+    }
+}
