@@ -105,17 +105,27 @@ def on_option_chain(self, chain) -> None:
 
 `StrikeRange` controls which strikes are active in a chain subscription:
 
-| Variant        | Description                                          | Example                                       |
-|----------------|------------------------------------------------------|-----------------------------------------------|
+| Variant        | Description                                          | Example                                        |
+|----------------|------------------------------------------------------|------------------------------------------------|
 | `Fixed`        | Subscribe to an explicit set of strikes.             | `nautilus_pyo3.StrikeRange.fixed([...])`       |
 | `AtmRelative`  | N strikes above and N below the current ATM strike.  | `nautilus_pyo3.StrikeRange.atm_relative(5, 5)` |
 | `AtmPercent`   | All strikes within a percentage band around ATM.     | `nautilus_pyo3.StrikeRange.atm_percent(0.10)`  |
+| `Delta`        | Strikes whose call or put delta is near a target.    | `nautilus_pyo3.StrikeRange.delta(0.25, 0.05)`  |
 
 For ATM-based variants, subscriptions are deferred until the ATM price is determined.
 ATM is derived from the forward price embedded in venue-provided `OptionGreeks` updates
 (the `underlying_price` field). It can also be seeded from an initial forward price
 fetched via HTTP, allowing instant bootstrap before live WebSocket ticks arrive. As ATM
 shifts, the active strike set rebalances automatically.
+
+`Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta
+magnitude (calls positive, puts negative, compared by absolute value) falls within
+`tolerance` of `target`. A typical out-of-the-money target such as `0.25` selects a strike on
+each side of ATM. When no active strike's Greeks match the band (including before any Greeks
+arrive), `Delta` falls back to an ATM-relative window of five strikes either side of ATM. In
+raw mode the active set can narrow to the first strike that reports a matching delta before
+neighbouring Greeks arrive, dropping the rest of the window until the selection falls back or
+ATM shifts; snapshot mode reduces this by letting Greeks accumulate before the first publish.
 
 ### Snapshot vs. raw mode
 

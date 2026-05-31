@@ -35,6 +35,10 @@ use crate::{
     types::Price,
 };
 
+/// Number of strikes either side of ATM that [`StrikeRange::Delta`] selects as a
+/// fallback when Greeks are not yet available for delta resolution.
+pub(crate) const DEFAULT_DELTA_FALLBACK_STRIKES: usize = 5;
+
 /// Defines which strikes to include in an option chain subscription.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StrikeRange {
@@ -47,6 +51,13 @@ pub enum StrikeRange {
     },
     /// Subscribe to strikes within a percentage band around ATM price.
     AtmPercent { pct: f64 },
+    /// Subscribe to strikes whose absolute option delta is near `target`.
+    ///
+    /// Delta resolution needs Greeks, so the option chain aggregator performs it.
+    /// The model-level [`StrikeRange::resolve`] has no Greeks and falls back to an
+    /// ATM-relative window of `DEFAULT_DELTA_FALLBACK_STRIKES` strikes either side
+    /// of ATM until Greeks are available.
+    Delta { target: f64, tolerance: f64 },
 }
 
 impl StrikeRange {
@@ -55,6 +66,9 @@ impl StrikeRange {
     /// - `Fixed`: returns the fixed strikes directly (intersected with available).
     /// - `AtmRelative`: finds the closest strike to ATM, takes N above and N below.
     /// - `AtmPercent`: filters strikes within a percentage band around ATM.
+    /// - `Delta`: has no Greeks at this level, so it falls back to an ATM-relative
+    ///   window of `DEFAULT_DELTA_FALLBACK_STRIKES` strikes either side of ATM. The
+    ///   option chain aggregator resolves `Delta` from Greeks instead.
     ///
     /// If `atm_price` is `None` for ATM-based variants, returns an empty vec
     /// (subscriptions are deferred until ATM is known).
@@ -127,6 +141,11 @@ impl StrikeRange {
                     .copied()
                     .collect()
             }
+            Self::Delta { .. } => Self::AtmRelative {
+                strikes_above: DEFAULT_DELTA_FALLBACK_STRIKES,
+                strikes_below: DEFAULT_DELTA_FALLBACK_STRIKES,
+            }
+            .resolve(atm_price, all_strikes),
         }
     }
 }
@@ -673,5 +692,42 @@ mod tests {
         assert_eq!(slice.call_count(), 0);
         assert_eq!(slice.put_count(), 0);
         assert!(slice.atm_strike.is_none());
+    }
+
+    #[rstest]
+    fn test_strike_range_resolve_delta_falls_back_to_atm_relative() {
+        // The model-level resolve has no Greeks, so Delta delegates to an
+        // AtmRelative window of DEFAULT_DELTA_FALLBACK_STRIKES either side of ATM.
+        let strikes: Vec<Price> = (0..=20)
+            .map(|i| Price::from(&(40000 + i * 1000).to_string()))
+            .collect();
+        let atm = Some(Price::from("50000")); // index 10
+        let delta = StrikeRange::Delta {
+            target: 0.25,
+            tolerance: 0.05,
+        };
+        let expected = StrikeRange::AtmRelative {
+            strikes_above: DEFAULT_DELTA_FALLBACK_STRIKES,
+            strikes_below: DEFAULT_DELTA_FALLBACK_STRIKES,
+        }
+        .resolve(atm, &strikes);
+
+        let result = delta.resolve(atm, &strikes);
+        assert_eq!(result, expected);
+        assert_eq!(result.len(), 2 * DEFAULT_DELTA_FALLBACK_STRIKES + 1);
+        assert!(result.contains(&Price::from("50000")));
+        assert!(!result.contains(&Price::from("40000")));
+        assert!(!result.contains(&Price::from("60000")));
+    }
+
+    #[rstest]
+    fn test_strike_range_resolve_delta_empty_without_atm() {
+        let delta = StrikeRange::Delta {
+            target: 0.25,
+            tolerance: 0.05,
+        };
+        let strikes = vec![Price::from("50000"), Price::from("55000")];
+        // No ATM -> deferred (empty), matching ATM-relative behaviour.
+        assert!(delta.resolve(None, &strikes).is_empty());
     }
 }

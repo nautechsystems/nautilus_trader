@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added native `OptionGreeks` persistence and backtest replay support (#4132), thanks @Jonah-Chan
+- Added `StrikeRange.delta(...)` to select option-chain strikes by target delta
 - Added deterministic liquidation engine for backtests (#4077), thanks @abhishektang
 - Added configurable logging IO policies (#4158), thanks @sunlei
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
@@ -63,6 +64,7 @@ Released on TBD (UTC).
 - Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 - Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
+- Added Tardis option greeks ingestion to the catalog for backtest replay
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
@@ -140,6 +142,7 @@ Released on TBD (UTC).
 - Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
 - Added DEX event-signature/parser parity tests across all registered chains
 - Added Derive fuzz targets
+- Added option chain backtest replay tests for slice assembly and snapshot cadence
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)
