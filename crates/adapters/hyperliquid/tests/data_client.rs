@@ -78,6 +78,7 @@ struct TestServerState {
     last_request_type: Arc<tokio::sync::Mutex<Option<String>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    asset_context_updates: Arc<tokio::sync::Notify>,
 }
 
 fn data_path() -> PathBuf {
@@ -411,7 +412,23 @@ async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerS
 }
 
 async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
-    while let Some(message) = socket.next().await {
+    loop {
+        let message = tokio::select! {
+            message = socket.next() => message,
+            () = state.asset_context_updates.notified() => {
+                if socket
+                    .send(Message::Text(active_asset_ctx_message().to_string().into()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+
+                continue;
+            }
+        };
+
+        let Some(message) = message else { break };
         let Ok(message) = message else { break };
 
         match message {
@@ -468,24 +485,7 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                         let book_data = load_json("ws_book_data.json");
                                         json!({"channel": "l2Book", "data": book_data})
                                     }
-                                    "activeAssetCtx" => json!({
-                                        "channel": "activeAssetCtx",
-                                        "data": {
-                                            "coin": "BTC",
-                                            "ctx": {
-                                                "dayNtlVlm": "1000000.0",
-                                                "prevDayPx": "97000.0",
-                                                "markPx": "98455.5",
-                                                "midPx": "98455.0",
-                                                "impactPxs": ["98454.0", "98456.0"],
-                                                "dayBaseVlm": "100.0",
-                                                "funding": "0.0001",
-                                                "openInterest": "1500.0",
-                                                "oraclePx": "98460.0",
-                                                "premium": "-0.0001"
-                                            }
-                                        }
-                                    }),
+                                    "activeAssetCtx" => active_asset_ctx_message(),
                                     "allDexsAssetCtxs" => load_json("ws_all_dexs_asset_ctxs.json"),
                                     _ => json!({"channel": sub_type, "data": {}}),
                                 };
@@ -523,6 +523,27 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
             _ => {}
         }
     }
+}
+
+fn active_asset_ctx_message() -> Value {
+    json!({
+        "channel": "activeAssetCtx",
+        "data": {
+            "coin": "BTC",
+            "ctx": {
+                "dayNtlVlm": "1000000.0",
+                "prevDayPx": "97000.0",
+                "markPx": "98455.5",
+                "midPx": "98455.0",
+                "impactPxs": ["98454.0", "98456.0"],
+                "dayBaseVlm": "100.0",
+                "funding": "0.0001",
+                "openInterest": "1500.0",
+                "oraclePx": "98460.0",
+                "premium": "-0.0001"
+            }
+        }
+    })
 }
 
 fn create_data_client_config(addr: SocketAddr) -> HyperliquidDataClientConfig {
@@ -569,26 +590,57 @@ async fn wait_for_open_interest_event(
 ) {
     wait_until_async(
         || {
-            let found = rx.try_recv().is_ok_and(|event| {
-                let DataEvent::Data(Data::Custom(custom)) = event else {
-                    return false;
-                };
-
-                custom
-                    .data
-                    .as_any()
-                    .downcast_ref::<HyperliquidOpenInterest>()
-                    .is_some_and(|open_interest| {
-                        open_interest.instrument_id == instrument_id
-                            && open_interest.open_interest.to_string() == "1500.0"
-                            && custom.data_type == data_type
-                    })
-            });
+            let found = rx
+                .try_recv()
+                .is_ok_and(|event| is_open_interest_event(event, instrument_id, &data_type));
             async move { found }
         },
         Duration::from_secs(5),
     )
     .await;
+}
+
+async fn wait_for_open_interest_event_after_asset_context_update(
+    state: &TestServerState,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    instrument_id: InstrumentId,
+    data_type: DataType,
+) {
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|event| is_open_interest_event(event, instrument_id, &data_type));
+
+            if !found {
+                state.asset_context_updates.notify_one();
+            }
+
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+fn is_open_interest_event(
+    event: DataEvent,
+    instrument_id: InstrumentId,
+    data_type: &DataType,
+) -> bool {
+    let DataEvent::Data(Data::Custom(custom)) = event else {
+        return false;
+    };
+
+    custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidOpenInterest>()
+        .is_some_and(|open_interest| {
+            open_interest.instrument_id == instrument_id
+                && open_interest.open_interest.to_string() == "1500.0"
+                && custom.data_type == *data_type
+        })
 }
 
 async fn wait_for_all_dex_asset_ctxs_event(
@@ -953,6 +1005,25 @@ async fn test_data_client_shared_asset_context_subscription_with_open_interest()
         Duration::from_secs(5),
     )
     .await;
+
+    wait_for_open_interest_event_after_asset_context_update(
+        &state,
+        &mut rx,
+        instrument_id,
+        data_type.clone(),
+    )
+    .await;
+
+    let active_asset_ctx_subscriptions = state
+        .subscriptions
+        .lock()
+        .await
+        .iter()
+        .filter(|subscription| {
+            subscription.get("type").and_then(|value| value.as_str()) == Some("activeAssetCtx")
+        })
+        .count();
+    assert_eq!(active_asset_ctx_subscriptions, 1);
 
     client
         .unsubscribe(&UnsubscribeCustomData::new(
