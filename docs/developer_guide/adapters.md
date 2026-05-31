@@ -929,6 +929,60 @@ flowchart LR
 - **Message buffering**: Handler uses `VecDeque<{Venue}WsMessage>` for frames that produce multiple output messages. The `next()` method drains the queue before polling channels.
 - **Python constraint**: Client uses `Arc<DashMap>` only for state Python might query; handler uses `AHashMap` for internal matching.
 
+#### Handler initialization handshake (`SetClient`)
+
+The handler does not own its `WebSocketClient` at construction time.
+`WebSocketClient` is not `Clone` and is awkward to move into an already-spawned
+task constructor; several adapters use a deferred handoff through the command
+channel. Lighter uses this stricter ordering:
+
+1. The outer client calls `WebSocketClient::connect(...)` and obtains the
+   live client.
+2. The outer client creates the local `cmd_tx`/`cmd_rx` and `out_tx`/`out_rx`
+   channels. The connection-mode atomic is captured into a local before
+   `client` is moved.
+3. The outer client sends `HandlerCommand::SetClient(client)` on the local
+   `cmd_tx` first, followed by any cache-replay commands
+   (e.g. `InitializeInstruments`).
+4. Only after `SetClient` is queued does the outer client publish the new
+   command channel (swap `self.cmd_tx`) and store the captured connection
+   mode (transition `is_active()` to true). Doing this in the opposite
+   order races: a clone observing `is_active()` could enqueue a Subscribe
+   on the published `cmd_tx` before SetClient lands, and the handler would
+   drop it because `inner == None`.
+5. The outer client spawns the handler task with `cmd_rx`. The handler
+   constructor takes `inner: Option<WebSocketClient>` initialized to
+   `None`; the first command it processes is `SetClient`, which moves the
+   client into `self.inner`.
+6. Any subscribe/order commands queued by clones after step 4 land behind
+   `SetClient` and `InitializeInstruments` in `cmd_rx`, so they reach a
+   fully wired handler in queue order.
+
+```rust
+pub enum HandlerCommand {
+    SetClient(WebSocketClient),
+    Disconnect,
+    Subscribe { /* ... */ },
+    // ... other commands
+}
+
+pub(super) struct {Venue}WsFeedHandler {
+    inner: Option<WebSocketClient>,  // None until SetClient
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    // ...
+}
+
+// In the cmd_rx match arm:
+HandlerCommand::SetClient(client) => {
+    self.inner = Some(client);
+}
+```
+
+BitMEX, OKX, Bybit, Hyperliquid, and Lighter all use `SetClient` to hand the
+connected `WebSocketClient` to the handler. Lighter queues `SetClient` before it
+publishes the new `cmd_tx` or marks the connection active; older adapters may
+publish the command channel first.
+
 ### Authentication
 
 Authentication state is managed through events:
@@ -958,6 +1012,87 @@ flow coordination and is not forwarded to downstream consumers (data/execution c
 Downstream consumers can query authentication state via `AuthTracker` if needed. The execution
 client's `Authenticated` handler only logs at debug level with no important logic depending
 on this event.
+
+#### Auth-token rotation (single-endpoint mixed-trust adapters)
+
+Some venues run public market data and authenticated account channels through a
+single WebSocket endpoint, gated by a short-lived bearer token attached to each
+subscribe request. Lighter is the canonical example: the token is a Schnorr
+signature over `(deadline, account_index, api_key_index)` with a venue-imposed
+hard cap of 8 hours (`LIGHTER_AUTH_TOKEN_MAX_TTL`). `build_auth_token_for(...)`
+currently emits a 7-hour token, and the execution client refreshes account
+channel subscriptions every 6 hours.
+
+This contrasts with the per-message-signature pattern (Hyperliquid) and the
+session-login pattern (BitMEX, Bybit); neither needs in-session token rotation.
+
+**Token lifecycle**
+
+The outer client owns the schedule; the handler owns the wire send. The
+flow is:
+
+1. **Mint before account subscribes**: The execution client calls
+   `build_auth_token_for(...)` after the WebSocket reaches active state, then
+   uses that token for the initial account-channel subscriptions.
+2. **Distribute on subscribe**: `subscribe_account(...)` attaches the token to
+   `HandlerCommand::Subscribe`. The WebSocket client stores the exact
+   `(channel, auth)` pair in `subscription_args` for reconnect replay.
+3. **Schedule refresh**: After the execution WebSocket consumer starts, the
+   execution client spawns a refresh task on `get_runtime()`. The task sleeps
+   for `AUTH_TOKEN_REFRESH_INTERVAL` (6 hours), mints a new token, and re-issues
+   `subscribe_account(...)` for every account channel.
+4. **Stop on disconnect**: The refresh task observes the execution client's
+   cancellation token and exits when the client stops or disconnects.
+
+**Where the schedule lives**
+
+Place the rotation timer in the outer client, not the handler. The execution
+client owns the credential and decides when to mint; the handler remains an I/O
+boundary that sends the supplied token and signs nothing on its own.
+
+```rust
+fn spawn_auth_token_refresh(&self, credential: Credential) {
+    let ws_client = self.ws_client.clone();
+    let cancellation_token = self.cancellation_token.clone();
+    let account_index = credential.account_index();
+    let channels = [
+        LighterWsChannel::AccountAllOrders(account_index),
+        LighterWsChannel::AccountAllTrades(account_index),
+        LighterWsChannel::AccountAllPositions(account_index),
+        LighterWsChannel::AccountAllAssets(account_index),
+    ];
+
+    get_runtime().spawn(async move {
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => break,
+                () = tokio::time::sleep(AUTH_TOKEN_REFRESH_INTERVAL) => {
+                    if let Ok(token) = build_auth_token_for(&credential) {
+                        for channel in channels.clone() {
+                            let _ = ws_client
+                                .subscribe_account(channel, token.clone())
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+```
+
+**Reconnect interaction**
+
+On `Reconnected`, the Lighter WebSocket client replays the tracked
+`subscription_args` through `HandlerCommand::Subscribe`. It does not mint a
+fresh token on reconnect; fresh account-channel tokens come from the scheduled
+execution-client refresh task.
+
+**Failure handling**
+
+Subscription send failures call `mark_failure(topic)` so reconnect replay keeps
+the topic pending. Lighter does not currently implement an immediate auth-token
+refresh path on a mid-session venue rejection.
 
 ### Subscription management
 
@@ -995,17 +1130,81 @@ State transitions follow this lifecycle:
 - Both confirmed and pending subscriptions are restored after reconnection.
 - Unsubscribe operations must check the `op` field in acknowledgments to avoid re-confirming topics.
 
+#### Confirmation timing
+
+The handler is responsible for transitioning topics from Pending to Confirmed.
+Two patterns are established, chosen per venue based on what the wire format
+provides:
+
+**Explicit ack (preferred when the venue supports it)**: used by BitMEX, OKX,
+Bybit, and Lighter. The venue sends a dedicated subscribe/unsubscribe
+acknowledgment frame (typically
+`{ "event": "subscribe", "arg": ..., "code": ... }` or similar). The handler
+matches that frame, derives the topic from its `arg`/`req_id` field, and
+dispatches:
+
+- success -> `confirm_subscribe(topic)` / `confirm_unsubscribe(topic)`.
+- failure -> `mark_failure(topic)` (stays pending; retried on reconnect).
+- unsubscribe failures should be treated as still-subscribed and reconfirmed.
+
+Keep the ack handling in one branch or function invoked from the wire-frame
+match arm so the lifecycle is auditable in one place.
+
+**Implicit-on-first-frame (fallback)**: used by Lighter as a backstop and by any
+venue that either omits subscribe acks or makes them unreliable. The handler calls
+`confirm_subscribe(topic)` when the first inbound data frame for that topic
+arrives. The topic is recovered from the frame's `channel` field. This
+doubles as a backstop when an explicit ack is dropped or arrives after the
+first data frame.
+
+```rust
+// Inside the data-frame match arm:
+let topic = frame_topic(&frame);
+self.subscriptions.confirm_subscribe(&topic);
+// ... then parse and emit
+```
+
+The two patterns can coexist: a venue that sometimes sends acks and sometimes
+doesn't can use the explicit handler for ack frames and the implicit
+backstop on data frames; `confirm_subscribe()` is idempotent.
+
+Failure paths must call `mark_failure(topic)` (not silently drop the
+subscription). `mark_failure()` keeps the topic pending so the reconnect
+replay restores it.
+
 #### Topic format patterns
 
 Adapters use venue-specific delimiters to structure subscription topics:
 
-| Adapter    | Delimiter | Example                | Pattern                      |
-|------------|-----------|------------------------|------------------------------|
-| **BitMEX** | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
-| **OKX**    | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
-| **Bybit**  | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
+| Adapter      | Delimiter | Example                | Pattern                      |
+|--------------|-----------|------------------------|------------------------------|
+| **BitMEX**   | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
+| **OKX**      | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
+| **Bybit**    | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
+| **Lighter**  | `:` / `/` | `order_book:0`         | `{channel}:{market_index}`   |
 
 Parse topics using `split_once()` with the appropriate delimiter to extract channel and symbol components.
+
+##### Asymmetric inbound vs outbound delimiters
+
+Some venues use different separators for outbound subscribe payloads versus
+inbound frame `channel` fields. Lighter is the canonical example: outbound
+subscribe uses `order_book/0` (slash), inbound frames carry
+`"channel": "order_book:0"` (colon).
+
+Established workaround:
+
+- Pick the inbound separator for `SubscriptionState::new(delimiter)` so the
+  handler can confirm subscriptions directly against the `channel` field of
+  every received frame.
+- Expose two methods on the venue's channel/subscription enum:
+  - `subscription_channel()` returns the outbound-formatted payload (used
+    when serializing the subscribe/unsubscribe request).
+  - `topic_key()` returns the canonical topic key (matching the inbound
+    form) used to key `SubscriptionState` and the reconnection replay map.
+
+This keeps a single canonical topic identity throughout the handler while
+honoring the venue's wire format on the way out.
 
 ### Reconnection logic
 
@@ -1017,6 +1216,15 @@ On reconnection, restore authentication and subscriptions:
    - Receive `{Venue}WsMessage::Reconnected` from handler.
    - If authenticated: Re-authenticate and wait for confirmation.
    - Restore all tracked subscriptions via handler commands.
+   - Forward `{Venue}WsMessage::Reconnected` to downstream consumers via
+     `out_tx` when those consumers need to reset local state. BitMEX, OKX,
+     Bybit, and Lighter forward this event after restore is initiated;
+     Hyperliquid currently consumes it in the WebSocket client after
+     resubscribing.
+
+For adapters with an `Authenticated` event, the client spawn loop can consume it
+for reconnection coordination instead of forwarding it. Downstream consumers can
+query `AuthTracker` when they need authentication state.
 
 **Preserving subscription arguments:**
 
@@ -1445,7 +1653,7 @@ fn should_retry_error(error: &MyWsError) -> bool {
 
 Adapters follow standardized naming conventions for consistency across all venue integrations.
 
-#### Channel naming: `raw` -> `msg` -> `out`
+#### Channel naming: `raw` -> `out`
 
 WebSocket message channels follow a two-stage transformation pipeline within the handler:
 

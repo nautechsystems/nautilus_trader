@@ -59,6 +59,11 @@ pub struct ExecTester {
     // One-shot guard for `test_modify_rejected`: ensures the programmatic
     // modify is attempted at most once across the strategy's lifetime.
     pub(super) modify_rejected_attempted: bool,
+    pub(super) pending_open_position_qty: Option<Decimal>,
+    pub(super) buy_cancel_replace_attempted: bool,
+    pub(super) sell_cancel_replace_attempted: bool,
+    pub(super) buy_stop_cancel_replace_attempted: bool,
+    pub(super) sell_stop_cancel_replace_attempted: bool,
 }
 
 nautilus_strategy!(ExecTester, {
@@ -170,13 +175,10 @@ impl DataActor for ExecTester {
             log_info!("{quote:?}", color = LogColor::Cyan);
         }
 
-        if let Some(qty) = self.config.open_position_on_start_qty
+        if quote.instrument_id == self.config.instrument_id
             && self.config.open_position_on_first_quote
-            && !self.open_position_submitted
-            && self.instrument.is_some()
         {
-            self.open_position(qty)?;
-            self.open_position_submitted = true;
+            self.submit_pending_open_position();
         }
 
         self.maintain_orders(quote.bid_price, quote.ask_price);
@@ -258,6 +260,8 @@ impl ExecTester {
     /// Creates a new [`ExecTester`] instance.
     #[must_use]
     pub fn new(config: ExecTesterConfig) -> Self {
+        let pending_open_position_qty = config.open_position_on_start_qty;
+
         Self {
             core: StrategyCore::new(config.base.clone()),
             config,
@@ -270,6 +274,11 @@ impl ExecTester {
             sell_stop_order: None,
             open_position_submitted: false,
             modify_rejected_attempted: false,
+            pending_open_position_qty,
+            buy_cancel_replace_attempted: false,
+            sell_cancel_replace_attempted: false,
+            buy_stop_cancel_replace_attempted: false,
+            sell_stop_cancel_replace_attempted: false,
         }
     }
 
@@ -303,11 +312,22 @@ impl ExecTester {
             );
         }
 
-        if let Some(qty) = self.config.open_position_on_start_qty
-            && !self.config.open_position_on_first_quote
-        {
-            self.open_position_submitted = true;
-            self.open_position(qty)?;
+        if let Some(qty) = self.pending_open_position_qty {
+            let quote_ready = {
+                let cache = self.cache();
+                cache.quote(&instrument_id).is_some()
+            };
+
+            if self.config.open_position_on_first_quote
+                && self.config.subscribe_quotes
+                && !quote_ready
+            {
+                log::info!("Waiting for first quote before opening {instrument_id} position");
+            } else {
+                self.pending_open_position_qty = None;
+                self.open_position(qty)?;
+                self.open_position_submitted = true;
+            }
         }
 
         Ok(())
@@ -343,8 +363,43 @@ impl ExecTester {
         }
     }
 
+    fn submit_pending_open_position(&mut self) {
+        if self.instrument.is_none() {
+            return;
+        }
+
+        let Some(qty) = self.pending_open_position_qty.take() else {
+            return;
+        };
+
+        if let Err(e) = self.open_position(qty) {
+            log::error!("Failed to submit pending open position: {e}");
+        } else {
+            self.open_position_submitted = true;
+        }
+    }
+
     pub(super) fn is_order_active(&self, order: &OrderAny) -> bool {
         order.is_active_local() || order.is_inflight() || order.is_open()
+    }
+
+    pub(super) fn limit_order_is_one_shot(&self) -> bool {
+        self.config.test_reject_post_only
+            || self.config.limit_aggressive
+            || self.config.order_expire_time_delta_mins.is_some()
+            || matches!(
+                self.config.limit_time_in_force,
+                Some(TimeInForce::Ioc | TimeInForce::Fok)
+            )
+    }
+
+    pub(super) fn stop_order_is_one_shot(&self) -> bool {
+        self.config.order_expire_time_delta_mins.is_some()
+            || matches!(
+                self.config.stop_time_in_force,
+                Some(TimeInForce::Ioc | TimeInForce::Fok)
+            )
+            || matches!(self.config.stop_order_type, OrderType::TrailingStopMarket)
     }
 
     pub(super) fn get_order_trigger_price(&self, order: &OrderAny) -> Option<Price> {
@@ -448,6 +503,25 @@ impl ExecTester {
         }
     }
 
+    fn refresh_tracked_stop_order(&mut self, side: OrderSide) {
+        let cid = match side {
+            OrderSide::Buy => self.buy_stop_order.as_ref().map(|o| o.client_order_id()),
+            OrderSide::Sell => self.sell_stop_order.as_ref().map(|o| o.client_order_id()),
+            _ => None,
+        };
+        let Some(cid) = cid else {
+            return;
+        };
+        let latest = self.cache().order(&cid).map(|o| o.clone());
+        if let Some(latest) = latest {
+            match side {
+                OrderSide::Buy => self.buy_stop_order = Some(latest),
+                OrderSide::Sell => self.sell_stop_order = Some(latest),
+                _ => {}
+            }
+        }
+    }
+
     /// Maintain buy limit orders.
     fn maintain_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
         // Refresh from cache first so post-submit event state (venue_order_id,
@@ -483,7 +557,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.buy_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -542,7 +616,10 @@ impl ExecTester {
                     ) {
                         log::error!("Failed to modify buy order: {e}");
                     }
-                } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
+                } else if self.config.cancel_replace_orders_to_maintain_tob_offset
+                    && !self.buy_cancel_replace_attempted
+                {
+                    self.buy_cancel_replace_attempted = true;
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone.client_order_id(), client_id, None);
 
@@ -585,7 +662,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.sell_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -643,7 +720,10 @@ impl ExecTester {
                     ) {
                         log::error!("Failed to modify sell order: {e}");
                     }
-                } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
+                } else if self.config.cancel_replace_orders_to_maintain_tob_offset
+                    && !self.sell_cancel_replace_attempted
+                {
+                    self.sell_cancel_replace_attempted = true;
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone.client_order_id(), client_id, None);
 
@@ -672,11 +752,11 @@ impl ExecTester {
 
         let buy_needs = match &self.buy_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
         };
         let sell_needs = match &self.sell_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.limit_order_is_one_shot(),
         };
 
         if !buy_needs || !sell_needs {
@@ -757,6 +837,8 @@ impl ExecTester {
 
     /// Maintain stop buy orders.
     fn maintain_stop_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
+        self.refresh_tracked_stop_order(OrderSide::Buy);
+
         let Some(instrument) = &self.instrument else {
             return;
         };
@@ -797,7 +879,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.buy_stop_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.stop_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -817,7 +899,10 @@ impl ExecTester {
                     {
                         log::error!("Failed to modify buy stop order: {e}");
                     }
-                } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
+                } else if self.config.cancel_replace_stop_orders_to_maintain_offset
+                    && !self.buy_stop_cancel_replace_attempted
+                {
+                    self.buy_stop_cancel_replace_attempted = true;
                     let order_clone = order.clone();
                     let _ = self.cancel_order(
                         order_clone.client_order_id(),
@@ -837,6 +922,8 @@ impl ExecTester {
 
     /// Maintain stop sell orders.
     fn maintain_stop_sell_orders(&mut self, best_bid: Price, best_ask: Price) {
+        self.refresh_tracked_stop_order(OrderSide::Sell);
+
         let Some(instrument) = &self.instrument else {
             return;
         };
@@ -877,7 +964,7 @@ impl ExecTester {
 
         let needs_new_order = match &self.sell_stop_order {
             None => true,
-            Some(order) => !self.is_order_active(order),
+            Some(order) => !self.is_order_active(order) && !self.stop_order_is_one_shot(),
         };
 
         if needs_new_order {
@@ -897,7 +984,10 @@ impl ExecTester {
                     {
                         log::error!("Failed to modify sell stop order: {e}");
                     }
-                } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
+                } else if self.config.cancel_replace_stop_orders_to_maintain_offset
+                    && !self.sell_stop_cancel_replace_attempted
+                {
+                    self.sell_stop_cancel_replace_attempted = true;
                     let order_clone = order.clone();
                     let _ = self.cancel_order(
                         order_clone.client_order_id(),

@@ -248,7 +248,12 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# `pornin/ecgfp5` is the upstream MIT-licensed Rust reference implementation
+# of the curve and field underpinning the Lighter L2 signer. Pulled in as a
+# `#[cfg(test)]` dev-dep (zero transitive deps; pinned by commit) for the
+# Lighter signing module's differential proptest and fuzz parity layer; never
+# linked into the production binary.
+allow-git = ["https://github.com/pornin/ecgfp5"]
 
 [sources.allow-org]
 github = []

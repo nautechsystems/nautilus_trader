@@ -1,0 +1,36 @@
+{
+  "code": 200,
+  "trades": [
+    {
+      "trade_id": 19211490282,
+      "trade_id_str": "19211490282",
+      "tx_hash": "000000128ba361090000019df5c94af4000000000000000000000000000000000000000000000000",
+      "type": "trade",
+      "market_id": 0,
+      "size": "0.0005",
+      "price": "2361.31",
+      "usd_amount": "1.180655",
+      "ask_id": 281476929689557,
+      "ask_id_str": "281476929689557",
+      "bid_id": 562947905454831,
+      "bid_id_str": "562947905454831",
+      "ask_client_id": 0,
+      "ask_client_id_str": "0",
+      "bid_client_id": 410940644,
+      "bid_client_id_str": "410940644",
+      "ask_account_id": 719347,
+      "bid_account_id": 281474976639642,
+      "is_maker_ask": false,
+      "block_height": 227557648,
+      "timestamp": 1777945103092,
+      "taker_position_size_before": "0.6611",
+      "taker_entry_quote_before": "1556.462172",
+      "taker_initial_margin_fraction_before": 200,
+      "maker_fee": 28,
+      "maker_position_size_before": "-76.0264",
+      "maker_entry_quote_before": "179127.402288",
+      "maker_initial_margin_fraction_before": 200,
+      "transaction_time": 1777945103092648
+    }
+  ]
+}

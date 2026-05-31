@@ -17,6 +17,7 @@ The following integrations are currently supported:
 | [Derive](https://www.derive.xyz)                                             | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](derive.md)       |
 | [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](dydx.md)         |
 | [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](hyperliquid.md)  |
+| [Lighter](https://lighter.xyz)                                               | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](lighter.md)      |
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi‑venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](ib.md)           |
 | [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](kraken.md)       |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](okx.md)          |

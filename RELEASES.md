@@ -55,6 +55,7 @@ Released on TBD (UTC).
 - Added Hyperliquid live open interest custom data from `activeAssetCtx` (Rust) (#4120), thanks @graceyangfan
 - Added Hyperliquid `allDexsAssetCtxs` custom data subscriptions (#4136), thanks @graceyangfan
 - Added Kraken WebSocket rate limiting (#4093), thanks @filipmacek
+- Added Lighter initial adapter (DEX: spot, perps)
 - Added OKX `on_instrument` write-through so data-client instrument updates refresh exec caches without restart
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
 - Added OKX Nitro spread order execution and reconciliation support (Rust)

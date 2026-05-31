@@ -1,0 +1,27 @@
+{
+  "channel": "market_stats:all",
+  "market_stats": {
+    "0": {
+      "symbol": "ETH",
+      "market_id": 0,
+      "index_price": "2064.48",
+      "mark_price": "2064.47",
+      "mid_price": "2064.39",
+      "open_interest": "27250.8411",
+      "open_interest_limit": "50000.0000",
+      "funding_clamp_small": "0.0001",
+      "funding_clamp_big": "0.0002",
+      "last_trade_price": "2064.50",
+      "current_funding_rate": "0.000001",
+      "funding_rate": "0.000002",
+      "funding_timestamp": 1774886400000,
+      "daily_base_token_volume": 199958.6931,
+      "daily_quote_token_volume": 471193598.847246,
+      "daily_price_low": 2311.81,
+      "daily_price_high": 2398.0,
+      "daily_price_change": 0.1685414778023213
+    }
+  },
+  "timestamp": 1774883844933,
+  "type": "update/market_stats"
+}

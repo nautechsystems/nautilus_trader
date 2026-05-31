@@ -1,0 +1,4 @@
+# Go-based maintenance harnesses. Kept on disk for reproducibility but not
+# tracked, so the crate does not advertise Go in its repo language stats.
+tests/bench-upstream-go/
+tests/fixtures-gen/

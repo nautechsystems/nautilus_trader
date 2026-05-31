@@ -1,0 +1,187 @@
+[package]
+name = "nautilus-lighter"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Lighter integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io yet
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_lighter"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+examples = [
+  "dep:reqwest",
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
+python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
+high-precision = ["nautilus-model/high-precision"]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-system",
+] # Optional dep activated only via the python feature
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bon = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
+futures-util = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, optional = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_repr = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+url = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
+
+axum = { workspace = true }
+criterion = { workspace = true }
+dotenvy = { workspace = true }
+ecgfp5 = { workspace = true }
+iai = { workspace = true }
+proptest = { workspace = true }
+rstest = { workspace = true }
+
+[[bench]]
+name = "signing_sign_verify"
+path = "benches/signing_sign_verify.rs"
+harness = false
+
+[[bench]]
+name = "signing_poseidon2"
+path = "benches/signing_poseidon2.rs"
+harness = false
+
+[[bench]]
+name = "signing_field"
+path = "benches/signing_field.rs"
+harness = false
+
+[[bench]]
+name = "signing_curve"
+path = "benches/signing_curve.rs"
+harness = false
+
+[[bench]]
+name = "signing_field_iai"
+path = "benches/signing_field_iai.rs"
+harness = false
+
+[[bench]]
+name = "data"
+path = "benches/data.rs"
+harness = false
+
+[[bench]]
+name = "exec"
+path = "benches/exec.rs"
+harness = false
+
+[[bench]]
+name = "micros"
+path = "benches/micros.rs"
+harness = false
+
+# cargo run -p nautilus-lighter --bin lighter-flatten
+[[bin]]
+name = "lighter-flatten"
+path = "bin/flatten.rs"
+doc = false
+test = false
+
+# cargo run -p nautilus-lighter --bin lighter-integrator-revoke [testnet]
+[[bin]]
+name = "lighter-integrator-revoke"
+path = "bin/integrator_revoke.rs"
+doc = false
+test = false
+
+# cargo run -p nautilus-lighter --bin lighter-trades-probe --features examples
+[[bin]]
+name = "lighter-trades-probe"
+path = "bin/trades_probe.rs"
+required-features = ["examples"]
+doc = false
+test = false
+
+# Run with `cargo run --example lighter-data-tester --package nautilus-lighter --features examples`.
+[[example]]
+name = "lighter-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example lighter-exec-tester --package nautilus-lighter --features examples`.
+[[example]]
+name = "lighter-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = ["examples"]
+doc = false

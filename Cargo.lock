@@ -3611,6 +3611,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecgfp5"
+version = "0.1.0"
+source = "git+https://github.com/pornin/ecgfp5?rev=ce059c6d1e1662db437aecbf3db6bb67fe63c716#ce059c6d1e1662db437aecbf3db6bb67fe63c716"
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6244,6 +6249,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-lighter"
+version = "0.58.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "base64",
+ "bon",
+ "chrono",
+ "criterion",
+ "dashmap",
+ "derive_builder",
+ "dotenvy",
+ "ecgfp5",
+ "futures-util",
+ "iai",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "nautilus-trading",
+ "proptest",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-stub-gen",
+ "rand 0.10.1",
+ "reqwest 0.13.4",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "url",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-live"
 version = "0.58.0"
 dependencies = [
@@ -6573,6 +6627,7 @@ dependencies = [
  "nautilus-infrastructure",
  "nautilus-interactive-brokers",
  "nautilus-kraken",
+ "nautilus-lighter",
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",

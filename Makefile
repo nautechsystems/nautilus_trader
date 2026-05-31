@@ -117,7 +117,8 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-bitmex nautilus-blockchain nautilus-bybit nautilus-databento \
     nautilus-deribit nautilus-dydx nautilus-hyperliquid nautilus-kraken \
-    nautilus-okx nautilus-polymarket nautilus-sandbox nautilus-tardis
+    nautilus-lighter nautilus-okx nautilus-polymarket nautilus-sandbox \
+    nautilus-tardis
 
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)

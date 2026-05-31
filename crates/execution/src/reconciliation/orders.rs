@@ -271,18 +271,19 @@ pub fn generate_external_order_status_events(
         }
         OrderStatus::Rejected => {
             // Rejected goes directly to terminal state without acceptance
+            let reason = report.cancel_reason.as_deref().unwrap_or("UNKNOWN");
             vec![OrderEventAny::Rejected(OrderRejected::new(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
                 *account_id,
-                Ustr::from(report.cancel_reason.as_deref().unwrap_or("UNKNOWN")),
+                Ustr::from(reason),
                 UUID4::new(),
                 report.ts_last,
                 ts_now,
                 true, // reconciliation
-                false,
+                reason_indicates_post_only_rejection(reason),
             ))]
         }
         _ => {
@@ -451,9 +452,24 @@ pub fn create_reconciliation_rejected(
         UUID4::new(),
         ts_now,
         ts_now,
-        true,  // reconciliation
-        false, // due_post_only
+        true, // reconciliation
+        reason_indicates_post_only_rejection(reason),
     )))
+}
+
+fn reason_indicates_post_only_rejection(reason: &str) -> bool {
+    let normalized: String = reason
+        .chars()
+        .filter_map(|ch| {
+            if ch == '-' || ch == '_' || ch.is_whitespace() {
+                None
+            } else {
+                Some(ch.to_ascii_lowercase())
+            }
+        })
+        .collect();
+
+    normalized.contains("postonly") || normalized.contains("postwouldexecute")
 }
 
 /// Creates an `OrderTriggered` event for reconciliation.

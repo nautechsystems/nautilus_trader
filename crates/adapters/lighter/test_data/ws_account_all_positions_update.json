@@ -1,0 +1,28 @@
+{
+  "type": "update/account_all_positions",
+  "channel": "account_all_positions:1234",
+  "positions": {
+    "0": {
+      "market_id": 0,
+      "symbol": "ETH",
+      "initial_margin_fraction": "0.0500",
+      "open_order_count": 1,
+      "pending_order_count": 0,
+      "position_tied_order_count": 0,
+      "sign": 1,
+      "position": "1.5000",
+      "avg_entry_price": "2350.10",
+      "position_value": "3525.15",
+      "unrealized_pnl": "3.45",
+      "realized_pnl": "0.00",
+      "liquidation_price": "1900.00",
+      "total_funding_paid_out": "0.05",
+      "margin_mode": 0,
+      "allocated_margin": "176.25",
+      "total_discount": "0.00"
+    }
+  },
+  "shares": [],
+  "last_funding_round": null,
+  "last_funding_discount": null
+}

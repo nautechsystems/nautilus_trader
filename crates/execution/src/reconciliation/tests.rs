@@ -1316,6 +1316,39 @@ fn test_external_order_status_event_generation(
 }
 
 #[rstest]
+fn test_external_order_rejected_due_post_only() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Rejected,
+        "0",
+        false,
+    );
+    report.cancel_reason = Some("post would execute".to_string());
+
+    let events = generate_external_order_status_events(
+        &order,
+        &report,
+        &AccountId::from("TEST-001"),
+        &InstrumentAny::CryptoPerpetual(instrument),
+        UnixNanos::from(2_000_000),
+    );
+
+    assert_eq!(events.len(), 1);
+    match events.last().unwrap() {
+        OrderEventAny::Rejected(rejected) => assert!(rejected.due_post_only),
+        other => panic!("Expected Rejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
 #[case::market(OrderType::Market, false, LiquiditySide::Taker)]
 #[case::stop_market(OrderType::StopMarket, false, LiquiditySide::Taker)]
 #[case::trailing_stop_market(OrderType::TrailingStopMarket, false, LiquiditySide::Taker)]
@@ -2472,6 +2505,42 @@ fn test_create_reconciliation_rejected_with_reason() {
         assert_eq!(rejected.reason.as_str(), "MARGIN_CALL");
         assert!(rejected.reconciliation);
         assert!(!rejected.due_post_only);
+    } else {
+        panic!("Expected Rejected event");
+    }
+}
+
+#[rstest]
+fn test_create_reconciliation_rejected_due_post_only() {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let client_order_id = ClientOrderId::from("O-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+
+    let submitted = build_order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        AccountId::from("SIM-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+    let result = create_reconciliation_rejected(&order, Some("post-only"), UnixNanos::from(1_000));
+    assert!(result.is_some());
+    if let OrderEventAny::Rejected(rejected) = result.unwrap() {
+        assert_eq!(rejected.reason.as_str(), "post-only");
+        assert!(rejected.reconciliation);
+        assert!(rejected.due_post_only);
     } else {
         panic!("Expected Rejected event");
     }

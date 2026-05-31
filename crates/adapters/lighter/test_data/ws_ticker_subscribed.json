@@ -1,0 +1,19 @@
+{
+  "channel": "ticker:0",
+  "last_updated_at": 1778138260508118,
+  "nonce": 904895,
+  "ticker": {
+    "a": {
+      "price": "2325.00",
+      "size": "99.0000"
+    },
+    "b": {
+      "price": "2000.00",
+      "size": "0.0200"
+    },
+    "last_updated_at": 1778138260508118,
+    "s": "ETH"
+  },
+  "timestamp": 1778138582640,
+  "type": "subscribed/ticker"
+}

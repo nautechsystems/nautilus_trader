@@ -1,0 +1,34 @@
+{
+  "type": "update/account_all_trades",
+  "channel": "account_all_trades:1234",
+  "trades": {
+    "0": [
+      {
+        "trade_id": 19209006902,
+        "trade_id_str": "19209006902",
+        "tx_hash": "000000128b1ee814",
+        "type": "trade",
+        "market_id": 0,
+        "size": "0.1336",
+        "price": "2352.73",
+        "usd_amount": "314.324728",
+        "ask_id": 281476929510102,
+        "ask_id_str": "281476929510102",
+        "bid_id": 562947905631053,
+        "bid_id_str": "562947905631053",
+        "ask_client_id": 0,
+        "ask_client_id_str": "0",
+        "bid_client_id": 7001011966,
+        "bid_client_id_str": "7001011966",
+        "ask_account_id": 91249,
+        "bid_account_id": 1234,
+        "is_maker_ask": true,
+        "block_height": 227535535,
+        "timestamp": 1777941384181,
+        "taker_fee": 196,
+        "maker_fee": 28,
+        "transaction_time": 1777941384181586
+      }
+    ]
+  }
+}

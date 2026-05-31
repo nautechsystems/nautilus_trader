@@ -1,0 +1,17 @@
+{
+  "channel": "spot_market_stats:2048",
+  "spot_market_stats": {
+    "symbol": "USDC",
+    "market_id": 2048,
+    "index_price": "1.000000",
+    "mid_price": "1.000001",
+    "last_trade_price": "1.000002",
+    "daily_base_token_volume": 1000.0,
+    "daily_quote_token_volume": 1000.1,
+    "daily_price_low": 0.999999,
+    "daily_price_high": 1.000002,
+    "daily_price_change": 0.000001
+  },
+  "timestamp": 1774883844933,
+  "type": "update/spot_market_stats"
+}

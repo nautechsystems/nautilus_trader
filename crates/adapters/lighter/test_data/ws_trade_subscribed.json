@@ -1,0 +1,34 @@
+{
+  "channel": "trade:0",
+  "liquidation_trades": [],
+  "nonce": 8630448841,
+  "trades": [
+    {
+      "trade_id": 16164557907,
+      "trade_id_str": "16164557907",
+      "tx_hash": "019f2b9c",
+      "type": "trade",
+      "market_id": 0,
+      "size": "0.1336",
+      "price": "2181.83",
+      "usd_amount": "291.492488",
+      "ask_id": 281476612587355,
+      "ask_id_str": "281476612587355",
+      "bid_id": 562948334068259,
+      "bid_id_str": "562948334068259",
+      "ask_client_id": 363283,
+      "ask_client_id_str": "363283",
+      "bid_client_id": 23004521241,
+      "bid_client_id_str": "23004521241",
+      "ask_account_id": 57890,
+      "bid_account_id": 317068,
+      "is_maker_ask": false,
+      "block_height": 198321831,
+      "timestamp": 1773854156654,
+      "taker_fee": 196,
+      "maker_fee": 28,
+      "transaction_time": 1773854156686065
+    }
+  ],
+  "type": "subscribed/trade"
+}

@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "license": "Apache-2.0 (SDK repository; compiled signer binary)",
+    "primitive": "lighter_auth_token",
+    "source": "github.com/elliottech/lighter-python",
+    "note": "Sig is non-deterministic (random k); the Rust side verifies each oracle token under the derived pubkey rather than asserting byte equality on the sig."
+  },
+  "vectors": [
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "deadline": 1700000000,
+      "token": "1700000000:12345:5:204483f057318ec80df9acd370b292a5c6b3e88f908a9268f10c7f928e8528448f292e56459de47741aaaaf403c64db19a9a0786ec0014afdefe0b3d1aced676cd061628d427f8519b28294cc35ebe54"
+    },
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "deadline": 1777809907,
+      "token": "1777809907:12345:5:a6fa0cae9ed6840a89b7705bffea8bd02f95a318a99e4b3cc6df82d498b7c9179702bd636304cb58e62da059e75216644959fa57b07b332531b1c3b03583384ce9bba941050e75150aaee2e1c0a1ed01"
+    },
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "deadline": 1999999999,
+      "token": "1999999999:12345:5:02d5c96208d2b71ef32efe005901c78666d57f90820dc77ec6c1f7eeb04639d7dd5f2d182c61a355f995b68d5f80f2e883aa5e298f4e95ad2f944673d6b6b4b17cb717e51d270033161ff386b022c57a"
+    },
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "deadline": 1111111111,
+      "token": "1111111111:12345:5:3b9198157bde181de02dd6169057d7c52eb1a9db29c6f6cb56f8f4437fb0c820b66c66b1bcccc64c6f51b3dd6b09b722fc06c5c260330915d7d31759700650cfb7de5c549f7d74be245af7ce0cfc1b33"
+    },
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "deadline": 1234567890,
+      "token": "1234567890:12345:5:585839f4c6e773f6b307c5b180f44c9db2bbffe2600b268ea5b6523653c6d520304d00059a620c2e1c477f9f933066f430427461df275fe8eb241a427df6fba73bd7670be56ba8c69aa6887a5b16956e"
+    },
+    {
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 0,
+      "deadline": 1888888888,
+      "token": "1888888888:12345:0:b67e761fef785f5fc8a91fcf1370eeef7c7ee0228a621c6298944f7743ff79e44f435ce6485f15434b9185d55ecbfac5a838c649ab52d25d0584d702bde344a16e781da4559cba337e5c7489ea747b6b"
+    }
+  ]
+}

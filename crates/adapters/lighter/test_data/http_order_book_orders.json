@@ -1,0 +1,29 @@
+{
+  "code": 200,
+  "total_asks": 1,
+  "asks": [
+    {
+      "order_index": 281476929689581,
+      "order_id": "281476929689581",
+      "owner_account_index": 281474976641952,
+      "initial_base_amount": "0.0317",
+      "remaining_base_amount": "0.0317",
+      "price": "2361.32",
+      "order_expiry": 1780364303894,
+      "transaction_time": 0
+    }
+  ],
+  "total_bids": 1,
+  "bids": [
+    {
+      "order_index": 562947905454787,
+      "order_id": "562947905454787",
+      "owner_account_index": 281474976618239,
+      "initial_base_amount": "3.4125",
+      "remaining_base_amount": "3.4125",
+      "price": "2361.17",
+      "order_expiry": 1780537103955,
+      "transaction_time": 0
+    }
+  ]
+}
