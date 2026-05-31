@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::{
     error::EventStoreError,
-    markers::{DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap},
+    markers::{DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, StreamDictEntry},
 };
 
 /// Default channel capacity for markers pending the writer thread.
@@ -57,6 +57,8 @@ pub enum MarkerMsg {
     Snapshot(DataCursorSnapshot),
     /// High-fidelity per-record marker.
     HiFi(HiFiMarker),
+    /// Stream dictionary entry.
+    Dict(StreamDictEntry),
     /// Closes and seals the marker run after draining older messages.
     Close,
     #[doc(hidden)]
@@ -78,10 +80,15 @@ mod imp {
 
     use nautilus_core::time::AtomicTime;
 
-    use super::{EventStoreError, MarkerBackend, MarkerGap, MarkerMsg, MarkerWriterConfig};
+    use super::{
+        EventStoreError, MarkerBackend, MarkerGap, MarkerMsg, MarkerWriterConfig, StreamDictEntry,
+    };
     use crate::{
         manifest::RunStatus,
-        markers::{MarkerGapReason, compute_gap_hash, compute_hifi_hash, compute_marker_hash},
+        markers::{
+            MarkerGapReason, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
+            compute_marker_hash,
+        },
     };
 
     const MARKER_WRITER_THREAD_NAME: &str = "event-store-marker-writer";
@@ -192,7 +199,10 @@ mod imp {
                 return Err(EventStoreError::Closed);
             }
 
-            if matches!(msg, MarkerMsg::Close | MarkerMsg::GapThen { .. }) {
+            if matches!(
+                msg,
+                MarkerMsg::Dict(_) | MarkerMsg::Close | MarkerMsg::GapThen { .. }
+            ) {
                 return Err(EventStoreError::Backend(
                     "submit accepts Snapshot or HiFi marker messages".to_string(),
                 ));
@@ -226,6 +236,28 @@ mod imp {
                     self.closed.store(true, Ordering::Release);
                     Err(EventStoreError::Closed)
                 }
+            }
+        }
+
+        /// Submits a stream dictionary entry to the writer.
+        ///
+        /// Dictionary entries are one-time stream metadata, so this path waits for channel
+        /// capacity instead of dropping and gap-accounting them.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`EventStoreError::Closed`] when the writer is closed.
+        pub fn put_dict(&self, entry: StreamDictEntry) -> Result<bool, EventStoreError> {
+            if self.closed.load(Ordering::Acquire) {
+                return Err(EventStoreError::Closed);
+            }
+
+            let tx = self.tx.as_ref().ok_or(EventStoreError::Closed)?;
+            if tx.send(MarkerMsg::Dict(entry)).is_ok() {
+                Ok(true)
+            } else {
+                self.closed.store(true, Ordering::Release);
+                Err(EventStoreError::Closed)
             }
         }
 
@@ -343,7 +375,7 @@ mod imp {
         match msg {
             MarkerMsg::Close => true,
             MarkerMsg::GapThen { msg, .. } => closes_after_msg(msg),
-            MarkerMsg::Snapshot(_) | MarkerMsg::HiFi(_) => false,
+            MarkerMsg::Snapshot(_) | MarkerMsg::HiFi(_) | MarkerMsg::Dict(_) => false,
         }
     }
 
@@ -363,6 +395,7 @@ mod imp {
                 backend.append_snapshot(&snapshot, compute_marker_hash(&snapshot))
             }
             MarkerMsg::HiFi(marker) => backend.append_hifi(&marker, compute_hifi_hash(&marker)),
+            MarkerMsg::Dict(entry) => backend.put_dict(&entry, compute_dict_hash(&entry)),
             MarkerMsg::GapThen { gap, msg } => {
                 backend.append_gap(&gap, compute_gap_hash(&gap))?;
                 write_msg(backend, *msg)
@@ -384,10 +417,10 @@ mod imp {
 
     use nautilus_core::time::AtomicTime;
 
-    use super::{EventStoreError, MarkerBackend, MarkerMsg, MarkerWriterConfig};
+    use super::{EventStoreError, MarkerBackend, MarkerMsg, MarkerWriterConfig, StreamDictEntry};
     use crate::{
         manifest::RunStatus,
-        markers::{compute_hifi_hash, compute_marker_hash},
+        markers::{compute_dict_hash, compute_hifi_hash, compute_marker_hash},
     };
 
     /// Synchronous marker writer used under simulation.
@@ -458,7 +491,7 @@ mod imp {
                 MarkerMsg::HiFi(marker) => inner
                     .backend
                     .append_hifi(&marker, compute_hifi_hash(&marker))?,
-                MarkerMsg::Close | MarkerMsg::GapThen { .. } => {
+                MarkerMsg::Dict(_) | MarkerMsg::Close | MarkerMsg::GapThen { .. } => {
                     return Err(EventStoreError::Backend(
                         "submit accepts Snapshot or HiFi marker messages".to_string(),
                     ));
@@ -466,6 +499,26 @@ mod imp {
             }
 
             self.last_submitted_seq.store(marker_seq, Ordering::Release);
+            Ok(true)
+        }
+
+        /// Commits the stream dictionary entry synchronously.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`EventStoreError::Closed`] when the writer is closed.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the writer mutex is poisoned.
+        pub fn put_dict(&self, entry: StreamDictEntry) -> Result<bool, EventStoreError> {
+            let mut inner = self.inner.lock().expect("marker writer mutex poisoned");
+
+            if inner.closed {
+                return Err(EventStoreError::Closed);
+            }
+
+            inner.backend.put_dict(&entry, compute_dict_hash(&entry))?;
             Ok(true)
         }
 
@@ -815,6 +868,82 @@ mod tests {
         assert_eq!(
             backend.scan_snapshots().expect("scan snapshots"),
             vec![s1, s2]
+        );
+    }
+
+    #[rstest]
+    fn put_dict_waits_for_capacity_and_persists_metadata() {
+        let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
+        inner
+            .lock()
+            .expect("inner marker")
+            .open_run(manifest("run-dict-capacity"))
+            .expect("open marker run");
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let appends_seen = Arc::new(AtomicUsize::new(0));
+        let backend = BlockingMarkerBackend::new(
+            Arc::clone(&inner),
+            Arc::clone(&gate),
+            Arc::clone(&appends_seen),
+        );
+
+        let writer = MarkerWriter::spawn(
+            Box::new(backend),
+            get_atomic_clock_static(),
+            MarkerWriterConfig {
+                channel_capacity: 1,
+                max_batch: 1,
+                max_latency: Duration::from_secs(30),
+            },
+        )
+        .expect("spawn marker writer");
+
+        let first = snapshot(1);
+        assert!(
+            writer
+                .submit(MarkerMsg::Snapshot(first.clone()), first.marker_seq)
+                .expect("submit first")
+        );
+        wait_until(
+            || appends_seen.load(Ordering::SeqCst) == 1,
+            "writer to block in backend append",
+        );
+
+        let second = snapshot(2);
+        assert!(
+            writer
+                .submit(MarkerMsg::Snapshot(second.clone()), second.marker_seq)
+                .expect("submit second")
+        );
+
+        let entry = StreamDictEntry {
+            slot: 1,
+            data_cls: DataClass::Trade,
+            identifier: "BTCUSDT.BINANCE".to_string(),
+        };
+        let gate_for_release = Arc::clone(&gate);
+
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            let (lock, cvar) = &*gate_for_release;
+            *lock.lock().expect("gate") = true;
+            cvar.notify_all();
+        });
+
+        assert!(writer.put_dict(entry.clone()).expect("put dict"));
+        release.join().expect("release gate");
+        writer.close();
+
+        let backend = inner.lock().expect("inner marker");
+        assert_eq!(backend.scan_dict().expect("scan dict"), vec![entry]);
+        assert_eq!(
+            backend
+                .scan_snapshots()
+                .expect("scan snapshots")
+                .into_iter()
+                .map(|snapshot| snapshot.marker_seq)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
         );
     }
 
