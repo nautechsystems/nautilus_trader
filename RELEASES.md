@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added structured `PoolProfilerError` carrying pool id, block, transaction/log index, and event kind
 - Added DeFi data (`DefiData`) replay through the data and backtest engines as a first-class `Data` variant
 - Added `BacktestEngine.add_defi_data` for replaying DeFi block, pool, and pool-event data in backtests
+- Added funding-rate catalog replay and `FundingSettlement` handling for backtests (Rust)
 - Added generic structured key-value fields to `LogLine` (#4090), thanks @filipmacek
 - Added `correlation_id` field to trading and system command structs for request tracing (Rust)
 - Added Cap'n Proto and adapter split propagation of trading command `correlation_id`
@@ -166,6 +167,7 @@ Released on TBD (UTC).
 - Added plug-in concept guide covering the C-ABI boundary, manifest, lifecycle, and live-node integration
 - Added event-sourcing concept guide covering capture, replay, snapshot recovery, and verifier behaviour
 - Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
+- Added backtesting guide notes for funding settlement flows
 - Added FFI and Rust unsafe-code guidance for `PyCapsule` ownership and scoped TLS access
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording

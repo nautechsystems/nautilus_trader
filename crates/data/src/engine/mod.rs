@@ -1627,9 +1627,9 @@ impl DataEngine {
     /// custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         self.data_count += 1;
-        // Dynamically-typed entry point: `InstrumentStatus`, `OptionGreeks`, and custom data are
-        // also `Data` enum variants handled in `process_data`, but can arrive here as typed data,
-        // whereas `InstrumentAny` and `FundingRateUpdate` are not `Data` variants.
+        // Dynamically-typed entry point: `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`,
+        // and custom data are also `Data` enum variants handled in `process_data`, but can arrive
+        // here as typed data, whereas `InstrumentAny` is not a `Data` variant.
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
@@ -1679,6 +1679,10 @@ impl DataEngine {
                 self.handle_index_price(index_price);
                 self.drain_deferred_commands();
             }
+            Data::FundingRateUpdate(funding_rate) => {
+                self.handle_funding_rate(funding_rate);
+                self.drain_deferred_commands();
+            }
             Data::InstrumentStatus(status) => {
                 self.handle_instrument_status(status);
                 self.drain_deferred_commands();
@@ -1723,6 +1727,9 @@ impl DataEngine {
             Data::Bar(bar) => self.handle_bar_pipeline(bar),
             Data::MarkPriceUpdate(mark_price) => self.handle_mark_price_pipeline(mark_price),
             Data::IndexPriceUpdate(index_price) => self.handle_index_price_pipeline(index_price),
+            Data::FundingRateUpdate(funding_rate) => {
+                self.handle_funding_rate_pipeline(funding_rate);
+            }
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
@@ -2756,6 +2763,21 @@ impl DataEngine {
 
         let topic = switchboard::get_pipeline_index_price_topic(index_price.instrument_id);
         msgbus::publish_index_price(topic, &index_price);
+    }
+
+    fn handle_funding_rate_pipeline(&self, funding_rate: FundingRateUpdate) {
+        if self.pipeline_cache_writes_allowed()
+            && let Err(e) = self
+                .cache
+                .as_ref()
+                .borrow_mut()
+                .add_funding_rate(funding_rate)
+        {
+            log_error_on_cache_insert(&e);
+        }
+
+        let topic = switchboard::get_pipeline_funding_rate_topic(funding_rate.instrument_id);
+        msgbus::publish_funding_rate(topic, &funding_rate);
     }
 
     fn handle_instrument_status_pipeline(&self, status: InstrumentStatus) {

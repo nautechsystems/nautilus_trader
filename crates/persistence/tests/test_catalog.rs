@@ -18,9 +18,9 @@ use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, HasTsInit,
-        IndexPriceUpdate, MarkPriceUpdate, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
+        HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OptionGreekValues, OptionGreeks,
+        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
         is_monotonically_increasing_by_init, to_variant,
     },
     enums::{
@@ -220,6 +220,17 @@ fn create_index_price_update(ts_init: u64) -> IndexPriceUpdate {
         ethusdt_binance_id(),
         Price::new(1000.00, 2),
         UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_funding_rate_update(ts_init: u64) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        ethusdt_binance_id(),
+        Decimal::from_str("0.0001").unwrap(),
+        Some(480),
+        Some(UnixNanos::from(ts_init + 1)),
+        UnixNanos::from(ts_init),
         UnixNanos::from(ts_init),
     )
 }
@@ -1465,6 +1476,34 @@ fn test_write_data_enum_option_greeks_round_trip() {
         .unwrap();
 
     assert_eq!(result, greeks);
+}
+
+#[rstest]
+fn test_write_data_enum_funding_rates_round_trip() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let funding_rates = vec![
+        create_funding_rate_update(1000),
+        create_funding_rate_update(2000),
+    ];
+    let data: Vec<Data> = funding_rates
+        .iter()
+        .copied()
+        .map(Data::FundingRateUpdate)
+        .collect();
+
+    catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap();
+
+    let result = catalog
+        .funding_rates(
+            Some(vec!["ETH/USDT.BINANCE".to_string()]),
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(2500)),
+        )
+        .unwrap();
+
+    assert_eq!(result, funding_rates);
 }
 
 #[rstest]

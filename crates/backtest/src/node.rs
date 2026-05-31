@@ -21,8 +21,9 @@ use ahash::{AHashMap, AHashSet};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
@@ -560,6 +561,9 @@ fn dispatch_query(
         }
         NautilusDataType::IndexPriceUpdate => {
             catalog.query::<IndexPriceUpdate>(identifiers, start, end, filter, None, optimize)
+        }
+        NautilusDataType::FundingRateUpdate => {
+            catalog.query::<FundingRateUpdate>(identifiers, start, end, filter, None, optimize)
         }
         NautilusDataType::InstrumentStatus => {
             catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize)

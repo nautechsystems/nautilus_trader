@@ -45,6 +45,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(|x| x.into_any()),
         Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
@@ -239,7 +240,10 @@ impl DataQueryResult {
                 let has_non_ffi = acc.iter().any(|d| {
                     matches!(
                         d,
-                        Data::Custom(_) | Data::InstrumentStatus(_) | Data::OptionGreeks(_)
+                        Data::Custom(_)
+                            | Data::FundingRateUpdate(_)
+                            | Data::InstrumentStatus(_)
+                            | Data::OptionGreeks(_)
                     )
                 });
 

@@ -40,10 +40,14 @@ use nautilus_indicators::{
     indicator::{Indicator, MovingAverage},
 };
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, TradeTick},
+    accounts::AccountAny,
+    data::{
+        Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, MarkPriceUpdate,
+        OrderBookDelta, QuoteTick, TradeTick,
+    },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, OmsType, OptionKind, OrderSide, PriceType,
+        BookType, OmsType, OptionKind, OrderSide, PositionAdjustmentType, PriceType,
     },
     events::OrderFilled,
     identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Symbol, TradeId, Venue},
@@ -1269,6 +1273,62 @@ fn test_run_processes_quote_ticks(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let bt_start = engine.backtest_start().expect("backtest_start populated");
     let bt_end = engine.backtest_end().expect("backtest_end populated");
     assert!(bt_end >= bt_start);
+}
+
+#[rstest]
+fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRateUpdate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(UnixNanos::from(4_000_000_000)),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let account = cache.account(&position.account_id).unwrap();
+    let AccountAny::Margin(_) = &*account else {
+        panic!("expected margin account");
+    };
+    let balance = account.balance(Some(Currency::USDT())).unwrap();
+    let [adjustment] = position.adjustments.as_slice() else {
+        panic!("expected one position adjustment");
+    };
+
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+    assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
+    assert_eq!(adjustment.ts_event, UnixNanos::from(4_000_000_000));
+    assert_eq!(position.realized_pnl, Some(Money::from("-1.4004 USDT")));
+    assert_eq!(balance.total, Money::from("999998.5996 USDT"));
 }
 
 #[rstest]

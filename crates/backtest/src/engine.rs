@@ -1086,17 +1086,26 @@ impl BacktestEngine {
 
         let venue = data.instrument_id().venue;
         if let Some(exchange) = self.venues.get(&venue) {
-            let mut exchange = exchange.borrow_mut();
+            let mut exchange_ref = exchange.borrow_mut();
 
             match data {
-                Data::Delta(delta) => exchange.process_order_book_delta(*delta),
-                Data::Deltas(deltas) => exchange.process_order_book_deltas(deltas),
-                Data::Quote(quote) => exchange.process_quote_tick(quote),
-                Data::Trade(trade) => exchange.process_trade_tick(trade),
-                Data::Bar(bar) => exchange.process_bar(*bar),
-                Data::InstrumentStatus(status) => exchange.process_instrument_status(*status),
-                Data::InstrumentClose(close) => exchange.process_instrument_close(*close),
-                Data::Depth10(depth) => exchange.process_order_book_depth10(depth),
+                Data::Delta(delta) => exchange_ref.process_order_book_delta(*delta),
+                Data::Deltas(deltas) => exchange_ref.process_order_book_deltas(deltas),
+                Data::Depth10(depth) => exchange_ref.process_order_book_depth10(depth),
+                Data::Quote(quote) => exchange_ref.process_quote_tick(quote),
+                Data::Trade(trade) => exchange_ref.process_trade_tick(trade),
+                Data::Bar(bar) => exchange_ref.process_bar(*bar),
+                Data::InstrumentStatus(status) => exchange_ref.process_instrument_status(*status),
+                Data::InstrumentClose(close) => exchange_ref.process_instrument_close(*close),
+                Data::FundingRateUpdate(funding) => {
+                    let settlement_ns = exchange_ref.process_funding_rate(*funding);
+                    drop(exchange_ref);
+                    self.schedule_funding_settlement_if_required(
+                        exchange,
+                        funding.instrument_id,
+                        settlement_ns,
+                    );
+                }
                 Data::MarkPriceUpdate(_)
                 | Data::IndexPriceUpdate(_)
                 | Data::OptionGreeks(_)
@@ -1112,7 +1121,6 @@ impl BacktestEngine {
     }
 
     fn advance_time_impl(&mut self, ts_now: UnixNanos, clocks: &[Rc<RefCell<dyn Clock>>]) {
-        // Advance all clocks to ts_now via accumulator
         for clock in clocks {
             Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
         }
@@ -1309,6 +1317,56 @@ impl BacktestEngine {
 
     fn instrument_expiration_timer_name(instrument_id: InstrumentId) -> String {
         format!("INSTRUMENT-EXPIRATION:{instrument_id}")
+    }
+
+    fn schedule_funding_settlement_if_required(
+        &self,
+        exchange: &Rc<RefCell<SimulatedExchange>>,
+        instrument_id: InstrumentId,
+        settlement_ns: Option<UnixNanos>,
+    ) {
+        let Some(settlement_ns) = settlement_ns else {
+            return;
+        };
+
+        if let Err(e) = self.set_funding_settlement_timer(exchange, instrument_id, settlement_ns) {
+            log::error!("Cannot schedule funding settlement for {instrument_id}: {e}");
+        }
+    }
+
+    fn set_funding_settlement_timer(
+        &self,
+        exchange: &Rc<RefCell<SimulatedExchange>>,
+        instrument_id: InstrumentId,
+        settlement_ns: UnixNanos,
+    ) -> anyhow::Result<()> {
+        let timer_name = Self::funding_settlement_timer_name(instrument_id);
+        let exchange: Weak<RefCell<SimulatedExchange>> = Rc::downgrade(exchange);
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event: TimeEvent| {
+            if let Some(exchange) = exchange.upgrade() {
+                exchange
+                    .borrow_mut()
+                    .process_funding_settlement(instrument_id, event.ts_event);
+            }
+        });
+        let timer_key = ustr::Ustr::from(timer_name.as_str());
+        let mut clock = self.kernel.clock.borrow_mut();
+        if clock.timer_exists(&timer_key) {
+            clock.cancel_timer(&timer_name);
+        }
+
+        clock.set_time_alert_ns(
+            &timer_name,
+            settlement_ns,
+            Some(TimeEventCallback::from(callback)),
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    fn funding_settlement_timer_name(instrument_id: InstrumentId) -> String {
+        format!("FUNDING-SETTLEMENT:{instrument_id}")
     }
 
     fn collect_all_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {

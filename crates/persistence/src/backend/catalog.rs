@@ -384,6 +384,7 @@ impl ParquetDataCatalog {
         let mut bars: Vec<Bar> = Vec::new();
         let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
         let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
+        let mut funding_rates: Vec<FundingRateUpdate> = Vec::new();
         let mut statuses: Vec<InstrumentStatus> = Vec::new();
         let mut option_greeks: Vec<OptionGreeks> = Vec::new();
         let mut closes: Vec<InstrumentClose> = Vec::new();
@@ -423,6 +424,9 @@ impl ParquetDataCatalog {
                 Data::IndexPriceUpdate(p) => {
                     index_prices.push(p);
                 }
+                Data::FundingRateUpdate(p) => {
+                    funding_rates.push(p);
+                }
                 Data::InstrumentStatus(s) => {
                     statuses.push(s);
                 }
@@ -449,6 +453,7 @@ impl ParquetDataCatalog {
         self.write_to_parquet(bars, start, end, skip_disjoint_check)?;
         self.write_to_parquet(mark_prices, start, end, skip_disjoint_check)?;
         self.write_to_parquet(index_prices, start, end, skip_disjoint_check)?;
+        self.write_to_parquet(funding_rates, start, end, skip_disjoint_check)?;
         self.write_to_parquet(statuses, start, end, skip_disjoint_check)?;
         self.write_to_parquet(option_greeks, start, end, skip_disjoint_check)?;
         self.write_to_parquet(closes, start, end, skip_disjoint_check)?;
@@ -3415,6 +3420,11 @@ impl ParquetDataCatalog {
                         let prices: Vec<MarkPriceUpdate> =
                             self.convert_record_batches_to_data(batches, false)?;
                         prices.into_iter().map(Data::from).collect()
+                    }
+                    "funding_rate_update" => {
+                        let funding_rates: Vec<FundingRateUpdate> =
+                            self.convert_record_batches_to_data(batches, false)?;
+                        funding_rates.into_iter().map(Data::from).collect()
                     }
                     "option_greeks" => {
                         let greeks: Vec<OptionGreeks> =

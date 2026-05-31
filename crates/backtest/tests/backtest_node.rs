@@ -15,7 +15,7 @@
 
 #![cfg(feature = "streaming")]
 
-use std::fmt::Debug;
+use std::{fmt::Debug, str::FromStr};
 
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
@@ -24,7 +24,7 @@ use nautilus_backtest::{
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarSpecification, QuoteTick, TradeTick},
+    data::{BarSpecification, FundingRateUpdate, QuoteTick, TradeTick},
     enums::{AccountType, AggressorSide, BarAggregation, BookType, OmsType, OrderSide, PriceType},
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -33,6 +33,7 @@ use nautilus_model::{
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
+use rust_decimal::Decimal;
 use tempfile::TempDir;
 use ustr::Ustr;
 
@@ -116,6 +117,43 @@ fn create_catalog_with_quotes_and_trades(
     catalog.write_to_parquet(trades, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
+}
+
+fn create_catalog_with_funding_rates(
+    instrument: &InstrumentAny,
+    base_ts: u64,
+) -> (TempDir, String, Vec<FundingRateUpdate>) {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog.write_instruments(vec![instrument.clone()]).unwrap();
+
+    let instrument_id = instrument.id();
+    let funding_rates = vec![
+        FundingRateUpdate::new(
+            instrument_id,
+            Decimal::from_str("0.0001").unwrap(),
+            Some(480),
+            Some(UnixNanos::from(base_ts + 1_000_000_000)),
+            UnixNanos::from(base_ts),
+            UnixNanos::from(base_ts),
+        ),
+        FundingRateUpdate::new(
+            instrument_id,
+            Decimal::from_str("0.0002").unwrap(),
+            Some(480),
+            Some(UnixNanos::from(base_ts + 2_000_000_000)),
+            UnixNanos::from(base_ts + 1_000_000_000),
+            UnixNanos::from(base_ts + 1_000_000_000),
+        ),
+    ];
+
+    catalog
+        .write_to_parquet(funding_rates.clone(), None, None, None)
+        .unwrap();
+
+    (temp_dir, catalog_path, funding_rates)
 }
 
 fn binance_venue_config() -> BacktestVenueConfig {
@@ -433,6 +471,37 @@ fn test_run_oneshot_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) 
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 5);
+}
+
+#[rstest]
+fn test_run_oneshot_loads_funding_rates_from_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path, funding_rates) =
+        create_catalog_with_funding_rates(&instrument, 1_000_000_000);
+
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::FundingRateUpdate)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument.id())
+        .build();
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data])
+        .dispose_on_completion(false)
+        .build();
+    let config_id = config.id().to_string();
+
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    let results = node.run().unwrap();
+    let engine = node.get_engine(&config_id).unwrap();
+    let cache = engine.kernel().cache.borrow();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, funding_rates.len());
+    assert_eq!(
+        cache.funding_rate(&instrument.id()),
+        Some(funding_rates.last().unwrap())
+    );
 }
 
 #[rstest]

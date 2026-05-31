@@ -38,6 +38,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::FundingRateUpdate(funding) => Py::new(py, funding).map(|x| x.into_any()),
         Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),

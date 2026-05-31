@@ -167,6 +167,30 @@ The `BacktestEngine` enforces important invariants to ensure data integrity:
 
 This design ensures data integrity while enabling performance optimizations for large datasets.
 
+## Funding
+
+Backtests settle perpetual funding at funding boundaries from `FundingRateUpdate` data.
+When an update has `next_funding_ns`, the simulated exchange stores the latest rate and the
+backtest clock emits one `FundingSettlement` at that timestamp. Without `next_funding_ns`, the
+exchange settles only when `ts_event` lands on the `interval` boundary. Updates without a boundary
+remain strategy data and do not create funding payments.
+
+```mermaid
+flowchart LR
+    A[FundingRateUpdate] --> B[SimulatedExchange stores latest rate]
+    B --> C[Backtest clock reaches funding boundary]
+    C --> D[FundingSettlement]
+    D --> E[Open positions]
+    E --> F[PositionAdjusted: Funding]
+    E --> G[AccountState]
+    F --> H[Portfolio]
+    G --> H
+```
+
+`PositionAdjusted` remains the position accounting event. A positive funding rate debits long
+positions and credits short positions. The resulting adjustment changes realized PnL, and the
+matching account balance update records the cash movement.
+
 ## High-level API
 
 The high-level API centers around a `BacktestNode`, which orchestrates the management of multiple `BacktestEngine` instances,

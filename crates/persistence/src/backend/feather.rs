@@ -740,6 +740,7 @@ impl FeatherWriter {
             Data::Depth10(depth) => self.write(*depth).await,
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
+            Data::FundingRateUpdate(funding) => self.write(funding).await,
             Data::InstrumentStatus(status) => self.write(status).await,
             Data::OptionGreeks(greeks) => self.write(greeks).await,
             Data::InstrumentClose(close) => self.write(close).await,

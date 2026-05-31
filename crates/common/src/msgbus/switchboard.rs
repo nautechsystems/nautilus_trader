@@ -375,6 +375,10 @@ define_switchboard! {
     get_funding_rate_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.funding_rates.{}.{}", instrument_id.venue, instrument_id.symbol;
 
+    funding_settlement_topics: InstrumentId,
+    get_funding_settlement_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.funding_settlements.{}.{}", instrument_id.venue, instrument_id.symbol;
+
     instrument_status_topics: InstrumentId,
     get_instrument_status_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.status.{}.{}", instrument_id.venue, instrument_id.symbol;
@@ -587,6 +591,7 @@ define_wrappers! {
     get_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_funding_settlement_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
