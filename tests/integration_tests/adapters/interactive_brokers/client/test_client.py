@@ -229,7 +229,9 @@ async def test_run_connection_watchdog_reconnect(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connected(ib_client_running):
+async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connected(
+    ib_client_running,
+):
     # Arrange - client is running and connected (_is_ib_connected is set by ib_client_running fixture)
     assert ib_client_running._is_ib_connected.is_set()
     assert ib_client_running._last_disconnection_ns is None
@@ -244,7 +246,9 @@ async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connecte
 
 
 @pytest.mark.asyncio
-async def test_handle_disconnection_does_not_set_last_disconnection_ns_when_not_connected(ib_client):
+async def test_handle_disconnection_does_not_set_last_disconnection_ns_when_not_connected(
+    ib_client,
+):
     # Arrange - client is NOT connected (_is_ib_connected is not set)
     # This simulates the watchdog firing during initial startup before the handshake completes,
     # which previously caused bar warmup start times to be capped at "now" instead of the
