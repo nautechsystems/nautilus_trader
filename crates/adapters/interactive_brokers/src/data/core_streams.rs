@@ -171,9 +171,11 @@ pub(super) async fn handle_historical_bars_subscription(
                     bar_type,
                     e
                 );
+
                 if had_connection {
                     last_disconnection_ns = Some(clock.get_time_ns());
                 }
+
                 tokio::time::sleep(HISTORICAL_BAR_RETRY_DELAY).await;
                 continue;
             }
