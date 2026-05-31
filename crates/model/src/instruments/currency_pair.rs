@@ -25,7 +25,7 @@ use ustr::Ustr;
 
 use super::{Instrument, any::InstrumentAny};
 use crate::{
-    enums::{AssetClass, InstrumentClass, OptionKind},
+    enums::{AssetClass, CurrencyType, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
@@ -263,7 +263,13 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        if self.base_currency.currency_type == CurrencyType::Crypto
+            || self.quote_currency.currency_type == CurrencyType::Crypto
+        {
+            AssetClass::Cryptocurrency
+        } else {
+            AssetClass::FX
+        }
     }
 
     fn instrument_class(&self) -> InstrumentClass {
@@ -403,7 +409,10 @@ mod tests {
             currency_pair_btcusdt.id(),
             InstrumentId::from("BTCUSDT.BINANCE")
         );
-        assert_eq!(currency_pair_btcusdt.asset_class(), AssetClass::FX);
+        assert_eq!(
+            currency_pair_btcusdt.asset_class(),
+            AssetClass::Cryptocurrency
+        );
         assert_eq!(
             currency_pair_btcusdt.instrument_class(),
             InstrumentClass::Spot
