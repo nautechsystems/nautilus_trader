@@ -35,7 +35,7 @@ use crate::{
         encoder::decode_broker_id,
         enums::{BinanceEnvironment, BinanceMarginType, BinancePositionSide, BinanceProductType},
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecClientConfig, SpotMarketDataMode},
     data_types::{
         BinanceFuturesLiquidation, BinanceFuturesOpenInterest, BinanceFuturesOpenInterestHist,
         BinanceFuturesOpenInterestHistPoint, register_binance_custom_data,
@@ -150,6 +150,7 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_class::<BinanceDataClientConfig>()?;
     m.add_class::<BinanceExecClientConfig>()?;
+    m.add_class::<SpotMarketDataMode>()?;
     m.add_class::<BinanceDataClientFactory>()?;
     m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_decode_binance_spot_client_order_id, m)?)?;

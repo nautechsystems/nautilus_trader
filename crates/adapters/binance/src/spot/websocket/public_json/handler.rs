@@ -348,6 +348,12 @@ fn parse_partial_depth_with_symbol(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    };
+
+    use nautilus_network::{RECONNECTED, websocket::SubscriptionState};
     use rstest::rstest;
     use serde_json::json;
     use ustr::Ustr;
@@ -369,5 +375,28 @@ mod tests {
         assert_eq!(parsed.last_update_id, 12345);
         assert_eq!(parsed.bids.len(), 1);
         assert_eq!(parsed.asks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_raw_message_emits_reconnected_signal() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let mut handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions,
+            request_id_counter,
+        );
+
+        let out = handler
+            .handle_raw_message(RECONNECTED.as_bytes().to_vec())
+            .await;
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], BinanceSpotPublicWsMessage::Reconnected));
     }
 }

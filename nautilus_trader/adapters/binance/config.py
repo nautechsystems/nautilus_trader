@@ -17,6 +17,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinanceSpotMarketDataMode
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
 from nautilus_trader.config import InstrumentProviderConfig
@@ -97,6 +98,11 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
         Live USD-M Futures data overrides are normalized onto the matching
         `/market` and `/public` routes.
+    spot_market_data_mode : BinanceSpotMarketDataMode, default AUTO
+        Spot market-data transport mode.
+        - `AUTO`: use SBE when Ed25519 credentials are available, otherwise public JSON.
+        - `SBE`: force SBE streams (requires Ed25519 credentials).
+        - `JSON_PUBLIC`: force public JSON streams (no credentials required).
     proxy_url : str, optional
         The proxy URL for HTTP and WebSocket transports.
     us : bool, default False
@@ -120,6 +126,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: BinanceEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    spot_market_data_mode: BinanceSpotMarketDataMode = BinanceSpotMarketDataMode.AUTO
     proxy_url: str | None = None
     us: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60

@@ -27,6 +27,18 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
 
 /// Spot market-data transport mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        eq,
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+)]
 pub enum SpotMarketDataMode {
     /// Automatically select the best mode:
     /// - Ed25519 credentials available -> SBE
@@ -213,6 +225,18 @@ instrument_status_poll_secs = 600
         );
         assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Auto);
         assert_eq!(config.instrument_status_poll_secs, 600);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_spot_market_data_mode_override() {
+        let config: BinanceDataClientConfig = toml::from_str(
+            r#"
+spot_market_data_mode = "JsonPublic"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::JsonPublic);
     }
 
     #[rstest]

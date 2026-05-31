@@ -195,50 +195,81 @@ impl BinanceSpotPublicJsonWebSocketClient {
     /// Returns an error if command delivery fails or if the connection pool is exhausted.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
-        if streams.is_empty() {
+        // Phase 1: filter already-subscribed streams (brief lock)
+        let new_streams: Vec<String> = {
+            let slots = self.slots.lock().expect("slots lock poisoned");
+            streams
+                .into_iter()
+                .filter(|s| !slots.iter().any(|slot| slot.streams.contains(s)))
+                .collect()
+        };
+
+        if new_streams.is_empty() {
             return Ok(());
         }
 
-        for stream in streams {
-            let should_create_connection = {
-                let mut slots = self.slots.lock().expect("slots lock poisoned");
-
-                if slots.iter().any(|s| s.streams.iter().any(|x| x == &stream)) {
-                    false
-                } else if let Some(slot) = slots
-                    .iter_mut()
-                    .find(|s| s.streams.len() < MAX_STREAMS_PER_CONNECTION)
-                {
-                    slot.streams.push(stream.clone());
-                    slot.cmd_tx
-                        .send(BinanceSpotPublicWsCommand::Subscribe {
-                            streams: vec![stream.clone()],
-                        })
-                        .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
-                    false
-                } else {
-                    if slots.len() >= MAX_CONNECTIONS {
-                        anyhow::bail!(
-                            "Spot public JSON stream pool exhausted ({MAX_CONNECTIONS} connections x {MAX_STREAMS_PER_CONNECTION} streams)",
-                        );
-                    }
-                    true
-                }
+        // Phase 2: create connections if needed (no lock held during async connect)
+        loop {
+            let (remaining_capacity, slot_count) = {
+                let slots = self.slots.lock().expect("slots lock poisoned");
+                let cap: usize = slots
+                    .iter()
+                    .map(|s| MAX_STREAMS_PER_CONNECTION.saturating_sub(s.streams.len()))
+                    .sum();
+                (cap, slots.len())
             };
 
-            if should_create_connection {
-                let mut new_slot = self.create_connection().await?;
-                new_slot.streams.push(stream.clone());
-                new_slot
-                    .cmd_tx
-                    .send(BinanceSpotPublicWsCommand::Subscribe {
-                        streams: vec![stream],
-                    })
-                    .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+            if remaining_capacity >= new_streams.len() || slot_count >= MAX_CONNECTIONS {
+                break;
+            }
 
+            let new_slot = self.create_connection().await?;
+            let slot_count = {
                 let mut slots = self.slots.lock().expect("slots lock poisoned");
                 slots.push(new_slot);
+                slots.len()
+            };
+            log::info!(
+                "Spot JSON pool slot {} connected: url={}",
+                slot_count - 1,
+                self.url
+            );
+        }
+
+        // Phase 3: stage assignments, send commands, then commit slot state.
+        let mut slots = self.slots.lock().expect("slots lock poisoned");
+        let mut slot_batches: Vec<(usize, Vec<String>)> = Vec::new();
+        let mut slot_counts: Vec<usize> = slots.iter().map(|s| s.streams.len()).collect();
+
+        for stream in &new_streams {
+            let slot_idx = slot_counts
+                .iter()
+                .position(|&count| count < MAX_STREAMS_PER_CONNECTION)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Spot public JSON stream pool exhausted ({MAX_CONNECTIONS} connections x {MAX_STREAMS_PER_CONNECTION} streams)",
+                    )
+                })?;
+
+            slot_counts[slot_idx] += 1;
+
+            if let Some(batch) = slot_batches.iter_mut().find(|(i, _)| *i == slot_idx) {
+                batch.1.push(stream.clone());
+            } else {
+                slot_batches.push((slot_idx, vec![stream.clone()]));
             }
+        }
+
+        for (slot_idx, batch) in &slot_batches {
+            slots[*slot_idx]
+                .cmd_tx
+                .send(BinanceSpotPublicWsCommand::Subscribe {
+                    streams: batch.clone(),
+                })
+                .map_err(|e| {
+                    anyhow::anyhow!("Handler not available for Spot JSON pool slot {slot_idx}: {e}")
+                })?;
+            slots[*slot_idx].streams.extend(batch.iter().cloned());
         }
 
         Ok(())
@@ -256,18 +287,33 @@ impl BinanceSpotPublicJsonWebSocketClient {
         }
 
         let mut slots = self.slots.lock().expect("slots lock poisoned");
+        let mut slot_batches: Vec<(usize, Vec<String>)> = Vec::new();
 
-        for stream in streams {
-            if let Some(slot) = slots
-                .iter_mut()
-                .find(|s| s.streams.iter().any(|x| x == &stream))
+        for stream in &streams {
+            if let Some(slot_idx) = slots
+                .iter()
+                .position(|s| s.streams.iter().any(|x| x == stream))
             {
-                slot.streams.retain(|s| s != &stream);
-                slot.cmd_tx
-                    .send(BinanceSpotPublicWsCommand::Unsubscribe {
-                        streams: vec![stream],
-                    })
-                    .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+                if let Some(batch) = slot_batches.iter_mut().find(|(i, _)| *i == slot_idx) {
+                    batch.1.push(stream.clone());
+                } else {
+                    slot_batches.push((slot_idx, vec![stream.clone()]));
+                }
+            }
+        }
+
+        for (slot_idx, batch) in &slot_batches {
+            slots[*slot_idx]
+                .cmd_tx
+                .send(BinanceSpotPublicWsCommand::Unsubscribe {
+                    streams: batch.clone(),
+                })
+                .map_err(|e| {
+                    anyhow::anyhow!("Handler not available for Spot JSON pool slot {slot_idx}: {e}")
+                })?;
+
+            for stream in batch {
+                slots[*slot_idx].streams.retain(|s| s != stream);
             }
         }
 
@@ -580,22 +626,97 @@ mod tests {
             .await
             .expect("unsubscribe should succeed");
 
-        let first = cmd_rx
+        let mut sent = match cmd_rx
             .try_recv()
-            .expect("first unsubscribe command should be sent");
-        let second = cmd_rx
-            .try_recv()
-            .expect("second unsubscribe command should be sent");
-        let mut sent = vec![];
+            .expect("one unsubscribe command should be sent")
+        {
+            BinanceSpotPublicWsCommand::Unsubscribe { streams } => streams,
+            _ => panic!("unexpected command type"),
+        };
 
-        for cmd in [first, second] {
-            match cmd {
-                BinanceSpotPublicWsCommand::Unsubscribe { streams } => {
-                    sent.extend(streams);
-                }
-                _ => panic!("unexpected command type"),
-            }
-        }
+        sent.sort();
+        assert_eq!(
+            sent,
+            vec!["btcusdt@trade".to_string(), "ethusdt@trade".to_string()]
+        );
+
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        assert_eq!(slots.len(), 1);
+        assert!(slots[0].streams.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_batches_same_slot_streams_in_single_command() {
+        let client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (slot, mut cmd_rx) = make_slot_with_streams(vec![]);
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        client
+            .subscribe(vec![
+                "btcusdt@trade".to_string(),
+                "ethusdt@trade".to_string(),
+            ])
+            .await
+            .expect("subscribe should succeed");
+
+        let mut sent = match cmd_rx
+            .try_recv()
+            .expect("one subscribe command should be sent")
+        {
+            BinanceSpotPublicWsCommand::Subscribe { streams } => streams,
+            _ => panic!("unexpected command type"),
+        };
+
+        sent.sort();
+        assert_eq!(
+            sent,
+            vec!["btcusdt@trade".to_string(), "ethusdt@trade".to_string()]
+        );
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        let mut stored = slots[0].streams.clone();
+        stored.sort();
+        assert_eq!(
+            stored,
+            vec!["btcusdt@trade".to_string(), "ethusdt@trade".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unsubscribe_batches_same_slot_streams_in_single_command() {
+        let client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (slot, mut cmd_rx) = make_slot_with_streams(vec![
+            "btcusdt@trade".to_string(),
+            "ethusdt@trade".to_string(),
+        ]);
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        client
+            .unsubscribe(vec![
+                "btcusdt@trade".to_string(),
+                "ethusdt@trade".to_string(),
+            ])
+            .await
+            .expect("unsubscribe should succeed");
+
+        let mut sent = match cmd_rx
+            .try_recv()
+            .expect("one unsubscribe command should be sent")
+        {
+            BinanceSpotPublicWsCommand::Unsubscribe { streams } => streams,
+            _ => panic!("unexpected command type"),
+        };
 
         sent.sort();
         assert_eq!(

@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType},
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecClientConfig, SpotMarketDataMode},
 };
 
 #[pymethods]
@@ -40,8 +40,10 @@ impl BinanceDataClientConfig {
         base_url_ws = None,
         api_key = None,
         api_secret = None,
+        spot_market_data_mode = None,
         instrument_status_poll_secs = None,
     ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<BinanceProductType>>,
         environment: Option<BinanceEnvironment>,
@@ -49,6 +51,7 @@ impl BinanceDataClientConfig {
         base_url_ws: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        spot_market_data_mode: Option<SpotMarketDataMode>,
         instrument_status_poll_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
@@ -59,7 +62,7 @@ impl BinanceDataClientConfig {
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
             api_key: api_key.or(defaults.api_key),
             api_secret: api_secret.or(defaults.api_secret),
-            spot_market_data_mode: defaults.spot_market_data_mode,
+            spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
             transport_backend: defaults.transport_backend,
@@ -155,7 +158,8 @@ mod tests {
 
     #[rstest]
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
-        let config = BinanceDataClientConfig::py_new(None, None, None, None, None, None, None);
+        let config =
+            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None);
         let defaults = BinanceDataClientConfig::default();
 
         assert_eq!(config.product_types, defaults.product_types);
@@ -180,6 +184,7 @@ mod tests {
             Some("wss://ws.example".to_string()),
             Some("api-key".to_string()),
             Some("api-secret".to_string()),
+            Some(SpotMarketDataMode::JsonPublic),
             Some(15),
         );
 
@@ -192,10 +197,7 @@ mod tests {
         assert_eq!(config.base_url_ws.as_deref(), Some("wss://ws.example"));
         assert_eq!(config.api_key.as_deref(), Some("api-key"));
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
-        assert_eq!(
-            config.spot_market_data_mode,
-            BinanceDataClientConfig::default().spot_market_data_mode
-        );
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::JsonPublic);
         assert_eq!(config.instrument_status_poll_secs, 15);
     }
 

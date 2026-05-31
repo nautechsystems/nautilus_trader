@@ -34,6 +34,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_CLIENT_ID
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinanceSpotMarketDataMode
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -135,6 +136,7 @@ __all__ = [
     "BinanceLiveExecClientFactory",
     "BinanceOrderBookDeltaDataLoader",
     "BinanceSpotInstrumentProvider",
+    "BinanceSpotMarketDataMode",
     "decode_binance_futures_client_order_id",
     "decode_binance_spot_client_order_id",
     "get_cached_binance_http_client",

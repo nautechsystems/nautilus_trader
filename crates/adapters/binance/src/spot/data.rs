@@ -396,6 +396,13 @@ impl BinanceSpotDataClient {
             context,
         );
     }
+
+    fn quote_stream_suffix(&self) -> &'static str {
+        match self.spot_market_data_mode {
+            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
+            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
+        }
+    }
 }
 
 fn upsert_instrument(
@@ -737,10 +744,7 @@ impl DataClient for BinanceSpotDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let suffix = match self.spot_market_data_mode {
-            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
-            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
-        };
+        let suffix = self.quote_stream_suffix();
         let stream = format!("{}@{suffix}", instrument_id.symbol.as_str().to_lowercase());
 
         self.spawn_subscribe(vec![stream], "quotes subscription");
@@ -796,10 +800,7 @@ impl DataClient for BinanceSpotDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let suffix = match self.spot_market_data_mode {
-            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
-            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
-        };
+        let suffix = self.quote_stream_suffix();
         let stream = format!("{}@{suffix}", instrument_id.symbol.as_str().to_lowercase());
 
         self.spawn_unsubscribe(vec![stream], "quotes unsubscribe");
