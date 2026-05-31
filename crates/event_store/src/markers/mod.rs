@@ -30,7 +30,7 @@ pub mod verifier;
 pub mod writer;
 
 pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend, StoredMarkerRecord};
-pub use capture::{DataMarkerCapture, DataMarkerConfig};
+pub use capture::DataMarkerCapture;
 pub use cursor::CursorState;
 pub use extractor::{DataMarkerExtractor, DataMarkerExtractorRegistry};
 pub use marker::{
@@ -38,6 +38,7 @@ pub use marker::{
     StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
     compute_marker_hash,
 };
+pub use nautilus_system::event_store::DataMarkerConfig;
 pub use reader::MarkerReader;
 pub use redb::RedbMarkerBackend;
 pub use verifier::{

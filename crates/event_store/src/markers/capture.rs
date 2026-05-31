@@ -26,6 +26,7 @@ use std::{
 
 use ahash::AHashSet;
 use nautilus_core::UnixNanos;
+use nautilus_system::event_store::DataMarkerConfig;
 
 use crate::{
     Topic,
@@ -34,27 +35,6 @@ use crate::{
         StreamDictEntry,
     },
 };
-
-/// Default maximum interval between cursor snapshots when no entry boundary occurs.
-pub const DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
-
-/// Configuration for engine-thread data marker capture.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataMarkerConfig {
-    /// Instrument identifiers that emit one high-fidelity marker per observed data message.
-    pub high_fidelity: Vec<String>,
-    /// Maximum interval between cursor snapshots when data advances without entry submissions.
-    pub safety_flush_interval: Duration,
-}
-
-impl Default for DataMarkerConfig {
-    fn default() -> Self {
-        Self {
-            high_fidelity: Vec::new(),
-            safety_flush_interval: DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL,
-        }
-    }
-}
 
 /// Engine-thread component that captures data marker cursors at the bus boundary.
 ///
@@ -199,6 +179,7 @@ mod tests {
     };
 
     use nautilus_core::{UnixNanos, time::get_atomic_clock_static};
+    use nautilus_system::event_store::DataMarkerClass;
     use rstest::rstest;
 
     use super::*;
@@ -367,8 +348,10 @@ mod tests {
 
     fn config(high_fidelity: Vec<String>, safety_flush_interval: Duration) -> DataMarkerConfig {
         DataMarkerConfig {
+            classes: vec![DataMarkerClass::Quote],
             high_fidelity,
             safety_flush_interval,
+            channel_capacity: 100,
         }
     }
 

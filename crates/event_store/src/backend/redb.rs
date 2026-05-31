@@ -279,7 +279,7 @@ impl RedbBackend {
             })?;
             let path = entry.path();
 
-            if path.extension().and_then(|s| s.to_str()) != Some("redb") {
+            if !is_run_file(&path) {
                 continue;
             }
             let db = ReadOnlyDatabase::open(&path).map_err(map_read_only_database_err)?;
@@ -830,6 +830,14 @@ fn map_commit_err(err: CommitError) -> EventStoreError {
         CommitError::Storage(storage) => map_storage_err(storage),
         other => EventStoreError::Backend(other.to_string()),
     }
+}
+
+fn is_run_file(path: &Path) -> bool {
+    path.extension().and_then(|s| s.to_str()) == Some("redb")
+        && path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_none_or(|name| !name.ends_with(".markers.redb"))
 }
 
 fn map_transaction_err(err: TransactionError) -> EventStoreError {

@@ -81,7 +81,7 @@ pub use kernel::{
 pub use manifest::{RunId, RunManifest, RunStatus};
 pub use markers::{
     CursorState, DEFAULT_MARKER_CHANNEL_CAPACITY, DEFAULT_MARKER_MAX_BATCH,
-    DEFAULT_MARKER_MAX_LATENCY, DataClass, DataCursorSnapshot, DataMarkerCapture, DataMarkerConfig,
+    DEFAULT_MARKER_MAX_LATENCY, DataClass, DataCursorSnapshot, DataMarkerCapture,
     DataMarkerExtractor, DataMarkerExtractorRegistry, HiFiMarker, MarkerBackend, MarkerCountKind,
     MarkerFinding, MarkerGap, MarkerGapReason, MarkerManifest, MarkerMsg, MarkerReader,
     MarkerRecordKind, MarkerVerifier, MarkerVerifyReport, MarkerWriter, MarkerWriterConfig,
@@ -90,7 +90,10 @@ pub use markers::{
 };
 pub use nautilus_system::{
     RegisteredComponents,
-    event_store::{EventStoreConfig, RetentionMode, RunIdentity},
+    event_store::{
+        DEFAULT_DATA_MARKER_CHANNEL_CAPACITY, DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL,
+        DataMarkerClass, DataMarkerConfig, EventStoreConfig, RetentionMode, RunIdentity,
+    },
 };
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan, SnapshotReplayPlan};
 #[cfg(feature = "persistence")]
