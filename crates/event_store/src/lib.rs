@@ -80,8 +80,8 @@ pub use kernel::{
 };
 pub use manifest::{RunId, RunManifest, RunStatus};
 pub use markers::{
-    DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
-    StreamDictEntry, StreamSlot, compute_hifi_hash, compute_marker_hash,
+    CursorState, DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason,
+    StreamCursor, StreamDictEntry, StreamSlot, compute_hifi_hash, compute_marker_hash,
 };
 pub use nautilus_system::{
     RegisteredComponents,

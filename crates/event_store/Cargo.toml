@@ -39,6 +39,7 @@ nautilus-system = { workspace = true }
 
 nautilus-persistence = { workspace = true, optional = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
@@ -54,7 +55,6 @@ ustr = { workspace = true }
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["stubs"] }
 
-ahash = { workspace = true }
 async-trait = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }

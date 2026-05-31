@@ -119,7 +119,7 @@ pub struct HiFiMarker {
     /// The ingestion timestamp of the record (`ts_init`).
     #[serde(with = "wire::nanos_as_u64")]
     pub ts_init: UnixNanos,
-    /// Ordinal for records sharing the same `ts_event` within a slot.
+    /// Ordinal among records sharing the same `ts_init` within a slot.
     pub same_ts_ordinal: u32,
     /// A 32-byte fingerprint of the record's content.
     pub record_fingerprint: [u8; 32],
