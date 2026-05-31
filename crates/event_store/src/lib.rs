@@ -82,10 +82,11 @@ pub use manifest::{RunId, RunManifest, RunStatus};
 pub use markers::{
     CursorState, DEFAULT_MARKER_CHANNEL_CAPACITY, DEFAULT_MARKER_MAX_BATCH,
     DEFAULT_MARKER_MAX_LATENCY, DataClass, DataCursorSnapshot, DataMarkerCapture, DataMarkerConfig,
-    DataMarkerExtractor, DataMarkerExtractorRegistry, HiFiMarker, MarkerBackend, MarkerGap,
-    MarkerGapReason, MarkerManifest, MarkerMsg, MarkerWriter, MarkerWriterConfig,
-    MemoryMarkerBackend, RedbMarkerBackend, StreamCursor, StreamDictEntry, StreamSlot,
-    compute_dict_hash, compute_gap_hash, compute_hifi_hash, compute_marker_hash,
+    DataMarkerExtractor, DataMarkerExtractorRegistry, HiFiMarker, MarkerBackend, MarkerCountKind,
+    MarkerFinding, MarkerGap, MarkerGapReason, MarkerManifest, MarkerMsg, MarkerReader,
+    MarkerRecordKind, MarkerVerifier, MarkerVerifyReport, MarkerWriter, MarkerWriterConfig,
+    MemoryMarkerBackend, RedbMarkerBackend, StoredMarkerRecord, StreamCursor, StreamDictEntry,
+    StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash, compute_marker_hash,
 };
 pub use nautilus_system::{
     RegisteredComponents,

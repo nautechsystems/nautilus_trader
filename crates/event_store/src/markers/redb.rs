@@ -16,6 +16,7 @@
 //! redb-backed marker backend for the data marker sidecar.
 
 use std::{
+    fmt::Debug,
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
@@ -23,16 +24,17 @@ use std::{
 
 use bincode::config::{Configuration, standard};
 use redb::{
-    CommitError, Database, DatabaseError, Durability, ReadableDatabase, ReadableTable,
-    StorageError, TableDefinition, TableError, TransactionError,
+    CommitError, Database, DatabaseError, Durability, ReadOnlyDatabase, ReadTransaction,
+    ReadableDatabase, ReadableTable, StorageError, TableDefinition, TableError, TransactionError,
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     error::EventStoreError,
     manifest::RunStatus,
     markers::{
-        DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerManifest, StreamDictEntry,
+        DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerManifest,
+        StoredMarkerRecord, StreamDictEntry,
     },
 };
 
@@ -63,15 +65,43 @@ pub struct RedbMarkerBackend {
 
 #[derive(Debug)]
 struct RunState {
-    db: Database,
+    db: MarkerDatabase,
     manifest: MarkerManifest,
     file_path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct StoredRecord<T> {
-    record: T,
-    hash: [u8; 32],
+enum MarkerDatabase {
+    ReadWrite(Database),
+    ReadOnly(ReadOnlyDatabase),
+}
+
+impl Debug for MarkerDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ReadWrite(_) => f.write_str("MarkerDatabase::ReadWrite"),
+            Self::ReadOnly(_) => f.write_str("MarkerDatabase::ReadOnly"),
+        }
+    }
+}
+
+impl MarkerDatabase {
+    fn readable(&self) -> &dyn ReadableDatabase {
+        match self {
+            Self::ReadWrite(db) => db,
+            Self::ReadOnly(db) => db,
+        }
+    }
+
+    fn read_write(&self) -> Result<&Database, EventStoreError> {
+        match self {
+            Self::ReadWrite(db) => Ok(db),
+            Self::ReadOnly(_) => Err(EventStoreError::Closed),
+        }
+    }
+
+    fn begin_read(&self) -> Result<ReadTransaction, EventStoreError> {
+        self.readable().begin_read().map_err(map_transaction_err)
+    }
 }
 
 impl RedbMarkerBackend {
@@ -93,6 +123,42 @@ impl RedbMarkerBackend {
         Ok(self.state()?.file_path.as_path())
     }
 
+    /// Opens an existing marker sidecar file read-only for verification.
+    ///
+    /// Marker verification must not seal, recover, or otherwise mutate the sidecar it scans. This
+    /// constructor accepts any manifest status and leaves lifecycle policy to the caller's report.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when the marker file is missing, and
+    /// [`EventStoreError::Corrupted`] when the file lacks a marker manifest or fails to decode.
+    pub fn open_read_only_file(path: impl Into<PathBuf>) -> Result<Self, EventStoreError> {
+        let path = path.into();
+        if !path.exists() {
+            return Err(EventStoreError::Backend(format!(
+                "no marker run file at {}",
+                path.display()
+            )));
+        }
+
+        let db = ReadOnlyDatabase::open(&path).map_err(map_database_err)?;
+        let manifest = Self::read_manifest(&db)?.ok_or_else(|| {
+            EventStoreError::Corrupted(format!(
+                "missing marker manifest in run file at {}",
+                path.display()
+            ))
+        })?;
+
+        Ok(Self {
+            file_path: path.clone(),
+            state: Some(RunState {
+                db: MarkerDatabase::ReadOnly(db),
+                manifest,
+                file_path: path,
+            }),
+        })
+    }
+
     fn state(&self) -> Result<&RunState, EventStoreError> {
         self.state
             .as_ref()
@@ -110,6 +176,7 @@ impl RedbMarkerBackend {
         if state.manifest.is_sealed() {
             return Err(EventStoreError::Closed);
         }
+        state.db.read_write()?;
         Ok(state)
     }
 
@@ -216,7 +283,7 @@ impl MarkerBackend for RedbMarkerBackend {
             }
 
             self.state = Some(RunState {
-                db,
+                db: MarkerDatabase::ReadWrite(db),
                 manifest: opened,
                 file_path: path,
             });
@@ -231,7 +298,7 @@ impl MarkerBackend for RedbMarkerBackend {
         Self::initialize_fresh(&db, &manifest)?;
 
         self.state = Some(RunState {
-            db,
+            db: MarkerDatabase::ReadWrite(db),
             manifest,
             file_path: path,
         });
@@ -244,7 +311,7 @@ impl MarkerBackend for RedbMarkerBackend {
         hash: [u8; 32],
     ) -> Result<(), EventStoreError> {
         let state = self.writable_state()?;
-        let stored = StoredRecord {
+        let stored = StoredMarkerRecord {
             record: snapshot.clone(),
             hash,
         };
@@ -253,7 +320,8 @@ impl MarkerBackend for RedbMarkerBackend {
         updated.snapshot_count += 1;
         let manifest_bytes = encode_value("marker manifest", &updated)?;
 
-        let mut txn = state.db.begin_write().map_err(map_transaction_err)?;
+        let db = state.db.read_write()?;
+        let mut txn = db.begin_write().map_err(map_transaction_err)?;
         txn.set_durability(Durability::Immediate)
             .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
         {
@@ -279,7 +347,7 @@ impl MarkerBackend for RedbMarkerBackend {
 
     fn append_hifi(&mut self, marker: &HiFiMarker, hash: [u8; 32]) -> Result<(), EventStoreError> {
         let state = self.writable_state()?;
-        let stored = StoredRecord {
+        let stored = StoredMarkerRecord {
             record: marker.clone(),
             hash,
         };
@@ -288,7 +356,8 @@ impl MarkerBackend for RedbMarkerBackend {
         updated.hifi_count += 1;
         let manifest_bytes = encode_value("marker manifest", &updated)?;
 
-        let mut txn = state.db.begin_write().map_err(map_transaction_err)?;
+        let db = state.db.read_write()?;
+        let mut txn = db.begin_write().map_err(map_transaction_err)?;
         txn.set_durability(Durability::Immediate)
             .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
         {
@@ -312,7 +381,7 @@ impl MarkerBackend for RedbMarkerBackend {
 
     fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError> {
         let state = self.writable_state()?;
-        let stored = StoredRecord {
+        let stored = StoredMarkerRecord {
             record: gap.clone(),
             hash,
         };
@@ -321,7 +390,8 @@ impl MarkerBackend for RedbMarkerBackend {
         updated.gap_count += 1;
         let manifest_bytes = encode_value("marker manifest", &updated)?;
 
-        let mut txn = state.db.begin_write().map_err(map_transaction_err)?;
+        let db = state.db.read_write()?;
+        let mut txn = db.begin_write().map_err(map_transaction_err)?;
         txn.set_durability(Durability::Immediate)
             .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
         {
@@ -345,7 +415,7 @@ impl MarkerBackend for RedbMarkerBackend {
 
     fn put_dict(&mut self, entry: &StreamDictEntry, hash: [u8; 32]) -> Result<(), EventStoreError> {
         let state = self.writable_state()?;
-        let stored = StoredRecord {
+        let stored = StoredMarkerRecord {
             record: entry.clone(),
             hash,
         };
@@ -355,7 +425,8 @@ impl MarkerBackend for RedbMarkerBackend {
         let manifest_bytes = encode_value("marker manifest", &updated)?;
         let mut inserted = false;
 
-        let mut txn = state.db.begin_write().map_err(map_transaction_err)?;
+        let db = state.db.read_write()?;
+        let mut txn = db.begin_write().map_err(map_transaction_err)?;
         txn.set_durability(Durability::Immediate)
             .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
         {
@@ -388,8 +459,20 @@ impl MarkerBackend for RedbMarkerBackend {
     }
 
     fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
+        let out = self
+            .scan_snapshot_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_snapshot_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<DataCursorSnapshot>>>, EventStoreError> {
         let state = self.state()?;
-        let txn = state.db.begin_read().map_err(map_transaction_err)?;
+        let txn = state.db.begin_read()?;
         let table = txn
             .open_table(CURSOR_SNAPSHOTS_TABLE)
             .map_err(map_table_err)?;
@@ -398,57 +481,94 @@ impl MarkerBackend for RedbMarkerBackend {
 
         for row in iter {
             let (_, value) = row.map_err(map_storage_err)?;
-            let stored: StoredRecord<DataCursorSnapshot> =
+            let stored: StoredMarkerRecord<DataCursorSnapshot> =
                 decode_value("cursor snapshot", value.value())?;
-            out.push(stored.record);
+            out.push(stored);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
+        let out = self
+            .scan_hifi_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_hifi_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<HiFiMarker>>>, EventStoreError> {
         let state = self.state()?;
-        let txn = state.db.begin_read().map_err(map_transaction_err)?;
+        let txn = state.db.begin_read()?;
         let table = txn.open_table(HIFI_MARKERS_TABLE).map_err(map_table_err)?;
         let iter = table.iter().map_err(map_storage_err)?;
         let mut out = Vec::new();
 
         for row in iter {
             let (_, value) = row.map_err(map_storage_err)?;
-            let stored: StoredRecord<HiFiMarker> = decode_value("hifi marker", value.value())?;
-            out.push(stored.record);
+            let stored: StoredMarkerRecord<HiFiMarker> =
+                decode_value("hifi marker", value.value())?;
+            out.push(stored);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
+        let out = self
+            .scan_gap_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_gap_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<MarkerGap>>>, EventStoreError> {
         let state = self.state()?;
-        let txn = state.db.begin_read().map_err(map_transaction_err)?;
+        let txn = state.db.begin_read()?;
         let table = txn.open_table(MARKER_GAPS_TABLE).map_err(map_table_err)?;
         let iter = table.iter().map_err(map_storage_err)?;
         let mut out = Vec::new();
 
         for row in iter {
             let (_, value) = row.map_err(map_storage_err)?;
-            let stored: StoredRecord<MarkerGap> = decode_value("marker gap", value.value())?;
-            out.push(stored.record);
+            let stored: StoredMarkerRecord<MarkerGap> = decode_value("marker gap", value.value())?;
+            out.push(stored);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
+        let out = self
+            .scan_dict_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_dict_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<StreamDictEntry>>>, EventStoreError> {
         let state = self.state()?;
-        let txn = state.db.begin_read().map_err(map_transaction_err)?;
+        let txn = state.db.begin_read()?;
         let table = txn.open_table(STREAM_DICT_TABLE).map_err(map_table_err)?;
         let iter = table.iter().map_err(map_storage_err)?;
         let mut out = Vec::new();
 
         for row in iter {
             let (_, value) = row.map_err(map_storage_err)?;
-            let stored: StoredRecord<StreamDictEntry> =
+            let stored: StoredMarkerRecord<StreamDictEntry> =
                 decode_value("stream dict entry", value.value())?;
-            out.push(stored.record);
+            out.push(stored);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
@@ -466,7 +586,8 @@ impl MarkerBackend for RedbMarkerBackend {
 
         let mut updated = state.manifest.clone();
         updated.status = status;
-        Self::write_manifest(&state.db, &updated)?;
+        let db = state.db.read_write()?;
+        Self::write_manifest(db, &updated)?;
         state.manifest = updated;
         Ok(())
     }
@@ -726,6 +847,36 @@ mod tests {
             RunStatus::CrashedRecovered
         );
         assert_eq!(reopened.scan_snapshots().expect("scan snapshots"), vec![s1]);
+    }
+
+    #[rstest]
+    fn read_only_marker_backend_rejects_writes_without_recovery_mutation(temp_dir: TempDir) {
+        let run_id = "1700000000-redb-read-only-running";
+        let path = marker_path(temp_dir.path(), "trader-001", run_id);
+        let s1 = snapshot(1, 10);
+
+        {
+            let mut backend = RedbMarkerBackend::new(&path);
+            backend.open_run(manifest(run_id)).expect("open run");
+            backend
+                .append_snapshot(&s1, compute_marker_hash(&s1))
+                .expect("append snapshot");
+        }
+
+        let mut read_only =
+            RedbMarkerBackend::open_read_only_file(&path).expect("open read-only marker file");
+        let s2 = snapshot(2, 11);
+
+        assert_eq!(
+            read_only.manifest().expect("manifest").status,
+            RunStatus::Running,
+        );
+        assert_closed(read_only.append_snapshot(&s2, compute_marker_hash(&s2)));
+        assert_closed(read_only.seal(RunStatus::Ended));
+        assert_eq!(
+            read_only.scan_snapshots().expect("scan snapshots"),
+            vec![s1]
+        );
     }
 
     #[rstest]

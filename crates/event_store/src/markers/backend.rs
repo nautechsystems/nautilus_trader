@@ -60,6 +60,15 @@ impl MarkerManifest {
     }
 }
 
+/// A durable marker record returned with the integrity hash stored beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredMarkerRecord<T> {
+    /// The decoded durable marker record.
+    pub record: T,
+    /// The stored 32-byte integrity hash for `record`.
+    pub hash: [u8; 32],
+}
+
 /// A durable backend for the data marker sidecar.
 ///
 /// Backends persist cursor snapshots, high-fidelity markers, gaps, and the slot dictionary for
@@ -123,12 +132,38 @@ pub trait MarkerBackend: Debug + Send {
     /// failures.
     fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError>;
 
+    /// Scans cursor snapshots with stored integrity hashes when the backend exposes them.
+    ///
+    /// Returns `Ok(None)` for backends that can only expose decoded records.
+    ///
+    /// # Errors
+    ///
+    /// See [`scan_snapshots`](Self::scan_snapshots).
+    fn scan_snapshot_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<DataCursorSnapshot>>>, EventStoreError> {
+        Ok(None)
+    }
+
     /// Scans all high-fidelity markers in ascending `marker_seq` order.
     ///
     /// # Errors
     ///
     /// See [`scan_snapshots`](Self::scan_snapshots).
     fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError>;
+
+    /// Scans high-fidelity markers with stored integrity hashes when the backend exposes them.
+    ///
+    /// Returns `Ok(None)` for backends that can only expose decoded records.
+    ///
+    /// # Errors
+    ///
+    /// See [`scan_hifi`](Self::scan_hifi).
+    fn scan_hifi_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<HiFiMarker>>>, EventStoreError> {
+        Ok(None)
+    }
 
     /// Scans all recorded gaps in ascending `from_marker_seq` order.
     ///
@@ -137,12 +172,38 @@ pub trait MarkerBackend: Debug + Send {
     /// See [`scan_snapshots`](Self::scan_snapshots).
     fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError>;
 
+    /// Scans marker gaps with stored integrity hashes when the backend exposes them.
+    ///
+    /// Returns `Ok(None)` for backends that can only expose decoded records.
+    ///
+    /// # Errors
+    ///
+    /// See [`scan_gaps`](Self::scan_gaps).
+    fn scan_gap_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<MarkerGap>>>, EventStoreError> {
+        Ok(None)
+    }
+
     /// Scans all slot dictionary entries in ascending slot order.
     ///
     /// # Errors
     ///
     /// See [`scan_snapshots`](Self::scan_snapshots).
     fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError>;
+
+    /// Scans dictionary entries with stored integrity hashes when the backend exposes them.
+    ///
+    /// Returns `Ok(None)` for backends that can only expose decoded records.
+    ///
+    /// # Errors
+    ///
+    /// See [`scan_dict`](Self::scan_dict).
+    fn scan_dict_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<StreamDictEntry>>>, EventStoreError> {
+        Ok(None)
+    }
 
     /// Seals the open run with the given terminal status.
     ///
@@ -270,47 +331,107 @@ impl MarkerBackend for MemoryMarkerBackend {
     }
 
     fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
-        let mut out: Vec<DataCursorSnapshot> = self
+        let out = self
+            .scan_snapshot_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_snapshot_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<DataCursorSnapshot>>>, EventStoreError> {
+        let mut out: Vec<StoredMarkerRecord<DataCursorSnapshot>> = self
             .state()?
             .snapshots
             .iter()
-            .map(|(snapshot, _)| snapshot.clone())
+            .map(|(record, hash)| StoredMarkerRecord {
+                record: record.clone(),
+                hash: *hash,
+            })
             .collect();
-        out.sort_by_key(|snapshot| snapshot.marker_seq);
-        Ok(out)
+        out.sort_by_key(|stored| stored.record.marker_seq);
+        Ok(Some(out))
     }
 
     fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
-        let mut out: Vec<HiFiMarker> = self
+        let out = self
+            .scan_hifi_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_hifi_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<HiFiMarker>>>, EventStoreError> {
+        let mut out: Vec<StoredMarkerRecord<HiFiMarker>> = self
             .state()?
             .hifi
             .iter()
-            .map(|(marker, _)| marker.clone())
+            .map(|(record, hash)| StoredMarkerRecord {
+                record: record.clone(),
+                hash: *hash,
+            })
             .collect();
-        out.sort_by_key(|marker| marker.marker_seq);
-        Ok(out)
+        out.sort_by_key(|stored| stored.record.marker_seq);
+        Ok(Some(out))
     }
 
     fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
-        let mut out: Vec<MarkerGap> = self
-            .state()?
-            .gaps
-            .iter()
-            .map(|(gap, _)| gap.clone())
+        let out = self
+            .scan_gap_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
             .collect();
-        out.sort_by_key(|gap| gap.from_marker_seq);
         Ok(out)
     }
 
+    fn scan_gap_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<MarkerGap>>>, EventStoreError> {
+        let mut out: Vec<StoredMarkerRecord<MarkerGap>> = self
+            .state()?
+            .gaps
+            .iter()
+            .map(|(record, hash)| StoredMarkerRecord {
+                record: record.clone(),
+                hash: *hash,
+            })
+            .collect();
+        out.sort_by_key(|stored| stored.record.from_marker_seq);
+        Ok(Some(out))
+    }
+
     fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
-        let mut out: Vec<StreamDictEntry> = self
+        let out = self
+            .scan_dict_records()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stored| stored.record)
+            .collect();
+        Ok(out)
+    }
+
+    fn scan_dict_records(
+        &self,
+    ) -> Result<Option<Vec<StoredMarkerRecord<StreamDictEntry>>>, EventStoreError> {
+        let mut out: Vec<StoredMarkerRecord<StreamDictEntry>> = self
             .state()?
             .dict
             .values()
-            .map(|(entry, _)| entry.clone())
+            .map(|(record, hash)| StoredMarkerRecord {
+                record: record.clone(),
+                hash: *hash,
+            })
             .collect();
-        out.sort_by_key(|entry| entry.slot);
-        Ok(out)
+        out.sort_by_key(|stored| stored.record.slot);
+        Ok(Some(out))
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {

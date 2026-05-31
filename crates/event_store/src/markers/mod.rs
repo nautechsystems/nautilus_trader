@@ -24,10 +24,12 @@ pub mod capture;
 pub mod cursor;
 pub mod extractor;
 pub mod marker;
+pub mod reader;
 pub mod redb;
+pub mod verifier;
 pub mod writer;
 
-pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend};
+pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend, StoredMarkerRecord};
 pub use capture::{DataMarkerCapture, DataMarkerConfig};
 pub use cursor::CursorState;
 pub use extractor::{DataMarkerExtractor, DataMarkerExtractorRegistry};
@@ -36,7 +38,11 @@ pub use marker::{
     StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
     compute_marker_hash,
 };
+pub use reader::MarkerReader;
 pub use redb::RedbMarkerBackend;
+pub use verifier::{
+    MarkerCountKind, MarkerFinding, MarkerRecordKind, MarkerVerifier, MarkerVerifyReport,
+};
 pub use writer::{
     DEFAULT_MARKER_CHANNEL_CAPACITY, DEFAULT_MARKER_MAX_BATCH, DEFAULT_MARKER_MAX_LATENCY,
     MarkerMsg, MarkerWriter, MarkerWriterConfig,
