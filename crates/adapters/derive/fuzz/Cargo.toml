@@ -1,0 +1,62 @@
+[package]
+name = "nautilus-derive-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false # Never publish to crates.io
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+alloy-primitives = { version = "1.6.0", default-features = false, features = [
+  "std",
+  "serde",
+] }
+libfuzzer-sys = "0.4.12"
+nautilus-derive = { path = ".." }
+rust_decimal = { version = "1.42.0", features = ["serde-with-float"] }
+serde = { version = "1.0.228", default-features = false, features = [
+  "derive",
+  "std",
+] }
+serde_json = { version = "1.0.150", default-features = false, features = [
+  "std",
+] }
+
+[[bin]]
+name = "fuzz_ws_decode"
+path = "fuzz_targets/fuzz_ws_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decimal_decode"
+path = "fuzz_targets/fuzz_decimal_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_trade_module_encode"
+path = "fuzz_targets/fuzz_trade_module_encode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_action_hash"
+path = "fuzz_targets/fuzz_action_hash.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_nonce_sequence"
+path = "fuzz_targets/fuzz_nonce_sequence.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

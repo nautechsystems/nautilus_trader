@@ -130,6 +130,7 @@ Released on TBD (UTC).
 - Added structured-error coverage tests for `PoolProfiler` overflow/underflow paths and Display formats
 - Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
 - Added DEX event-signature/parser parity tests across all registered chains
+- Added Derive fuzz targets
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)

@@ -83,6 +83,7 @@ env/
 .tmp-pre-commit/
 *.bak
 *.sh
+!**/fuzz/grind.sh
 !.docker/entrypoint.sh
 !.pre-commit-hooks/cargo_fmt_stable.sh
 !.pre-commit-hooks/cargo_machete.sh
