@@ -39,6 +39,8 @@
 //! - [`surfaces::custom_data`]: custom data type plug-point.
 //! - [`surfaces::actor`]: plug-in actor (`DataActor`-shaped) plug-point.
 //! - [`surfaces::strategy`]: plug-in strategy (`Strategy`-shaped) plug-point.
+//! - [`surfaces::controller`]: controller plug-point with prepare hooks and
+//!   runtime strategy-control host services.
 //!
 //! Host-side loading lives behind the `host` feature and uses `libloading`.
 
@@ -77,19 +79,20 @@ mod macros;
 mod normalize;
 
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
-pub use host::{HostContext, HostVTable};
+pub use host::{ControllerHostContext, ControllerHostVTable, HostContext, HostVTable};
 pub use manifest::{
-    ActorRegistration, CustomDataRegistration, PluginBuildId, PluginInitFn, PluginManifest,
-    StrategyRegistration,
+    ActorRegistration, ControllerRegistration, CustomDataRegistration, PluginBuildId, PluginInitFn,
+    PluginManifest, StrategyRegistration,
 };
 #[cfg(feature = "host")]
 pub use manifest::{
-    ValidatedActorRegistration, ValidatedActorVTable, ValidatedCustomDataRegistration,
-    ValidatedCustomDataVTable, ValidatedPluginManifest, ValidatedStrategyRegistration,
-    ValidatedStrategyVTable,
+    ValidatedActorRegistration, ValidatedActorVTable, ValidatedControllerRegistration,
+    ValidatedControllerVTable, ValidatedCustomDataRegistration, ValidatedCustomDataVTable,
+    ValidatedPluginManifest, ValidatedStrategyRegistration, ValidatedStrategyVTable,
 };
 pub use surfaces::{
     actor::PluginActor,
+    controller::PluginController,
     custom_data::{PluginCustomData, PluginCustomDataRef},
     strategy::PluginStrategy,
 };
@@ -97,8 +100,9 @@ pub use surfaces::{
 /// Re-exports that plug-in authors typically want in scope.
 pub mod prelude {
     pub use crate::{
-        BorrowedStr, HostContext, HostVTable, NAUTILUS_PLUGIN_ABI_VERSION, PluginActor,
-        PluginBuildId, PluginCustomData, PluginCustomDataRef, PluginError, PluginErrorCode,
-        PluginManifest, PluginResult, PluginStrategy, Slice,
+        BorrowedStr, ControllerHostContext, ControllerHostVTable, HostContext, HostVTable,
+        NAUTILUS_PLUGIN_ABI_VERSION, PluginActor, PluginBuildId, PluginController,
+        PluginCustomData, PluginCustomDataRef, PluginError, PluginErrorCode, PluginManifest,
+        PluginResult, PluginStrategy, Slice,
     };
 }

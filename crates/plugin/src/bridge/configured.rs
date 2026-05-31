@@ -242,6 +242,7 @@ mod tests {
             custom_data: Slice::empty(),
             actors,
             strategies,
+            controllers: Slice::empty(),
         }
     }
 

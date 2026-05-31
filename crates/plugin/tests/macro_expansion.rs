@@ -24,6 +24,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use nautilus_common::timer::TimeEvent;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::QuoteTick,
@@ -36,7 +37,7 @@ use nautilus_model::{
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginResult, Slice},
-    host::{HostContext, HostLogLevel, HostVTable},
+    host::{ControllerHostContext, ControllerHostVTable, HostContext, HostLogLevel, HostVTable},
     manifest::{PluginManifest, compiled_precision_mode},
     surfaces::{
         actor::PluginActor,
@@ -46,11 +47,13 @@ use nautilus_plugin::{
             QueryAccountHandle, QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle,
             SubmitOrderListHandle,
         },
+        controller::PluginController,
         custom_data::{CustomDataHandle, MetadataEntry, PluginCustomData, custom_data_vtable},
         strategy::PluginStrategy,
     },
 };
 use rstest::rstest;
+use ustr::Ustr;
 
 macro_rules! generated_slot {
     ($vtable:expr, $slot:ident) => {{
@@ -226,6 +229,51 @@ impl PluginStrategy for TestStrategy {
     }
 }
 
+static TEST_CONTROLLER_PREPARE_COUNT: AtomicU64 = AtomicU64::new(0);
+static TEST_CONTROLLER_START_COUNT: AtomicU64 = AtomicU64::new(0);
+static TEST_CONTROLLER_TIME_EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
+static TEST_CONTROLLER_CONTEXT_PTR: std::sync::atomic::AtomicPtr<ControllerHostContext> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+struct TestController;
+
+// SAFETY: TestController holds no fields; the trait requires Send.
+unsafe impl Send for TestController {}
+
+impl PluginController for TestController {
+    const TYPE_NAME: &'static str = "TestController";
+
+    fn prepare(request_json: &str) -> anyhow::Result<Vec<u8>> {
+        TEST_CONTROLLER_PREPARE_COUNT.fetch_add(1, Ordering::SeqCst);
+        Ok(format!(r#"{{"prepared":true,"request":{request_json}}}"#).into_bytes())
+    }
+
+    fn new(
+        _host: *const ControllerHostVTable,
+        ctx: *const ControllerHostContext,
+        _config_json: &str,
+    ) -> Self {
+        TEST_CONTROLLER_CONTEXT_PTR.store(ctx.cast_mut(), Ordering::SeqCst);
+        Self
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        TEST_CONTROLLER_START_COUNT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        let expected = Ustr::from("ControllerAlarm");
+        anyhow::ensure!(
+            event.name == expected,
+            "controller time event name was {}, expected {expected}",
+            event.name
+        );
+        TEST_CONTROLLER_TIME_EVENT_COUNT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
 fn test_market_submit_order_command() -> SubmitOrderCommand {
     let order = OrderAny::Market(MarketOrder::new(
         TraderId::from("TRADER-001"),
@@ -259,6 +307,7 @@ nautilus_plugin::nautilus_plugin! {
     custom_data: [TestTick],
     actors: [TestActor],
     strategies: [TestStrategy],
+    controllers: [TestController],
 }
 
 unsafe extern "C" fn test_clock_now_ns() -> u64 {
@@ -554,6 +603,25 @@ static TEST_HOST: HostVTable = HostVTable {
     query_order: test_query_order_stub,
 };
 
+unsafe extern "C" fn test_controller_host_call(
+    _ctx: *const ControllerHostContext,
+    _request_json: BorrowedStr<'_>,
+) -> PluginResult<OwnedBytes> {
+    PluginResult::Ok(OwnedBytes::from_vec(br#"{"ok":true}"#.to_vec()))
+}
+
+static TEST_CONTROLLER_HOST: ControllerHostVTable = ControllerHostVTable {
+    abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+    create_plugin_strategy: test_controller_host_call,
+    start_strategy: test_controller_host_call,
+    stop_strategy: test_controller_host_call,
+    exit_market: test_controller_host_call,
+    remove_strategy: test_controller_host_call,
+    instrument_exists: test_controller_host_call,
+    log: test_controller_host_call,
+    clock_now_ns: test_controller_host_call,
+};
+
 unsafe extern "C" {
     fn nautilus_plugin_init(host: *const HostVTable) -> *const PluginManifest;
 }
@@ -611,6 +679,77 @@ fn macro_emits_loadable_manifest() {
     assert_eq!(strategies.len(), 1, "one strategy registration expected");
     // SAFETY: type_name in the registration points at static storage.
     assert_eq!(unsafe { strategies[0].type_name.as_str() }, "TestStrategy");
+
+    // SAFETY: slice points at static storage owned by the manifest.
+    let controllers = unsafe { manifest.controllers.as_slice() };
+    assert_eq!(controllers.len(), 1, "one controller registration expected");
+    // SAFETY: type_name in the registration points at static storage.
+    assert_eq!(
+        unsafe { controllers[0].type_name.as_str() },
+        "TestController"
+    );
+}
+
+#[rstest]
+fn controller_vtable_dispatches_prepare_and_lifecycle() {
+    TEST_CONTROLLER_PREPARE_COUNT.store(0, Ordering::SeqCst);
+    TEST_CONTROLLER_START_COUNT.store(0, Ordering::SeqCst);
+    TEST_CONTROLLER_TIME_EVENT_COUNT.store(0, Ordering::SeqCst);
+    TEST_CONTROLLER_CONTEXT_PTR.store(std::ptr::null_mut(), Ordering::SeqCst);
+
+    let manifest_ptr = unsafe { nautilus_plugin_init(&raw const TEST_HOST) };
+    let manifest = unsafe { &*manifest_ptr };
+    let entry = unsafe { &manifest.controllers.as_slice()[0] };
+    // SAFETY: vtable pointer is non-null and lives for the process lifetime.
+    let vtable = unsafe { &*entry.vtable };
+
+    let request = BorrowedStr::from_str(r#"{"scope":"test"}"#);
+    // SAFETY: request outlives the call.
+    let response = unsafe { generated_slot!(vtable, prepare)(request) }
+        .into_result()
+        .expect("prepare failed");
+    // SAFETY: response buffer is live until dropped.
+    let response_text = std::str::from_utf8(unsafe { response.as_bytes() }).unwrap();
+    assert_eq!(
+        response_text,
+        r#"{"prepared":true,"request":{"scope":"test"}}"#
+    );
+    assert_eq!(TEST_CONTROLLER_PREPARE_COUNT.load(Ordering::SeqCst), 1);
+
+    let ctx = std::ptr::NonNull::<u8>::dangling()
+        .as_ptr()
+        .cast::<ControllerHostContext>();
+    // SAFETY: host vtable, context, and config borrow are live for the call.
+    let handle = unsafe {
+        generated_slot!(vtable, create)(
+            &raw const TEST_CONTROLLER_HOST,
+            ctx,
+            BorrowedStr::from_str(r#"{"id":"controller-001"}"#),
+        )
+    };
+    assert!(!handle.is_null());
+    assert_eq!(TEST_CONTROLLER_CONTEXT_PTR.load(Ordering::SeqCst), ctx);
+
+    // SAFETY: handle is live and owned by the controller vtable.
+    unsafe { generated_slot!(vtable, on_start)(handle) }
+        .into_result()
+        .expect("on_start failed");
+    assert_eq!(TEST_CONTROLLER_START_COUNT.load(Ordering::SeqCst), 1);
+
+    let event = TimeEvent::new(
+        Ustr::from("ControllerAlarm"),
+        UUID4::new(),
+        UnixNanos::from(1u64),
+        UnixNanos::from(2u64),
+    );
+    // SAFETY: event is live for the duration of the call.
+    unsafe { generated_slot!(vtable, on_time_event)(handle, &raw const event) }
+        .into_result()
+        .expect("on_time_event failed");
+    assert_eq!(TEST_CONTROLLER_TIME_EVENT_COUNT.load(Ordering::SeqCst), 1);
+
+    // SAFETY: dropping the live controller handle.
+    unsafe { generated_slot!(vtable, drop_handle)(handle) };
 }
 
 #[rstest]

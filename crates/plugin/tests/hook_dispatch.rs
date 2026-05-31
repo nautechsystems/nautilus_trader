@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parametrised per-hook dispatch tests for the actor and strategy plug
-//! points.
+//! Parametrised per-hook dispatch tests for actor, strategy, and controller
+//! plug points.
 //!
-//! Each vtable entry on `ActorVTable` and `StrategyVTable` is paired with
-//! a thunk. A wiring mistake at the vtable-init site (e.g. assigning
+//! Each callback vtable entry is paired with a thunk. A wiring mistake at the
+//! vtable-init site (e.g. assigning
 //! `on_order_canceled_thunk` to the `on_order_filled` field) compiles but
 //! routes events to the wrong trait method. These tests guard against
 //! that class of mistake by:
 //!
-//! 1. Implementing a "hook-counting" test actor and strategy that
-//!    overrides every callback to increment a per-hook atomic counter.
+//! 1. Implementing "hook-counting" test plug-ins that override every
+//!    callback to increment a per-hook atomic counter.
 //! 2. Invoking each vtable entry with a valid payload for the type the
 //!    entry's documented to accept.
 //! 3. Asserting only the matching counter incremented.
@@ -68,10 +68,11 @@ use nautilus_model::{
 };
 use nautilus_plugin::{
     boundary::{BorrowedStr, Slice},
-    host::{HostContext, HostVTable},
+    host::{ControllerHostContext, ControllerHostVTable, HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
         book::{OrderBookDeltasHandle, OrderBookHandle},
+        controller::{PluginController, controller_vtable},
         custom_data::{
             CustomDataHandle, PluginCustomData, PluginCustomDataRef, custom_data_vtable,
         },
@@ -721,6 +722,105 @@ impl PluginStrategy for HookCountingStrategy {
 
     fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
         bump_strategy(StrategyHook::OnHistoricalFundingRates);
+        Ok(())
+    }
+}
+
+// See note above on ActorHook regarding the `On` prefix lint.
+#[allow(clippy::enum_variant_names)]
+#[repr(usize)]
+#[derive(Clone, Copy, Debug)]
+enum ControllerHook {
+    OnStart,
+    OnStop,
+    OnResume,
+    OnReset,
+    OnDispose,
+    OnDegrade,
+    OnFault,
+    OnTimeEvent,
+}
+
+const CONTROLLER_HOOK_COUNT: usize = ControllerHook::OnTimeEvent as usize + 1;
+static CONTROLLER_HOOK_CALLS: [AtomicU64; CONTROLLER_HOOK_COUNT] =
+    [const { AtomicU64::new(0) }; CONTROLLER_HOOK_COUNT];
+
+fn reset_controller_counters() {
+    for c in &CONTROLLER_HOOK_CALLS {
+        c.store(0, Ordering::SeqCst);
+    }
+}
+
+fn bump_controller(hook: ControllerHook) {
+    CONTROLLER_HOOK_CALLS[hook as usize].fetch_add(1, Ordering::SeqCst);
+}
+
+fn assert_only_controller_hook(expected: ControllerHook) {
+    for (i, c) in CONTROLLER_HOOK_CALLS.iter().enumerate() {
+        let v = c.load(Ordering::SeqCst);
+        if i == expected as usize {
+            assert_eq!(v, 1, "hook {expected:?} should have fired exactly once");
+        } else {
+            assert_eq!(
+                v, 0,
+                "hook at index {i} fired but {expected:?} was expected",
+            );
+        }
+    }
+}
+
+struct HookCountingController;
+// SAFETY: holds no fields; the trait requires Send.
+unsafe impl Send for HookCountingController {}
+
+impl PluginController for HookCountingController {
+    const TYPE_NAME: &'static str = "HookCountingController";
+
+    fn new(
+        _host: *const ControllerHostVTable,
+        _ctx: *const ControllerHostContext,
+        _config_json: &str,
+    ) -> Self {
+        Self
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnStart);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnStop);
+        Ok(())
+    }
+
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnResume);
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnReset);
+        Ok(())
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnDispose);
+        Ok(())
+    }
+
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnDegrade);
+        Ok(())
+    }
+
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnFault);
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, _e: &TimeEvent) -> anyhow::Result<()> {
+        bump_controller(ControllerHook::OnTimeEvent);
         Ok(())
     }
 }
@@ -1991,6 +2091,77 @@ fn strategy_historical_slice_thunk_dispatches_to_its_method(#[case] hook: Strate
     };
     r.into_result().expect("historical slice thunk failed");
     assert_only_strategy_hook(hook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+#[case::on_start(ControllerHook::OnStart)]
+#[case::on_stop(ControllerHook::OnStop)]
+#[case::on_resume(ControllerHook::OnResume)]
+#[case::on_reset(ControllerHook::OnReset)]
+#[case::on_dispose(ControllerHook::OnDispose)]
+#[case::on_degrade(ControllerHook::OnDegrade)]
+#[case::on_fault(ControllerHook::OnFault)]
+fn controller_lifecycle_thunk_dispatches_to_its_method(#[case] hook: ControllerHook) {
+    let _g = dispatch_lock();
+    reset_controller_counters();
+    let vt = controller_vtable::<HookCountingController>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const ControllerHostVTable = std::ptr::null();
+    let ctx: *const ControllerHostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingController never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let r = match hook {
+        // SAFETY: handle is live for each branch below.
+        ControllerHook::OnStart => unsafe { generated_slot!(vt, on_start)(handle) },
+        ControllerHook::OnStop => unsafe { generated_slot!(vt, on_stop)(handle) },
+        ControllerHook::OnResume => unsafe { generated_slot!(vt, on_resume)(handle) },
+        ControllerHook::OnReset => unsafe { generated_slot!(vt, on_reset)(handle) },
+        ControllerHook::OnDispose => unsafe { generated_slot!(vt, on_dispose)(handle) },
+        ControllerHook::OnDegrade => unsafe { generated_slot!(vt, on_degrade)(handle) },
+        ControllerHook::OnFault => unsafe { generated_slot!(vt, on_fault)(handle) },
+        _ => panic!("non-lifecycle hook"),
+    };
+    r.into_result().expect("lifecycle thunk failed");
+    assert_only_controller_hook(hook);
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+}
+
+#[rstest]
+fn controller_time_event_thunk_dispatches_to_its_method() {
+    let _g = dispatch_lock();
+    reset_controller_counters();
+    let vt = controller_vtable::<HookCountingController>();
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*vt };
+    let host: *const ControllerHostVTable = std::ptr::null();
+    let ctx: *const ControllerHostContext = std::ptr::null();
+    // SAFETY: create returns a fresh handle; null pointers are fine since
+    // HookCountingController never deref's them.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+    let event = TimeEvent::new(
+        Ustr::from("TestAlarm"),
+        UUID4::new(),
+        UnixNanos::from(1u64),
+        UnixNanos::from(2u64),
+    );
+
+    // SAFETY: handle and event are live for the duration of the call.
+    unsafe { generated_slot!(vt, on_time_event)(handle, &raw const event) }
+        .into_result()
+        .expect("on_time_event thunk failed");
+    assert_only_controller_hook(ControllerHook::OnTimeEvent);
 
     // SAFETY: handle is live.
     unsafe {

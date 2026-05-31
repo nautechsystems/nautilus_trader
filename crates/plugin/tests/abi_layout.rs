@@ -27,10 +27,10 @@ use nautilus_model::{
 use nautilus_plugin::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, Slice},
-    host::{HostContext, HostLogLevel, HostVTable},
+    host::{ControllerHostContext, ControllerHostVTable, HostContext, HostLogLevel, HostVTable},
     manifest::{
-        ActorRegistration, CustomDataRegistration, PluginBuildId, PluginManifest,
-        StrategyRegistration, compiled_precision_mode,
+        ActorRegistration, ControllerRegistration, CustomDataRegistration, PluginBuildId,
+        PluginManifest, StrategyRegistration, compiled_precision_mode,
     },
     surfaces::{
         actor::{ActorVTable, PluginActorHandle},
@@ -43,6 +43,7 @@ use nautilus_plugin::{
             QueryOrderHandle, SubmitOrderCommand, SubmitOrderHandle, SubmitOrderListCommand,
             SubmitOrderListHandle,
         },
+        controller::{ControllerVTable, PluginControllerHandle},
         custom_data::{CustomDataHandle, CustomDataVTable, MetadataEntry, PluginCustomDataRef},
         instrument::InstrumentAnyHandle,
         option_chain::OptionChainSliceHandle,
@@ -147,7 +148,7 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         precision_mode: 72,
         fixed_precision: 88,
     ]);
-    x64_layout_snapshot!(PluginManifest, "PluginManifest", 200, 8, [
+    x64_layout_snapshot!(PluginManifest, "PluginManifest", 216, 8, [
         abi_version: 0,
         plugin_name: 8,
         plugin_vendor: 24,
@@ -156,6 +157,7 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         custom_data: 152,
         actors: 168,
         strategies: 184,
+        controllers: 200,
     ]);
     x64_layout_snapshot!(CustomDataRegistration, "CustomDataRegistration", 24, 8, [
         type_name: 0,
@@ -166,6 +168,10 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         vtable: 16,
     ]);
     x64_layout_snapshot!(StrategyRegistration, "StrategyRegistration", 24, 8, [
+        type_name: 0,
+        vtable: 16,
+    ]);
+    x64_layout_snapshot!(ControllerRegistration, "ControllerRegistration", 24, 8, [
         type_name: 0,
         vtable: 16,
     ]);
@@ -280,6 +286,20 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         on_historical_index_prices: 416,
         on_historical_funding_rates: 424,
     ]);
+    x64_layout_snapshot!(ControllerVTable, "ControllerVTable", 96, 8, [
+        prepare: 0,
+        create: 8,
+        drop_handle: 16,
+        type_name: 24,
+        on_start: 32,
+        on_stop: 40,
+        on_resume: 48,
+        on_reset: 56,
+        on_dispose: 64,
+        on_degrade: 72,
+        on_fault: 80,
+        on_time_event: 88,
+    ]);
     x64_layout_snapshot!(HostVTable, "HostVTable", 264, 8, [
         abi_version: 0,
         clock_now_ns: 8,
@@ -315,11 +335,24 @@ fn x64_boundary_layouts_match_absolute_snapshot() {
         query_account: 248,
         query_order: 256,
     ]);
+    x64_layout_snapshot!(ControllerHostVTable, "ControllerHostVTable", 72, 8, [
+        abi_version: 0,
+        create_plugin_strategy: 8,
+        start_strategy: 16,
+        stop_strategy: 24,
+        exit_market: 32,
+        remove_strategy: 40,
+        instrument_exists: 48,
+        log: 56,
+        clock_now_ns: 64,
+    ]);
 
     x64_layout_snapshot!(HostContext, "HostContext", 0, 1, []);
+    x64_layout_snapshot!(ControllerHostContext, "ControllerHostContext", 0, 1, []);
     x64_layout_snapshot!(CustomDataHandle, "CustomDataHandle", 0, 1, []);
     x64_layout_snapshot!(PluginActorHandle, "PluginActorHandle", 0, 1, []);
     x64_layout_snapshot!(PluginStrategyHandle, "PluginStrategyHandle", 0, 1, []);
+    x64_layout_snapshot!(PluginControllerHandle, "PluginControllerHandle", 0, 1, []);
     x64_layout_snapshot!(PluginCustomDataRef, "PluginCustomDataRef", 32, 8, []);
     x64_layout_snapshot!(OrderBookHandle, "OrderBookHandle", 8, 8, []);
     x64_layout_snapshot!(OrderBookDeltasHandle, "OrderBookDeltasHandle", 8, 8, []);
@@ -446,6 +479,7 @@ fn manifest_layouts_match_snapshot() {
         custom_data: Slice<'static, CustomDataRegistration>,
         actors: Slice<'static, ActorRegistration>,
         strategies: Slice<'static, StrategyRegistration>,
+        controllers: Slice<'static, ControllerRegistration>,
     ]);
     repr_c_layout_snapshot!(CustomDataRegistration, "CustomDataRegistration", [
         type_name: BorrowedStr<'static>,
@@ -458,6 +492,10 @@ fn manifest_layouts_match_snapshot() {
     repr_c_layout_snapshot!(StrategyRegistration, "StrategyRegistration", [
         type_name: BorrowedStr<'static>,
         vtable: *const StrategyVTable,
+    ]);
+    repr_c_layout_snapshot!(ControllerRegistration, "ControllerRegistration", [
+        type_name: BorrowedStr<'static>,
+        vtable: *const ControllerVTable,
     ]);
 }
 
@@ -597,6 +635,28 @@ fn strategy_vtable_layout_matches_snapshot() {
 }
 
 #[rstest]
+fn controller_vtable_layout_matches_snapshot() {
+    pointer_table_layout_snapshot!(
+        ControllerVTable,
+        "ControllerVTable",
+        [
+            prepare,
+            create,
+            drop_handle,
+            type_name,
+            on_start,
+            on_stop,
+            on_resume,
+            on_reset,
+            on_dispose,
+            on_degrade,
+            on_fault,
+            on_time_event,
+        ]
+    );
+}
+
+#[rstest]
 fn host_vtable_layout_matches_snapshot() {
     host_vtable_layout_snapshot!([
         clock_now_ns,
@@ -635,11 +695,52 @@ fn host_vtable_layout_matches_snapshot() {
 }
 
 #[rstest]
+fn controller_host_vtable_layout_matches_snapshot() {
+    repr_c_layout_snapshot!(ControllerHostVTable, "ControllerHostVTable", [
+        abi_version: u32,
+        create_plugin_strategy: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        start_strategy: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        stop_strategy: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        exit_market: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        remove_strategy: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        instrument_exists: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        log: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+        clock_now_ns: unsafe extern "C" fn(
+            *const ControllerHostContext,
+            BorrowedStr<'_>,
+        ) -> nautilus_plugin::PluginResult<OwnedBytes>,
+    ]);
+}
+
+#[rstest]
 fn opaque_boundary_handles_match_snapshot() {
     assert_type_layout::<HostContext>("HostContext", 0, 1);
+    assert_type_layout::<ControllerHostContext>("ControllerHostContext", 0, 1);
     assert_type_layout::<CustomDataHandle>("CustomDataHandle", 0, 1);
     assert_type_layout::<PluginActorHandle>("PluginActorHandle", 0, 1);
     assert_type_layout::<PluginStrategyHandle>("PluginStrategyHandle", 0, 1);
+    assert_type_layout::<PluginControllerHandle>("PluginControllerHandle", 0, 1);
     assert_type_layout::<PluginCustomDataRef>(
         "PluginCustomDataRef",
         size_of::<BorrowedStr<'static>>() + (2 * pointer_size()),

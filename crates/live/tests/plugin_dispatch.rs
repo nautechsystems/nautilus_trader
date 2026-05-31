@@ -1396,6 +1396,7 @@ fn plugin_dispatch_custom_data(value: u64) -> CustomData {
         custom_data: Slice::from_slice(custom_data),
         actors: Slice::empty(),
         strategies: Slice::empty(),
+        controllers: Slice::empty(),
     };
     let manifest =
         ValidatedPluginManifest::new(&manifest).expect("test manifest passes validation");

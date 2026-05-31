@@ -40,6 +40,8 @@
 ///   [`PluginActor`](crate::surfaces::actor::PluginActor).
 /// - `strategies`: array of types implementing
 ///   [`PluginStrategy`](crate::surfaces::strategy::PluginStrategy).
+/// - `controllers`: array of types implementing
+///   [`PluginController`](crate::surfaces::controller::PluginController).
 ///
 /// # Example
 ///
@@ -70,6 +72,7 @@ macro_rules! nautilus_plugin {
         $(custom_data: [$($cd:ty),* $(,)?] ,)?
         $(actors: [$($act:ty),* $(,)?] ,)?
         $(strategies: [$($strategy:ty),* $(,)?] ,)?
+        $(controllers: [$($controller:ty),* $(,)?] ,)?
     ) => {
         $crate::__nautilus_plugin_impl! {
             @parse
@@ -79,6 +82,7 @@ macro_rules! nautilus_plugin {
             custom_data = ($($($cd),*)?),
             actors = ($($($act),*)?),
             strategies = ($($($strategy),*)?),
+            controllers = ($($($controller),*)?),
         }
     };
 }
@@ -95,6 +99,7 @@ macro_rules! __nautilus_plugin_impl {
         custom_data = ($($cd:ty),*),
         actors = ($($act:ty),*),
         strategies = ($($strategy:ty),*),
+        controllers = ($($controller:ty),*),
     ) => {
         const _: () = {
             // Compile-time guard: every listed type implements the trait. The
@@ -107,6 +112,8 @@ macro_rules! __nautilus_plugin_impl {
             use $crate::surfaces::actor::PluginActor as _PluginActor;
             #[allow(unused_imports)]
             use $crate::surfaces::strategy::PluginStrategy as _PluginStrategy;
+            #[allow(unused_imports)]
+            use $crate::surfaces::controller::PluginController as _PluginController;
 
             static CUSTOM_DATA: ::std::sync::LazyLock<
                 [$crate::manifest::CustomDataRegistration; $crate::__nautilus_plugin_impl!(@count $($cd),*)]
@@ -153,6 +160,21 @@ macro_rules! __nautilus_plugin_impl {
                 ]
             });
 
+            static CONTROLLERS: ::std::sync::LazyLock<
+                [$crate::manifest::ControllerRegistration; $crate::__nautilus_plugin_impl!(@count $($controller),*)]
+            > = ::std::sync::LazyLock::new(|| {
+                [
+                    $(
+                        $crate::manifest::ControllerRegistration {
+                            type_name: $crate::boundary::BorrowedStr::from_str(
+                                <$controller as $crate::surfaces::controller::PluginController>::TYPE_NAME,
+                            ),
+                            vtable: $crate::surfaces::controller::controller_vtable::<$controller>(),
+                        },
+                    )*
+                ]
+            });
+
             static MANIFEST: ::std::sync::LazyLock<$crate::manifest::PluginManifest> =
                 ::std::sync::LazyLock::new(|| $crate::manifest::PluginManifest {
                     abi_version: $crate::NAUTILUS_PLUGIN_ABI_VERSION,
@@ -165,6 +187,7 @@ macro_rules! __nautilus_plugin_impl {
                     custom_data: $crate::boundary::Slice::from_slice(&*CUSTOM_DATA),
                     actors: $crate::boundary::Slice::from_slice(&*ACTORS),
                     strategies: $crate::boundary::Slice::from_slice(&*STRATEGIES),
+                    controllers: $crate::boundary::Slice::from_slice(&*CONTROLLERS),
                 });
 
             #[unsafe(no_mangle)]

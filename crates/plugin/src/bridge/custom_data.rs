@@ -356,6 +356,7 @@ mod tests {
             custom_data: Slice::from_slice(&NULL_VTABLE_CUSTOM_DATA),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
 
         let r = ValidatedPluginManifest::new(&manifest);
@@ -382,6 +383,7 @@ mod tests {
             custom_data: Slice::from_slice(custom_data),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let manifest =
             ValidatedPluginManifest::new(&manifest).expect("test manifest passes validation");

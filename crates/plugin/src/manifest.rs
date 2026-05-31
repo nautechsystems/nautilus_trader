@@ -33,7 +33,10 @@ use crate::{
     NAUTILUS_PLUGIN_ABI_VERSION, PLUGIN_BUILD_ID_VERSION,
     boundary::{BorrowedStr, Slice},
     host::HostVTable,
-    surfaces::{actor::ActorVTable, custom_data::CustomDataVTable, strategy::StrategyVTable},
+    surfaces::{
+        actor::ActorVTable, controller::ControllerVTable, custom_data::CustomDataVTable,
+        strategy::StrategyVTable,
+    },
 };
 
 /// Signature of the single `extern "C"` entry symbol every plug-in exports
@@ -173,6 +176,9 @@ pub struct PluginManifest {
 
     /// Strategy registrations contributed by this plug-in.
     pub strategies: Slice<'static, StrategyRegistration>,
+
+    /// Controller registrations contributed by this plug-in.
+    pub controllers: Slice<'static, ControllerRegistration>,
     // Future plug-point slices land here and require rebuilding plug-ins:
     //   pub indicators: Slice<'static, IndicatorRegistration>,
     //   pub fill_models: Slice<'static, FillModelRegistration>,
@@ -301,6 +307,19 @@ fn validate_registrations(manifest: &PluginManifest, errors: &mut PluginManifest
                 errors.push(format!("{location}.vtable must not be null"));
             } else {
                 validate_strategy_vtable(&location, type_name, entry.vtable, errors);
+            }
+        }
+    }
+
+    if let Some(entries) = validate_slice("controllers", &manifest.controllers, errors) {
+        for (index, entry) in entries.iter().enumerate() {
+            let location = format!("controllers[{index}]");
+            let type_name = validate_type_name(&location, entry.type_name, errors);
+            validate_unique_type_name(&mut seen_type_names, &location, type_name, errors);
+            if entry.vtable.is_null() {
+                errors.push(format!("{location}.vtable must not be null"));
+            } else {
+                validate_controller_vtable(&location, type_name, entry.vtable, errors);
             }
         }
     }
@@ -464,6 +483,37 @@ fn validate_strategy_vtable(
     );
 }
 
+fn validate_controller_vtable(
+    location: &str,
+    type_name: Option<&str>,
+    vtable: *const ControllerVTable,
+    errors: &mut PluginManifestValidationErrors,
+) {
+    // SAFETY: caller checked the vtable pointer is non-null. Validation only
+    // reads nullable function-pointer slots and never invokes plug-in code.
+    let vtable = unsafe { &*vtable };
+    validate_vtable_slots!(
+        location,
+        type_name,
+        vtable,
+        errors,
+        [
+            prepare,
+            create,
+            drop_handle,
+            type_name,
+            on_start,
+            on_stop,
+            on_resume,
+            on_reset,
+            on_dispose,
+            on_degrade,
+            on_fault,
+            on_time_event,
+        ]
+    );
+}
+
 fn validate_vtable_slot(
     location: &str,
     type_name: Option<&str>,
@@ -620,6 +670,20 @@ unsafe impl Send for StrategyRegistration {}
 /// SAFETY: see above.
 unsafe impl Sync for StrategyRegistration {}
 
+/// Registration entry for one plug-in controller type.
+#[repr(C)]
+pub struct ControllerRegistration {
+    /// Canonical type name; must match the `type_name` returned by the vtable.
+    pub type_name: BorrowedStr<'static>,
+    /// Pointer to the static vtable for this controller type.
+    pub vtable: *const ControllerVTable,
+}
+
+/// SAFETY: the pointer is `'static` and immutable for the process lifetime.
+unsafe impl Send for ControllerRegistration {}
+/// SAFETY: see above.
+unsafe impl Sync for ControllerRegistration {}
+
 /// Host-side view of a manifest that passed structural validation.
 ///
 /// This wrapper is not part of the ABI. Hosts use it after loader validation
@@ -690,6 +754,15 @@ impl<'a> ValidatedPluginManifest<'a> {
         unsafe { self.manifest.strategies.as_slice() }
             .iter()
             .map(ValidatedStrategyRegistration::from_validated_registration)
+    }
+
+    /// Returns validated controller registrations in manifest order.
+    #[must_use]
+    pub fn controllers(self) -> impl ExactSizeIterator<Item = ValidatedControllerRegistration> {
+        // SAFETY: validation checked the slice descriptor.
+        unsafe { self.manifest.controllers.as_slice() }
+            .iter()
+            .map(ValidatedControllerRegistration::from_validated_registration)
     }
 }
 
@@ -785,6 +858,38 @@ impl ValidatedStrategyRegistration {
     /// Returns the validated vtable wrapper.
     #[must_use]
     pub fn vtable(self) -> ValidatedStrategyVTable {
+        self.vtable
+    }
+}
+
+/// Host-side controller registration with a validated type name and vtable.
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedControllerRegistration {
+    type_name: &'static str,
+    vtable: ValidatedControllerVTable,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedControllerRegistration {
+    fn from_validated_registration(registration: &ControllerRegistration) -> Self {
+        Self {
+            // SAFETY: validation checked the descriptor and manifest strings
+            // live in static plug-in storage.
+            type_name: unsafe { registration.type_name.as_str() },
+            vtable: ValidatedControllerVTable::from_validated_ptr(registration.vtable),
+        }
+    }
+
+    /// Returns the canonical controller type name.
+    #[must_use]
+    pub fn type_name(self) -> &'static str {
+        self.type_name
+    }
+
+    /// Returns the validated vtable wrapper.
+    #[must_use]
+    pub fn vtable(self) -> ValidatedControllerVTable {
         self.vtable
     }
 }
@@ -912,6 +1017,47 @@ unsafe impl Send for ValidatedStrategyVTable {}
 #[cfg(feature = "host")]
 unsafe impl Sync for ValidatedStrategyVTable {}
 
+/// Host-side pointer to a validated [`ControllerVTable`].
+#[cfg(feature = "host")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValidatedControllerVTable {
+    ptr: std::ptr::NonNull<ControllerVTable>,
+}
+
+#[cfg(feature = "host")]
+impl ValidatedControllerVTable {
+    fn from_validated_ptr(ptr: *const ControllerVTable) -> Self {
+        Self {
+            ptr: std::ptr::NonNull::new(ptr.cast_mut())
+                .expect("validated manifest stores non-null ControllerVTable"),
+        }
+    }
+
+    /// Wraps a controller vtable pointer that the caller already validated.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null, point at immutable process-lifetime storage,
+    /// and contain every required [`ControllerVTable`] function slot.
+    #[must_use]
+    pub unsafe fn from_raw_unchecked(ptr: *const ControllerVTable) -> Self {
+        Self::from_validated_ptr(ptr)
+    }
+
+    /// Returns the raw vtable pointer for ABI calls.
+    #[must_use]
+    pub fn as_ptr(self) -> *const ControllerVTable {
+        self.ptr.as_ptr()
+    }
+}
+
+/// SAFETY: validated vtables point at immutable process-lifetime storage.
+#[cfg(feature = "host")]
+unsafe impl Send for ValidatedControllerVTable {}
+/// SAFETY: see `Send`.
+#[cfg(feature = "host")]
+unsafe impl Sync for ValidatedControllerVTable {}
+
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
@@ -986,6 +1132,20 @@ mod tests {
         }
     }
 
+    struct ManifestTestController;
+
+    impl crate::surfaces::controller::PluginController for ManifestTestController {
+        const TYPE_NAME: &'static str = "ManifestTestController";
+
+        fn new(
+            _host: *const crate::host::ControllerHostVTable,
+            _ctx: *const crate::host::ControllerHostContext,
+            _config_json: &str,
+        ) -> Self {
+            Self
+        }
+    }
+
     static VALID_CUSTOM_DATA: LazyLock<[CustomDataRegistration; 1]> = LazyLock::new(|| {
         [CustomDataRegistration {
             type_name: BorrowedStr::from_str("TestTick"),
@@ -1002,6 +1162,12 @@ mod tests {
         [StrategyRegistration {
             type_name: BorrowedStr::from_str("TestStrategy"),
             vtable: crate::surfaces::strategy::strategy_vtable::<ManifestTestStrategy>(),
+        }]
+    });
+    static VALID_CONTROLLERS: LazyLock<[ControllerRegistration; 1]> = LazyLock::new(|| {
+        [ControllerRegistration {
+            type_name: BorrowedStr::from_str("TestController"),
+            vtable: crate::surfaces::controller::controller_vtable::<ManifestTestController>(),
         }]
     });
     static DUPLICATE_CUSTOM_DATA: LazyLock<[CustomDataRegistration; 1]> = LazyLock::new(|| {
@@ -1067,6 +1233,17 @@ mod tests {
         vtable: *const StrategyVTable,
     ) -> Slice<'static, StrategyRegistration> {
         let entries = Box::leak(Box::new([StrategyRegistration {
+            type_name: BorrowedStr::from_str(type_name),
+            vtable,
+        }]));
+        Slice::from_slice(entries)
+    }
+
+    fn controller_registration(
+        type_name: &'static str,
+        vtable: *const ControllerVTable,
+    ) -> Slice<'static, ControllerRegistration> {
+        let entries = Box::leak(Box::new([ControllerRegistration {
             type_name: BorrowedStr::from_str(type_name),
             vtable,
         }]));
@@ -1329,6 +1506,27 @@ mod tests {
         std::ptr::from_ref(&*vtable)
     }
 
+    fn controller_vtable_missing_prepare() -> *const ControllerVTable {
+        let valid = crate::surfaces::controller::controller_vtable::<ManifestTestController>();
+        // SAFETY: generated test vtable lives for the process lifetime.
+        let valid = unsafe { &*valid };
+        let vtable = Box::leak(Box::new(ControllerVTable {
+            prepare: None,
+            create: valid.create,
+            drop_handle: valid.drop_handle,
+            type_name: valid.type_name,
+            on_start: valid.on_start,
+            on_stop: valid.on_stop,
+            on_resume: valid.on_resume,
+            on_reset: valid.on_reset,
+            on_dispose: valid.on_dispose,
+            on_degrade: valid.on_degrade,
+            on_fault: valid.on_fault,
+            on_time_event: valid.on_time_event,
+        }));
+        std::ptr::from_ref(&*vtable)
+    }
+
     fn valid_manifest() -> PluginManifest {
         PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
@@ -1339,6 +1537,7 @@ mod tests {
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         }
     }
 
@@ -1390,6 +1589,7 @@ mod tests {
             custom_data: Slice::from_slice(&*VALID_CUSTOM_DATA),
             actors: Slice::from_slice(&*VALID_ACTORS),
             strategies: Slice::from_slice(&*VALID_STRATEGIES),
+            controllers: Slice::from_slice(&*VALID_CONTROLLERS),
             ..valid_manifest()
         };
 
@@ -1404,6 +1604,7 @@ mod tests {
             custom_data: Slice::from_slice(&*VALID_CUSTOM_DATA),
             actors: Slice::from_slice(&*VALID_ACTORS),
             strategies: Slice::from_slice(&*VALID_STRATEGIES),
+            controllers: Slice::from_slice(&*VALID_CONTROLLERS),
             ..valid_manifest()
         };
 
@@ -1412,14 +1613,17 @@ mod tests {
         let custom_data = manifest.custom_data().next().expect("custom data entry");
         let actor = manifest.actors().next().expect("actor entry");
         let strategy = manifest.strategies().next().expect("strategy entry");
+        let controller = manifest.controllers().next().expect("controller entry");
 
         assert_eq!(manifest.plugin_name(), "test");
         assert_eq!(custom_data.type_name(), "TestTick");
         assert_eq!(actor.type_name(), "TestActor");
         assert_eq!(strategy.type_name(), "TestStrategy");
+        assert_eq!(controller.type_name(), "TestController");
         assert_eq!(custom_data.vtable().as_ptr(), VALID_CUSTOM_DATA[0].vtable);
         assert_eq!(actor.vtable().as_ptr(), VALID_ACTORS[0].vtable);
         assert_eq!(strategy.vtable().as_ptr(), VALID_STRATEGIES[0].vtable);
+        assert_eq!(controller.vtable().as_ptr(), VALID_CONTROLLERS[0].vtable);
     }
 
     #[rstest]
@@ -1552,6 +1756,10 @@ mod tests {
                 "BadStrategy",
                 strategy_vtable_missing_on_book_and_on_position_closed(),
             ),
+            controllers: controller_registration(
+                "BadController",
+                controller_vtable_missing_prepare(),
+            ),
             ..valid_manifest()
         };
 
@@ -1571,6 +1779,10 @@ mod tests {
         assert!(rendered.contains(
             "strategies[0] type 'BadStrategy' vtable.on_position_closed must not be null"
         ));
+        assert!(
+            rendered
+                .contains("controllers[0] type 'BadController' vtable.prepare must not be null")
+        );
     }
 
     #[rstest]

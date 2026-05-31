@@ -384,10 +384,11 @@ impl PluginLoader {
         let custom_data_count = manifest.custom_data().len();
         let actor_count = manifest.actors().len();
         let strategy_count = manifest.strategies().len();
+        let controller_count = manifest.controllers().len();
         let build_id = PluginBuildIdDiagnostics::from_build_id(&manifest_ref.build_id);
         log::info!(
             target: "nautilus_plugin",
-            "Loaded plug-in '{}' (abi={abi}, {build_id}, custom_data={custom_data_count}, actors={actor_count}, strategies={strategy_count}) from {}",
+            "Loaded plug-in '{}' (abi={abi}, {build_id}, custom_data={custom_data_count}, actors={actor_count}, strategies={strategy_count}, controllers={controller_count}) from {}",
             manifest.plugin_name(),
             path_buf.display(),
         );
@@ -1031,6 +1032,7 @@ mod tests {
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
@@ -1084,6 +1086,7 @@ mod tests {
             custom_data: Slice::empty(),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
@@ -1121,6 +1124,7 @@ mod tests {
             custom_data: Slice::from_slice(registrations),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let manifest = validate_manifest_ptr(&raw const good_manifest, path)
@@ -1151,6 +1155,7 @@ mod tests {
             custom_data: Slice::from_slice(&NULL_VTABLE_CUSTOM_DATA),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();
@@ -1208,6 +1213,7 @@ mod tests {
             custom_data: Slice::from_slice(registrations),
             actors: Slice::empty(),
             strategies: Slice::empty(),
+            controllers: Slice::empty(),
         };
         let path = std::path::Path::new("/test/plugin.so");
         let err = validate_manifest_ptr(&raw const bad_manifest, path).unwrap_err();

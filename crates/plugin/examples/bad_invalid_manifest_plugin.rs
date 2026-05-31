@@ -57,6 +57,7 @@ static MANIFEST: LazyLock<PluginManifest> = LazyLock::new(|| PluginManifest {
     // loader can prove it rejects the manifest before registration.
     actors: unsafe { slice_from_raw(std::ptr::null(), 1) },
     strategies: Slice::from_slice(&*STRATEGIES),
+    controllers: Slice::empty(),
 });
 
 #[unsafe(no_mangle)]

@@ -71,10 +71,11 @@ use nautilus_model::{
 };
 use nautilus_plugin::{
     boundary::{BorrowedStr, PluginError, PluginErrorCode, PluginResult, Slice},
-    host::{HostContext, HostVTable},
+    host::{ControllerHostContext, ControllerHostVTable, HostContext, HostVTable},
     surfaces::{
         actor::{PluginActor, actor_vtable},
         book::{OrderBookDeltasHandle, OrderBookHandle},
+        controller::{PluginController, controller_vtable},
         custom_data::{
             CustomDataHandle, MetadataEntry, PluginCustomData, PluginCustomDataRef,
             custom_data_vtable,
@@ -450,6 +451,54 @@ impl PluginStrategy for MisbehavingStrategy {
         fail()
     }
     fn on_historical_funding_rates(&mut self, _f: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        fail()
+    }
+}
+
+// Controller whose fallible hooks panic or err based on the thread-local
+// mode. Used to drive the `guard()`-wrapped controller thunks.
+struct MisbehavingController;
+
+// SAFETY: zero-sized type; the trait requires Send.
+unsafe impl Send for MisbehavingController {}
+
+impl PluginController for MisbehavingController {
+    const TYPE_NAME: &'static str = "MisbehavingController";
+
+    fn prepare(_request_json: &str) -> anyhow::Result<Vec<u8>> {
+        fail()
+    }
+
+    fn new(
+        _host: *const ControllerHostVTable,
+        _ctx: *const ControllerHostContext,
+        _config_json: &str,
+    ) -> Self {
+        Self
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        fail()
+    }
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
         fail()
     }
 }
@@ -1325,6 +1374,94 @@ fn strategy_thunk_propagates_failure(#[case] thunk: StrategyThunkUnderTest, #[ca
     set_mode(mode);
     let r = drive_strategy_thunk(thunk);
     let err = r.into_result().unwrap_err();
+    assert_failure_code(&err, mode, PluginErrorCode::Panic, PluginErrorCode::Generic);
+}
+
+// See note above on ActorThunkUnderTest regarding the `On` prefix lint.
+#[allow(clippy::enum_variant_names)]
+#[derive(Clone, Copy, Debug)]
+enum ControllerThunkUnderTest {
+    Prepare,
+    OnStart,
+    OnStop,
+    OnResume,
+    OnReset,
+    OnDispose,
+    OnDegrade,
+    OnFault,
+    OnTimeEvent,
+}
+
+fn drive_controller_thunk(thunk: ControllerThunkUnderTest) -> PluginError {
+    // SAFETY: vtable lives for the process lifetime.
+    let vt = unsafe { &*controller_vtable::<MisbehavingController>() };
+
+    if matches!(thunk, ControllerThunkUnderTest::Prepare) {
+        let request = BorrowedStr::empty();
+        // SAFETY: request outlives the call.
+        let r = unsafe { generated_slot!(vt, prepare)(request) };
+        return expect_err(r);
+    }
+
+    let host: *const ControllerHostVTable = std::ptr::null();
+    let ctx: *const ControllerHostContext = std::ptr::null();
+    // SAFETY: MisbehavingController::new never derefs host or ctx.
+    let handle = unsafe { generated_slot!(vt, create)(host, ctx, BorrowedStr::empty()) };
+
+    let r = match thunk {
+        // SAFETY: handle is live for each branch below.
+        ControllerThunkUnderTest::OnStart => unsafe { generated_slot!(vt, on_start)(handle) },
+        ControllerThunkUnderTest::OnStop => unsafe { generated_slot!(vt, on_stop)(handle) },
+        ControllerThunkUnderTest::OnResume => unsafe { generated_slot!(vt, on_resume)(handle) },
+        ControllerThunkUnderTest::OnReset => unsafe { generated_slot!(vt, on_reset)(handle) },
+        ControllerThunkUnderTest::OnDispose => unsafe { generated_slot!(vt, on_dispose)(handle) },
+        ControllerThunkUnderTest::OnDegrade => unsafe { generated_slot!(vt, on_degrade)(handle) },
+        ControllerThunkUnderTest::OnFault => unsafe { generated_slot!(vt, on_fault)(handle) },
+        ControllerThunkUnderTest::OnTimeEvent => {
+            let v = TimeEvent::new(
+                Ustr::from("TestAlarm"),
+                UUID4::new(),
+                UnixNanos::from(1u64),
+                UnixNanos::from(2u64),
+            );
+            // SAFETY: v outlives the call.
+            unsafe { generated_slot!(vt, on_time_event)(handle, &raw const v) }
+        }
+        ControllerThunkUnderTest::Prepare => unreachable!("prepare handled before create"),
+    };
+
+    // SAFETY: handle is live.
+    unsafe {
+        generated_slot!(vt, drop_handle)(handle);
+    };
+    expect_err(r)
+}
+
+#[rstest]
+#[case::prepare_panic(ControllerThunkUnderTest::Prepare, Mode::Panic)]
+#[case::prepare_err(ControllerThunkUnderTest::Prepare, Mode::Err)]
+#[case::on_start_panic(ControllerThunkUnderTest::OnStart, Mode::Panic)]
+#[case::on_start_err(ControllerThunkUnderTest::OnStart, Mode::Err)]
+#[case::on_stop_panic(ControllerThunkUnderTest::OnStop, Mode::Panic)]
+#[case::on_stop_err(ControllerThunkUnderTest::OnStop, Mode::Err)]
+#[case::on_resume_panic(ControllerThunkUnderTest::OnResume, Mode::Panic)]
+#[case::on_resume_err(ControllerThunkUnderTest::OnResume, Mode::Err)]
+#[case::on_reset_panic(ControllerThunkUnderTest::OnReset, Mode::Panic)]
+#[case::on_reset_err(ControllerThunkUnderTest::OnReset, Mode::Err)]
+#[case::on_dispose_panic(ControllerThunkUnderTest::OnDispose, Mode::Panic)]
+#[case::on_dispose_err(ControllerThunkUnderTest::OnDispose, Mode::Err)]
+#[case::on_degrade_panic(ControllerThunkUnderTest::OnDegrade, Mode::Panic)]
+#[case::on_degrade_err(ControllerThunkUnderTest::OnDegrade, Mode::Err)]
+#[case::on_fault_panic(ControllerThunkUnderTest::OnFault, Mode::Panic)]
+#[case::on_fault_err(ControllerThunkUnderTest::OnFault, Mode::Err)]
+#[case::on_time_event_panic(ControllerThunkUnderTest::OnTimeEvent, Mode::Panic)]
+#[case::on_time_event_err(ControllerThunkUnderTest::OnTimeEvent, Mode::Err)]
+fn controller_thunk_propagates_failure(
+    #[case] thunk: ControllerThunkUnderTest,
+    #[case] mode: Mode,
+) {
+    set_mode(mode);
+    let err = drive_controller_thunk(thunk);
     assert_failure_code(&err, mode, PluginErrorCode::Panic, PluginErrorCode::Generic);
 }
 

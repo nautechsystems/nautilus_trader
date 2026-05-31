@@ -34,6 +34,7 @@ static MANIFEST: PluginManifest = PluginManifest {
     custom_data: Slice::empty(),
     actors: Slice::empty(),
     strategies: Slice::empty(),
+    controllers: Slice::empty(),
 };
 
 #[unsafe(no_mangle)]

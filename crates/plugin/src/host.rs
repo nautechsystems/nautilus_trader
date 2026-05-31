@@ -56,6 +56,88 @@ pub struct HostContext {
     _opaque: [u8; 0],
 }
 
+/// Opaque per-instance context the host supplies to controller plug-ins.
+///
+/// Controller host services use this context to attribute runtime-created
+/// strategies and lifecycle commands to the calling controller instance.
+#[repr(C)]
+pub struct ControllerHostContext {
+    _opaque: [u8; 0],
+}
+
+/// Function table the host passes to every controller plug-in instance.
+///
+/// Each service accepts a JSON request envelope and returns a JSON response
+/// envelope as [`OwnedBytes`]. The producing side owns and frees returned
+/// allocations so host and plug-in allocators remain isolated.
+#[repr(C)]
+pub struct ControllerHostVTable {
+    /// ABI version of this vtable. Must equal [`NAUTILUS_PLUGIN_ABI_VERSION`].
+    pub abi_version: u32,
+
+    /// Creates a plug-in strategy through the host's registered controller.
+    pub create_plugin_strategy: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Starts a strategy through the host's system controller command path.
+    pub start_strategy: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Stops a strategy through the host's system controller command path.
+    pub stop_strategy: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Exits the market for a strategy through the system controller.
+    pub exit_market: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Removes a strategy through the system controller.
+    pub remove_strategy: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Checks whether an instrument is present in the host cache.
+    pub instrument_exists: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Emits a structured log record through the host logger.
+    pub log: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+
+    /// Returns the host clock reading in a JSON response envelope.
+    pub clock_now_ns: unsafe extern "C" fn(
+        ctx: *const ControllerHostContext,
+        request_json: BorrowedStr<'_>,
+    ) -> PluginResult<OwnedBytes>,
+}
+
+impl ControllerHostVTable {
+    /// Asserts that the embedded ABI version matches the compiled-in constant.
+    #[must_use]
+    pub fn matches_compiled_abi(&self) -> bool {
+        self.abi_version == NAUTILUS_PLUGIN_ABI_VERSION
+    }
+}
+
+/// SAFETY: function pointers are thread-safe by construction; the host
+/// guarantees the underlying implementations are `Sync`.
+unsafe impl Send for ControllerHostVTable {}
+/// SAFETY: see above.
+unsafe impl Sync for ControllerHostVTable {}
+
 /// Function table the host passes to every plug-in at load time.
 ///
 /// All function pointers are non-null and stable for the process lifetime.
@@ -473,6 +555,17 @@ mod tests {
         };
     }
 
+    macro_rules! stub_controller_bytes {
+        ($name:ident) => {
+            unsafe extern "C" fn $name(
+                _ctx: *const ControllerHostContext,
+                _a: BorrowedStr<'_>,
+            ) -> PluginResult<OwnedBytes> {
+                PluginResult::Ok(OwnedBytes::empty())
+            }
+        };
+    }
+
     macro_rules! stub_unit {
         ($name:ident, ($($arg:ident : $ty:ty),* $(,)?)) => {
             unsafe extern "C" fn $name($($arg: $ty),*) -> PluginResult<()> {
@@ -488,6 +581,14 @@ mod tests {
     stub_bytes!(stub_cache_position);
     stub_bytes!(stub_cache_orders_for_strategy);
     stub_bytes!(stub_cache_positions_for_strategy);
+    stub_controller_bytes!(stub_controller_create_plugin_strategy);
+    stub_controller_bytes!(stub_controller_start_strategy);
+    stub_controller_bytes!(stub_controller_stop_strategy);
+    stub_controller_bytes!(stub_controller_exit_market);
+    stub_controller_bytes!(stub_controller_remove_strategy);
+    stub_controller_bytes!(stub_controller_instrument_exists);
+    stub_controller_bytes!(stub_controller_log);
+    stub_controller_bytes!(stub_controller_clock_now_ns);
 
     stub_unit!(
         stub_subscribe,
@@ -641,9 +742,29 @@ mod tests {
         }
     }
 
+    fn build_controller_test_host(abi: u32) -> ControllerHostVTable {
+        ControllerHostVTable {
+            abi_version: abi,
+            create_plugin_strategy: stub_controller_create_plugin_strategy,
+            start_strategy: stub_controller_start_strategy,
+            stop_strategy: stub_controller_stop_strategy,
+            exit_market: stub_controller_exit_market,
+            remove_strategy: stub_controller_remove_strategy,
+            instrument_exists: stub_controller_instrument_exists,
+            log: stub_controller_log,
+            clock_now_ns: stub_controller_clock_now_ns,
+        }
+    }
+
     #[rstest]
     fn matches_compiled_abi_accepts_compiled_version() {
         let host = build_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
+        assert!(host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    fn controller_matches_compiled_abi_accepts_compiled_version() {
+        let host = build_controller_test_host(NAUTILUS_PLUGIN_ABI_VERSION);
         assert!(host.matches_compiled_abi());
     }
 
@@ -653,6 +774,15 @@ mod tests {
     #[case::max(u32::MAX)]
     fn matches_compiled_abi_rejects_mismatch(#[case] abi: u32) {
         let host = build_test_host(abi);
+        assert!(!host.matches_compiled_abi());
+    }
+
+    #[rstest]
+    #[case::off_by_one(NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1))]
+    #[case::zero(0)]
+    #[case::max(u32::MAX)]
+    fn controller_matches_compiled_abi_rejects_mismatch(#[case] abi: u32) {
+        let host = build_controller_test_host(abi);
         assert!(!host.matches_compiled_abi());
     }
 
