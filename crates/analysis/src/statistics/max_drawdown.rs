@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 
 use nautilus_core::UnixNanos;
+use nautilus_model::position::Position;
 
 use crate::statistic::PortfolioStatistic;
 
@@ -84,6 +85,13 @@ impl PortfolioStatistic for MaxDrawdown {
 
         // Return as negative percentage
         Some(-max_drawdown)
+    }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
     }
 }
 

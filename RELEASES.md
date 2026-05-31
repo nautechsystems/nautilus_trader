@@ -84,6 +84,7 @@ Released on TBD (UTC).
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
 - Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax
 - Fixed `PortfolioStatistic.downsample_to_daily_bins` to compound sub-daily returns (#4141), thanks @mahimn01
+- Fixed `MaxDrawdown`, `CAGR`, and `CalmarRatio` Rust trait impls panicking on `calculate_from_realized_pnls` and `calculate_from_positions` (#4174), thanks @mahimn01
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
