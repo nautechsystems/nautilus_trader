@@ -21,12 +21,14 @@
 
 pub mod backend;
 pub mod cursor;
+pub mod extractor;
 pub mod marker;
 pub mod redb;
 pub mod writer;
 
 pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend};
 pub use cursor::CursorState;
+pub use extractor::{DataMarkerExtractor, DataMarkerExtractorRegistry};
 pub use marker::{
     DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
     StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
