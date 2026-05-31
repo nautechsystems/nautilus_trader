@@ -56,7 +56,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BINANCE_VENUE, credential::resolve_credentials, enums::BinanceProductType,
-        parse::bar_spec_to_binance_interval, status::diff_and_emit_statuses,
+        parse::bar_spec_to_binance_interval, status::diff_and_emit_statuses, urls::get_ws_base_url,
     },
     config::{BinanceDataClientConfig, SpotMarketDataMode},
     spot::{
@@ -110,6 +110,36 @@ fn resolve_spot_market_data_mode(
         }
         SpotMarketDataMode::Sbe => ResolvedSpotMarketDataMode::Sbe,
         SpotMarketDataMode::JsonPublic => ResolvedSpotMarketDataMode::JsonPublic,
+    }
+}
+
+fn looks_like_spot_sbe_ws_url(base_url: &str) -> bool {
+    let without_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let host = without_scheme
+        .split(['/', ':'])
+        .next()
+        .unwrap_or(without_scheme);
+    host.starts_with("stream-sbe") || host.starts_with("demo-stream-sbe")
+}
+
+fn resolve_spot_json_ws_url(
+    base_url_ws: Option<String>,
+    environment: crate::common::enums::BinanceEnvironment,
+) -> String {
+    let default_url = get_ws_base_url(BinanceProductType::Spot, environment).to_string();
+
+    match base_url_ws {
+        Some(url) if looks_like_spot_sbe_ws_url(&url) => {
+            log::warn!(
+                "Spot JSON market-data mode received an SBE WebSocket URL override (`{url}`); \
+                 using Spot JSON WebSocket default for {environment:?}: {default_url}",
+            );
+            default_url
+        }
+        Some(url) => url,
+        None => default_url,
     }
 }
 
@@ -190,7 +220,10 @@ impl BinanceSpotDataClient {
             )?),
             ResolvedSpotMarketDataMode::JsonPublic => {
                 SpotWsClient::JsonPublic(BinanceSpotPublicJsonWebSocketClient::new(
-                    config.base_url_ws.clone(),
+                    Some(resolve_spot_json_ws_url(
+                        config.base_url_ws.clone(),
+                        config.environment,
+                    )),
                     Some(20), // Heartbeat interval
                     config.transport_backend,
                 ))
@@ -1024,6 +1057,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::{consts::BINANCE_SPOT_WS_URL, enums::BinanceEnvironment};
 
     #[rstest]
     fn test_resolve_spot_market_data_mode_auto_without_credentials() {
@@ -1046,6 +1080,34 @@ mod tests {
         assert_eq!(
             resolve_spot_market_data_mode(SpotMarketDataMode::Sbe, false),
             ResolvedSpotMarketDataMode::Sbe
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_spot_json_ws_url_uses_environment_default_without_override() {
+        assert_eq!(
+            resolve_spot_json_ws_url(None, BinanceEnvironment::Live),
+            BINANCE_SPOT_WS_URL.to_string()
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_spot_json_ws_url_rewrites_sbe_override_to_spot_default() {
+        assert_eq!(
+            resolve_spot_json_ws_url(
+                Some("wss://stream-sbe.binance.com/ws".to_string()),
+                BinanceEnvironment::Live,
+            ),
+            BINANCE_SPOT_WS_URL.to_string()
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_spot_json_ws_url_preserves_non_sbe_override() {
+        let custom = "wss://example.com/ws".to_string();
+        assert_eq!(
+            resolve_spot_json_ws_url(Some(custom.clone()), BinanceEnvironment::Live),
+            custom
         );
     }
 }
