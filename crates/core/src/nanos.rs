@@ -102,6 +102,12 @@ impl UnixNanos {
         self.0
     }
 
+    /// Returns the timestamp as milliseconds, truncating sub-millisecond precision.
+    #[must_use]
+    pub const fn as_millis(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_MILLISECOND
+    }
+
     /// Creates a new [`UnixNanos`] from a millisecond timestamp.
     ///
     /// # Panics
@@ -1385,6 +1391,15 @@ mod tests {
         let ms = 1_625_474_304_765_u64;
         let expected = ms * 1_000_000;
         assert_eq!(UnixNanos::from_millis(ms).as_u64(), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(999_999, 0)]
+    #[case(1_000_000, 1)]
+    #[case(1_700_000_000_000_123_456, 1_700_000_000_000)]
+    fn test_as_millis(#[case] nanos: u64, #[case] expected: u64) {
+        assert_eq!(UnixNanos::from(nanos).as_millis(), expected);
     }
 
     #[rstest]

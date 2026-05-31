@@ -59,7 +59,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
@@ -96,9 +96,11 @@ use crate::{
     websocket::{
         DeriveOrdersSubscriptionData, DeriveTradesSubscriptionData, DeriveWebSocketClient,
         DeriveWsChannel, DeriveWsCredentials, DeriveWsError, DeriveWsExecutionHandle,
-        DeriveWsMessage, OrderIdentity, WsDispatchState,
+        DeriveWsMessage, OrderIdentity, WsDispatchState, parse::parse_ticker_quote_from_rest,
     },
 };
+
+const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
 
 /// Live execution client for Derive.
 ///
@@ -591,11 +593,13 @@ impl ExecutionClient for DeriveExecutionClient {
             if found.is_none() {
                 let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
                 let mut page: u32 = 1;
-                let page_size: u32 = 500;
 
                 'history: loop {
-                    let mut params =
-                        DeriveGetOrderHistoryParams::new(subaccount_id, page, page_size);
+                    let mut params = DeriveGetOrderHistoryParams::new(
+                        subaccount_id,
+                        page,
+                        DERIVE_PRIVATE_PAGE_SIZE,
+                    );
 
                     if let Some(name) = instrument_name.as_deref() {
                         params = params.with_instrument_name(name);
@@ -666,15 +670,15 @@ impl ExecutionClient for DeriveExecutionClient {
                 .await?
                 .orders
         } else {
-            let start_ms = cmd.start.map(|t| (t.as_u64() / 1_000_000) as i64);
-            let end_ms = cmd.end.map(|t| (t.as_u64() / 1_000_000) as i64);
+            let start_ms = cmd.start.map(|t| t.as_millis() as i64);
+            let end_ms = cmd.end.map(|t| t.as_millis() as i64);
             let mut page: u32 = 1;
-            let page_size: u32 = 500;
             let mut collected: Vec<DeriveOrder> = Vec::new();
 
             loop {
-                let mut params = DeriveGetOrderHistoryParams::new(subaccount_id, page, page_size)
-                    .with_window(start_ms, end_ms);
+                let mut params =
+                    DeriveGetOrderHistoryParams::new(subaccount_id, page, DERIVE_PRIVATE_PAGE_SIZE)
+                        .with_window(start_ms, end_ms);
 
                 if let Some(name) = instrument_name.as_deref() {
                     params = params.with_instrument_name(name);
@@ -693,8 +697,8 @@ impl ExecutionClient for DeriveExecutionClient {
         };
 
         let ts_init = self.clock.get_time_ns();
-        let start_ms = cmd.start.map(|t| (t.as_u64() / 1_000_000) as i64);
-        let end_ms = cmd.end.map(|t| (t.as_u64() / 1_000_000) as i64);
+        let start_ms = cmd.start.map(|t| t.as_millis() as i64);
+        let end_ms = cmd.end.map(|t| t.as_millis() as i64);
         let mut reports = Vec::with_capacity(orders.len());
         for order in orders {
             if let Some(instrument_id) = cmd.instrument_id
@@ -732,16 +736,18 @@ impl ExecutionClient for DeriveExecutionClient {
     ) -> anyhow::Result<Vec<FillReport>> {
         let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
         let mut page: u32 = 1;
-        let page_size: u32 = 500;
         let mut all_trades: Vec<DeriveTrade> = Vec::new();
 
         loop {
-            let mut params =
-                DeriveGetTradeHistoryParams::new(self.credential.subaccount_id(), page, page_size)
-                    .with_window(
-                        cmd.start.map(|t| (t.as_u64() / 1_000_000) as i64),
-                        cmd.end.map(|t| (t.as_u64() / 1_000_000) as i64),
-                    );
+            let mut params = DeriveGetTradeHistoryParams::new(
+                self.credential.subaccount_id(),
+                page,
+                DERIVE_PRIVATE_PAGE_SIZE,
+            )
+            .with_window(
+                cmd.start.map(|t| t.as_millis() as i64),
+                cmd.end.map(|t| t.as_millis() as i64),
+            );
 
             if let Some(name) = instrument_name.as_deref() {
                 params = params.with_instrument_name(name);
@@ -951,13 +957,10 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(());
         }
 
-        // Market orders need a worst-acceptable limit before signing. The
-        // venue rejects (or sweeps unbounded) when limit_price is zero, so we
-        // capture the top-of-book quote here and pair it with the instrument's
-        // tick size inside the spawned task to derive a tick-aligned bound.
+        // Keep the existing OrderDenied path here, then refresh before signing
         let market_quote = if order.order_type() == OrderType::Market {
             match self.core.cache().quote(&cmd.instrument_id) {
-                Some(quote) => Some(*quote),
+                Some(_) => Some(()),
                 None => {
                     let reason = format!(
                         "no cached quote for {}; subscribe to quote data before submitting market orders",
@@ -1042,12 +1045,32 @@ impl ExecutionClient for DeriveExecutionClient {
                 return Ok(());
             }
 
-            // Derive the tick-rounded slippage bound for market orders now
-            // that `tick_size` is available; deny when rounding falls to or
-            // below zero (e.g. extreme slippage on a thin book).
-            let explicit_price = if let Some(quote) = market_quote.as_ref() {
+            // Avoid signing against a quote captured before instrument resolution
+            let explicit_price = if market_quote.is_some() {
+                let quote = match refresh_market_order_quote(
+                    &http_client,
+                    &venue_symbol,
+                    &instrument,
+                    clock,
+                )
+                .await
+                {
+                    Ok(quote) => quote,
+                    Err(e) => {
+                        let reason = format!(
+                            "market-order quote refresh failed for {}: {e}",
+                            order_for_task.client_order_id(),
+                        );
+                        log::warn!("{reason}");
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(&order_for_task, &reason, ts, false);
+                        return Ok(());
+                    }
+                };
+
                 match market_order_limit_price(
-                    quote,
+                    &quote,
                     order_for_task.order_side(),
                     slippage_bps,
                     instrument.tick_size,
@@ -1943,6 +1966,28 @@ fn market_order_limit_price(
         return None;
     }
     Some(rounded)
+}
+
+async fn refresh_market_order_quote(
+    http_client: &DeriveHttpClient,
+    venue_symbol: &str,
+    instrument: &DeriveInstrument,
+    clock: &'static AtomicTime,
+) -> anyhow::Result<QuoteTick> {
+    let ticker = http_client.get_ticker(venue_symbol).await?;
+    let price_precision = Price::from_decimal(instrument.tick_size)
+        .with_context(|| format!("invalid Derive tick_size for {venue_symbol}"))?
+        .precision;
+    let size_precision = Quantity::from_decimal(instrument.amount_step)
+        .with_context(|| format!("invalid Derive amount_step for {venue_symbol}"))?
+        .precision;
+
+    parse_ticker_quote_from_rest(
+        &ticker,
+        price_precision,
+        size_precision,
+        clock.get_time_ns(),
+    )
 }
 
 /// Rounds `value` to the nearest multiple of `tick_size`. Buys round up so

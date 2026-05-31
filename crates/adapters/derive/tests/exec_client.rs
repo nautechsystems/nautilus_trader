@@ -101,13 +101,16 @@ struct RestState {
     order_history_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_history_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     positions_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    ticker_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     get_instrument_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subaccount_response: Arc<tokio::sync::Mutex<Value>>,
     open_orders_response: Arc<tokio::sync::Mutex<Value>>,
     order_history_response: Arc<tokio::sync::Mutex<Value>>,
+    order_history_pages: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_history_response: Arc<tokio::sync::Mutex<Value>>,
     trade_history_pages: Arc<tokio::sync::Mutex<Vec<Value>>>,
     positions_response: Arc<tokio::sync::Mutex<Value>>,
+    ticker_response: Arc<tokio::sync::Mutex<Value>>,
     get_order_response: Arc<tokio::sync::Mutex<Value>>,
     get_instrument_response: Arc<tokio::sync::Mutex<Value>>,
 }
@@ -229,6 +232,14 @@ async fn handle_get_order_history(
 ) -> Response {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
     state.order_history_calls.lock().await.push(parsed);
+
+    let mut pages = state.order_history_pages.lock().await;
+    if !pages.is_empty() {
+        let page = pages.remove(0);
+        return (StatusCode::OK, Json(json!({"id": 1, "result": page}))).into_response();
+    }
+    drop(pages);
+
     let response = state.order_history_response.lock().await.clone();
     let body = if response.is_null() {
         // Default: empty page so by-label fallbacks terminate.
@@ -293,6 +304,30 @@ async fn handle_get_positions(State(state): State<RestState>, body: axum::body::
     (StatusCode::OK, Json(body)).into_response()
 }
 
+async fn handle_get_tickers(State(state): State<RestState>, body: axum::body::Bytes) -> Response {
+    let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    state.ticker_calls.lock().await.push(parsed);
+
+    let response = state.ticker_response.lock().await.clone();
+    let response = if response.is_null() {
+        sample_ticker_json("ETH-PERP", 1_700_000_000_013_i64)
+    } else {
+        response
+    };
+    let body = if response.get("error").is_some() {
+        response
+    } else if response.get("tickers").is_some() {
+        json!({"id": 1, "result": response})
+    } else {
+        let instrument_name = response
+            .get("instrument_name")
+            .and_then(Value::as_str)
+            .unwrap_or("ETH-PERP");
+        json!({"id": 1, "result": {"tickers": {instrument_name: response}}})
+    };
+    (StatusCode::OK, Json(body)).into_response()
+}
+
 async fn handle_get_instrument(
     State(state): State<RestState>,
     body: axum::body::Bytes,
@@ -319,6 +354,7 @@ async fn start_rest_server(state: RestState) -> SocketAddr {
         .route("/private/get_order_history", post(handle_get_order_history))
         .route("/private/get_trade_history", post(handle_get_trade_history))
         .route("/private/get_positions", post(handle_get_positions))
+        .route("/public/get_tickers", post(handle_get_tickers))
         .route("/public/get_instrument", post(handle_get_instrument))
         .with_state(state);
 
@@ -515,6 +551,22 @@ fn sample_instrument_json() -> Value {
         "scheduled_deactivation": 32503680000000_i64,
         "taker_fee_rate": "0.0005",
         "tick_size": "0.01",
+    })
+}
+
+fn sample_ticker_json(instrument_name: &str, timestamp_ms: i64) -> Value {
+    json!({
+        "instrument_name": instrument_name,
+        "best_ask_amount": "1.0",
+        "best_ask_price": "3501.00",
+        "best_bid_amount": "1.0",
+        "best_bid_price": "3500.00",
+        "funding_rate": "0",
+        "index_price": "3500",
+        "mark_price": "3500",
+        "max_price": "5000",
+        "min_price": "1",
+        "timestamp": timestamp_ms,
     })
 }
 
@@ -1209,7 +1261,10 @@ async fn test_submit_order_rejects_unsupported_time_in_force_before_posting(
 async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut refreshed_ticker = sample_ticker_json("ETH-PERP", 1_700_000_000_013_i64);
+    refreshed_ticker["best_ask_price"] = json!("3501.00");
+    *rest_state.ticker_response.lock().await = refreshed_ticker;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
@@ -1217,8 +1272,8 @@ async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
 
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from("3500.00"),
-        Price::from("3501.00"),
+        Price::from("3100.00"),
+        Price::from("3101.00"),
         Quantity::from("1.000"),
         Quantity::from("1.000"),
         UnixNanos::default(),
@@ -1254,8 +1309,9 @@ async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
     let posts = ws_state.submitted_orders.lock().await;
     let body = &posts[0];
     assert_eq!(body["order_type"].as_str(), Some("market"));
-    // 50bps buy lift: 3501 * 1.005 = 3518.505; tick_size 0.01 rounds up to 3518.51.
+    // Refreshed REST ask, not stale cache: 3501 * 1.005 -> 3518.51
     assert_eq!(body["limit_price"].as_str(), Some("3518.51"));
+    assert_eq!(rest_state.ticker_calls.lock().await.len(), 1);
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -1265,7 +1321,7 @@ async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
 async fn test_submit_order_market_without_quote_is_denied() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
@@ -1297,6 +1353,81 @@ async fn test_submit_order_market_without_quote_is_denied() {
     } else {
         unreachable!();
     }
+    assert!(ws_state.submitted_orders.lock().await.is_empty());
+    assert!(rest_state.ticker_calls.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_market_rejects_when_quote_refresh_fails_without_posting() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.ticker_response.lock().await = json!({
+        "id": 1,
+        "error": {"code": -32000, "message": "ticker unavailable"},
+    });
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-MARKET-REFRESH-FAIL");
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("3500.00"),
+        Price::from("3501.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_quote(quote)
+        .expect("quote insert");
+    let order = build_market_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.500"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted event",
+    )
+    .await;
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
+        "OrderRejected event",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event {
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert!(
+            rejected
+                .reason
+                .as_str()
+                .contains("market-order quote refresh failed"),
+            "unexpected reject reason: {}",
+            rejected.reason,
+        );
+    } else {
+        unreachable!();
+    }
+    assert!(!rest_state.ticker_calls.lock().await.is_empty());
     assert!(ws_state.submitted_orders.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
@@ -2498,7 +2629,70 @@ async fn test_generate_order_status_reports_history_path_when_not_open_only() {
         .expect("reports");
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].venue_order_id.as_str(), "from-history");
-    assert!(!rest_state.order_history_calls.lock().await.is_empty());
+    let calls = rest_state.order_history_calls.lock().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["page_size"].as_u64(), Some(500));
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_paginates_across_multiple_pages() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.order_history_pages.lock().await = vec![
+        json!({
+            "orders": [order_json_with(
+                "order-page-1", "L-PAGE-1", "buy", "ETH-PERP", 1_700_000_000_500, "filled",
+            )],
+            "pagination": {"count": 2, "num_pages": 2},
+            "subaccount_id": TEST_SUBACCOUNT,
+        }),
+        json!({
+            "orders": [order_json_with(
+                "order-page-2", "L-PAGE-2", "sell", "ETH-PERP", 1_700_000_001_500, "filled",
+            )],
+            "pagination": {"count": 2, "num_pages": 2},
+            "subaccount_id": TEST_SUBACCOUNT,
+        }),
+    ];
+    let mut tc = build_client(rest_state.clone(), ws_state).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        Some(UnixNanos::from(1_700_000_000_000_123_456_u64)),
+        Some(UnixNanos::from(1_700_000_002_000_999_999_u64)),
+        None,
+        None,
+    );
+    let reports = tc
+        .client
+        .generate_order_status_reports(&cmd)
+        .await
+        .expect("reports");
+
+    let mut venue_order_ids: Vec<&str> = reports
+        .iter()
+        .map(|report| report.venue_order_id.as_str())
+        .collect();
+    venue_order_ids.sort_unstable();
+    assert_eq!(venue_order_ids, vec!["order-page-1", "order-page-2"]);
+
+    let calls = rest_state.order_history_calls.lock().await;
+    assert_eq!(calls.len(), 2, "must request both pages");
+    assert_eq!(calls[0]["page"].as_u64(), Some(1));
+    assert_eq!(calls[0]["page_size"].as_u64(), Some(500));
+    assert_eq!(calls[0]["from_timestamp"].as_i64(), Some(1_700_000_000_000));
+    assert_eq!(calls[0]["to_timestamp"].as_i64(), Some(1_700_000_002_000));
+    assert_eq!(calls[1]["page"].as_u64(), Some(2));
+    assert_eq!(calls[1]["page_size"].as_u64(), Some(500));
+    assert_eq!(calls[1]["from_timestamp"].as_i64(), Some(1_700_000_000_000));
+    assert_eq!(calls[1]["to_timestamp"].as_i64(), Some(1_700_000_002_000));
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -2576,6 +2770,8 @@ async fn test_generate_order_status_report_falls_back_to_history_by_label() {
         .expect("some");
     assert_eq!(report.venue_order_id.as_str(), "ord-hist-1");
     assert!(!rest_state.order_history_calls.lock().await.is_empty());
+    let calls = rest_state.order_history_calls.lock().await;
+    assert_eq!(calls[0]["page_size"].as_u64(), Some(500));
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -4609,7 +4805,9 @@ async fn test_generate_fill_reports_paginates_across_multiple_pages() {
     let calls = rest_state.trade_history_calls.lock().await;
     assert_eq!(calls.len(), 2, "must request both pages");
     assert_eq!(calls[0]["page"].as_u64(), Some(1));
+    assert_eq!(calls[0]["page_size"].as_u64(), Some(500));
     assert_eq!(calls[1]["page"].as_u64(), Some(2));
+    assert_eq!(calls[1]["page_size"].as_u64(), Some(500));
 
     tc.client.disconnect().await.expect("disconnect");
 }

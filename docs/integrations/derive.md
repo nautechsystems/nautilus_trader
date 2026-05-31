@@ -227,6 +227,10 @@ The adapter supports ordinary `private/order` requests: `LIMIT` and `MARKET` ord
 fields yet. Unsupported Nautilus order types are rejected before
 signing, so they cannot fill at the venue.
 
+Market orders require a cached quote before submission. After the async submit task resolves the
+instrument, it refreshes the current ticker snapshot and derives the signed slippage-bound
+`limit_price` from that refreshed quote.
+
 #### Execution instructions
 
 | Instruction   | Supported | Derive value  | Notes                                                         |
