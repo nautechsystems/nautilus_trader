@@ -73,6 +73,9 @@ pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
 pub use controller::Controller;
 pub use event_store::{EventStoreFactory, KernelEventStore, RegisteredComponents};
 pub use kernel::NautilusKernel;
-pub use messages::ControllerCommand;
+pub use messages::{
+    ControllerCommand, CreateActor, CreateStrategy, RemoveActor, RemoveStrategy, StartActor,
+    StartStrategy, StopActor, StopStrategy,
+};
 #[cfg(feature = "python")]
 pub use python::{FactoryRegistry, get_global_pyo3_registry};
