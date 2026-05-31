@@ -13356,6 +13356,27 @@ fn test_reset_propagates_to_registered_clients(
 }
 
 #[rstest]
+fn test_reset_clears_cache_state(mut execution_engine: ExecutionEngine) {
+    let account: AccountAny = CashAccount::default().into();
+    let account_id = account.id();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account)
+        .unwrap();
+
+    execution_engine.reset();
+
+    assert!(
+        execution_engine
+            .cache()
+            .borrow()
+            .account(&account_id)
+            .is_none()
+    );
+}
+
+#[rstest]
 fn test_dispose_propagates_to_registered_clients(
     mut execution_engine: ExecutionEngine,
     stub_client: StubExecutionClient,

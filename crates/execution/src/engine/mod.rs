@@ -1722,6 +1722,7 @@ impl ExecutionEngine {
             }
         }
 
+        self.cache.borrow_mut().reset();
         self.pos_id_generator.reset();
 
         self.stop_snapshot_timer();

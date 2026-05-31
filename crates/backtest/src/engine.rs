@@ -877,6 +877,12 @@ impl BacktestEngine {
         self.kernel.data_engine.borrow_mut().reset();
 
         self.kernel.exec_engine.borrow_mut().stop();
+
+        // Reset exchanges before the exec engine wipes the cache so
+        // exchange.reset() can see the prior run's account.
+        for exchange in self.venues.values() {
+            exchange.borrow_mut().reset();
+        }
         self.kernel.exec_engine.borrow_mut().reset();
 
         self.kernel.risk_engine.borrow_mut().stop();
@@ -887,12 +893,6 @@ impl BacktestEngine {
             log::error!("Error resetting trader: {e:?}");
         }
 
-        // Reset exchanges before the cache is wiped so the conditional in
-        // exchange.reset() can see the prior run's account.
-        for exchange in self.venues.values() {
-            exchange.borrow_mut().reset();
-        }
-        self.kernel.cache.borrow_mut().reset();
         self.kernel.portfolio.borrow_mut().reset();
 
         // Clear run state
