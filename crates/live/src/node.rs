@@ -138,7 +138,8 @@ use crate::{
 use crate::{
     config::PluginConfig,
     plugin::{
-        ConfiguredPluginEntry, configured_entry, plugin_loader, register_manifest_custom_data,
+        ConfiguredPluginEntry, PluginControllerAdapter, configured_entry, plugin_loader,
+        register_manifest_custom_data,
     },
 };
 
@@ -286,6 +287,10 @@ pub struct LiveNode {
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugin_loader: Option<PluginLoader>,
+    #[cfg(feature = "plugin")]
+    plugin_controllers: Vec<PluginControllerAdapter>,
+    #[cfg(feature = "plugin")]
+    plugin_controllers_started: bool,
     #[cfg(feature = "python")]
     #[allow(dead_code)] // TODO: Under development
     python_actors: Vec<pyo3::Py<pyo3::PyAny>>,
@@ -311,6 +316,10 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugin_loader: None,
+            #[cfg(feature = "plugin")]
+            plugin_controllers: Vec::new(),
+            #[cfg(feature = "plugin")]
+            plugin_controllers_started: false,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         }
@@ -383,6 +392,10 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugin_loader: None,
+            #[cfg(feature = "plugin")]
+            plugin_controllers: Vec::new(),
+            #[cfg(feature = "plugin")]
+            plugin_controllers_started: false,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         };
@@ -501,6 +514,84 @@ impl LiveNode {
                     })?;
                 self.add_strategy(adapter)
             }
+            ConfiguredPluginEntry::Controller(entry) => {
+                let adapter = entry.create_adapter(&config_json).with_context(|| {
+                    format!(
+                        "failed to instantiate plug-in controller '{}' from {}",
+                        config.type_name, config.path
+                    )
+                })?;
+                self.plugin_controllers.push(adapter);
+                Ok(())
+            }
+        }
+    }
+
+    #[cfg(feature = "plugin")]
+    fn start_plugin_controllers(&mut self) -> anyhow::Result<()> {
+        if self.plugin_controllers_started {
+            return Ok(());
+        }
+
+        for index in 0..self.plugin_controllers.len() {
+            let result = {
+                let controller = &mut self.plugin_controllers[index];
+                controller.on_start().with_context(|| {
+                    format!(
+                        "failed to start plug-in controller '{}' from plug-in '{}'",
+                        controller.type_name(),
+                        controller.plugin_name()
+                    )
+                })
+            };
+
+            if let Err(start_err) = result {
+                for controller in self.plugin_controllers[..index].iter_mut().rev() {
+                    if let Err(stop_err) = controller.on_stop() {
+                        log::error!(
+                            "Failed to roll back plug-in controller '{}' from plug-in '{}': {stop_err}",
+                            controller.type_name(),
+                            controller.plugin_name()
+                        );
+                    }
+                }
+                return Err(start_err);
+            }
+        }
+
+        self.plugin_controllers_started = true;
+        Ok(())
+    }
+
+    #[cfg(feature = "plugin")]
+    fn stop_plugin_controllers(&mut self) -> anyhow::Result<()> {
+        if !self.plugin_controllers_started {
+            return Ok(());
+        }
+
+        let mut first_error = None;
+
+        for controller in self.plugin_controllers.iter_mut().rev() {
+            if let Err(e) = controller.on_stop().with_context(|| {
+                format!(
+                    "failed to stop plug-in controller '{}' from plug-in '{}'",
+                    controller.type_name(),
+                    controller.plugin_name()
+                )
+            }) {
+                log::error!("{e}");
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
+            }
+        }
+
+        self.plugin_controllers_started = false;
+
+        if let Some(e) = first_error {
+            Err(e)
+        } else {
+            Ok(())
         }
     }
 
@@ -585,6 +676,10 @@ impl LiveNode {
         self.perform_startup_reconciliation().await?;
 
         self.kernel.start_trader();
+        #[cfg(feature = "plugin")]
+        if let Err(e) = self.start_plugin_controllers() {
+            return self.abort_after_trader_start_failure(e).await;
+        }
 
         self.handle.set_state(NodeState::Running);
 
@@ -606,12 +701,26 @@ impl LiveNode {
 
         self.handle.set_state(NodeState::ShuttingDown);
 
+        #[cfg(feature = "plugin")]
+        let controller_stop_result = self.stop_plugin_controllers();
+        #[cfg(not(feature = "plugin"))]
+        let controller_stop_result: anyhow::Result<()> = Ok(());
+
         self.kernel.stop_trader();
         let delay = self.kernel.delay_post_stop();
         log::info!("Awaiting residual events ({delay:?})...");
 
         dst::time::sleep(delay).await;
-        self.finalize_stop().await
+        let stop_result = self.finalize_stop().await;
+        match (controller_stop_result, stop_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(controller_err), Ok(())) => Err(controller_err),
+            (Ok(()), Err(stop_err)) => Err(stop_err),
+            (Err(controller_err), Err(stop_err)) => {
+                log::error!("Error stopping plug-in controllers: {controller_err}");
+                Err(stop_err)
+            }
+        }
     }
 
     /// Awaits engine clients to connect with timeout.
@@ -975,6 +1084,19 @@ impl LiveNode {
             // Run reconciliation now that instruments are in cache and start trader
             self.perform_startup_reconciliation().await?;
             self.kernel.start_trader();
+            #[cfg(feature = "plugin")]
+            if let Err(e) = self.start_plugin_controllers() {
+                let result = self.abort_after_trader_start_failure(e).await;
+                self.drain_channels(
+                    &mut time_evt_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+                return result;
+            }
         } else {
             log::error!("Not starting trader: engine client(s) not connected");
         }
@@ -1396,7 +1518,28 @@ impl LiveNode {
         self.finalize_stop().await
     }
 
+    #[cfg(feature = "plugin")]
+    async fn abort_after_trader_start_failure(
+        &mut self,
+        start_err: anyhow::Error,
+    ) -> anyhow::Result<()> {
+        log::info!("Plug-in controller startup failed, aborting startup");
+        self.handle.set_state(NodeState::ShuttingDown);
+        self.kernel.stop_trader();
+
+        if let Err(finalize_err) = self.finalize_stop().await {
+            anyhow::bail!(
+                "failed to start plug-in controller: {start_err}; failed to finalize startup abort: {finalize_err}"
+            );
+        }
+        Err(start_err)
+    }
+
     fn initiate_shutdown(&mut self) {
+        #[cfg(feature = "plugin")]
+        if let Err(e) = self.stop_plugin_controllers() {
+            log::error!("Error stopping plug-in controllers: {e}");
+        }
         self.kernel.stop_trader();
         let delay = self.kernel.delay_post_stop();
         log::info!("Awaiting residual events ({delay:?})...");

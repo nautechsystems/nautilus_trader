@@ -56,7 +56,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos, hex};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig, PluginConfig},
-    node::LiveNode,
+    node::{LiveNode, NodeState},
     plugin::{
         HostContextInner, PluginActorAdapter, PluginStrategyAdapter, host_vtable, plugin_loader,
         register_custom_data_from_manifest,
@@ -1997,4 +1997,180 @@ async fn live_node_start_invokes_configured_plugin_actor() {
     let _ = fs::remove_file(marker);
 
     assert_eq!(contents, "rust:on_start\n");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_node_start_and_stop_invokes_configured_plugin_strategy() {
+    let path = build_runtime_smoke_example_once();
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+
+    let config = LiveNodeConfig {
+        delay_post_stop: Duration::ZERO,
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![PluginConfig {
+            path: path.display().to_string(),
+            type_name: "RuntimeSmokeStrategy".to_string(),
+            config: HashMap::from([
+                (
+                    "strategy_id".to_string(),
+                    serde_json::json!("RuntimeSmokeStrategy-001"),
+                ),
+                (
+                    "callback_path".to_string(),
+                    serde_json::json!(marker.display().to_string()),
+                ),
+                ("label".to_string(), serde_json::json!("rust-strategy")),
+            ]),
+            sha256: None,
+        }],
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("PluginRuntimeStrategyNode".to_string(), Some(config)).unwrap();
+    let strategy_registered = {
+        let trader = node.kernel().trader.borrow();
+        trader
+            .strategy_ids()
+            .contains(&StrategyId::from("RuntimeSmokeStrategy-001"))
+    };
+    assert!(strategy_registered);
+
+    node.start().await.unwrap();
+    node.stop().await.unwrap();
+    let contents = fs::read_to_string(&marker).expect("plug-in strategy writes callback marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(contents, "rust-strategy:on_start\nrust-strategy:on_stop\n");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_node_start_and_stop_invokes_configured_plugin_controller() {
+    let path = build_runtime_smoke_example_once();
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+
+    let config = LiveNodeConfig {
+        delay_post_stop: Duration::ZERO,
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![PluginConfig {
+            path: path.display().to_string(),
+            type_name: "RuntimeSmokeController".to_string(),
+            config: HashMap::from([
+                (
+                    "callback_path".to_string(),
+                    serde_json::json!(marker.display().to_string()),
+                ),
+                ("label".to_string(), serde_json::json!("rust-controller")),
+            ]),
+            sha256: None,
+        }],
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("PluginRuntimeControllerNode".to_string(), Some(config))
+        .expect("configured controller loads");
+    {
+        let trader = node.kernel().trader.borrow();
+        assert!(trader.actor_ids().is_empty());
+        assert!(trader.strategy_ids().is_empty());
+    }
+
+    node.start().await.expect("controller starts with node");
+    node.stop().await.expect("controller stops with node");
+    let contents = fs::read_to_string(&marker).expect("plug-in controller writes callback marker");
+    let _ = fs::remove_file(marker);
+
+    assert_eq!(
+        contents,
+        "rust-controller:on_start\nrust-controller:on_stop\n"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_node_start_rolls_back_configured_plugin_controller_failure() {
+    let path = build_runtime_smoke_example_once();
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+
+    let mut node = LiveNode::build(
+        "PluginRuntimeControllerFailureNode".to_string(),
+        Some(controller_start_failure_config(&path, &marker)),
+    )
+    .expect("configured controllers load");
+
+    let error = node.start().await.expect_err("controller start fails");
+    let contents = fs::read_to_string(&marker).expect("plug-in controllers write callback marker");
+    let _ = fs::remove_file(marker);
+
+    assert!(format!("{error:#}").contains("configured controller start failure"));
+    assert_eq!(node.state(), NodeState::Stopped);
+    assert!(!node.kernel().trader.borrow().is_running());
+    assert_eq!(
+        contents,
+        "controller-ok:on_start\ncontroller-fail:on_start\ncontroller-ok:on_stop\n"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn live_node_run_rolls_back_configured_plugin_controller_failure() {
+    let path = build_runtime_smoke_example_once();
+    let marker = std::env::temp_dir().join(format!("nautilus-plugin-{}.txt", UUID4::new()));
+    let _ = fs::remove_file(&marker);
+
+    let mut node = LiveNode::build(
+        "PluginRuntimeControllerRunFailureNode".to_string(),
+        Some(controller_start_failure_config(&path, &marker)),
+    )
+    .expect("configured controllers load");
+
+    let error = node.run().await.expect_err("controller start fails");
+    let contents = fs::read_to_string(&marker).expect("plug-in controllers write callback marker");
+    let _ = fs::remove_file(marker);
+
+    assert!(format!("{error:#}").contains("configured controller start failure"));
+    assert_eq!(node.state(), NodeState::Stopped);
+    assert!(!node.kernel().trader.borrow().is_running());
+    assert_eq!(
+        contents,
+        "controller-ok:on_start\ncontroller-fail:on_start\ncontroller-ok:on_stop\n"
+    );
+}
+
+fn controller_start_failure_config(path: &Path, marker: &Path) -> LiveNodeConfig {
+    let controller_config = |label: &str, fail_on_start: bool| PluginConfig {
+        path: path.display().to_string(),
+        type_name: "RuntimeSmokeController".to_string(),
+        config: HashMap::from([
+            (
+                "callback_path".to_string(),
+                serde_json::json!(marker.display().to_string()),
+            ),
+            ("label".to_string(), serde_json::json!(label)),
+            (
+                "fail_on_start".to_string(),
+                serde_json::json!(fail_on_start),
+            ),
+        ]),
+        sha256: None,
+    };
+
+    LiveNodeConfig {
+        delay_post_stop: Duration::ZERO,
+        exec_engine: LiveExecEngineConfig {
+            reconciliation: false,
+            ..Default::default()
+        },
+        plugins: vec![
+            controller_config("controller-ok", false),
+            controller_config("controller-fail", true),
+        ],
+        ..Default::default()
+    }
 }

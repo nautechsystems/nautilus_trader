@@ -15,9 +15,15 @@
 
 //! Plug-in cdylib used by live-node runtime smoke tests.
 
-use std::{fs, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf};
 
 use nautilus_plugin::prelude::*;
+
+struct CallbackConfig {
+    callback_path: Option<PathBuf>,
+    label: String,
+    fail_on_start: bool,
+}
 
 #[derive(Default)]
 pub struct RuntimeSmokeActor {
@@ -29,30 +35,127 @@ impl PluginActor for RuntimeSmokeActor {
     const TYPE_NAME: &'static str = "RuntimeSmokeActor";
 
     fn new(_host: *const HostVTable, _ctx: *const HostContext, config_json: &str) -> Self {
-        let config = serde_json::from_str::<serde_json::Value>(config_json)
-            .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
-        let callback_path = config
-            .get("callback_path")
-            .and_then(serde_json::Value::as_str)
-            .map(PathBuf::from);
-        let label = config
-            .get("label")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("runtime-smoke")
-            .to_string();
-
+        let config = parse_callback_config(config_json, "runtime-smoke");
         Self {
-            callback_path,
-            label,
+            callback_path: config.callback_path,
+            label: config.label,
         }
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
         if let Some(path) = &self.callback_path {
-            fs::write(path, format!("{}:on_start\n", self.label))?;
+            append_callback(path, &self.label, "on_start")?;
         }
         Ok(())
     }
+}
+
+#[derive(Default)]
+pub struct RuntimeSmokeStrategy {
+    callback_path: Option<PathBuf>,
+    label: String,
+}
+
+impl PluginStrategy for RuntimeSmokeStrategy {
+    const TYPE_NAME: &'static str = "RuntimeSmokeStrategy";
+
+    fn new(_host: *const HostVTable, _ctx: *const HostContext, config_json: &str) -> Self {
+        let config = parse_callback_config(config_json, "runtime-smoke-strategy");
+        Self {
+            callback_path: config.callback_path,
+            label: config.label,
+        }
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = &self.callback_path {
+            append_callback(path, &self.label, "on_start")?;
+        }
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = &self.callback_path {
+            append_callback(path, &self.label, "on_stop")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct RuntimeSmokeController {
+    callback_path: Option<PathBuf>,
+    label: String,
+    fail_on_start: bool,
+}
+
+impl PluginController for RuntimeSmokeController {
+    const TYPE_NAME: &'static str = "RuntimeSmokeController";
+
+    fn new(
+        _host: *const ControllerHostVTable,
+        _ctx: *const ControllerHostContext,
+        config_json: &str,
+    ) -> Self {
+        let config = parse_callback_config(config_json, "runtime-smoke-controller");
+        Self {
+            callback_path: config.callback_path,
+            label: config.label,
+            fail_on_start: config.fail_on_start,
+        }
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = &self.callback_path {
+            append_callback(path, &self.label, "on_start")?;
+        }
+
+        if self.fail_on_start {
+            anyhow::bail!("configured controller start failure")
+        }
+
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = &self.callback_path {
+            append_callback(path, &self.label, "on_stop")?;
+        }
+        Ok(())
+    }
+}
+
+fn parse_callback_config(config_json: &str, default_label: &str) -> CallbackConfig {
+    let config = serde_json::from_str::<serde_json::Value>(config_json)
+        .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+    let callback_path = config
+        .get("callback_path")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from);
+    let label = config
+        .get("label")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(default_label)
+        .to_string();
+    let fail_on_start = config
+        .get("fail_on_start")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    CallbackConfig {
+        callback_path,
+        label,
+        fail_on_start,
+    }
+}
+
+fn append_callback(path: &PathBuf, label: &str, hook: &str) -> anyhow::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{label}:{hook}")?;
+    Ok(())
 }
 
 nautilus_plugin::nautilus_plugin! {
@@ -60,6 +163,8 @@ nautilus_plugin::nautilus_plugin! {
     vendor: "Nautech",
     version: env!("CARGO_PKG_VERSION"),
     actors: [RuntimeSmokeActor],
+    strategies: [RuntimeSmokeStrategy],
+    controllers: [RuntimeSmokeController],
 }
 
 #[allow(dead_code)]

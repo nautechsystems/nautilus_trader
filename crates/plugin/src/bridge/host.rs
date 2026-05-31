@@ -49,10 +49,10 @@ use crate::{
     boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice},
     bridge::{
         actor::PluginActorAdapter,
-        registry::{HostContextInner, host_context_inner},
+        registry::{HostContextInner, controller_host_context_inner, host_context_inner},
         strategy::PluginStrategyAdapter,
     },
-    host::{HostContext, HostLogLevel, HostVTable},
+    host::{ControllerHostContext, ControllerHostVTable, HostContext, HostLogLevel, HostVTable},
     loader::PluginLoader,
     normalize::BoundaryCommandHandle,
     surfaces::commands::{
@@ -107,6 +107,23 @@ pub fn host_vtable() -> *const HostVTable {
     }))
 }
 
+/// Returns the process-wide `ControllerHostVTable` for plug-in controllers.
+#[must_use]
+pub fn controller_host_vtable() -> *const ControllerHostVTable {
+    static HOST: OnceLock<ControllerHostVTable> = OnceLock::new();
+    std::ptr::from_ref(HOST.get_or_init(|| ControllerHostVTable {
+        abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
+        create_plugin_strategy: controller_host_not_implemented,
+        start_strategy: controller_host_not_implemented,
+        stop_strategy: controller_host_not_implemented,
+        exit_market: controller_host_not_implemented,
+        remove_strategy: controller_host_not_implemented,
+        instrument_exists: controller_host_not_implemented,
+        log: controller_host_log,
+        clock_now_ns: controller_host_clock_now_ns,
+    }))
+}
+
 /// Returns a [`PluginLoader`] pre-bound to the host vtable from
 /// [`host_vtable`].
 ///
@@ -120,6 +137,45 @@ pub fn plugin_loader() -> PluginLoader {
 
 unsafe extern "C" fn host_clock_now_ns() -> u64 {
     u64::try_from(duration_since_unix_epoch().as_nanos()).unwrap_or(u64::MAX)
+}
+
+unsafe extern "C" fn controller_host_not_implemented(
+    ctx: *const ControllerHostContext,
+    _request_json: BorrowedStr<'_>,
+) -> PluginResult<OwnedBytes> {
+    let context = controller_context_label(ctx);
+    PluginResult::Err(PluginError::new(
+        PluginErrorCode::NotImplemented,
+        format!("{context} controller host service is not implemented"),
+    ))
+}
+
+unsafe extern "C" fn controller_host_log(
+    ctx: *const ControllerHostContext,
+    request_json: BorrowedStr<'_>,
+) -> PluginResult<OwnedBytes> {
+    let context = controller_context_label(ctx);
+    // SAFETY: producer holds the storage live across the call.
+    let request = unsafe { request_json.as_str() };
+    log::info!(target: "nautilus_plugin", "[{context}] {request}");
+    PluginResult::Ok(OwnedBytes::empty())
+}
+
+unsafe extern "C" fn controller_host_clock_now_ns(
+    _ctx: *const ControllerHostContext,
+    _request_json: BorrowedStr<'_>,
+) -> PluginResult<OwnedBytes> {
+    json_bytes(&serde_json::json!({
+        "unix_nanos": u64::try_from(duration_since_unix_epoch().as_nanos()).unwrap_or(u64::MAX),
+    }))
+}
+
+fn controller_context_label(ctx: *const ControllerHostContext) -> String {
+    // SAFETY: plug-ins round-trip the context pointer supplied at create time.
+    let Some(inner) = (unsafe { controller_host_context_inner(ctx) }) else {
+        return "unknown-controller".to_string();
+    };
+    format!("{}:{}", inner.plugin_name, inner.type_name)
 }
 
 unsafe extern "C" fn host_log(

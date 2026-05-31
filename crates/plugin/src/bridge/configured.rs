@@ -22,11 +22,13 @@ use nautilus_trading::strategy::StrategyConfig;
 
 use crate::{
     bridge::{
-        PluginActorAdapter, PluginStrategyAdapter, host_vtable, register_custom_data_from_manifest,
+        PluginActorAdapter, PluginControllerAdapter, PluginStrategyAdapter, controller_host_vtable,
+        host_vtable, register_custom_data_from_manifest,
     },
     manifest::{
-        ValidatedActorRegistration, ValidatedActorVTable, ValidatedPluginManifest,
-        ValidatedStrategyRegistration, ValidatedStrategyVTable,
+        ValidatedActorRegistration, ValidatedActorVTable, ValidatedControllerRegistration,
+        ValidatedControllerVTable, ValidatedPluginManifest, ValidatedStrategyRegistration,
+        ValidatedStrategyVTable,
     },
 };
 
@@ -34,6 +36,7 @@ use crate::{
 pub enum ConfiguredPluginEntry {
     Actor(ConfiguredActorEntry),
     Strategy(ConfiguredStrategyEntry),
+    Controller(ConfiguredControllerEntry),
 }
 
 /// Actor entry copied from a loaded manifest.
@@ -48,6 +51,13 @@ pub struct ConfiguredStrategyEntry {
     plugin_name: String,
     type_name: String,
     vtable: ValidatedStrategyVTable,
+}
+
+/// Controller entry copied from a loaded manifest.
+pub struct ConfiguredControllerEntry {
+    plugin_name: String,
+    type_name: String,
+    vtable: ValidatedControllerVTable,
 }
 
 impl ConfiguredActorEntry {
@@ -102,6 +112,27 @@ impl ConfiguredStrategyEntry {
     }
 }
 
+impl ConfiguredControllerEntry {
+    /// Creates a host-side adapter for this configured controller entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the plug-in vtable rejects construction.
+    pub fn create_adapter(&self, config_json: &str) -> anyhow::Result<PluginControllerAdapter> {
+        // SAFETY: entries come from a manifest owned by `PluginLoader`, and
+        // `controller_host_vtable()` is process-lifetime static.
+        unsafe {
+            PluginControllerAdapter::new(
+                self.plugin_name.clone(),
+                self.type_name.clone(),
+                self.vtable,
+                controller_host_vtable(),
+                config_json,
+            )
+        }
+    }
+}
+
 /// Registers every custom data type declared by a loaded manifest.
 ///
 /// # Errors
@@ -113,7 +144,7 @@ pub fn register_manifest_custom_data(
     register_custom_data_from_manifest(manifest)
 }
 
-/// Resolves an actor or strategy entry from a loaded manifest by type name.
+/// Resolves an actor, strategy, or controller entry from a loaded manifest by type name.
 ///
 /// # Errors
 ///
@@ -126,23 +157,49 @@ pub fn configured_entry(
     let plugin_name = manifest.plugin_name().to_string();
     let actor_entry = find_actor_entry(manifest, type_name);
     let strategy_entry = find_strategy_entry(manifest, type_name);
+    let controller_entry = find_controller_entry(manifest, type_name);
 
-    match (actor_entry, strategy_entry) {
-        (Some(entry), None) => Ok(ConfiguredPluginEntry::Actor(ConfiguredActorEntry {
+    match (actor_entry, strategy_entry, controller_entry) {
+        (Some(entry), None, None) => Ok(ConfiguredPluginEntry::Actor(ConfiguredActorEntry {
             plugin_name,
             type_name: entry.type_name().to_string(),
             vtable: entry.vtable(),
         })),
-        (None, Some(entry)) => Ok(ConfiguredPluginEntry::Strategy(ConfiguredStrategyEntry {
+        (None, Some(entry), None) => Ok(ConfiguredPluginEntry::Strategy(ConfiguredStrategyEntry {
             plugin_name,
             type_name: entry.type_name().to_string(),
             vtable: entry.vtable(),
         })),
-        (None, None) => {
-            anyhow::bail!("plug-in '{path}' does not expose actor or strategy type '{type_name}'")
+        (None, None, Some(entry)) => Ok(ConfiguredPluginEntry::Controller(
+            ConfiguredControllerEntry {
+                plugin_name,
+                type_name: entry.type_name().to_string(),
+                vtable: entry.vtable(),
+            },
+        )),
+        (None, None, None) => {
+            anyhow::bail!(
+                "plug-in '{path}' does not expose actor, strategy, or controller type '{type_name}'"
+            )
         }
-        (Some(_), Some(_)) => {
-            anyhow::bail!("plug-in '{path}' exposes type '{type_name}' as both actor and strategy")
+        (actor, strategy, controller) => {
+            let mut kinds = Vec::new();
+            if actor.is_some() {
+                kinds.push("actor");
+            }
+
+            if strategy.is_some() {
+                kinds.push("strategy");
+            }
+
+            if controller.is_some() {
+                kinds.push("controller");
+            }
+
+            anyhow::bail!(
+                "plug-in '{path}' exposes type '{type_name}' as multiple component kinds ({})",
+                kinds.join(", ")
+            )
         }
     }
 }
@@ -165,6 +222,15 @@ fn find_strategy_entry(
         .find(|entry| entry.type_name() == type_name)
 }
 
+fn find_controller_entry(
+    manifest: ValidatedPluginManifest<'_>,
+    type_name: &str,
+) -> Option<ValidatedControllerRegistration> {
+    manifest
+        .controllers()
+        .find(|entry| entry.type_name() == type_name)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
@@ -179,6 +245,7 @@ mod tests {
         manifest::{ActorRegistration, PluginBuildId, PluginManifest, StrategyRegistration},
         surfaces::{
             actor::{PluginActor, actor_vtable},
+            controller::{PluginController, controller_vtable},
             strategy::{PluginStrategy, strategy_vtable},
         },
     };
@@ -203,6 +270,20 @@ mod tests {
         }
     }
 
+    struct ExampleController;
+
+    impl PluginController for ExampleController {
+        const TYPE_NAME: &'static str = "ExampleController";
+
+        fn new(
+            _host: *const crate::host::ControllerHostVTable,
+            _ctx: *const crate::host::ControllerHostContext,
+            _config_json: &str,
+        ) -> Self {
+            Self
+        }
+    }
+
     static ACTOR_REGISTRATIONS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
         [ActorRegistration {
             type_name: BorrowedStr::from_str("ExampleActor"),
@@ -215,6 +296,13 @@ mod tests {
             vtable: strategy_vtable::<ExampleStrategy>(),
         }]
     });
+    static CONTROLLER_REGISTRATIONS: LazyLock<[crate::manifest::ControllerRegistration; 1]> =
+        LazyLock::new(|| {
+            [crate::manifest::ControllerRegistration {
+                type_name: BorrowedStr::from_str("ExampleController"),
+                vtable: controller_vtable::<ExampleController>(),
+            }]
+        });
     static AMBIGUOUS_ACTOR_REGISTRATIONS: LazyLock<[ActorRegistration; 1]> = LazyLock::new(|| {
         [ActorRegistration {
             type_name: BorrowedStr::from_str("DuplicateType"),
@@ -228,10 +316,19 @@ mod tests {
                 vtable: strategy_vtable::<ExampleStrategy>(),
             }]
         });
+    static AMBIGUOUS_CONTROLLER_REGISTRATIONS: LazyLock<
+        [crate::manifest::ControllerRegistration; 1],
+    > = LazyLock::new(|| {
+        [crate::manifest::ControllerRegistration {
+            type_name: BorrowedStr::from_str("DuplicateType"),
+            vtable: controller_vtable::<ExampleController>(),
+        }]
+    });
 
     fn manifest(
         actors: Slice<'static, ActorRegistration>,
         strategies: Slice<'static, StrategyRegistration>,
+        controllers: Slice<'static, crate::manifest::ControllerRegistration>,
     ) -> PluginManifest {
         PluginManifest {
             abi_version: NAUTILUS_PLUGIN_ABI_VERSION,
@@ -242,7 +339,7 @@ mod tests {
             custom_data: Slice::empty(),
             actors,
             strategies,
-            controllers: Slice::empty(),
+            controllers,
         }
     }
 
@@ -251,6 +348,7 @@ mod tests {
         let manifest = manifest(
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*CONTROLLER_REGISTRATIONS),
         );
         let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("configured actor lookup uses a loader-valid manifest");
@@ -270,6 +368,7 @@ mod tests {
         let manifest = manifest(
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*CONTROLLER_REGISTRATIONS),
         );
         let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("configured strategy lookup uses a loader-valid manifest");
@@ -285,10 +384,31 @@ mod tests {
     }
 
     #[rstest]
+    fn configured_entry_resolves_controller_by_type_name() {
+        let manifest = manifest(
+            Slice::from_slice(&*ACTOR_REGISTRATIONS),
+            Slice::from_slice(&*STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*CONTROLLER_REGISTRATIONS),
+        );
+        let manifest = ValidatedPluginManifest::new(&manifest)
+            .expect("configured controller lookup uses a loader-valid manifest");
+
+        let entry = configured_entry(manifest, "./libexample.so", "ExampleController").unwrap();
+
+        let ConfiguredPluginEntry::Controller(entry) = entry else {
+            panic!("expected controller entry");
+        };
+        assert_eq!(entry.plugin_name, "test-plugin");
+        assert_eq!(entry.type_name, "ExampleController");
+        assert_eq!(entry.vtable.as_ptr(), CONTROLLER_REGISTRATIONS[0].vtable);
+    }
+
+    #[rstest]
     fn configured_entry_rejects_missing_type_name() {
         let manifest = manifest(
             Slice::from_slice(&*ACTOR_REGISTRATIONS),
             Slice::from_slice(&*STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*CONTROLLER_REGISTRATIONS),
         );
         let manifest = ValidatedPluginManifest::new(&manifest)
             .expect("missing configured type test uses a loader-valid manifest");
@@ -298,7 +418,7 @@ mod tests {
             Err(e) => e.to_string(),
         };
 
-        assert!(error.contains("does not expose actor or strategy type"));
+        assert!(error.contains("does not expose actor, strategy, or controller type"));
         assert!(error.contains("MissingType"));
     }
 
@@ -307,6 +427,7 @@ mod tests {
         let manifest = manifest(
             Slice::from_slice(&*AMBIGUOUS_ACTOR_REGISTRATIONS),
             Slice::from_slice(&*AMBIGUOUS_STRATEGY_REGISTRATIONS),
+            Slice::empty(),
         );
         let validation_error = ValidatedPluginManifest::new(&manifest)
             .expect_err("loader rejects ambiguous manifest type names");
@@ -315,5 +436,35 @@ mod tests {
                 .to_string()
                 .contains("type name 'DuplicateType' appears in both actors[0] and strategies[0]")
         );
+    }
+
+    #[rstest]
+    fn validated_manifest_rejects_controller_ambiguous_type_name() {
+        let manifest = manifest(
+            Slice::from_slice(&*AMBIGUOUS_ACTOR_REGISTRATIONS),
+            Slice::empty(),
+            Slice::from_slice(&*AMBIGUOUS_CONTROLLER_REGISTRATIONS),
+        );
+        let validation_error = ValidatedPluginManifest::new(&manifest)
+            .expect_err("loader rejects ambiguous controller manifest type names");
+        assert!(
+            validation_error
+                .to_string()
+                .contains("type name 'DuplicateType' appears in both actors[0] and controllers[0]")
+        );
+    }
+
+    #[rstest]
+    fn validated_manifest_rejects_strategy_controller_ambiguous_type_name() {
+        let manifest = manifest(
+            Slice::empty(),
+            Slice::from_slice(&*AMBIGUOUS_STRATEGY_REGISTRATIONS),
+            Slice::from_slice(&*AMBIGUOUS_CONTROLLER_REGISTRATIONS),
+        );
+        let validation_error = ValidatedPluginManifest::new(&manifest)
+            .expect_err("loader rejects ambiguous strategy/controller manifest type names");
+        assert!(validation_error.to_string().contains(
+            "type name 'DuplicateType' appears in both strategies[0] and controllers[0]"
+        ));
     }
 }

@@ -28,6 +28,7 @@
 //!
 //! - [`actor`]: [`PluginActorAdapter`] for plug-in actors.
 //! - [`strategy`]: [`PluginStrategyAdapter`] for plug-in strategies.
+//! - [`controller`]: [`PluginControllerAdapter`] for plug-in controllers.
 //! - [`host`]: host-side `HostVTable` construction with engine callback routing.
 //! - [`registry`]: the per-instance opaque context the host attaches to each
 //!   plug-in instance so host callbacks can be attributed to the calling
@@ -53,6 +54,7 @@ macro_rules! validated_slot {
 }
 
 pub mod actor;
+pub mod controller;
 pub mod custom_data;
 pub mod host;
 pub mod registry;
@@ -61,9 +63,13 @@ pub mod strategy;
 pub mod configured;
 
 pub use actor::PluginActorAdapter;
-pub use configured::{ConfiguredPluginEntry, configured_entry, register_manifest_custom_data};
+pub use configured::{
+    ConfiguredControllerEntry, ConfiguredPluginEntry, configured_entry,
+    register_manifest_custom_data,
+};
+pub use controller::PluginControllerAdapter;
 pub use custom_data::{PluginCustomDataValue, register_custom_data_from_manifest};
-pub use host::{host_vtable, plugin_loader};
+pub use host::{controller_host_vtable, host_vtable, plugin_loader};
 pub use registry::HostContextInner;
 pub use strategy::PluginStrategyAdapter;
 

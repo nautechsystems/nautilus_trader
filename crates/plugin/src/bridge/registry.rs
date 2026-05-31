@@ -35,10 +35,13 @@ use std::sync::{
 
 use nautilus_model::identifiers::ActorId;
 
-use crate::host::HostContext;
+use crate::host::{ControllerHostContext, HostContext};
 
 #[cfg(test)]
 static HOST_CONTEXT_LIVE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+static CONTROLLER_HOST_CONTEXT_LIVE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(test)]
 static HOST_CONTEXT_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -63,6 +66,25 @@ pub fn host_context_live_count() -> usize {
     HOST_CONTEXT_LIVE.load(Ordering::SeqCst)
 }
 
+/// Serializes controller-context leak-counter assertions across parallel tests.
+/// Test-only.
+#[cfg(test)]
+pub fn controller_host_context_test_lock() -> MutexGuard<'static, ()> {
+    // Poisoning can occur if a panic interrupts a holder; clear it so
+    // subsequent tests still serialize cleanly.
+    HOST_CONTEXT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Returns the number of controller host-context allocations currently alive.
+/// Test-only.
+#[cfg(test)]
+#[must_use]
+pub fn controller_host_context_live_count() -> usize {
+    CONTROLLER_HOST_CONTEXT_LIVE.load(Ordering::SeqCst)
+}
+
 /// Inner payload behind the opaque `*const HostContext` the host hands every
 /// plug-in instance.
 #[repr(C)]
@@ -79,6 +101,17 @@ pub struct HostContextInner {
     pub is_strategy: bool,
 }
 
+/// Inner payload behind the opaque `*const ControllerHostContext`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct ControllerHostContextInner {
+    /// Plug-in name from the manifest.
+    pub plugin_name: String,
+
+    /// Canonical controller type name.
+    pub type_name: String,
+}
+
 /// Boxes `inner` on the heap, leaks it, and returns the resulting pointer as
 /// a `*const HostContext` to hand to a plug-in.
 ///
@@ -89,6 +122,16 @@ pub fn leak_host_context(inner: HostContextInner) -> *const HostContext {
     #[cfg(test)]
     HOST_CONTEXT_LIVE.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(Box::new(inner)).cast::<HostContext>()
+}
+
+/// Boxes `inner` on the heap and returns it as a `*const ControllerHostContext`.
+#[must_use]
+pub fn leak_controller_host_context(
+    inner: ControllerHostContextInner,
+) -> *const ControllerHostContext {
+    #[cfg(test)]
+    CONTROLLER_HOST_CONTEXT_LIVE.fetch_add(1, Ordering::SeqCst);
+    Box::into_raw(Box::new(inner)).cast::<ControllerHostContext>()
 }
 
 /// Reclaims a previously [`leak_host_context`]-leaked allocation.
@@ -108,6 +151,26 @@ pub unsafe fn drop_host_context(ctx: *const HostContext) {
     }
 }
 
+/// Reclaims a previously [`leak_controller_host_context`]-leaked allocation.
+///
+/// # Safety
+///
+/// `ctx` must originate from [`leak_controller_host_context`] and must not be
+/// aliased.
+pub unsafe fn drop_controller_host_context(ctx: *const ControllerHostContext) {
+    if ctx.is_null() {
+        return;
+    }
+    #[cfg(test)]
+    CONTROLLER_HOST_CONTEXT_LIVE.fetch_sub(1, Ordering::SeqCst);
+    // SAFETY: caller upholds the origin and aliasing contract.
+    unsafe {
+        drop(Box::from_raw(
+            ctx.cast_mut().cast::<ControllerHostContextInner>(),
+        ));
+    }
+}
+
 /// Interprets `ctx` as a `*const HostContextInner` and returns a reference.
 ///
 /// Returns `None` if `ctx` is null.
@@ -122,6 +185,25 @@ pub unsafe fn host_context_inner<'a>(ctx: *const HostContext) -> Option<&'a Host
     }
     // SAFETY: caller upholds the origin and liveness contract.
     Some(unsafe { &*ctx.cast::<HostContextInner>() })
+}
+
+/// Interprets `ctx` as a `*const ControllerHostContextInner`.
+///
+/// Returns `None` if `ctx` is null.
+///
+/// # Safety
+///
+/// `ctx` must originate from [`leak_controller_host_context`] and must still
+/// be live.
+#[must_use]
+pub unsafe fn controller_host_context_inner<'a>(
+    ctx: *const ControllerHostContext,
+) -> Option<&'a ControllerHostContextInner> {
+    if ctx.is_null() {
+        return None;
+    }
+    // SAFETY: caller upholds the origin and liveness contract.
+    Some(unsafe { &*ctx.cast::<ControllerHostContextInner>() })
 }
 
 #[cfg(test)]

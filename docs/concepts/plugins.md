@@ -1,9 +1,9 @@
 # Plugins
 
 The plug-in system extends a Nautilus live node with independently compiled Rust cdylibs. The host
-loads each cdylib at process startup and runs its actors, strategies, and custom-data types
-alongside compiled-in components. The host owns the C-ABI boundary; plug-in authors write standard
-Rust traits, and a macro emits the boundary glue.
+loads each cdylib at process startup and runs its actors, strategies, controllers, and custom-data
+types alongside compiled-in components. The host owns the C-ABI boundary; plug-in authors write
+standard Rust traits, and a macro emits the boundary glue.
 
 :::note
 The plug-in system is supported on Linux only.
@@ -14,8 +14,13 @@ The plug-in system is supported on Linux only.
 - The boundary is C ABI, because Rust's `#[repr(Rust)]` layout is unstable across compilations.
 - Authors write normal Rust traits; macros generate the `extern "C"` thunks and `#[repr(C)]` vtables.
 - Plug-ins load at process startup, register through a validated manifest, and live for the process lifetime.
-- The host adapts each plug-in instance into a `DataActor` or `Strategy` so the live engine sees no FFI.
-- Callbacks from a plug-in back into the host route through a single static `HostVTable` of function pointers.
+- The host adapts actor and strategy instances into a `DataActor` or `Strategy` so the live engine
+  sees no FFI.
+- The live node owns controller instances directly and drives their lifecycle outside trader
+  registration.
+- Callbacks from an actor or strategy back into the host route through a single static `HostVTable`
+  of function pointers.
+- Controller callbacks use a controller-specific `ControllerHostVTable`.
 - Every plug-in callback runs under `catch_unwind`. A panic in a fallible plug-in thunk surfaces as
   a `PluginError`; a panic in an infallible plug-in thunk aborts the process. Neither path unwinds
   across the FFI boundary. Infallible thunks include:
@@ -33,22 +38,29 @@ for current development rather than a stable compatibility promise.
 ## Terms
 
 - Plug-in: a Rust cdylib that exports a single `nautilus_plugin_init` symbol.
-- Plug point: one trait surface a plug-in can contribute to (custom data, actor, strategy).
+- Plug point: one trait surface a plug-in can contribute to (custom data, actor, strategy, controller).
 - Manifest: a `'static PluginManifest` returned from `nautilus_plugin_init` enumerating contributions.
 - VTable: a `#[repr(C)]` struct of function pointers the host calls for one plug point on one type.
-- `HostVTable`: the function-pointer table the host hands every plug-in for re-entrant callbacks.
+- `HostVTable`: the function-pointer table the host hands every actor or strategy for re-entrant
+  callbacks.
+- `ControllerHostVTable`: the function-pointer table the host hands every controller for
+  controller-specific host services.
 - `HostContext`: an opaque boundary pointer that lets host thunks attribute callbacks to the
   calling adapter. On the host side it points to a `HostContextInner` allocation carrying the
   adapter's actor ID and whether the caller is a strategy.
-- Adapter: the host-side `PluginActorAdapter` or `PluginStrategyAdapter` that wraps a plug-in handle.
+- `ControllerHostContext`: an opaque boundary pointer carrying the controller's plug-in and type
+  names for host-service attribution.
+- Adapter: the host-side `PluginActorAdapter`, `PluginStrategyAdapter`, or
+  `PluginControllerAdapter` that wraps a plug-in handle.
 
 ## What a plug-in contributes
 
-A plug-in cdylib can publish three families of contributions through its manifest:
+A plug-in cdylib can publish four families of contributions through its manifest:
 
 - Custom-data types via `PluginCustomData` (`surfaces::custom_data`).
 - Plug-in actors via `PluginActor` (`surfaces::actor`).
 - Plug-in strategies via `PluginStrategy` (`surfaces::strategy`).
+- Plug-in controllers via `PluginController` (`surfaces::controller`).
 
 Each family has its own `#[repr(C)]` vtable struct, an author-facing trait, and a registration entry
 the manifest lists in a `Slice<'static, Registration>`. Adding a future plug point means adding one
@@ -70,6 +82,10 @@ Each plug point family carries a fixed callback set. The actor surface today cov
 
 The strategy surface adds the order lifecycle and position event callbacks on top of the actor
 surface.
+
+The controller surface exposes a static `prepare` hook plus runtime lifecycle callbacks. Controllers
+use JSON request and response envelopes for host services because they orchestrate runtime
+components rather than process market-data events.
 
 ## Boundaries
 
@@ -179,7 +195,7 @@ identifies the build and enumerates every plug point contribution:
   - build profile
   - precision mode
   - fixed precision
-- `custom_data`, `actors`, `strategies`: registration slices, one per plug point.
+- `custom_data`, `actors`, `strategies`, `controllers`: registration slices, one per plug point.
 
 The loader runs `ValidatedPluginManifest::new` on the manifest before exposing it to the live node.
 Validation checks identifier strings, the build-id schema version, every registration vtable
@@ -198,8 +214,10 @@ flowchart LR
     Init --> Manifest["Validated PluginManifest"]
     Manifest --> CustomData["register_manifest_custom_data"]
     Manifest --> Entry["configured_entry by type_name"]
-    Entry --> Actor["PluginActorAdapter / PluginStrategyAdapter"]
-    Actor --> Engine["DataActor / Strategy registration"]
+    Entry --> TraderAdapter["PluginActorAdapter / PluginStrategyAdapter"]
+    Entry --> ControllerAdapter["PluginControllerAdapter"]
+    TraderAdapter --> Engine["DataActor / Strategy registration"]
+    ControllerAdapter --> NodeOwned["LiveNode controller ownership"]
 ```
 
 The operational steps are:
@@ -213,18 +231,21 @@ The operational steps are:
   the plug-in name, version, and full `PluginBuildId`.
 - The node walks every loaded manifest once to register custom-data deserializers with
   `nautilus_model::data::registry`.
-- The node walks the configured entries again, resolves each `type_name` to either an actor or
-  strategy registration, and instantiates an adapter through the plug-in's `create` thunk.
-- The adapter is added to the trader, after which the live engine drives it like any
-  compiled-in component.
+- The node walks the configured entries again, resolves each `type_name` to an actor, strategy, or
+  controller registration, and instantiates an adapter through the plug-in's `create` thunk.
+- Actor and strategy adapters are added to the trader, after which the live engine drives them like
+  compiled-in components.
+- Controller adapters stay owned by the live node. The node starts them after trader startup and
+  stops them before trader shutdown.
 
 The loader stops on the first error and leaks every successfully opened `Library` for the process
 lifetime, because manifest, vtable, and `drop_fn` pointers the host has copied into its registries
 must outlive the loader.
 
-## Adapter routing
+## Actor and strategy adapter routing
 
-Once an adapter is registered, callbacks flow in both directions through stable function pointers:
+Once an actor or strategy adapter is registered, callbacks flow in both directions through stable
+function pointers:
 
 ```mermaid
 flowchart LR
@@ -248,9 +269,14 @@ flowchart LR
 - The default `HostVTable` returns `NotImplemented` for stateful callbacks. Engines install a
   populated vtable via `plugin_loader()` so plug-ins reach the real execution paths.
 
+Controller adapters use `ControllerHostVTable` instead. Their lifecycle callbacks go from the live
+node to the plug-in through `PluginControllerAdapter`; controller-host calls return JSON envelopes
+through the controller-specific host service table.
+
 ## Lifecycle
 
-A plug-in instance follows the same lifecycle as a compiled-in actor or strategy:
+Actor and strategy plug-in instances follow the same lifecycle as compiled-in actors and
+strategies:
 
 ```mermaid
 flowchart TD
@@ -263,12 +289,27 @@ flowchart TD
     Dispose --> Process["Library remains loaded until process exit"]
 ```
 
+Controller instances use the same cdylib load and `create`/`drop_handle` ownership model, but the
+live node drives their hooks directly:
+
+```mermaid
+flowchart TD
+    Load["Library opened, manifest validated"] --> Create["create thunk constructs controller"]
+    Create --> Own["LiveNode owns PluginControllerAdapter"]
+    Own --> Start["LiveNode calls controller on_start after trader start"]
+    Start --> Run["Controller lifecycle hooks"]
+    Run --> Stop["LiveNode calls controller on_stop before trader stop"]
+    Stop --> Dispose["drop_handle when adapter is dropped"]
+```
+
 Key points:
 
-- `create` runs once per configured instance. The adapter passes the plug-in its `HostVTable`
-  pointer, its `HostContextInner` pointer, and the verbatim JSON config payload.
+- `create` runs once per configured instance. Actor and strategy adapters pass the plug-in their
+  `HostVTable` pointer, `HostContextInner` pointer, and the verbatim JSON config payload.
+- Controller adapters pass the plug-in their `ControllerHostVTable` pointer,
+  `ControllerHostContext` pointer, and the same verbatim JSON config payload.
 - Adapter drop runs the plug-in's `drop_handle` thunk and releases the heap-allocated
-  `HostContextInner` allocation.
+  host context allocation.
 - `dlclose` is intentionally never called. The `LoadedPlugin` wraps its `libloading::Library` in
   `ManuallyDrop` so manifest and vtable pointers copied into the host's registries never dangle.
 
@@ -293,19 +334,23 @@ Each entry binds one plug-in instance:
 - `path`: absolute or working-directory-relative path to the cdylib. Repeated paths are loaded
   once and shared across entries.
 - `type_name`: the canonical type name from the plug-in manifest. The host rejects the entry if
-  the manifest exposes the name as both an actor and a strategy.
+  the manifest exposes the name as more than one actor, strategy, or controller kind.
 - `sha256`: optional lowercase hex SHA-256 digest of the cdylib. If set, the node hashes the file
   before loading and aborts on mismatch.
 - `config`: a free-form JSON object serialised verbatim into the `config_json` argument the
   plug-in's `create` thunk receives.
 
-The node interprets a few well-known keys inside `config` when instantiating an entry:
+The node interprets a few well-known keys inside `config` when instantiating actor and strategy
+entries:
 
 - `actor_id`: identifier assigned to the adapter's `ActorId`. Defaults to the manifest `type_name`.
 - `strategy_id`: identifier assigned to the adapter's `StrategyId`. Defaults to `<type_name>-001`.
 - `order_id_tag`: optional order ID tag forwarded into the strategy's `StrategyConfig`.
 - `strategy_config`: optional fully-formed `StrategyConfig` JSON value, used for strategy plug-ins
   that need more than the three keys above.
+
+Controller entries do not use those keys in the host. Their `config` object is still passed
+verbatim into `PluginController::new`.
 
 Plug-in support is gated behind the `plugin` Cargo feature on the live crate, which is on by
 default. A build compiled with `--no-default-features` (or any feature set that omits `plugin`)
@@ -357,12 +402,13 @@ forward through `guard_infallible`:
 Trivial slots that cannot panic (the `type_name` thunks, which just return a `BorrowedStr` over a
 `&'static str` constant) carry no guard at all.
 
-Authors never write `extern "C"` or `#[repr(C)]`. `unsafe` requirements depend on what the plug-in
-holds. The example actor in `crates/plugin/examples/custom_data_plugin.rs` discards the
-`*const HostVTable` and `*const HostContext` pointers that `PluginActor::new` receives, so it
-needs no `unsafe`. Plug-ins that store those pointers (whether actor or strategy) need an
-`unsafe impl Send` on the struct, and any direct call into a `HostVTable` slot is
-`unsafe extern "C"` and therefore `unsafe` to invoke.
+The same macro accepts `custom_data`, `actors`, `strategies`, and `controllers` lists. Authors never
+write `extern "C"` or `#[repr(C)]`. `unsafe` requirements depend on what the plug-in holds. The
+example actor in `crates/plugin/examples/custom_data_plugin.rs` discards the `*const HostVTable` and
+`*const HostContext` pointers that `PluginActor::new` receives, so it needs no `unsafe`. Plug-ins
+that store those pointers (whether actor or strategy) need an `unsafe impl Send` on the struct, and
+any direct call into a `HostVTable` slot is `unsafe extern "C"` and therefore `unsafe` to invoke.
+Controller plug-ins follow the same rule for `ControllerHostVTable` and `ControllerHostContext`.
 
 `Cargo.toml` for the cdylib needs `crate-type = ["cdylib"]` and a dependency on the matching
 `nautilus-plugin` version. The artifact lands at
@@ -398,5 +444,10 @@ registered:
 - Cache reads, msgbus publishes, and timer callbacks bypass the `Strategy` layer by design and go
   through the engine services directly.
 
-The only difference is structural: plug-ins ship as separate cdylibs with their own manifest, in
+Controller plug-ins are different: the live node owns them, starts them after the trader starts, and
+stops them before the trader stops. They can orchestrate runtime work through the
+`ControllerHostVTable` surface, but they are not trader actors or strategies unless they ask the
+host to create those components.
+
+The shared difference is structural: plug-ins ship as separate cdylibs with their own manifest, in
 exchange for being deployable out-of-tree without recompiling the host.
