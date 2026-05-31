@@ -118,6 +118,12 @@ pub(super) async fn handle_historical_bars_subscription(
 
     let first_start_ns = resolve_historical_bar_start_ns(start_ns, clock.get_time_ns());
     let mut last_disconnection_ns = None;
+    // Only stamp last_disconnection_ns after a genuine prior connection, mirroring the
+    // Python adapter's _is_ib_connected guard in _handle_disconnection. Without this,
+    // a subscription creation failure during the pre-handshake window (client TCP-connected
+    // but IB session not yet ready) would cap the warmup window to now, delivering zero
+    // warmup bars on startup.
+    let mut had_connection = false;
 
     loop {
         if cancellation_token.is_cancelled() {
@@ -155,14 +161,19 @@ pub(super) async fn handle_historical_bars_subscription(
             )
             .await
         {
-            Ok(subscription) => subscription,
+            Ok(subscription) => {
+                had_connection = true;
+                subscription
+            }
             Err(e) => {
                 tracing::warn!(
                     "Failed to create historical bars subscription for {}: {:?}",
                     bar_type,
                     e
                 );
-                last_disconnection_ns = Some(clock.get_time_ns());
+                if had_connection {
+                    last_disconnection_ns = Some(clock.get_time_ns());
+                }
                 tokio::time::sleep(HISTORICAL_BAR_RETRY_DELAY).await;
                 continue;
             }
@@ -1302,6 +1313,29 @@ mod tests {
         );
 
         assert_eq!(replay_start_ns, last_disconnection_ns);
+    }
+
+    #[rstest]
+    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_no_prior_disconnection() {
+        let first_start_ns = UnixNanos::from(1_000);
+
+        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(first_start_ns, None);
+
+        assert_eq!(replay_start_ns, first_start_ns);
+    }
+
+    #[rstest]
+    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_disconnection_before_start()
+     {
+        let first_start_ns = UnixNanos::from(1_000);
+        let last_disconnection_ns = UnixNanos::from(500);
+
+        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
+            first_start_ns,
+            Some(last_disconnection_ns),
+        );
+
+        assert_eq!(replay_start_ns, first_start_ns);
     }
 
     #[rstest]
