@@ -19,11 +19,14 @@
 //! compact cursor snapshots, joinable back to catalog rows. No market-data payload is
 //! persisted.
 
+pub mod backend;
 pub mod cursor;
 pub mod marker;
 
+pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend};
 pub use cursor::CursorState;
 pub use marker::{
     DataClass, DataCursorSnapshot, HiFiMarker, MarkerGap, MarkerGapReason, StreamCursor,
-    StreamDictEntry, StreamSlot, compute_hifi_hash, compute_marker_hash,
+    StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
+    compute_marker_hash,
 };
