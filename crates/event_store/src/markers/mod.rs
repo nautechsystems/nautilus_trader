@@ -22,6 +22,7 @@
 pub mod backend;
 pub mod cursor;
 pub mod marker;
+pub mod redb;
 
 pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend};
 pub use cursor::CursorState;
@@ -30,3 +31,4 @@ pub use marker::{
     StreamDictEntry, StreamSlot, compute_dict_hash, compute_gap_hash, compute_hifi_hash,
     compute_marker_hash,
 };
+pub use redb::RedbMarkerBackend;
