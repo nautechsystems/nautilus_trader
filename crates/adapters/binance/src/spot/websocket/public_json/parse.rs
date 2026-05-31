@@ -112,10 +112,13 @@ pub fn parse_book_ticker(
         .parse::<f64>()
         .with_context(|| format!("invalid ask quantity `{}`", msg.best_ask_qty))?;
 
-    let ts_event = msg.transaction_time.map_or_else(
-        || UnixNanos::from_millis(msg.event_time as u64),
-        |ts| UnixNanos::from_millis(ts as u64),
-    );
+    // Spot bookTicker payloads on public streams do not consistently include
+    // event timestamps; fall back to receive time when absent.
+    let ts_event = msg
+        .transaction_time
+        .or(msg.event_time)
+        .and_then(|ts| u64::try_from(ts).ok())
+        .map_or(ts_init, UnixNanos::from_millis);
 
     Ok(QuoteTick::new(
         instrument_id,

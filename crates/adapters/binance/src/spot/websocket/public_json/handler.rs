@@ -274,6 +274,17 @@ impl BinanceSpotPublicWsHandler {
             return vec![BinanceSpotPublicWsMessage::DepthSnapshot(depth)];
         }
 
+        if let Some(stream_name) = stream_name.as_deref()
+            && stream_name.ends_with("@bookTicker")
+        {
+            return serde_json::from_value::<BinanceSpotBookTickerMsg>(payload)
+                .map(BinanceSpotPublicWsMessage::BookTicker)
+                .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
+                .ok()
+                .into_iter()
+                .collect();
+        }
+
         let Some(event_type) = extract_event_type(&payload) else {
             return vec![BinanceSpotPublicWsMessage::RawJson(payload)];
         };
@@ -398,5 +409,38 @@ mod tests {
             .await;
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], BinanceSpotPublicWsMessage::Reconnected));
+    }
+
+    #[rstest]
+    fn test_handle_stream_data_parses_book_ticker_without_event_type() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions,
+            request_id_counter,
+        );
+
+        let payload = json!({
+            "stream": "btcusdt@bookTicker",
+            "data": {
+                "u": 94528182161_u64,
+                "s": "BTCUSDT",
+                "b": "73650.51000000",
+                "B": "2.95126000",
+                "a": "73650.52000000",
+                "A": "1.38108000"
+            }
+        });
+
+        let out = handler.handle_stream_data(&payload);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], BinanceSpotPublicWsMessage::BookTicker(_)));
     }
 }

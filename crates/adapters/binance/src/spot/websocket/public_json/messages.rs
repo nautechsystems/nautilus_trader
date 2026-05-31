@@ -139,11 +139,11 @@ pub struct BinanceSpotTradeMsg {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinanceSpotBookTickerMsg {
     /// Event type.
-    #[serde(rename = "e")]
-    pub event_type: String,
+    #[serde(rename = "e", default)]
+    pub event_type: Option<String>,
     /// Event time in milliseconds.
-    #[serde(rename = "E")]
-    pub event_time: i64,
+    #[serde(rename = "E", default)]
+    pub event_time: Option<i64>,
     /// Symbol.
     #[serde(rename = "s")]
     pub symbol: Ustr,
@@ -163,7 +163,7 @@ pub struct BinanceSpotBookTickerMsg {
     #[serde(rename = "A")]
     pub best_ask_qty: String,
     /// Transaction time in milliseconds (if provided).
-    #[serde(rename = "T")]
+    #[serde(rename = "T", default)]
     pub transaction_time: Option<i64>,
 }
 
