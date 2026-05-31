@@ -82,7 +82,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging configuration for the kernel.
-    timeout_connection : PositiveFloat, default 60
+    timeout_connection : PositiveFloat, default 120
         The timeout (seconds) for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat, default 30
         The timeout (seconds) for execution state to reconcile.

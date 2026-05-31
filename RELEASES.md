@@ -174,6 +174,7 @@ Released on TBD (UTC).
 - Refined OKX integration guide with product capabilities and Nitro spread order notes
 - Fixed `NautilusKernelConfig` state flag default docs (#4144), thanks for reporting @trikafi
 - Fixed `LatencyModelConfig` base latency unit comment (1 second) (#4170), thanks for reporting @phx000
+- Fixed `NautilusKernelConfig` timeout default docs (#4179), thanks for reporting @triyys
 - Fixed Polymarket crate README labelling separate Gamma and Data API endpoints
 - Fixed Polymarket integration guide inaccuracies (Gamma vs Data API split, `determine_trade_id` hash by adapter)
 
