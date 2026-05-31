@@ -83,7 +83,7 @@ def get_exchange_rate(
     price_type: PriceType,
     quotes_bid: dict[str, float],
     quotes_ask: dict[str, float],
-) -> float | None: ...
+) -> Decimal | None: ...
 
 # Logging
 

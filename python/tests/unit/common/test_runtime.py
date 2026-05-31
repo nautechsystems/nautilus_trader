@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 import pytest
 
@@ -91,8 +92,8 @@ def test_get_exchange_rate_direct_and_inverse_pairs():
         {"EUR/USD": 1.25},
     )
 
-    assert direct == pytest.approx(0.8)
-    assert inverse == pytest.approx(0.8)
+    assert direct == pytest.approx(Decimal("0.8"), abs=Decimal("1e-9"))
+    assert inverse == pytest.approx(Decimal("0.8"), abs=Decimal("1e-9"))
 
 
 def test_message_bus_listener_stream_requires_running_event_loop():

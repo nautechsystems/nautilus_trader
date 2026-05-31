@@ -3785,13 +3785,15 @@ cdef class Cache(CacheFacade):
 
         cdef tuple quotes = self._build_quote_table(venue)
         try:
-            return nautilus_pyo3.get_exchange_rate(
+            # `get_exchange_rate` returns a `Decimal`; the Cython path uses floats, so cast here
+            xrate = nautilus_pyo3.get_exchange_rate(
                 from_currency=from_currency.code,
                 to_currency=to_currency.code,
                 price_type=nautilus_pyo3.PriceType.from_int(price_type),
                 quotes_bid=quotes[0],  # Bid
                 quotes_ask=quotes[1],  # Ask
             )
+            return float(xrate) if xrate is not None else None
         except ValueError as e:
             self._log.error(f"Cannot calculate exchange rate: {e!r}")
 

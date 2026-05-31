@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+from decimal import Decimal
 
 import pandas as pd
 import pytest
@@ -84,7 +85,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 0.80000
+        assert result == pytest.approx(Decimal("0.80000"), abs=Decimal("1e-9"))
 
     def test_get_rate_when_symbol_has_slash(self):
         # Arrange
@@ -101,7 +102,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 0.80000
+        assert result == pytest.approx(Decimal("0.80000"), abs=Decimal("1e-9"))
 
     def test_get_rate_for_inverse1(self):
         # Arrange
@@ -118,7 +119,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 9.522449173927534e-05
+        assert result == pytest.approx(Decimal("9.522449173927534e-05"), abs=Decimal("1e-9"))
 
     def test_get_rate_for_inverse2(self):
         # Arrange
@@ -135,7 +136,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 0.009082652134423252
+        assert result == pytest.approx(Decimal("0.009082652134423252"), abs=Decimal("1e-9"))
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
@@ -166,8 +167,8 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result1 == 0.011353315168029066
-        assert result2 == 88.115013
+        assert result1 == pytest.approx(Decimal("0.011353315168029066"), abs=Decimal("1e-9"))
+        assert result2 == pytest.approx(Decimal("88.115013"), abs=Decimal("1e-9"))
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
@@ -184,7 +185,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 0.009081414884438995
+        assert result == pytest.approx(Decimal("0.009081414884438995"), abs=Decimal("1e-9"))
 
     def test_calculate_exchange_rate_for_mid_price_type2(self):
         # Arrange
@@ -201,7 +202,7 @@ class TestExchangeRateCalculator:
         )
 
         # Assert
-        assert result == 110.115
+        assert result == pytest.approx(Decimal("110.115"), abs=Decimal("1e-9"))
 
 
 class TestRolloverInterestCalculator:

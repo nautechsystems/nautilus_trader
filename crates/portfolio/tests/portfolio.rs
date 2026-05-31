@@ -4167,6 +4167,82 @@ fn test_equity_cash_account_foreign_settlement_converts(
 }
 
 #[rstest]
+fn test_equity_rounds_once_across_small_foreign_positions(
+    simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    // Per-position rounding drops each 0.004 EUR notional to 0; round-once keeps 0.008 -> 0.01
+    let mut simple_cache = simple_cache;
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.004);
+
+    let config = PortfolioConfig::builder().use_mark_xrates(true).build();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        Some(config),
+    );
+
+    let state = AccountState::new(
+        AccountId::new("SIM-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::new(1_000.0, Currency::EUR()),
+            Money::new(0.0, Currency::EUR()),
+            Money::new(1_000.0, Currency::EUR()),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        Some(Currency::EUR()),
+    );
+    portfolio.update_account(&state);
+
+    // Long positions mark at the bid; bid 1.0 yields a 1 USD notional per position
+    let quote = get_quote_tick(&instrument_audusd, 1.0, 1.0, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    for position_id in ["P-SMALL1", "P-SMALL2"] {
+        let fill = make_fill_for_account(
+            &instrument_audusd,
+            AccountId::new("SIM-001"),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::new(1.0, instrument_audusd.price_precision()),
+            PositionId::new(position_id),
+        );
+        let position = Position::new(&instrument_audusd, fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+        portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    }
+
+    // 2 positions * (1 USD * 0.004) = 0.008 EUR, rounded once to 0.01 (not 0.00)
+    let mark_values = portfolio.mark_values(&Venue::test_default(), None);
+    assert_eq!(
+        mark_values.get(&Currency::EUR()).unwrap().as_decimal(),
+        dec!(0.01),
+    );
+
+    // equity[EUR] = balance.total (1000) + mark (0.01) = 1000.01
+    let equity = portfolio.equity(&Venue::test_default(), None);
+    assert_eq!(
+        equity.get(&Currency::EUR()).unwrap().as_decimal(),
+        dec!(1000.01),
+    );
+}
+
+#[rstest]
 fn test_missing_xrate_flags_instrument(
     simple_cache: Cache,
     clock: TestClock,

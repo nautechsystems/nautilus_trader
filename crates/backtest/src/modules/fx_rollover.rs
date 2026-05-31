@@ -28,6 +28,7 @@ use nautilus_model::{
     instruments::Instrument,
     types::{Currency, Money},
 };
+use rust_decimal::prelude::ToPrimitive;
 
 use super::{ExchangeContext, SimulationModule};
 
@@ -252,9 +253,11 @@ impl FXRolloverInterestModule {
 
             let instrument = &ctx.instruments[instrument_id];
             let currency = if let Some(base) = ctx.base_currency {
+                // Rollover math is still f64; convert the Decimal rate at the boundary
                 let xrate = ctx
                     .cache
                     .get_xrate(ctx.venue, instrument.quote_currency(), base, PriceType::Mid)
+                    .and_then(|rate| rate.to_f64())
                     .unwrap_or(0.0);
                 rollover *= xrate;
                 base

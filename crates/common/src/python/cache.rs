@@ -43,6 +43,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use pyo3::prelude::*;
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     cache::{Cache, CacheConfig},
@@ -264,6 +265,7 @@ impl PyCache {
         self.0
             .borrow()
             .get_xrate(venue, from_currency, to_currency, price_type)
+            .and_then(|rate| rate.to_f64())
     }
 
     #[pyo3(name = "get_mark_xrate")]
@@ -2503,6 +2505,7 @@ impl Cache {
         price_type: PriceType,
     ) -> Option<f64> {
         self.get_xrate(venue, from_currency, to_currency, price_type)
+            .and_then(|rate| rate.to_f64())
     }
 
     /// Returns the mark exchange rate for the given currency pair, or `None` if not set.

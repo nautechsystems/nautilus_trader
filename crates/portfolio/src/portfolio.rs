@@ -437,7 +437,7 @@ impl Portfolio {
             instrument_ids
         };
 
-        let mut unrealized_pnls: IndexMap<Currency, f64> = IndexMap::new();
+        let mut unrealized_pnls: IndexMap<Currency, Money> = IndexMap::new();
 
         for instrument_id in instrument_ids {
             // The instrument-keyed cache aggregates across all accounts on the
@@ -445,19 +445,22 @@ impl Portfolio {
             if account_id.is_none()
                 && let Some(&pnl) = self.inner.borrow_mut().unrealized_pnls.get(&instrument_id)
             {
-                *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
+                unrealized_pnls
+                    .entry(pnl.currency)
+                    .and_modify(|total| *total = *total + pnl)
+                    .or_insert(pnl);
                 continue;
             }
 
             if let Some(pnl) = self.calculate_unrealized_pnl(&instrument_id, account_id) {
-                *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
+                unrealized_pnls
+                    .entry(pnl.currency)
+                    .and_modify(|total| *total = *total + pnl)
+                    .or_insert(pnl);
             }
         }
 
         unrealized_pnls
-            .into_iter()
-            .map(|(currency, amount)| (currency, Money::new(amount, currency)))
-            .collect()
     }
 
     /// Returns the realized PnLs for all positions at the given venue.
@@ -483,7 +486,7 @@ impl Portfolio {
             instrument_ids
         };
 
-        let mut realized_pnls: IndexMap<Currency, f64> = IndexMap::new();
+        let mut realized_pnls: IndexMap<Currency, Money> = IndexMap::new();
 
         for instrument_id in instrument_ids {
             // The instrument-keyed cache aggregates across all accounts on the
@@ -491,19 +494,22 @@ impl Portfolio {
             if account_id.is_none()
                 && let Some(&pnl) = self.inner.borrow_mut().realized_pnls.get(&instrument_id)
             {
-                *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
+                realized_pnls
+                    .entry(pnl.currency)
+                    .and_modify(|total| *total = *total + pnl)
+                    .or_insert(pnl);
                 continue;
             }
 
             if let Some(pnl) = self.calculate_realized_pnl(&instrument_id, account_id) {
-                *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
+                realized_pnls
+                    .entry(pnl.currency)
+                    .and_modify(|total| *total = *total + pnl)
+                    .or_insert(pnl);
             }
         }
 
         realized_pnls
-            .into_iter()
-            .map(|(currency, amount)| (currency, Money::new(amount, currency)))
-            .collect()
     }
 
     #[must_use]
@@ -532,7 +538,7 @@ impl Portfolio {
             return Some(IndexMap::new()); // Nothing to calculate
         }
 
-        let mut net_exposures: IndexMap<Currency, f64> = IndexMap::new();
+        let mut net_exposures: IndexMap<Currency, Money> = IndexMap::new();
 
         for position in positions_open {
             let instrument = if let Some(instrument) = cache.instrument(&position.instrument_id) {
@@ -570,24 +576,27 @@ impl Portfolio {
                 .base_currency()
                 .unwrap_or_else(|| instrument.settlement_currency());
 
-            let net_exposure = instrument
-                .calculate_notional_value(position.quantity, price, None)
-                .as_f64()
-                * xrate;
+            let net_exposure = match Money::from_decimal(
+                instrument
+                    .calculate_notional_value(position.quantity, price, None)
+                    .as_decimal()
+                    * xrate,
+                settlement_currency,
+            ) {
+                Ok(money) => money,
+                Err(e) => {
+                    log::error!("Cannot calculate net exposures: {e}");
+                    return None;
+                }
+            };
 
-            let net_exposure = (net_exposure * 10f64.powi(settlement_currency.precision.into()))
-                .round()
-                / 10f64.powi(settlement_currency.precision.into());
-
-            *net_exposures.entry(settlement_currency).or_insert(0.0) += net_exposure;
+            net_exposures
+                .entry(settlement_currency)
+                .and_modify(|total| *total = *total + net_exposure)
+                .or_insert(net_exposure);
         }
 
-        Some(
-            net_exposures
-                .into_iter()
-                .map(|(currency, amount)| (currency, Money::new(amount, currency)))
-                .collect(),
-        )
+        Some(net_exposures)
     }
 
     #[must_use]
@@ -682,10 +691,7 @@ impl Portfolio {
             return None;
         }
 
-        Some(Money::new(
-            realized.as_f64() + unrealized.as_f64(),
-            realized.currency,
-        ))
+        Some(realized + unrealized)
     }
 
     /// Returns the total PnLs for the given venue.
@@ -737,7 +743,7 @@ impl Portfolio {
         venue: &Venue,
         account_id: Option<&AccountId>,
     ) -> IndexMap<Currency, Money> {
-        let mut values: IndexMap<Currency, f64> = IndexMap::new();
+        let mut values: IndexMap<Currency, Decimal> = IndexMap::new();
         let mut unpriced: AHashSet<InstrumentId> = AHashSet::new();
 
         if self.accumulate_mark_values(venue, account_id, &mut values, &mut unpriced) {
@@ -748,10 +754,7 @@ impl Portfolio {
             self.inner.borrow_mut().venues_missing_price.remove(venue);
         }
 
-        values
-            .into_iter()
-            .map(|(c, v)| (c, Money::new(v, c)))
-            .collect()
+        decimal_map_to_money(values)
     }
 
     /// Returns the per-currency total equity for the given venue.
@@ -778,10 +781,10 @@ impl Portfolio {
 
             match account {
                 Some(account) => {
-                    let equity: IndexMap<Currency, f64> = account
+                    let equity: IndexMap<Currency, Decimal> = account
                         .balances_total()
                         .into_iter()
-                        .map(|(c, m)| (c, m.as_f64()))
+                        .map(|(c, m)| (c, m.as_decimal()))
                         .collect();
                     (equity, matches!(&*account, AccountAny::Margin(_)))
                 }
@@ -827,7 +830,8 @@ impl Portfolio {
 
                     match pnl {
                         Some(pnl) => {
-                            *equity.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
+                            *equity.entry(pnl.currency).or_insert(Decimal::ZERO) +=
+                                pnl.as_decimal();
                         }
                         None => {
                             unpriced.insert(instrument_id);
@@ -842,10 +846,7 @@ impl Portfolio {
             self.inner.borrow_mut().venues_missing_price.remove(venue);
         }
 
-        equity
-            .into_iter()
-            .map(|(c, v)| (c, Money::new(v, c)))
-            .collect()
+        decimal_map_to_money(equity)
     }
 
     /// Builds a [`PortfolioSnapshot`] for the given account at the current clock time.
@@ -889,50 +890,52 @@ impl Portfolio {
             .map(|p| p.instrument_id.venue)
             .collect();
 
-        let mut unrealized: IndexMap<Currency, f64> = IndexMap::new();
-        let mut realized: IndexMap<Currency, f64> = IndexMap::new();
-        let mut equity: IndexMap<Currency, f64> = account
-            .balances_total()
-            .into_iter()
-            .map(|(c, m)| (c, m.as_f64()))
-            .collect();
+        let mut unrealized: IndexMap<Currency, Money> = IndexMap::new();
+        let mut realized: IndexMap<Currency, Money> = IndexMap::new();
+        let mut equity: IndexMap<Currency, Money> = account.balances_total().into_iter().collect();
 
         for venue in &open_venues {
             for (currency, money) in self.unrealized_pnls(venue, Some(account_id)) {
-                *unrealized.entry(currency).or_insert(0.0) += money.as_f64();
+                unrealized
+                    .entry(currency)
+                    .and_modify(|total| *total = *total + money)
+                    .or_insert(money);
             }
         }
 
         for venue in &all_venues {
             for (currency, money) in self.realized_pnls(venue, Some(account_id)) {
-                *realized.entry(currency).or_insert(0.0) += money.as_f64();
+                realized
+                    .entry(currency)
+                    .and_modify(|total| *total = *total + money)
+                    .or_insert(money);
             }
         }
 
         match &account {
             AccountAny::Margin(_) => {
                 for (currency, value) in &unrealized {
-                    *equity.entry(*currency).or_insert(0.0) += *value;
+                    equity
+                        .entry(*currency)
+                        .and_modify(|total| *total = *total + *value)
+                        .or_insert(*value);
                 }
             }
             AccountAny::Cash(_) | AccountAny::Betting(_) => {
                 for venue in &open_venues {
                     for (currency, money) in self.mark_values(venue, Some(account_id)) {
-                        *equity.entry(currency).or_insert(0.0) += money.as_f64();
+                        equity
+                            .entry(currency)
+                            .and_modify(|total| *total = *total + money)
+                            .or_insert(money);
                     }
                 }
             }
         }
 
-        let unrealized_pnls: Vec<Money> = unrealized
-            .into_iter()
-            .map(|(c, v)| Money::new(v, c))
-            .collect();
-        let realized_pnls: Vec<Money> = realized
-            .into_iter()
-            .map(|(c, v)| Money::new(v, c))
-            .collect();
-        let total_equity: Vec<Money> = equity.into_iter().map(|(c, v)| Money::new(v, c)).collect();
+        let unrealized_pnls: Vec<Money> = unrealized.into_values().collect();
+        let realized_pnls: Vec<Money> = realized.into_values().collect();
+        let total_equity: Vec<Money> = equity.into_values().collect();
 
         let ts_now = self.clock.borrow().timestamp_ns();
 
@@ -1014,7 +1017,7 @@ impl Portfolio {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-        values: &mut IndexMap<Currency, f64>,
+        values: &mut IndexMap<Currency, Decimal>,
         unpriced: &mut AHashSet<InstrumentId>,
     ) -> bool {
         let cache = self.cache.borrow();
@@ -1028,12 +1031,12 @@ impl Portfolio {
             Some(id) => cache.account(id),
             None => cache.account_for_venue(venue),
         };
-        let mut xrate_cache: AHashMap<Currency, Option<f64>> = AHashMap::new();
+        let mut xrate_cache: AHashMap<Currency, Option<Decimal>> = AHashMap::new();
 
         for position in positions {
             let sign = match position.side {
-                PositionSide::Long => 1.0,
-                PositionSide::Short => -1.0,
+                PositionSide::Long => Decimal::ONE,
+                PositionSide::Short => Decimal::NEGATIVE_ONE,
                 PositionSide::Flat | PositionSide::NoPositionSide => continue,
             };
 
@@ -1070,11 +1073,12 @@ impl Portfolio {
                 };
                 (xrate, base_currency)
             } else {
-                (1.0, settlement)
+                (Decimal::ONE, settlement)
             };
 
-            let notional = position.notional_value(price).as_f64() * xrate;
-            *values.entry(currency).or_insert(0.0) += sign * notional;
+            // Sum exact Decimals; the caller rounds once so sub-precision positions survive
+            let notional = position.notional_value(price).as_decimal() * xrate * sign;
+            *values.entry(currency).or_insert(Decimal::ZERO) += notional;
         }
 
         true
@@ -1102,7 +1106,7 @@ impl Portfolio {
             return Some(Money::new(0.0, instrument.settlement_currency()));
         }
 
-        let mut net_exposure = 0.0;
+        let mut net_exposure = Decimal::ZERO;
         let mut first_base_currency: Option<Currency> = None;
 
         for position in &positions_open {
@@ -1149,13 +1153,19 @@ impl Portfolio {
 
             let notional_value =
                 instrument.calculate_notional_value(position.quantity, price, None);
-            net_exposure += notional_value.as_f64() * xrate;
+            net_exposure += notional_value.as_decimal() * xrate;
         }
 
         let settlement_currency =
             first_base_currency.unwrap_or_else(|| instrument.settlement_currency());
 
-        Some(Money::new(net_exposure, settlement_currency))
+        match Money::from_decimal(net_exposure, settlement_currency) {
+            Ok(money) => Some(money),
+            Err(e) => {
+                log::error!("Cannot calculate net exposure: {e}");
+                None
+            }
+        }
     }
 
     #[must_use]
@@ -1531,7 +1541,7 @@ impl Portfolio {
             return Some(Money::new(0.0, currency));
         }
 
-        let mut total_pnl = 0.0;
+        let mut total_pnl = Decimal::ZERO;
 
         for position in positions_open {
             if position.instrument_id != *instrument_id {
@@ -1550,7 +1560,7 @@ impl Portfolio {
                 return None; // Cannot calculate
             };
 
-            let mut pnl = position.unrealized_pnl(price).as_f64();
+            let mut pnl = position.unrealized_pnl(price).as_decimal();
 
             if let Some(base_currency) = account.base_currency() {
                 let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, &account)
@@ -1567,14 +1577,19 @@ impl Portfolio {
                     return None; // Cannot calculate
                 };
 
-                let scale = 10f64.powi(currency.precision.into());
-                pnl = ((pnl * xrate) * scale).round() / scale;
+                pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
             }
 
             total_pnl += pnl;
         }
 
-        Some(Money::new(total_pnl, currency))
+        match Money::from_decimal(total_pnl, currency) {
+            Ok(money) => Some(money),
+            Err(e) => {
+                log::error!("Cannot calculate unrealized PnL: {e}");
+                None
+            }
+        }
     }
 
     fn ensure_snapshot_pnls_cached_for(&self, instrument_id: &InstrumentId) {
@@ -1800,7 +1815,7 @@ impl Portfolio {
             .iter()
             .any(|p| cache.oms_type(&p.id) == Some(OmsType::Netting));
 
-        let mut total_pnl = 0.0;
+        let mut total_pnl = Decimal::ZERO;
 
         if is_netting && !snapshot_position_ids.is_empty() {
             // NETTING OMS: Apply 3-case rule for position cycles
@@ -1818,7 +1833,7 @@ impl Portfolio {
                         .copied();
 
                     if let Some(last_pnl) = last_pnl {
-                        let mut pnl = last_pnl.as_f64();
+                        let mut pnl = last_pnl.as_decimal();
 
                         if let Some(base_currency) = account.base_currency()
                             && positions.iter().any(|p| p.id == *position_id)
@@ -1837,8 +1852,7 @@ impl Portfolio {
                                 return Some(Money::new(0.0, currency));
                             };
 
-                            let scale = 10f64.powi(currency.precision.into());
-                            pnl = ((pnl * xrate) * scale).round() / scale;
+                            pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                         }
 
                         total_pnl += pnl;
@@ -1853,7 +1867,7 @@ impl Portfolio {
                         .copied();
 
                     if let Some(sum_pnl) = sum_pnl {
-                        let mut pnl = sum_pnl.as_f64();
+                        let mut pnl = sum_pnl.as_decimal();
 
                         if let Some(base_currency) = account.base_currency() {
                             // For closed positions, we don't have entry price, use current rates
@@ -1865,8 +1879,7 @@ impl Portfolio {
                             );
 
                             if let Some(xrate) = xrate {
-                                let scale = 10f64.powi(currency.precision.into());
-                                pnl = ((pnl * xrate) * scale).round() / scale;
+                                pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                             } else {
                                 log::error!(
                                     "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
@@ -1890,7 +1903,7 @@ impl Portfolio {
                 }
 
                 if let Some(realized_pnl) = position.realized_pnl {
-                    let mut pnl = realized_pnl.as_f64();
+                    let mut pnl = realized_pnl.as_decimal();
 
                     if let Some(base_currency) = account.base_currency() {
                         let xrate = if let Some(xrate) =
@@ -1907,8 +1920,7 @@ impl Portfolio {
                             return Some(Money::new(0.0, currency));
                         };
 
-                        let scale = 10f64.powi(currency.precision.into());
-                        pnl = ((pnl * xrate) * scale).round() / scale;
+                        pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                     }
 
                     total_pnl += pnl;
@@ -1926,7 +1938,7 @@ impl Portfolio {
                     .copied();
 
                 if let Some(sum_pnl) = sum_pnl {
-                    let mut pnl = sum_pnl.as_f64();
+                    let mut pnl = sum_pnl.as_decimal();
 
                     if let Some(base_currency) = account.base_currency() {
                         let xrate = cache.get_xrate(
@@ -1937,8 +1949,7 @@ impl Portfolio {
                         );
 
                         if let Some(xrate) = xrate {
-                            let scale = 10f64.powi(currency.precision.into());
-                            pnl = ((pnl * xrate) * scale).round() / scale;
+                            pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                         } else {
                             log::error!(
                                 "Cannot calculate realized PnL: insufficient exchange rate data for {}/{}, marking as pending calculation",
@@ -1961,7 +1972,7 @@ impl Portfolio {
                 }
 
                 if let Some(realized_pnl) = position.realized_pnl {
-                    let mut pnl = realized_pnl.as_f64();
+                    let mut pnl = realized_pnl.as_decimal();
 
                     if let Some(base_currency) = account.base_currency() {
                         let xrate = if let Some(xrate) =
@@ -1978,8 +1989,7 @@ impl Portfolio {
                             return Some(Money::new(0.0, currency));
                         };
 
-                        let scale = 10f64.powi(currency.precision.into());
-                        pnl = ((pnl * xrate) * scale).round() / scale;
+                        pnl = (pnl * xrate).round_dp(u32::from(currency.precision));
                     }
 
                     total_pnl += pnl;
@@ -1987,7 +1997,13 @@ impl Portfolio {
             }
         }
 
-        Some(Money::new(total_pnl, currency))
+        match Money::from_decimal(total_pnl, currency) {
+            Ok(money) => Some(money),
+            Err(e) => {
+                log::error!("Cannot calculate realized PnL: {e}");
+                Some(Money::new(0.0, currency))
+            }
+        }
     }
 
     fn get_price(&self, position: &Position) -> Option<Price> {
@@ -2024,14 +2040,14 @@ impl Portfolio {
         &self,
         instrument: &InstrumentAny,
         account: &AccountAny,
-    ) -> Option<f64> {
+    ) -> Option<Decimal> {
         if !self.config.convert_to_account_base_currency {
-            return Some(1.0); // No conversion needed
+            return Some(Decimal::ONE); // No conversion needed
         }
 
         let base_currency = match account.base_currency() {
             Some(base_currency) => base_currency,
-            None => return Some(1.0),
+            None => return Some(Decimal::ONE),
         };
 
         let settlement = instrument.settlement_currency();
@@ -2040,7 +2056,8 @@ impl Portfolio {
         if self.config.use_mark_xrates
             && let Some(xrate) = cache.get_mark_xrate(settlement, base_currency)
         {
-            return Some(xrate);
+            // Mark exchange rates are stored as f64 in the cache; convert at the boundary
+            return Decimal::try_from(xrate).ok();
         }
 
         cache.get_xrate(
@@ -2053,6 +2070,21 @@ impl Portfolio {
 }
 
 // Helper functions
+
+fn decimal_map_to_money(map: IndexMap<Currency, Decimal>) -> IndexMap<Currency, Money> {
+    map.into_iter()
+        .filter_map(
+            |(currency, amount)| match Money::from_decimal(amount, currency) {
+                Ok(money) => Some((currency, money)),
+                Err(e) => {
+                    log::error!("Cannot convert {currency} amount to Money: {e}");
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
 fn update_quote_tick(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,

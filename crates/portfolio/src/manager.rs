@@ -301,8 +301,7 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if let Some(xrate) = self.calculate_xrate_to_base(account.base_currency, instrument)
                 {
-                    let xrate_decimal = Decimal::try_from(xrate).ok()?;
-                    total_margin_maint *= xrate_decimal;
+                    total_margin_maint *= xrate;
                 } else {
                     log::debug!(
                         "Cannot calculate maintenance (position) margin: insufficient data for {}/{}",
@@ -335,7 +334,7 @@ impl AccountsManager {
         }
 
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
-        let mut base_xrate: Option<f64> = None;
+        let mut base_xrate: Option<Decimal> = None;
 
         let mut currency = instrument.settlement_currency();
 
@@ -379,7 +378,13 @@ impl AccountsManager {
                 }
 
                 if let Some(xrate) = base_xrate {
-                    locked = Money::new(locked.as_f64() * xrate, currency);
+                    locked = match Money::from_decimal(locked.as_decimal() * xrate, currency) {
+                        Ok(money) => money,
+                        Err(e) => {
+                            log::error!("Cannot calculate balance locked: {e}");
+                            return None;
+                        }
+                    };
                 } else {
                     log::error!(
                         "Cannot calculate balance locked: insufficient data for {}/{}",
@@ -419,8 +424,8 @@ impl AccountsManager {
         orders_open: &[&OrderAny],
         ts_event: UnixNanos,
     ) -> Option<AccountState> {
-        let mut total_margin_init = 0.0;
-        let mut base_xrate: Option<f64> = None;
+        let mut total_margin_init = Decimal::ZERO;
+        let mut base_xrate: Option<Decimal> = None;
         let mut currency = instrument.settlement_currency();
 
         for order in orders_open {
@@ -502,7 +507,7 @@ impl AccountsManager {
                     .ok()?,
             };
 
-            let mut margin_init = margin_init.as_f64();
+            let mut margin_init = margin_init.as_decimal();
 
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
@@ -525,7 +530,13 @@ impl AccountsManager {
             total_margin_init += margin_init;
         }
 
-        let money = Money::new(total_margin_init, currency);
+        let money = match Money::from_decimal(total_margin_init, currency) {
+            Ok(money) => money,
+            Err(e) => {
+                log::error!("Cannot calculate initial margin: {e}");
+                return None;
+            }
+        };
         let margin_init = {
             account.update_initial_margin(instrument.id(), money);
             money
@@ -549,7 +560,7 @@ impl AccountsManager {
         }
 
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
-        let mut base_xrate: Option<f64> = None;
+        let mut base_xrate: Option<Decimal> = None;
         let mut currency = instrument.settlement_currency();
 
         for order in orders_open {
@@ -592,7 +603,13 @@ impl AccountsManager {
                 }
 
                 if let Some(xrate) = base_xrate {
-                    locked = Money::new(locked.as_f64() * xrate, currency);
+                    locked = match Money::from_decimal(locked.as_decimal() * xrate, currency) {
+                        Ok(money) => money,
+                        Err(e) => {
+                            log::error!("Cannot calculate balance locked: {e}");
+                            return None;
+                        }
+                    };
                 } else {
                     log::error!(
                         "Cannot calculate balance locked: insufficient data for {}/{}",
@@ -655,7 +672,13 @@ impl AccountsManager {
             );
 
             if let Some(xrate) = xrate {
-                *comm = Money::new(comm.as_f64() * xrate, base_currency);
+                *comm = match Money::from_decimal(comm.as_decimal() * xrate, base_currency) {
+                    Ok(money) => money,
+                    Err(e) => {
+                        log::error!("Cannot calculate account state: {e}");
+                        return;
+                    }
+                };
             } else {
                 log::error!(
                     "Cannot calculate account state: insufficient data for {}/{}",
@@ -679,7 +702,13 @@ impl AccountsManager {
             );
 
             if let Some(xrate) = xrate {
-                pnl = Money::new(pnl.as_f64() * xrate, base_currency);
+                pnl = match Money::from_decimal(pnl.as_decimal() * xrate, base_currency) {
+                    Ok(money) => money,
+                    Err(e) => {
+                        log::error!("Cannot calculate account state: {e}");
+                        return;
+                    }
+                };
             } else {
                 log::error!(
                     "Cannot calculate account state: insufficient data for {}/{}",
@@ -960,9 +989,9 @@ impl AccountsManager {
         &self,
         base_currency: Option<Currency>,
         instrument: &InstrumentAny,
-    ) -> Option<f64> {
+    ) -> Option<Decimal> {
         match base_currency {
-            None => Some(1.0),
+            None => Some(Decimal::ONE),
             Some(base_curr) => self.cache.borrow().get_xrate(
                 instrument.id().venue,
                 instrument.settlement_currency(),

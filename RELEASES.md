@@ -61,6 +61,7 @@ Released on TBD (UTC).
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 
 ### Breaking Changes
+- Changed `nautilus_pyo3.get_exchange_rate` to return `decimal.Decimal` instead of `float`
 - Changed DeFi pool-event and snapshot types to require `ts_event`/`ts_init` timestamps (was optional `timestamp`)
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
 - Changed command `new` constructors to accept `correlation_id: Option<UUID4>`, pass `None` for old behavior (Rust)
@@ -138,6 +139,7 @@ Released on TBD (UTC).
 - Added Polymarket Criterion bench groups for inbound pipeline, exec pipeline, and signing (Rust)
 - Enabled `unreachable_pub` rustc lint workspace-wide to prevent dead public surface
 - Implemented OKX `DataClient::unsubscribe_instrument` override to silence missing-handler warning at teardown
+- Improved Portfolio calculations with `Decimal` arithmetic (Rust)
 - Improved `RiskEngine` per-order pre-trade checks to resolve each order's own instrument in mixed-instrument lists
 - Improved `ExecutionEngine` to route own-order-book inserts per order for mixed-instrument lists
 - Improved Binance Spot SBE missing credentials error message (#4092), thanks @filipmacek

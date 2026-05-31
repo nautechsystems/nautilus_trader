@@ -64,6 +64,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use crate::{
@@ -322,7 +323,11 @@ fn test_get_xrate_after_reset_follows_instrument_lifecycle(
         PriceType::Mid,
     );
 
-    assert_eq!(rate.is_some(), xrate_available);
+    if xrate_available {
+        assert_eq!(rate, Some(dec!(0.80005)));
+    } else {
+        assert_eq!(rate, None);
+    }
 }
 
 #[rstest]

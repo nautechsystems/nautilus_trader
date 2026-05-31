@@ -2,6 +2,7 @@
 # ruff: noqa: F401
 
 import datetime
+import decimal
 import enum
 import typing
 
@@ -1325,7 +1326,7 @@ def get_exchange_rate(
     price_type: model.PriceType,
     quotes_bid: typing.Mapping[str, float],
     quotes_ask: typing.Mapping[str, float],
-) -> float | None: ...
+) -> decimal.Decimal | None: ...
 def init_logging(
     trader_id: model.TraderId,
     instance_id: core.UUID4,

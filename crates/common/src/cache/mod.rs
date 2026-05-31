@@ -77,6 +77,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, PositionRefMut};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
@@ -5156,11 +5157,11 @@ impl Cache {
         from_currency: Currency,
         to_currency: Currency,
         price_type: PriceType,
-    ) -> Option<f64> {
+    ) -> Option<Decimal> {
         if from_currency == to_currency {
             // When the source and target currencies are identical,
-            // no conversion is needed; return an exchange rate of 1.0.
-            return Some(1.0);
+            // no conversion is needed; return an exchange rate of one.
+            return Some(Decimal::ONE);
         }
 
         let (bid_quote, ask_quote) = self.build_quote_table(&venue);
@@ -5180,7 +5181,10 @@ impl Cache {
         }
     }
 
-    fn build_quote_table(&self, venue: &Venue) -> (AHashMap<String, f64>, AHashMap<String, f64>) {
+    fn build_quote_table(
+        &self,
+        venue: &Venue,
+    ) -> (AHashMap<Ustr, Decimal>, AHashMap<Ustr, Decimal>) {
         let mut bid_quotes = AHashMap::new();
         let mut ask_quotes = AHashMap::new();
 
@@ -5228,8 +5232,8 @@ impl Cache {
                 }
             };
 
-            bid_quotes.insert(instrument_id.symbol.to_string(), bid_price.as_f64());
-            ask_quotes.insert(instrument_id.symbol.to_string(), ask_price.as_f64());
+            bid_quotes.insert(instrument_id.symbol.inner(), bid_price.as_decimal());
+            ask_quotes.insert(instrument_id.symbol.inner(), ask_price.as_decimal());
         }
 
         (bid_quotes, ask_quotes)
