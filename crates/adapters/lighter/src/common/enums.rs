@@ -80,20 +80,6 @@ pub enum LighterEnvironment {
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.lighter",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
-)]
 pub enum LighterProductType {
     /// Perpetual futures.
     Perp,
@@ -117,20 +103,6 @@ pub enum LighterProductType {
     Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.lighter",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
-)]
 pub enum LighterCandleResolution {
     /// One-minute candles.
     #[serde(rename = "1m")]
@@ -570,20 +542,6 @@ pub enum LighterTradeType {
     Copy, Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, Serialize_repr, Deserialize_repr,
 )]
 #[repr(u8)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.lighter",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
-)]
 pub enum LighterOrderType {
     Limit = 0,
     Market = 1,
@@ -647,20 +605,6 @@ impl TryFrom<OrderType> for LighterOrderType {
     Copy, Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, Serialize_repr, Deserialize_repr,
 )]
 #[repr(u8)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.lighter",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.lighter")
-)]
 pub enum LighterTimeInForce {
     /// Immediate-or-cancel.
     ImmediateOrCancel = 0,

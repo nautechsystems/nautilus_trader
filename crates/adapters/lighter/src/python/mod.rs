@@ -15,28 +15,30 @@
 
 //! Python bindings from `pyo3`.
 //!
-//! Lighter's Python surface is intentionally narrow: configuration, enums, and
-//! factories. Data and execution clients are consumed directly through the Rust
-//! trait surface and are not exposed to Python.
+//! Lighter's Python surface is intentionally narrow: configuration, environment
+//! selection, and factories. Data and execution clients are consumed directly
+//! through the Rust trait surface and are not exposed to Python.
 
 #![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]
 
+pub mod config;
+pub mod factories;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+        consts::{LIGHTER, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX},
         credential::Credential,
-        enums::{
-            LighterCandleResolution, LighterEnvironment, LighterOrderType, LighterProductType,
-            LighterTimeInForce,
-        },
+        enums::LighterEnvironment,
         urls::lighter_chain_id,
     },
     config::{LighterDataClientConfig, LighterExecClientConfig},
@@ -52,6 +54,58 @@ use crate::{
 };
 
 const TX_EXPIRY_MS: i64 = 5 * 60 * 1_000;
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_lighter_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<LighterDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract LighterDataClientFactory: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_lighter_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<LighterExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract LighterExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_lighter_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<LighterDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract LighterDataClientConfig: {e}"
+        ))),
+    }
+}
+
+#[expect(clippy::needless_pass_by_value)]
+fn extract_lighter_exec_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<LighterExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract LighterExecClientConfig: {e}"
+        ))),
+    }
+}
 
 async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow::Result<String> {
     let credential = Credential::resolve(None, None, None, environment)?
@@ -108,6 +162,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
 ///
 /// Returns a status string on the awaitable; raises on failure.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.lighter")]
 #[pyo3(name = "revoke_lighter_integrator", signature = (environment = LighterEnvironment::Mainnet))]
 fn py_revoke_lighter_integrator(
     py: Python<'_>,
@@ -124,15 +179,49 @@ fn py_revoke_lighter_integrator(
 /// Loaded as `nautilus_pyo3.lighter`.
 #[pymodule]
 pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(LIGHTER), LIGHTER)?;
     m.add_class::<LighterEnvironment>()?;
-    m.add_class::<LighterProductType>()?;
-    m.add_class::<LighterCandleResolution>()?;
-    m.add_class::<LighterOrderType>()?;
-    m.add_class::<LighterTimeInForce>()?;
     m.add_class::<LighterDataClientConfig>()?;
     m.add_class::<LighterExecClientConfig>()?;
     m.add_class::<LighterDataClientFactory>()?;
     m.add_class::<LighterExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_revoke_lighter_integrator, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor(LIGHTER.to_string(), extract_lighter_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Lighter data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_exec_factory_extractor(LIGHTER.to_string(), extract_lighter_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Lighter exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "LighterDataClientConfig".to_string(),
+        extract_lighter_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Lighter data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "LighterExecClientConfig".to_string(),
+        extract_lighter_exec_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Lighter exec config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }

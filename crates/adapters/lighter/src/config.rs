@@ -141,7 +141,7 @@ fn env_var_is_set(name: &str) -> bool {
 }
 
 /// Configuration for the Lighter execution client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
@@ -192,6 +192,27 @@ pub struct LighterExecClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+}
+
+impl Debug for LighterExecClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(LighterExecClientConfig))
+            .field("trader_id", &self.trader_id)
+            .field("account_id", &self.account_id)
+            .field("account_index", &self.account_index)
+            .field("api_key_index", &self.api_key_index)
+            .field("private_key", &self.private_key.as_ref().map(|_| REDACTED))
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws", &self.base_url_ws)
+            .field("proxy_url", &self.proxy_url)
+            .field("environment", &self.environment)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("ws_timeout_secs", &self.ws_timeout_secs)
+            .field("active_markets", &self.active_markets)
+            .field("market_order_slippage_bps", &self.market_order_slippage_bps)
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
 }
 
 impl LighterExecClientConfig {
@@ -269,6 +290,31 @@ mod tests {
         let dbg_out = format!("{config:?}");
 
         assert!(dbg_out.contains("private_key: None"));
+    }
+
+    #[rstest]
+    fn exec_config_debug_redacts_private_key() {
+        let config = LighterExecClientConfig {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("LIGHTER-001"),
+            api_key_index: Some(5),
+            account_index: Some(12_345),
+            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            base_url_http: None,
+            base_url_ws: None,
+            proxy_url: None,
+            environment: LighterEnvironment::Mainnet,
+            http_timeout_secs: 60,
+            ws_timeout_secs: 30,
+            active_markets: Vec::new(),
+            market_order_slippage_bps: 50,
+            transport_backend: TransportBackend::default(),
+        };
+
+        let dbg_out = format!("{config:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains(PRIVATE_KEY_HEX));
     }
 
     // Tests that observe the `env_var_is_set` fallback live in the workspace

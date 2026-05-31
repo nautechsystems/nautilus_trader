@@ -21,22 +21,49 @@ The adapter consists of the following main components:
   modification, cancellation, and reconciliation reports.
 - `LighterDataClientFactory` and `LighterExecutionClientFactory`: live-node factory wiring.
 
-The Python surface is intentionally narrow. The Python extension exposes configuration, enums,
-factory classes, and integrator revocation; data and execution clients are consumed through the Rust
-trait surface.
+The Python surface is intentionally narrow. The Python extension exposes configuration,
+environment selection, factory classes, and integrator revocation; data and execution clients are
+consumed through the Rust trait surface.
 
 ## Examples
 
-The crate includes Rust examples behind the `examples` feature:
+The adapter includes Python v2 and Rust live-node examples. The Python examples live in
+[`python/examples/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/lighter/)
+and default to a dry build: they build the node, register the tester, and exit unless `--run` is
+passed.
 
-```bash
+```fish
+cd python
+.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/lighter/exec_tester.py --lighter-environment testnet
+```
+
+Pass `--run` to connect to Lighter. The execution tester remains in `dry_run` mode unless
+`--live-orders` is also passed.
+
+```fish
+cd python
+.venv/bin/python examples/lighter/data_tester.py \
+    --lighter-environment mainnet \
+    --instrument BTC-PERP.LIGHTER \
+    --run
+.venv/bin/python examples/lighter/exec_tester.py \
+    --lighter-environment mainnet \
+    --instrument DOGE-PERP.LIGHTER \
+    --run
+```
+
+Rust examples live under `crates/adapters/lighter/examples/` and run immediately:
+
+```fish
 cargo run --example lighter-data-tester --package nautilus-lighter --features examples
 cargo run --example lighter-exec-tester --package nautilus-lighter --features examples
 ```
 
 :::warning
-Execution examples submit live orders when pointed at a funded mainnet account. Review the selected
-instrument, quantity, and environment before running them.
+Examples can connect to live venues. Execution examples with live order flow enabled can submit
+orders when pointed at a funded mainnet account. Review the selected instrument, quantity, and
+environment before running them.
 :::
 
 ## Product support

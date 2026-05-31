@@ -23,6 +23,7 @@ from . import hyperliquid
 from . import indicators
 from . import infrastructure
 from . import kraken
+from . import lighter
 from . import live
 from . import model
 from . import network
@@ -59,6 +60,7 @@ __all__ = [
     "indicators",
     "infrastructure",
     "kraken",
+    "lighter",
     "live",
     "model",
     "network",
