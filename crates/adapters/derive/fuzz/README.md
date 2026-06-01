@@ -8,13 +8,18 @@ Run them when the Derive wire models, parsers, signing payloads, or nonce manage
 
 ## Setup
 
+Start from the repository root so the workspace-pinned tools are installed:
+
 ```bash
-cargo install cargo-fuzz
+cargo install cargo-binstall --locked
+make install-tools
 rustup toolchain install nightly
 ```
 
-`cargo-fuzz` requires a nightly toolchain because `libfuzzer-sys` uses unstable compiler flags. The
-fuzz crate is a standalone workspace so the parent stable build stays unchanged.
+`make install-tools` installs the `cargo-fuzz` version pinned in the root `Cargo.toml` under
+`[workspace.metadata.tools]`. `cargo-fuzz` requires a nightly toolchain because `libfuzzer-sys` uses
+unstable compiler flags. The fuzz crate is a standalone workspace so the parent stable build stays
+unchanged.
 
 ## Targets
 

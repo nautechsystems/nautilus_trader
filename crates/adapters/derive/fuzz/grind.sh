@@ -8,7 +8,7 @@ per_target_secs="${1:-300}"
 filter="${2:-}"
 
 if ! command -v cargo-fuzz > /dev/null 2>&1; then
-  echo "cargo-fuzz not installed. Run \`cargo install cargo-fuzz\`." >&2
+  echo "cargo-fuzz not installed. Run \`make install-tools\` from the repo root." >&2
   exit 1
 fi
 

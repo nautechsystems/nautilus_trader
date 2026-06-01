@@ -31,14 +31,18 @@ changes; especially before relying on the signer against a live venue.
 
 ## Setup
 
+Start from the repository root so the workspace-pinned tools are installed:
+
 ```bash
-cargo install cargo-fuzz
+cargo install cargo-binstall --locked
+make install-tools
 rustup toolchain install nightly
 ```
 
-`cargo-fuzz` requires a nightly toolchain because the underlying
-`libfuzzer-sys` runtime depends on unstable compiler flags. The fuzz crate
-is a standalone workspace, so it does not affect the parent stable build.
+`make install-tools` installs the `cargo-fuzz` version pinned in the root `Cargo.toml` under
+`[workspace.metadata.tools]`. `cargo-fuzz` requires a nightly toolchain because the underlying
+`libfuzzer-sys` runtime depends on unstable compiler flags. The fuzz crate is a standalone
+workspace, so it does not affect the parent stable build.
 
 ## Targets
 
@@ -84,9 +88,8 @@ gitignored.
 ## Grind mode
 
 For long idle sessions (e.g. an hour or overnight), `./grind.sh` round-robins
-across every target with a per-slice budget. Spreads the wall time across
-the seven attack surfaces instead of pegging one. Bails on the first crash
-and points at the artifact.
+across every target with a per-slice budget. Spreads the wall time across the registered attack
+surfaces instead of pegging one. Bails on the first crash and points at the artifact.
 
 ```bash
 # 5-minute slice per target, cycle forever (default)

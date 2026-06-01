@@ -80,6 +80,12 @@ gated by independent layers:
 Round-trip testing against Lighter itself remains the final correctness
 gate for what the sequencer accepts.
 
+## Fuzzing
+
+Coverage-guided fuzz targets for the L2 signer live in [`fuzz/`](fuzz/README.md). They require the
+workspace-pinned `cargo-fuzz` binary and a Rust nightly toolchain; install them from the repository
+root with `make install-tools` and `rustup toolchain install nightly`.
+
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-lighter) for more detailed usage.

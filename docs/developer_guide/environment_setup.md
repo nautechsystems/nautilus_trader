@@ -105,14 +105,21 @@ make install-tools
 This installs:
 
 - **Cargo CLIs** pinned in `Cargo.toml` under `[workspace.metadata.tools]`: `cargo-audit`,
-  `cargo-deny`, `cargo-edit`, `cargo-llvm-cov`, `cargo-machete`, `cargo-nextest`, `cargo-vet`,
-  `lychee`.
+  `cargo-deny`, `cargo-edit`, `cargo-fuzz`, `cargo-llvm-cov`, `cargo-machete`, `cargo-nextest`,
+  `cargo-vet`, `flamegraph`, `lychee`.
 - **Prebuilt binaries** pinned in `tools.toml`: `prek` (pre-commit runner) and `osv-scanner`
   (vulnerability scanner).
 - **uv**, synced to the version required by `pyproject.toml`.
 
 Cap'n Proto is also pinned in `tools.toml` but installs separately; see the [Cap'n Proto](#capn-proto)
 section below.
+
+Fuzz targets also require a Rust nightly toolchain at runtime because `cargo-fuzz` uses
+`libfuzzer-sys` and unstable compiler flags:
+
+```bash
+rustup toolchain install nightly
+```
 
 #### One-off prerequisite: cargo-binstall
 
