@@ -932,12 +932,12 @@ pub fn parse_account_balances_and_margins(
         None => return Ok((balances, margins)),
     };
 
-    let mut total_value = cross_margin_summary.total_raw_usd.max(Decimal::ZERO);
+    let mut total_value = cross_margin_summary.total_raw_usd;
     let free_value = state.withdrawable.unwrap_or(total_value).max(Decimal::ZERO);
 
-    // Withdrawable may include spot balances that sit outside the margin account value;
-    // raise total so those funds are not silently clamped away. Mirrors the HTTP parser.
-    if free_value > total_value {
+    // Withdrawable may include spot balances that sit outside a positive margin
+    // account value; raise total so those funds are not silently clamped away.
+    if total_value >= Decimal::ZERO && free_value > total_value {
         total_value = free_value;
     }
 
@@ -2046,7 +2046,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_account_balances_bumps_total_when_withdrawable_exceeds() {
+    fn test_parse_account_balances_preserves_negative_total_raw_usd() {
+        let json =
+            include_str!("../../test_data/http_clearinghouse_state_negative_total_raw_usd.json");
+
+        let state: ClearinghouseState = serde_json::from_str(json).unwrap();
+        let (balances, margins) = parse_account_balances_and_margins(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        assert_eq!(balance.total.as_decimal(), dec!(-22358.938225));
+        assert_eq!(balance.free.as_decimal(), dec!(772.232111));
+        assert_eq!(balance.locked.as_decimal(), dec!(-23131.170336));
+
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(963.798764));
+    }
+
+    #[rstest]
+    fn test_parse_account_balances_bumps_positive_total_when_withdrawable_exceeds() {
         let json = r#"{
             "assetPositions": [],
             "crossMarginSummary": {
