@@ -112,6 +112,10 @@ from nautilus_trader.trading import Strategy
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
+def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
+    return [f"{key}={summary[key]}" for key in sorted(summary)]
+
+
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
@@ -1063,6 +1067,59 @@ def test_correct_account_balance_from_issue_2632() -> None:
     assert account.balance_free(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_locked(USDT) == Money(0, USDT)
 
+    result = engine.get_result()
+    snapshot_positions = len(engine.cache.position_snapshots())
+    assert result.summary["iterations"] == str(engine.iteration)
+    assert result.summary["total_events"] == str(engine.kernel.exec_engine.event_count)
+    assert result.summary["orders.total"] == str(engine.cache.orders_total_count())
+    assert result.summary["orders.open"] == str(engine.cache.orders_open_count())
+    assert result.summary["orders.closed"] == str(engine.cache.orders_closed_count())
+    assert result.summary["orders.emulated"] == str(engine.cache.orders_emulated_count())
+    assert result.summary["orders.inflight"] == str(engine.cache.orders_inflight_count())
+    assert result.summary["positions.total"] == str(engine.cache.positions_total_count())
+    assert result.summary["positions.open"] == str(engine.cache.positions_open_count())
+    assert result.summary["positions.closed"] == str(engine.cache.positions_closed_count())
+    assert result.summary["positions.snapshots"] == str(snapshot_positions)
+    assert result.summary["positions.total_with_snapshots"] == str(
+        engine.cache.positions_total_count() + snapshot_positions,
+    )
+    assert result.summary["venues.total"] == "1"
+    assert result.summary["account.BINANCE.id"] == str(account.id)
+    assert result.summary["account.BINANCE.type"] == "MARGIN"
+    assert result.summary["account.BINANCE.base_currency"] == "USDT"
+    assert result.summary["account.BINANCE.event_count"] == str(account.event_count)
+    assert result.summary["account.BINANCE.balance.USDT.total"] == str(
+        account.balance_total(USDT),
+    )
+    assert result.summary["account.BINANCE.balance.USDT.free"] == str(
+        account.balance_free(USDT),
+    )
+    assert result.summary["account.BINANCE.balance.USDT.locked"] == str(
+        account.balance_locked(USDT),
+    )
+    assert _canonical_summary_lines(result.summary) == [
+        "account.BINANCE.balance.USDT.free=1000245.87500000 USDT",
+        "account.BINANCE.balance.USDT.locked=0.00000000 USDT",
+        "account.BINANCE.balance.USDT.total=1000245.87500000 USDT",
+        "account.BINANCE.base_currency=USDT",
+        "account.BINANCE.event_count=3",
+        "account.BINANCE.id=BINANCE-001",
+        "account.BINANCE.type=MARGIN",
+        "iterations=120",
+        "orders.closed=2",
+        "orders.emulated=0",
+        "orders.inflight=0",
+        "orders.open=0",
+        "orders.total=2",
+        "positions.closed=1",
+        "positions.open=0",
+        "positions.snapshots=0",
+        "positions.total=1",
+        "positions.total_with_snapshots=1",
+        "total_events=4",
+        "venues.total=1",
+    ]
+
 
 class TestBacktestPnLAlignmentAcceptance:
     """
@@ -1266,6 +1323,14 @@ class TestBacktestPnLAlignmentAcceptance:
         # In NETTING mode, we expect snapshots for closed position cycles
         assert len(snapshots) >= 2, (
             f"Should have at least 2 snapshots in NETTING mode, was {len(snapshots)}"
+        )
+        result = engine.get_result()
+        positions_total = engine.cache.positions_total_count()
+        total_positions_with_snapshots = positions_total + len(snapshots)
+        assert total_positions_with_snapshots > positions_total
+        assert result.summary["positions.snapshots"] == str(len(snapshots))
+        assert result.summary["positions.total_with_snapshots"] == str(
+            total_positions_with_snapshots,
         )
         assert len(positions_report) >= 3, (
             f"Should have at least 3 position entries, was {len(positions_report)}"

@@ -36,6 +36,7 @@ class BacktestResult:
     total_events: int
     total_orders: int
     total_positions: int
+    summary: dict[str, str]
     stats_pnls: dict[str, dict[str, float]]
     stats_returns: dict[str, float]
 

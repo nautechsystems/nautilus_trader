@@ -40,7 +40,7 @@ use nautilus_indicators::{
     indicator::{Indicator, MovingAverage},
 };
 use nautilus_model::{
-    accounts::AccountAny,
+    accounts::{Account, AccountAny},
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, MarkPriceUpdate,
         OrderBookDelta, QuoteTick, TradeTick,
@@ -1329,6 +1329,89 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.ts_event, UnixNanos::from(4_000_000_000));
     assert_eq!(position.realized_pnl, Some(Money::from("-1.4004 USDT")));
     assert_eq!(balance.total, Money::from("999998.5996 USDT"));
+
+    let result = engine.get_result();
+    assert_eq!(result.summary["iterations"], result.iterations.to_string());
+    assert_eq!(
+        result.summary["total_events"],
+        result.total_events.to_string()
+    );
+    assert_eq!(
+        result.summary["orders.total"],
+        result.total_orders.to_string(),
+    );
+    assert_eq!(
+        result.summary["orders.open"],
+        cache
+            .orders_open_count(None, None, None, None, None)
+            .to_string()
+    );
+    assert_eq!(
+        result.summary["orders.closed"],
+        cache
+            .orders_closed_count(None, None, None, None, None)
+            .to_string()
+    );
+    assert_eq!(
+        result.summary["orders.emulated"],
+        cache
+            .orders_emulated_count(None, None, None, None, None)
+            .to_string()
+    );
+    assert_eq!(
+        result.summary["orders.inflight"],
+        cache
+            .orders_inflight_count(None, None, None, None, None)
+            .to_string()
+    );
+    assert_eq!(
+        result.summary["positions.total"],
+        result.total_positions.to_string(),
+    );
+    assert_eq!(
+        result.summary["positions.open"],
+        cache
+            .positions_open_count(None, None, None, None, None)
+            .to_string()
+    );
+    assert_eq!(
+        result.summary["positions.closed"],
+        cache
+            .positions_closed_count(None, None, None, None, None)
+            .to_string()
+    );
+    let snapshot_positions = cache.position_snapshots(None, None).len();
+    assert_eq!(
+        result.summary["positions.snapshots"],
+        snapshot_positions.to_string()
+    );
+    assert_eq!(
+        result.summary["positions.total_with_snapshots"],
+        (result.total_positions + snapshot_positions).to_string()
+    );
+    assert_eq!(result.summary["venues.total"], "1");
+    assert_eq!(
+        result.summary["account.BINANCE.id"],
+        account.id().to_string()
+    );
+    assert_eq!(result.summary["account.BINANCE.type"], "MARGIN");
+    assert_eq!(result.summary["account.BINANCE.base_currency"], "None");
+    assert_eq!(
+        result.summary["account.BINANCE.event_count"],
+        account.event_count().to_string()
+    );
+    assert_eq!(
+        result.summary["account.BINANCE.balance.USDT.total"],
+        balance.total.to_string(),
+    );
+    assert_eq!(
+        result.summary["account.BINANCE.balance.USDT.free"],
+        balance.free.to_string(),
+    );
+    assert_eq!(
+        result.summary["account.BINANCE.balance.USDT.locked"],
+        balance.locked.to_string(),
+    );
 }
 
 #[rstest]
@@ -1356,7 +1439,13 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     engine.run(None, None, None, false).unwrap();
 
     let cache_rc = engine.kernel().cache();
-    let (expected_total, cache_realized_count, snapshots_realized, snapshots_realized_count) = {
+    let (
+        expected_total,
+        cache_realized_count,
+        snapshots_realized,
+        snapshots_realized_count,
+        snapshot_positions_count,
+    ) = {
         let cache = cache_rc.borrow();
         let positions = cache.positions(None, None, None, None, None);
 
@@ -1373,6 +1462,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
             .iter()
             .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
             .collect();
+        let snapshot_positions_count = snapshot_positions.len();
         let snapshots_realized: f64 = snapshot_positions
             .iter()
             .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
@@ -1383,6 +1473,10 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
             .count() as f64;
 
         assert!(
+            snapshot_positions_count > 0,
+            "expected non-zero snapshot position count"
+        );
+        assert!(
             snapshots_realized.abs() > 0.0,
             "expected non-zero snapshot realized history"
         );
@@ -1392,12 +1486,24 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
             cache_realized_count,
             snapshots_realized,
             snapshots_realized_count,
+            snapshot_positions_count,
         )
     };
 
     let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
 
     let bt_result = engine.get_result();
+    let total_positions_with_snapshots = bt_result.total_positions + snapshot_positions_count;
+    assert_eq!(
+        bt_result.summary["positions.snapshots"],
+        snapshot_positions_count.to_string()
+    );
+    assert_eq!(
+        bt_result.summary["positions.total_with_snapshots"],
+        total_positions_with_snapshots.to_string()
+    );
+    assert!(total_positions_with_snapshots > bt_result.total_positions);
+
     let expectancy = bt_result
         .stats_pnls
         .values()

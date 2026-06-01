@@ -995,6 +995,14 @@ impl BacktestEngine {
             .map(|p| p.cloned())
             .collect();
         let total_positions = positions.len();
+        let snapshot_positions = cache.position_snapshots(None, None).len();
+        let summary = self.build_result_summary(
+            &cache,
+            total_events,
+            total_orders,
+            total_positions,
+            snapshot_positions,
+        );
 
         let analyzer = self.build_analyzer(&cache, &positions);
         let mut stats_pnls = AHashMap::new();
@@ -1023,10 +1031,110 @@ impl BacktestEngine {
             total_events,
             total_orders,
             total_positions,
+            summary,
             stats_pnls,
             stats_returns,
             stats_general,
         }
+    }
+
+    fn build_result_summary(
+        &self,
+        cache: &Cache,
+        total_events: usize,
+        total_orders: usize,
+        total_positions: usize,
+        snapshot_positions: usize,
+    ) -> AHashMap<String, String> {
+        let mut summary = AHashMap::new();
+        summary.insert("iterations".to_string(), self.iteration.to_string());
+        summary.insert("total_events".to_string(), total_events.to_string());
+        summary.insert("orders.total".to_string(), total_orders.to_string());
+        summary.insert(
+            "orders.open".to_string(),
+            cache
+                .orders_open_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert(
+            "orders.closed".to_string(),
+            cache
+                .orders_closed_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert(
+            "orders.emulated".to_string(),
+            cache
+                .orders_emulated_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert(
+            "orders.inflight".to_string(),
+            cache
+                .orders_inflight_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert("positions.total".to_string(), total_positions.to_string());
+        summary.insert(
+            "positions.open".to_string(),
+            cache
+                .positions_open_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert(
+            "positions.closed".to_string(),
+            cache
+                .positions_closed_count(None, None, None, None, None)
+                .to_string(),
+        );
+        summary.insert(
+            "positions.snapshots".to_string(),
+            snapshot_positions.to_string(),
+        );
+        summary.insert(
+            "positions.total_with_snapshots".to_string(),
+            (total_positions + snapshot_positions).to_string(),
+        );
+
+        let mut venues: Vec<Venue> = self.venues.keys().copied().collect();
+        venues.sort_by_key(ToString::to_string);
+        summary.insert("venues.total".to_string(), venues.len().to_string());
+
+        for venue in venues {
+            let Some(account) = cache.account_for_venue(&venue) else {
+                continue;
+            };
+
+            let venue_key = venue.to_string();
+            let account_key = format!("account.{venue_key}");
+            summary.insert(format!("{account_key}.id"), account.id().to_string());
+            summary.insert(
+                format!("{account_key}.type"),
+                account.account_type().to_string(),
+            );
+            summary.insert(
+                format!("{account_key}.base_currency"),
+                account
+                    .base_currency()
+                    .map_or_else(|| "None".to_string(), |currency| currency.code.to_string()),
+            );
+            summary.insert(
+                format!("{account_key}.event_count"),
+                account.event_count().to_string(),
+            );
+
+            let mut balances: Vec<_> = account.balances().into_iter().collect();
+            balances.sort_by_key(|(currency, _)| currency.code.to_string());
+
+            for (currency, balance) in balances {
+                let balance_key = format!("{account_key}.balance.{}", currency.code);
+                summary.insert(format!("{balance_key}.total"), balance.total.to_string());
+                summary.insert(format!("{balance_key}.free"), balance.free.to_string());
+                summary.insert(format!("{balance_key}.locked"), balance.locked.to_string());
+            }
+        }
+
+        summary
     }
 
     fn build_analyzer(&self, cache: &Cache, positions: &[Position]) -> PortfolioAnalyzer {

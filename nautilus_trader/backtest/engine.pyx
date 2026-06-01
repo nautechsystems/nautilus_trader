@@ -1465,9 +1465,69 @@ cdef class BacktestEngine:
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
             total_positions=len(self._kernel.cache.positions()) + len(self._kernel.cache.position_snapshots()),
+            summary=self._get_result_summary(),
             stats_pnls=stats_pnls,
             stats_returns=self._kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
+
+    cdef dict _get_result_summary(self):
+        cdef:
+            dict summary = {}
+            object cache = self._kernel.cache
+            int snapshot_positions = len(cache.position_snapshots())
+            object venue
+            object account
+            object currency
+            object balance
+            object base_currency
+            object venues
+            str venue_key
+            str account_key
+            str balance_key
+
+        summary["iterations"] = str(self._iteration)
+        summary["total_events"] = str(self._kernel.exec_engine.event_count)
+        summary["orders.total"] = str(cache.orders_total_count())
+        summary["orders.open"] = str(cache.orders_open_count())
+        summary["orders.closed"] = str(cache.orders_closed_count())
+        summary["orders.emulated"] = str(cache.orders_emulated_count())
+        summary["orders.inflight"] = str(cache.orders_inflight_count())
+        summary["positions.total"] = str(cache.positions_total_count())
+        summary["positions.open"] = str(cache.positions_open_count())
+        summary["positions.closed"] = str(cache.positions_closed_count())
+        summary["positions.snapshots"] = str(snapshot_positions)
+        summary["positions.total_with_snapshots"] = str(
+            cache.positions_total_count() + snapshot_positions,
+        )
+
+        venues = sorted(self._venues.keys(), key=str)
+        summary["venues.total"] = str(len(venues))
+
+        for venue in venues:
+            account = cache.account_for_venue(venue)
+            if account is None:
+                continue
+
+            venue_key = str(venue)
+            account_key = f"account.{venue_key}"
+            summary[f"{account_key}.id"] = str(account.id)
+            summary[f"{account_key}.type"] = account_type_to_str(account.type)
+            base_currency = account.base_currency
+            summary[f"{account_key}.base_currency"] = (
+                base_currency.code if base_currency is not None else "None"
+            )
+            summary[f"{account_key}.event_count"] = str(account.event_count)
+
+            for currency, balance in sorted(
+                account.balances().items(),
+                key=lambda item: item[0].code,
+            ):
+                balance_key = f"{account_key}.balance.{currency.code}"
+                summary[f"{balance_key}.total"] = str(balance.total)
+                summary[f"{balance_key}.free"] = str(balance.free)
+                summary[f"{balance_key}.locked"] = str(balance.locked)
+
+        return summary
 
     def _run(
         self,

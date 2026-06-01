@@ -19,10 +19,12 @@ This suite mirrors the v1 acceptance suite under `tests/acceptance_tests/test_ba
 so we can validate v2 feature parity. Tests that depend on v2 features that have not yet
 been ported are marked with `pytest.skip` and a `v2 missing: ...` reason.
 
-Magic-number assertions from the v1 suite (msgbus counts, exact balances) are not
+Most magic-number assertions from the v1 suite (msgbus counts, exact balances) are not
 replicated since v2's runtime has different internal counters; instead we assert on the
 publicly-exposed `BacktestResult` (iterations, total_orders, total_positions,
-total_events) and broad invariants (e.g. balance moved, ran without error).
+total_events) and broad invariants (e.g. balance moved, ran without error). Tests may
+pin exact values when the value itself is the public output contract under test, such as
+`BacktestResult.summary`.
 
 """
 
@@ -108,6 +110,10 @@ def _ema_config(instrument_id, bar_type, trade_size="1000000", fast=10, slow=20)
             "slow_ema_period": slow,
         },
     )
+
+
+def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
+    return [f"{key}={summary[key]}" for key in sorted(summary)]
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -560,6 +566,61 @@ def test_correct_account_balance_from_issue_2632():
     assert result.total_orders == 2
     assert result.total_positions >= 1
 
+    account = engine.cache.account_for_venue(venue)
+    assert account is not None
+    usdt = Currency.from_str("USDT")
+    snapshot_positions = len(engine.cache.position_snapshots())
+    assert result.summary["iterations"] == str(result.iterations)
+    assert result.summary["total_events"] == str(result.total_events)
+    assert result.summary["orders.total"] == str(engine.cache.orders_total_count())
+    assert result.summary["orders.open"] == str(engine.cache.orders_open_count())
+    assert result.summary["orders.closed"] == str(engine.cache.orders_closed_count())
+    assert result.summary["orders.emulated"] == str(engine.cache.orders_emulated_count())
+    assert result.summary["orders.inflight"] == str(engine.cache.orders_inflight_count())
+    assert result.summary["positions.total"] == str(engine.cache.positions_total_count())
+    assert result.summary["positions.open"] == str(engine.cache.positions_open_count())
+    assert result.summary["positions.closed"] == str(engine.cache.positions_closed_count())
+    assert result.summary["positions.snapshots"] == str(snapshot_positions)
+    assert result.summary["positions.total_with_snapshots"] == str(
+        engine.cache.positions_total_count() + snapshot_positions,
+    )
+    assert result.summary["venues.total"] == "1"
+    assert result.summary["account.BINANCE.id"] == str(account.id)
+    assert result.summary["account.BINANCE.type"] == "MARGIN"
+    assert result.summary["account.BINANCE.base_currency"] == "USDT"
+    assert result.summary["account.BINANCE.event_count"] == str(account.event_count)
+    assert result.summary["account.BINANCE.balance.USDT.total"] == str(
+        account.balance_total(usdt),
+    )
+    assert result.summary["account.BINANCE.balance.USDT.free"] == str(
+        account.balance_free(usdt),
+    )
+    assert result.summary["account.BINANCE.balance.USDT.locked"] == str(
+        account.balance_locked(usdt),
+    )
+    assert _canonical_summary_lines(result.summary) == [
+        "account.BINANCE.balance.USDT.free=1000542.91500000 USDT",
+        "account.BINANCE.balance.USDT.locked=0.00000000 USDT",
+        "account.BINANCE.balance.USDT.total=1000542.91500000 USDT",
+        "account.BINANCE.base_currency=USDT",
+        "account.BINANCE.event_count=3",
+        "account.BINANCE.id=BINANCE-001",
+        "account.BINANCE.type=MARGIN",
+        "iterations=120",
+        "orders.closed=2",
+        "orders.emulated=0",
+        "orders.inflight=0",
+        "orders.open=0",
+        "orders.total=2",
+        "positions.closed=1",
+        "positions.open=0",
+        "positions.snapshots=0",
+        "positions.total=1",
+        "positions.total_with_snapshots=1",
+        "total_events=6",
+        "venues.total=1",
+    ]
+
     engine.dispose()
 
 
@@ -652,6 +713,15 @@ class TestBacktestPnLAlignmentAcceptance:
         assert result.iterations == 70
         assert result.total_orders == len(actions)
         assert result.total_positions >= 1
+        snapshot_positions = len(engine.cache.position_snapshots())
+        positions_total = engine.cache.positions_total_count()
+        total_positions_with_snapshots = positions_total + snapshot_positions
+        assert snapshot_positions > 0
+        assert total_positions_with_snapshots > positions_total
+        assert result.summary["positions.snapshots"] == str(snapshot_positions)
+        assert result.summary["positions.total_with_snapshots"] == str(
+            total_positions_with_snapshots,
+        )
         engine.dispose()
 
     def test_pnl_alignment_position_flips(self):
