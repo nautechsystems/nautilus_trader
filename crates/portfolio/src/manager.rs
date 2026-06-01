@@ -22,8 +22,9 @@ use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount},
-    enums::{AccountType, OrderSide, PriceType},
+    enums::{AccountType, OrderSide, OrderType, PriceType},
     events::{AccountState, OrderFilled},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::{Position, fold_net_position},
@@ -810,12 +811,20 @@ impl AccountsManager {
 
             let new_balance = if let Some(balance) = balances.get(&currency) {
                 let new_total = balance.total.as_decimal() + pnl.as_decimal();
+                let mut new_locked = balance.locked.as_decimal();
 
-                match AccountBalance::from_total_and_locked(
-                    new_total,
-                    balance.locked.as_decimal(),
-                    currency,
-                ) {
+                if pnl.as_decimal() < Decimal::ZERO
+                    && fill.order_type != OrderType::Market
+                    && !self.is_sports_betting_fill(fill.instrument_id)
+                {
+                    new_locked += pnl.as_decimal();
+
+                    if new_locked < Decimal::ZERO {
+                        new_locked = Decimal::ZERO;
+                    }
+                }
+
+                match AccountBalance::from_total_and_locked(new_total, new_locked, currency) {
                     Ok(new_balance) => new_balance,
                     Err(e) => {
                         log::error!("Cannot update {currency} balance: {e}");
@@ -910,6 +919,13 @@ impl AccountsManager {
                 }
             }
         }
+    }
+
+    fn is_sports_betting_fill(&self, instrument_id: InstrumentId) -> bool {
+        self.cache
+            .borrow()
+            .instrument(&instrument_id)
+            .is_some_and(|instrument| matches!(instrument, InstrumentAny::Betting(_)))
     }
 
     fn generate_account_state(&self, account: &AccountAny, ts_event: UnixNanos) -> AccountState {
@@ -1865,6 +1881,54 @@ mod tests {
             .build()
     }
 
+    fn multi_currency_cash_account_with_usd_locked(total: f64, locked: f64) -> CashAccount {
+        multi_currency_cash_account_with_usd_locked_and_borrowing(total, locked, false)
+    }
+
+    fn multi_currency_cash_account_with_usd_locked_and_borrowing(
+        total: f64,
+        locked: f64,
+        allow_borrowing: bool,
+    ) -> CashAccount {
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(total, usd),
+                Money::new(locked, usd),
+                Money::new(total - locked, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        CashAccount::new(account_state, true, allow_borrowing)
+    }
+
+    fn multi_currency_betting_account_with_gbp_locked(total: f64, locked: f64) -> BettingAccount {
+        let gbp = Currency::GBP();
+        let account_state = AccountState::new(
+            AccountId::new("BETFAIR-001"),
+            AccountType::Betting,
+            vec![AccountBalance::new(
+                Money::new(total, gbp),
+                Money::new(locked, gbp),
+                Money::new(total - locked, gbp),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        BettingAccount::new(account_state, true)
+    }
+
     fn order_submitted_for(order: &OrderAny) -> OrderSubmitted {
         OrderSubmittedSpec::builder()
             .trader_id(order.trader_id())
@@ -1907,6 +1971,188 @@ mod tests {
             .venue_order_id(venue_order_id)
             .account_id(account_id)
             .build()
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_market_debit_keeps_locked_balance() {
+        let usd = Currency::USD();
+        let account = multi_currency_cash_account_with_usd_locked(1_000.0, 200.0);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_type(OrderType::Market)
+            .commission(Money::new(20.0, usd))
+            .build();
+        let mut account = AccountAny::Cash(account);
+        let mut pnls = vec![Money::new(-100.0, usd)];
+
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        match account {
+            AccountAny::Cash(cash) => {
+                assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(880.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(200.0, usd)));
+                assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(680.0, usd)));
+                assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
+            }
+            _ => panic!("Expected CashAccount"),
+        }
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_limit_debit_reduces_locked_balance() {
+        let usd = Currency::USD();
+        let account = multi_currency_cash_account_with_usd_locked(1_000.0, 200.0);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_type(OrderType::Limit)
+            .commission(Money::new(20.0, usd))
+            .build();
+        let mut account = AccountAny::Cash(account);
+        let mut pnls = vec![Money::new(-100.0, usd)];
+
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        match account {
+            AccountAny::Cash(cash) => {
+                assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(880.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(80.0, usd)));
+                assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(800.0, usd)));
+                assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
+            }
+            _ => panic!("Expected CashAccount"),
+        }
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_limit_debit_spills_from_locked_to_free() {
+        let usd = Currency::USD();
+        let account = multi_currency_cash_account_with_usd_locked(1_000.0, 50.0);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_type(OrderType::Limit)
+            .commission(Money::new(20.0, usd))
+            .build();
+        let mut account = AccountAny::Cash(account);
+        let mut pnls = vec![Money::new(-100.0, usd)];
+
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        match account {
+            AccountAny::Cash(cash) => {
+                assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(880.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+                assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(880.0, usd)));
+                assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
+            }
+            _ => panic!("Expected CashAccount"),
+        }
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_limit_debit_floors_locked_on_negative_total() {
+        let usd = Currency::USD();
+        let account = multi_currency_cash_account_with_usd_locked_and_borrowing(100.0, 50.0, true);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_type(OrderType::Limit)
+            .commission(Money::new(20.0, usd))
+            .build();
+        let mut account = AccountAny::Cash(account);
+        let mut pnls = vec![Money::new(-200.0, usd)];
+
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        match account {
+            AccountAny::Cash(cash) => {
+                assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(-120.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+                assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(-120.0, usd)));
+                assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
+            }
+            _ => panic!("Expected CashAccount"),
+        }
+    }
+
+    #[rstest]
+    fn test_update_balance_multi_currency_betting_limit_debit_keeps_locked_balance() {
+        let gbp = Currency::GBP();
+        let account = multi_currency_betting_account_with_gbp_locked(1_000.0, 200.0);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let instrument = betting();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Betting(instrument.clone()))
+            .unwrap();
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_type(OrderType::Limit)
+            .commission(Money::new(20.0, gbp))
+            .build();
+        let mut account = AccountAny::Betting(account);
+        let mut pnls = vec![Money::new(-100.0, gbp)];
+
+        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+
+        match account {
+            AccountAny::Betting(betting_account) => {
+                assert_eq!(
+                    betting_account.balance_total(Some(gbp)),
+                    Some(Money::new(880.0, gbp))
+                );
+                assert_eq!(
+                    betting_account.balance_locked(Some(gbp)),
+                    Some(Money::new(200.0, gbp))
+                );
+                assert_eq!(
+                    betting_account.balance_free(Some(gbp)),
+                    Some(Money::new(680.0, gbp))
+                );
+                assert_eq!(
+                    betting_account.commission(&gbp),
+                    Some(Money::new(20.0, gbp))
+                );
+            }
+            _ => panic!("Expected BettingAccount"),
+        }
     }
 
     #[rstest]
