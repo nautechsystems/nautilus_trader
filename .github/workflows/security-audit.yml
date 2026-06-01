@@ -28,12 +28,14 @@ on:
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
+      - crates/**/fuzz/Cargo.lock
       - uv.lock
       - pyproject.toml
       - .pre-commit-config.yaml
       - python/uv.lock
       - python/pyproject.toml
       - deny.toml
+      - .cargo/deny-fuzz.toml
       - osv-scanner.toml
       - .supply-chain/**
       - tools.toml
@@ -159,7 +161,10 @@ jobs:
           tool-name: cargo-audit
 
       - name: Run cargo-audit
-        run: cargo audit
+        run: |
+          cargo audit
+          cargo audit --file crates/adapters/lighter/fuzz/Cargo.lock
+          cargo audit --file crates/adapters/derive/fuzz/Cargo.lock
 
   cargo-deny:
     name: cargo-deny
@@ -185,7 +190,14 @@ jobs:
           tool-name: cargo-deny
 
       - name: Run cargo-deny (advisories, licenses, sources, bans)
-        run: cargo deny --all-features check advisories licenses sources bans
+        run: |
+          cargo deny --all-features check advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
+          cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            advisories licenses sources bans
 
   cargo-vet:
     name: cargo-vet
@@ -211,7 +223,12 @@ jobs:
           tool-name: cargo-vet
 
       - name: Run cargo-vet
-        run: cargo vet --locked
+        run: |
+          cargo vet --locked
+          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+            --store-path .supply-chain
+          cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
+            --store-path .supply-chain
 
   pip-audit:
     name: pip-audit
@@ -274,5 +291,7 @@ jobs:
           scan-args: |-
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
+            --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
+            --lockfile=crates/adapters/derive/fuzz/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock
