@@ -94,8 +94,7 @@ impl MarkerReader {
     /// Returns `None` when the slot is unknown or the backend cannot scan the dictionary.
     #[must_use]
     pub fn resolve_slot(&self, slot: StreamSlot) -> Option<StreamDictEntry> {
-        let mut dict = self.stream_dictionary().ok()?;
-        dict.remove(&slot)
+        self.stream_dictionary().ok()?.get(&slot).cloned()
     }
 }
 

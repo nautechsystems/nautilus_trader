@@ -101,20 +101,7 @@ where
             cursor.count
         ))
     })?;
-    let query = CatalogSliceQuery {
-        data_cls: data_cls.to_string(),
-        identifiers: vec![entry.identifier.clone()],
-        start: UnixNanos::from(0),
-        end: cursor.ts_init_hi,
-        required: false,
-    };
-    let coverage = plan_slice(catalog, &query)?;
-    let plan = CatalogSlicePlan { query, coverage };
-    let mut records = if plan.is_missing() {
-        Vec::new()
-    } else {
-        load_slice(catalog, &plan)?
-    };
+    let mut records = load_replayable_records(catalog, &entry, &cursor, data_cls)?;
     let candidate = records.len() != expected_count;
     records.truncate(expected_count);
 
@@ -124,6 +111,32 @@ where
         records,
         candidate,
     })
+}
+
+fn load_replayable_records<C>(
+    catalog: &mut C,
+    entry: &StreamDictEntry,
+    cursor: &StreamCursor,
+    data_cls: &str,
+) -> Result<Vec<CatalogReplayRecord>, EventStoreError>
+where
+    C: ReplayCatalog + ?Sized,
+{
+    let query = CatalogSliceQuery {
+        data_cls: data_cls.to_string(),
+        identifiers: vec![entry.identifier.clone()],
+        start: UnixNanos::from(0),
+        end: cursor.ts_init_hi,
+        required: false,
+    };
+    let coverage = plan_slice(catalog, &query)?;
+    let plan = CatalogSlicePlan { query, coverage };
+
+    if plan.is_missing() {
+        Ok(Vec::new())
+    } else {
+        load_slice(catalog, &plan)
+    }
 }
 
 fn replayable_data_class(data_cls: DataClass) -> Option<&'static str> {
