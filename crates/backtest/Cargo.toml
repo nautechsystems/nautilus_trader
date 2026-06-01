@@ -123,3 +123,10 @@ name = "node-ema-cross"
 path = "examples/node_ema_cross.rs"
 required-features = ["examples", "streaming"]
 doc = false
+
+# Run with `NAUTILUS_TARDIS_OPTION_CATALOG=/path/to/catalog cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
+[[example]]
+name = "tardis-option-chain"
+path = "examples/tardis_option_chain.rs"
+required-features = ["examples", "streaming"]
+doc = false

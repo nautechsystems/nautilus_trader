@@ -138,6 +138,100 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
   a slice immediately. Suitable for latency-sensitive strategies that react to
   individual updates.
 
+## Backtesting option chains
+
+Option-chain backtests use the same `OptionChainManager` and `OptionChainAggregator`
+path as live subscriptions. The prerequisite is a Nautilus Parquet catalog that
+already contains the option instruments and the per-instrument data needed for the
+chain:
+
+- `QuoteTick` records for each option contract, carrying the replayed best bid and offer.
+- `OptionGreeks` records for each option contract, carrying delta, implied volatility,
+  and the `underlying_price` used to seed ATM.
+- `CryptoOption` or `OptionContract` instruments for the same instrument IDs.
+
+Tardis replays satisfy this contract when option book snapshots or quotes are written
+as `QuoteTick` and `option_summary` messages are written as `OptionGreeks`. The
+backtest does not download or request missing catalog data during the run.
+
+Configure a `BacktestNode` run with both data streams for the option instruments in
+the series:
+
+```python
+data = [
+    BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path="/path/to/catalog",
+        instrument_ids=option_instrument_ids,
+    ),
+    BacktestDataConfig(
+        data_type="OptionGreeks",
+        catalog_path="/path/to/catalog",
+        instrument_ids=option_instrument_ids,
+    ),
+]
+```
+
+Then subscribe from the strategy:
+
+```python
+strike_range = StrikeRange.delta(0.25, 0.05)
+self.subscribe_option_chain(
+    series_id,
+    strike_range=strike_range,
+    snapshot_interval_ms=1000,
+)
+```
+
+Use `snapshot_interval_ms=None` for raw mode. Raw mode publishes a slice after each
+quote or Greeks update that changes the active chain. Use an integer interval for
+thinned snapshots. Thinned mode accumulates the latest BBO and Greeks per instrument
+and publishes the chain on the timer cadence, reducing event volume for large chains.
+
+Each `OptionChainSlice` joins the latest BBO and Greeks by instrument, then groups
+the result by strike and option kind. A quote can arrive before Greeks, and Greeks
+can arrive before a quote; the aggregator keeps latest state and attaches both when
+available. The `underlying_price` in `OptionGreeks` drives ATM detection.
+
+Selection can happen either in the subscription range or inside the strategy:
+
+- Moneyness: use `StrikeRange.atm_relative(...)` or `StrikeRange.atm_percent(...)`.
+- Delta: use `StrikeRange.delta(target, tolerance)`, or inspect `entry.greeks.delta`
+  in `on_option_chain`.
+- Strike: use `StrikeRange.fixed([...])`, or read `chain.get_call(strike)` and
+  `chain.get_put(strike)`.
+
+Matching is quote-driven for options. Market orders and marketable limits fill as
+takers against the opposing replayed BBO. Passive limit orders rest on the simulated
+book and can fill as makers when later BBO updates trade through the limit price.
+The model does not simulate L2 queue position for options.
+
+Structural option fee models are configured on the simulated venue, not inferred
+from the venue name:
+
+```python
+from decimal import Decimal
+
+from nautilus_trader.execution import CappedOptionFeeModel
+from nautilus_trader.execution import TieredNotionalOptionFeeModel
+
+deribit_like = CappedOptionFeeModel(
+    maker_rate=Decimal("0.0003"),
+    taker_rate=Decimal("0.0003"),
+)
+okx_like = TieredNotionalOptionFeeModel(
+    maker_rate=Decimal("0.0002"),
+    taker_rate=Decimal("0.0005"),
+)
+```
+
+Pass one of these objects as `fee_model` on `BacktestVenueConfig`. The Rust surface
+uses `FeeModelAny::CappedOption(CappedOptionFeeModel::new(...))` and
+`FeeModelAny::TieredNotionalOption(TieredNotionalOptionFeeModel::new(...))`.
+
+See `examples/backtest/tardis_option_chain.py` and the Rust `tardis-option-chain`
+example in `crates/backtest/examples/`.
+
 ## Option chain architecture
 
 The option chain system is event-driven and built around per-series isolation. The

@@ -195,6 +195,31 @@ Parquet files will then be organized under `<NAUTILUS_PATH>/catalog/data/` in th
 
 If no `output_path` is specified in the configuration file and the `NAUTILUS_PATH` environment variable is unset, the system will default to the current working directory.
 
+### Option-chain backtest catalog
+
+An option-chain backtest starts after the Tardis replay has written data to the Nautilus
+catalog. The backtest loader does not request missing Tardis data during a run, so the
+catalog must contain:
+
+- Option instruments from the Tardis instrument metadata API.
+- `QuoteTick` data from one-level option book snapshots or quote data.
+- `OptionGreeks` data from Tardis `option_summary` messages.
+
+Use both `QuoteTick` and `OptionGreeks` in the `BacktestDataConfig` list for the same
+option instrument IDs. The option-chain manager aggregates the replayed BBO and Greeks
+into `OptionChainSlice` snapshots. Use `snapshot_interval_ms=None` for raw publishing,
+or set an interval in milliseconds to publish thinned snapshots.
+
+Strategies can select contracts by moneyness with ATM-relative or ATM-percent strike
+ranges, by delta with `StrikeRange.delta(target, tolerance)`, or by fixed strike with
+`StrikeRange.fixed([...])`. Option order matching in backtests is quote-driven:
+marketable orders fill as takers against the opposing BBO, while passive limits can
+fill as makers when later BBO updates trade through the limit.
+
+Configure option fees explicitly on the simulated venue with structural fee models such
+as `CappedOptionFeeModel` or `TieredNotionalOptionFeeModel`. There is no automatic
+Tardis exchange to fee model mapping.
+
 ### Procedure
 
 First, ensure the `tardis-machine` docker container is running. Use the following command:
