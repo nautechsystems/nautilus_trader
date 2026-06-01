@@ -6,9 +6,9 @@ Nautilus provides two paths for working with option Greeks
 1. **Venue-provided Greeks (Rust/PyO3)**: real-time Greeks streamed from venues
    like Deribit, Bybit, and OKX via the `OptionGreeks` data type and the option
    chain aggregation system.
-2. **Local Greeks calculator (Cython/Python)**: the `GreeksCalculator` class that
-   computes Black-Scholes Greeks from cached market data, with support for portfolio
-   aggregation, shock scenarios, and beta weighting.
+2. **Local Greeks calculator (Cython/Python and Rust/PyO3)**: the `GreeksCalculator`
+   class computes Black-Scholes Greeks from cached market data, with support for
+   portfolio aggregation, shock scenarios, and beta weighting.
 
 Either path works independently or together. Venue-provided Greeks arrive
 through the data subscription system and require no local computation. The local
@@ -22,21 +22,22 @@ adjustments (shocks, beta weighting, percent Greeks).
 The `OptionGreeks` type represents venue-provided sensitivities for a single option
 contract. It is a Rust-native type exposed to Python via PyO3.
 
-| Field              | Type             | Description                                         |
-|--------------------|------------------|-----------------------------------------------------|
-| `instrument_id`    | `InstrumentId`   | The option contract these Greeks apply to.          |
-| `delta`            | `float`          | Rate of change of option price per unit underlying. |
-| `gamma`            | `float`          | Rate of change of delta per unit underlying.        |
-| `vega`             | `float`          | Sensitivity to a 1% change in implied volatility.   |
-| `theta`            | `float`          | Daily time decay (dV/dt / 365.25).                  |
-| `rho`              | `float`          | Sensitivity to a change in interest rate.           |
-| `mark_iv`          | `float` or None  | Mark implied volatility.                            |
-| `bid_iv`           | `float` or None  | Bid implied volatility.                             |
-| `ask_iv`           | `float` or None  | Ask implied volatility.                             |
-| `underlying_price` | `float` or None  | Underlying price at time of calculation.            |
-| `open_interest`    | `float` or None  | Open interest for the contract.                     |
-| `ts_event`         | `int`            | UNIX timestamp (nanoseconds) of the event.          |
-| `ts_init`          | `int`            | UNIX timestamp (nanoseconds) when initialized.      |
+| Field              | Type               | Description                                         |
+|--------------------|--------------------|-----------------------------------------------------|
+| `instrument_id`    | `InstrumentId`     | The option contract these Greeks apply to.          |
+| `convention`       | `GreeksConvention` | Numeraire convention for the Greeks.                |
+| `delta`            | `float`            | Rate of change of option price per unit underlying. |
+| `gamma`            | `float`            | Rate of change of delta per unit underlying.        |
+| `vega`             | `float`            | Sensitivity to a 1% change in implied volatility.   |
+| `theta`            | `float`            | Daily time decay (dV/dt / 365.25).                  |
+| `rho`              | `float`            | Sensitivity to a change in interest rate.           |
+| `mark_iv`          | `float` or None    | Mark implied volatility.                            |
+| `bid_iv`           | `float` or None    | Bid implied volatility.                             |
+| `ask_iv`           | `float` or None    | Ask implied volatility.                             |
+| `underlying_price` | `float` or None    | Underlying price at time of calculation.            |
+| `open_interest`    | `float` or None    | Open interest for the contract.                     |
+| `ts_event`         | `int`              | UNIX timestamp (nanoseconds) of the event.          |
+| `ts_init`          | `int`              | UNIX timestamp (nanoseconds) when initialized.      |
 
 Subscribe from an actor or strategy:
 
@@ -80,8 +81,9 @@ interest, and convention. These field names are stable.
 
 There is no single complete Greeks shape, so venue- or model-specific values such as
 `vanna`, `volga`, `charm`, calibration inputs, or surface metadata belong in
-[custom data](custom_data.md) rather than the native type. New native fields are added only
-as nullable fields, and only when a real integration shows they belong in the common model.
+[custom data](custom_data.md) rather than the native type. Optional venue fields are
+nullable. Fields required to interpret the values, such as `convention`, are non-nullable
+and carry defaults.
 
 ### Underlying Rust types
 
@@ -90,8 +92,9 @@ The core Rust implementation lives in `crates/model/src/data/greeks.rs`:
 - `OptionGreekValues`: a plain struct with `delta`, `gamma`, `vega`, `theta`, `rho`
   fields. Implements `Add` and `Mul<f64>` for aggregation.
 - `OptionGreeks` (in `crates/model/src/data/option_chain.rs`): wraps
-  `OptionGreekValues` with `instrument_id`, implied volatility fields, and timestamps.
-  Implements `Deref<Target = OptionGreekValues>` so you can access Greeks fields directly.
+  `OptionGreekValues` with `instrument_id`, `convention`, implied volatility fields, and
+  timestamps. Implements `Deref<Target = OptionGreekValues>` so you can access Greeks
+  fields directly.
 - `HasGreeks` trait: provides a `greeks()` method returning `OptionGreekValues`.
   Implemented by both `OptionGreekValues` and `OptionGreeks`.
 
@@ -100,7 +103,7 @@ The core Rust implementation lives in `crates/model/src/data/greeks.rs`:
 Low-level pricing functions exposed to Python from `crates/model/src/data/greeks.rs`:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import (
+from nautilus_trader.model import (
     black_scholes_greeks,
     imply_vol,
     imply_vol_and_greeks,
@@ -128,13 +131,14 @@ The `BlackScholesGreeksResult` returned by these functions contains: `price`, `v
 - Theta is scaled by 1/365.25 (daily decay).
 - American-style options are priced as European for Greeks computation.
 
-## Local Greeks calculator (Cython/Python)
+## Local Greeks calculators
 
 ### GreeksCalculator
 
-The `GreeksCalculator` class in `nautilus_trader/model/greeks.pyx` computes
-Black-Scholes Greeks from cached market data. It is accessible from any actor or
-strategy.
+The legacy Cython `GreeksCalculator` class in `nautilus_trader/model/greeks.pyx` computes
+Black-Scholes Greeks from cached market data. A PyO3 calculator is also exposed from
+`nautilus_trader.common.GreeksCalculator` for the v2 surface. Both use the cache and clock
+and are accessible from actors or strategies.
 
 ```python
 from nautilus_trader.model.greeks import GreeksCalculator
@@ -238,9 +242,10 @@ Filters:
 
 ### GreeksData
 
-`GreeksData` is a Python custom data class (`@customdataclass`) that carries the full
-context of a single instrument's Greeks computation. It extends `Data` and supports
-Arrow serialization, cache storage, and catalog persistence.
+On the legacy Python surface, `GreeksData` is a Python custom data class
+(`@customdataclass`) that carries the full context of a single instrument's Greeks
+computation. It extends `Data` and supports Arrow serialization, cache storage, and
+catalog persistence. The v2/PyO3 surface exposes the same core fields from Rust.
 
 | Field               | Type            | Description                                            |
 |---------------------|-----------------|--------------------------------------------------------|
@@ -320,7 +325,7 @@ rate = curve(0.75)  # quadratic interpolation
 | Beta weighting               | Not supported                          | Built‑in                                 |
 | Backtest support             | Via recorded `OptionGreeks` data       | From cached prices at any point in time  |
 | Greeks available             | delta, gamma, vega, theta, rho, IV, OI | delta, gamma, vega, theta, itm_prob, vol |
-| Data type                    | `OptionGreeks` (Rust/PyO3)             | `GreeksData` (Python `@customdataclass`) |
+| Data type                    | `OptionGreeks` (Rust/PyO3)             | `GreeksData` / `PortfolioGreeks`         |
 
 ## Greek definitions
 
@@ -333,7 +338,9 @@ For reference, the Greeks that Nautilus computes:
 | Vega       | `v`    | Sensitivity to a 1 percentage point change in implied volatility (dV/dVol).   |
 | Theta      | `t`    | Daily time decay: change in option price per calendar day (dV/dt / 365.25).   |
 | Rho        | `r`    | Sensitivity to a change in the risk‑free interest rate (dV/dr).               |
-| ITM prob   | -      | Probability that the option finishes in the money: P(ϕS_T > ϕK), where ϕ = 1 for calls and ϕ = -1 for puts. |
+| ITM prob   | -      | Probability that the option finishes in the money.                            |
+
+For calls, ITM probability is `P(S_T > K)`. For puts, it is `P(S_T < K)`.
 
 ## Examples
 
