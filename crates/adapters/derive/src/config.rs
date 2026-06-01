@@ -19,11 +19,13 @@ use std::fmt::Debug;
 
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{enums::DeriveEnvironment, urls};
 
 /// Configuration for the Derive data client.
-#[derive(Clone, Debug, bon::Builder)]
+#[derive(Clone, Debug, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
@@ -101,7 +103,8 @@ impl DeriveDataClientConfig {
 /// `Debug` is implemented manually so that `session_key` is redacted; the
 /// derived `Debug` would leak the raw secret through any logger or Python
 /// `__repr__`.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)

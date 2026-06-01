@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_network::websocket::TransportBackend;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{
     credential::credential_env_vars,
@@ -28,7 +29,8 @@ use crate::common::{
 };
 
 /// Configuration for the Lighter data client.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
@@ -141,7 +143,8 @@ fn env_var_is_set(name: &str) -> bool {
 }
 
 /// Configuration for the Lighter execution client.
-#[derive(Clone, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
@@ -152,8 +155,10 @@ fn env_var_is_set(name: &str) -> bool {
 )]
 pub struct LighterExecClientConfig {
     /// Trader identifier.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// Account identifier on the venue.
+    #[builder(default = AccountId::from("LIGHTER-001"))]
     pub account_id: AccountId,
     /// Lighter account index (numeric, assigned at registration). Falls back
     /// to `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_TESTNET_ACCOUNT_INDEX` when
@@ -192,6 +197,12 @@ pub struct LighterExecClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+}
+
+impl Default for LighterExecClientConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
 }
 
 impl Debug for LighterExecClientConfig {
