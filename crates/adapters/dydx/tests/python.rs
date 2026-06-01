@@ -35,6 +35,7 @@ use pyo3::{Py, Python, types::PyModule};
 use rstest::rstest;
 
 const SMOKE_WALLET_ADDRESS: &str = "dydx1abc123";
+const TEST_PRIVATE_KEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
 #[rstest]
 fn test_dydx_python_factories_extract_from_registry() {
@@ -119,6 +120,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             account_id,
             network: DydxNetwork::Testnet,
             wallet_address: Some(SMOKE_WALLET_ADDRESS.to_string()),
+            private_key: Some(TEST_PRIVATE_KEY.to_string()),
             ..DydxExecClientConfig::default()
         },
     )
