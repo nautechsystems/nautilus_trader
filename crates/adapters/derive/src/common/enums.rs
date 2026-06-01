@@ -26,6 +26,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 /// Derive network selector. Drives REST/WS URLs and per-network protocol
 /// constants (`DOMAIN_SEPARATOR`, module addresses).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
