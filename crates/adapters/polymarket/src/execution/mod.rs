@@ -177,9 +177,26 @@ impl PolymarketExecutionClient {
         )
         .context("failed to resolve Polymarket credentials")?;
 
+        let signer_address = secrets.address.clone();
+        let maker_address = secrets
+            .funder
+            .clone()
+            .unwrap_or_else(|| signer_address.clone());
+        if config.signature_type == SignatureType::Poly1271
+            && maker_address.eq_ignore_ascii_case(&signer_address)
+        {
+            anyhow::bail!(
+                "POLY_1271 signature type requires a deposit wallet funder distinct from the signing address"
+            );
+        }
+        let api_address = match config.signature_type {
+            SignatureType::Poly1271 => maker_address.clone(),
+            _ => signer_address.clone(),
+        };
+
         let http_client = PolymarketClobHttpClient::new(
             secrets.credential.clone(),
-            secrets.address.clone(),
+            api_address,
             config.base_url_http.clone(),
             config.http_timeout_secs,
         )
@@ -193,12 +210,6 @@ impl PolymarketExecutionClient {
 
         let order_signer =
             OrderSigner::new(&secrets.private_key).context("failed to create order signer")?;
-
-        let signer_address = secrets.address.clone();
-        let maker_address = secrets
-            .funder
-            .clone()
-            .unwrap_or_else(|| signer_address.clone());
         let order_builder = Arc::new(PolymarketOrderBuilder::new(
             order_signer,
             signer_address,

@@ -28,6 +28,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquidity
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketSignatureType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.parsing import basis_points_as_decimal
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
@@ -76,6 +77,10 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+def test_polymarket_signature_type_exposes_poly_1271() -> None:
+    assert PolymarketSignatureType.POLY_1271.value == 3
 
 
 def test_parse_instruments() -> None:

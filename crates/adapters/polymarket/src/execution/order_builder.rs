@@ -263,7 +263,7 @@ impl PolymarketOrderBuilder {
         let mut poly_order = PolymarketOrder {
             salt,
             maker: self.maker_address.clone(),
-            signer: self.signer_address.clone(),
+            signer: self.order_signer_address(),
             token_id: Ustr::from(token_id),
             maker_amount,
             taker_amount,
@@ -283,6 +283,13 @@ impl PolymarketOrderBuilder {
         poly_order.signature = signature;
 
         Ok(poly_order)
+    }
+
+    fn order_signer_address(&self) -> String {
+        match self.signature_type {
+            SignatureType::Poly1271 => self.maker_address.clone(),
+            _ => self.signer_address.clone(),
+        }
     }
 }
 
@@ -378,7 +385,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::PolymarketOrderSide;
+    use crate::{
+        common::{credential::EvmPrivateKey, enums::PolymarketOrderSide},
+        signing::eip712::OrderSigner,
+    };
 
     fn make_limit(
         reduce_only: bool,
@@ -545,7 +555,6 @@ mod tests {
     }
 
     fn make_test_builder() -> PolymarketOrderBuilder {
-        use crate::{common::credential::EvmPrivateKey, signing::eip712::OrderSigner};
         let pk = EvmPrivateKey::new(
             "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
         )
@@ -609,6 +618,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(order.builder, POLYMARKET_NAUTILUS_BUILDER_CODE);
+    }
+
+    #[rstest]
+    fn test_poly_1271_order_uses_deposit_wallet_as_signer() {
+        let pk = EvmPrivateKey::new(
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        )
+        .unwrap();
+        let signer = OrderSigner::new(&pk).unwrap();
+        let signer_address = format!("{:#x}", signer.address());
+        let deposit_wallet = "0x1111111111111111111111111111111111111111".to_string();
+        let builder = PolymarketOrderBuilder::new(
+            signer,
+            signer_address,
+            deposit_wallet.clone(),
+            SignatureType::Poly1271,
+        );
+
+        let order = builder
+            .build_limit_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                PolymarketOrderSide::Buy,
+                dec!(0.50),
+                dec!(10),
+                "0",
+                false,
+                2,
+            )
+            .unwrap();
+
+        assert_eq!(order.maker, deposit_wallet);
+        assert_eq!(order.signer, deposit_wallet);
+        assert_eq!(order.signature_type, SignatureType::Poly1271);
+        assert_eq!(order.signature.len(), 636);
     }
 
     #[rstest]

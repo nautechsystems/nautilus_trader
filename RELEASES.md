@@ -62,6 +62,7 @@ Released on TBD (UTC).
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
 - Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
+- Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
@@ -173,6 +174,7 @@ Released on TBD (UTC).
 - Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
 - Added backtesting guide notes for funding settlement flows
 - Added FFI and Rust unsafe-code guidance for `PyCapsule` ownership and scoped TLS access
+- Added Polymarket integration guide notes for `POLY_1271` deposit wallets
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Refined OKX integration guide with product capabilities and Nitro spread order notes

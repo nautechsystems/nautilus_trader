@@ -47,6 +47,10 @@ def test_polymarket_factories_expose_python_names() -> None:
     assert PolymarketExecutionClientFactory().name() == POLYMARKET
 
 
+def test_polymarket_signature_type_exposes_poly_1271() -> None:
+    assert int(SignatureType.Poly1271) == 3
+
+
 def test_live_node_builder_accepts_polymarket_data_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
 

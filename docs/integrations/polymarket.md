@@ -114,11 +114,12 @@ To interact with Polymarket via NautilusTrader, you'll need a **Polygon**-compat
 
 Polymarket supports multiple signature types for order signing and verification:
 
-| Signature Type | Wallet Type                    | Description | Use Case |
-|----------------|--------------------------------|-------------|----------|
-| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.). |
-| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link). Only the email‑associated address can execute functions. | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address. |
-| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets. | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address. |
+| Signature Type | Wallet Type                    | Description                                                              | Use Case                                                                                                   |
+|----------------|--------------------------------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.).                                 |
+| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link).             | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address.                          |
+| `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets.              | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address.      |
+| `3`            | Deposit Wallet                 | ERC-1271 deposit wallet flow for new API users.                          | New Polymarket API accounts. Requires the deposit wallet as `funder` and API credentials for that address. |
 
 :::note
 See also: [Proxy wallet](https://docs.polymarket.com/developers/proxy-wallet) in the Polymarket documentation for more details about signature types and proxy wallet infrastructure.
@@ -587,10 +588,10 @@ normalizes them with a single threshold of `DUST_SNAP_THRESHOLD = 0.01`
 shares. Anything beyond that surfaces to the engine as a real partial fill or
 overfill.
 
-| Direction | Source                                  | Adapter behaviour                         |
-|-----------|-----------------------------------------|-------------------------------------------|
-| Overfill  | V2 USDC‑scale truncation (microshares)  | Snap fill DOWN to `submitted_qty`         |
-| Underfill | CLOB cent‑tick truncation (≤ `0.01`)    | Preserved; synthetic dust fill at MATCHED |
+| Direction | Source                                 | Adapter behaviour                         |
+|-----------|----------------------------------------|-------------------------------------------|
+| Overfill  | V2 USDC‑scale truncation (microshares) | Snap fill DOWN to `submitted_qty`         |
+| Underfill | CLOB cent‑tick truncation (≤ `0.01`)   | Preserved; synthetic dust fill at MATCHED |
 
 `FillReport.commission` always reflects the venue-reported size, not the
 snapped quantity. The few-ulp difference is sub-microcent in pUSD.
