@@ -163,5 +163,5 @@ config = DeltaNeutralVolConfig(
     entry_iv_offset=0.02,  # Sell 2 vol points below mark
 )
 
-node.add_native_strategy(config)
+node.add_native_strategy("DeltaNeutralVol", config)
 ```

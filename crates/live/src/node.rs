@@ -128,19 +128,16 @@ use nautilus_trading::strategy::StrategyConfig;
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use tabled::{Table, Tabled, settings::Style};
 
+#[cfg(feature = "plugin")]
+use crate::plugin::{
+    ConfiguredPluginEntry, PluginControllerAdapter, configured_entry, plugin_loader,
+    register_manifest_custom_data,
+};
 use crate::{
     builder::LiveNodeBuilder,
-    config::LiveNodeConfig,
+    config::{LiveNodeConfig, PluginConfig},
     manager::{ExecutionManager, ExecutionManagerConfig},
     runner::{AsyncRunner, AsyncRunnerChannels},
-};
-#[cfg(feature = "plugin")]
-use crate::{
-    config::PluginConfig,
-    plugin::{
-        ConfiguredPluginEntry, PluginControllerAdapter, configured_entry, plugin_loader,
-        register_manifest_custom_data,
-    },
 };
 
 /// Lifecycle state of the `LiveNode` runner.
@@ -474,6 +471,70 @@ impl LiveNode {
         anyhow::bail!("LiveNodeConfig.plugins requires the `plugin` feature")
     }
 
+    /// Loads and registers one plug-in instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the plug-in cannot be loaded, verified, resolved,
+    /// or registered.
+    #[cfg(feature = "plugin")]
+    pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        config.validate_runtime_support(self.config.plugins.len())?;
+
+        if self.state() != NodeState::Idle {
+            anyhow::bail!("Cannot add plug-in after the node leaves Idle state");
+        }
+
+        verify_plugin_sha256(&config)?;
+        let entry = {
+            let loader = self.plugin_loader.get_or_insert_with(plugin_loader);
+            let path = std::path::Path::new(&config.path);
+            let already_loaded = loader.loaded().iter().any(|loaded| loaded.path() == path);
+
+            if !already_loaded {
+                let loaded = loader
+                    .load(&config.path)
+                    .with_context(|| format!("failed to load plug-in '{}'", config.path))?;
+                let registered = register_manifest_custom_data(loaded.validated_manifest())
+                    .with_context(|| {
+                        format!(
+                            "failed to register custom data from plug-in '{}'",
+                            loaded.path().display()
+                        )
+                    })?;
+
+                if registered > 0 {
+                    log::info!(
+                        "Registered {registered} custom data type(s) from plug-in {}",
+                        loaded.path().display()
+                    );
+                }
+            }
+
+            let loaded = loader
+                .loaded()
+                .iter()
+                .find(|loaded| loaded.path() == path)
+                .ok_or_else(|| anyhow::anyhow!("plug-in '{}' was not loaded", config.path))?;
+            configured_entry(loaded.validated_manifest(), &config.path, &config.type_name)?
+        };
+
+        self.instantiate_configured_plugin_entry(entry, &config)?;
+        self.config.plugins.push(config);
+        Ok(())
+    }
+
+    /// Rejects plug-in registration when the live crate is built without plug-in support.
+    ///
+    /// # Errors
+    ///
+    /// Always returns an error explaining that the `plugin` feature is required.
+    #[cfg(not(feature = "plugin"))]
+    pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        let _ = config;
+        anyhow::bail!("LiveNode::add_plugin requires the `plugin` feature")
+    }
+
     #[cfg(feature = "plugin")]
     fn instantiate_configured_plugin(
         &mut self,
@@ -487,6 +548,15 @@ impl LiveNode {
             .ok_or_else(|| anyhow::anyhow!("plug-in '{}' was not loaded", config.path))?;
 
         let entry = configured_entry(loaded.validated_manifest(), &config.path, &config.type_name)?;
+        self.instantiate_configured_plugin_entry(entry, config)
+    }
+
+    #[cfg(feature = "plugin")]
+    fn instantiate_configured_plugin_entry(
+        &mut self,
+        entry: ConfiguredPluginEntry,
+        config: &PluginConfig,
+    ) -> anyhow::Result<()> {
         let config_json = serde_json::to_string(&config.config)?;
 
         match entry {

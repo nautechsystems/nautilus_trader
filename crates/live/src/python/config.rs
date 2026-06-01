@@ -217,8 +217,8 @@ fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<Py
     }
 }
 
-/// Converts Python filter values into JSON values.
-fn coerce_filters_to_json(
+/// Converts Python mapping values into JSON values.
+pub(crate) fn coerce_json_config(
     raw: HashMap<String, Py<PyAny>>,
 ) -> PyResult<HashMap<String, serde_json::Value>> {
     Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
@@ -538,7 +538,7 @@ impl InstrumentProviderConfig {
     ) -> PyResult<Self> {
         let default = Self::default();
         let filters = match filters {
-            Some(raw) => coerce_filters_to_json(raw)?,
+            Some(raw) => coerce_json_config(raw)?,
             None => HashMap::new(),
         };
         Ok(Self {
@@ -679,7 +679,7 @@ impl PluginConfig {
         sha256: Option<String>,
     ) -> PyResult<Self> {
         let config = match config {
-            Some(config) => coerce_filters_to_json(config)?,
+            Some(config) => coerce_json_config(config)?,
             None => HashMap::new(),
         };
 

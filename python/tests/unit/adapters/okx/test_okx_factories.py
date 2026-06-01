@@ -123,7 +123,8 @@ def test_okx_exec_tester_limit_sells_are_explicit(
             captured["exec_tester_kwargs"] = kwargs
 
     class CapturingNode:
-        def add_native_strategy(self, config: object) -> None:
+        def add_native_strategy(self, type_name: str, config: object) -> None:
+            captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
 
     class CapturingBuilder:
@@ -158,6 +159,7 @@ def test_okx_exec_tester_limit_sells_are_explicit(
 
     okx_exec_tester.main()
 
+    assert captured["strategy_type_name"] == "ExecTester"
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["enable_limit_buys"] is expected_buys

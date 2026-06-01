@@ -58,6 +58,7 @@ def main() -> None:
 
     node = builder.build()
     node.add_native_actor(
+        "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(BETFAIR),
             instrument_ids=[instrument_id],

@@ -150,5 +150,5 @@ config = CompositeMarketMakerConfig(
     requote_threshold_bps=10,
 )
 
-node.add_native_strategy(config)
+node.add_native_strategy("CompositeMarketMaker", config)
 ```

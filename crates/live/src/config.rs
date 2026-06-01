@@ -686,7 +686,7 @@ impl LiveNodeConfig {
 }
 
 impl PluginConfig {
-    fn validate_runtime_support(&self, index: usize) -> anyhow::Result<()> {
+    pub(crate) fn validate_runtime_support(&self, index: usize) -> anyhow::Result<()> {
         if self.path.trim().is_empty() {
             anyhow::bail!("LiveNodeConfig.plugins[{index}].path must not be empty");
         }
