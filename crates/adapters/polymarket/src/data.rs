@@ -80,9 +80,12 @@ use crate::{
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
-        clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
-        gamma::PolymarketGammaHttpClient, models::GammaMarket,
-        parse::rebuild_instrument_with_tick_size, query::GetGammaMarketsParams,
+        clob::PolymarketClobPublicClient,
+        data_api::PolymarketDataApiHttpClient,
+        gamma::PolymarketGammaHttpClient,
+        models::{ClobMarketResponse, GammaMarket},
+        parse::rebuild_instrument_with_tick_size,
+        query::GetGammaMarketsParams,
     },
     providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_configured_instruments},
     websocket::{
@@ -642,6 +645,41 @@ fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMa
     })
 }
 
+fn build_resolved_market_from_clob_market(
+    market: &ClobMarketResponse,
+) -> Option<StrictResolvedMarket> {
+    if !market.closed {
+        return None;
+    }
+
+    if market.tokens.len() != 2 {
+        return None;
+    }
+
+    let mut winner_idx: Option<usize> = None;
+
+    for (idx, token) in market.tokens.iter().enumerate() {
+        if token.winner {
+            if winner_idx.is_some() {
+                return None;
+            }
+            winner_idx = Some(idx);
+        }
+    }
+
+    let winner_idx = winner_idx?;
+    let winner = market.tokens.get(winner_idx)?;
+    if winner.token_id.is_empty() || winner.outcome.is_empty() {
+        return None;
+    }
+
+    Some(StrictResolvedMarket {
+        condition_id: market.condition_id.clone(),
+        winning_asset_id: winner.token_id.clone(),
+        winning_outcome: winner.outcome.clone(),
+    })
+}
+
 fn parse_condition_ids_from_request_params(params: &Option<Params>) -> Vec<String> {
     let Some(params) = params.as_ref() else {
         return Vec::new();
@@ -782,6 +820,7 @@ struct WsMessageContext {
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     gamma_client: PolymarketGammaHttpClient,
+    clob_public_client: PolymarketClobPublicClient,
     filters: Vec<Arc<dyn InstrumentFilter>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -924,6 +963,7 @@ impl PolymarketDataClient {
 
     async fn fetch_and_apply_resolutions_by_condition_ids(
         gamma_client: &PolymarketGammaHttpClient,
+        clob_public_client: &PolymarketClobPublicClient,
         ctx: &WsMessageContext,
         condition_ids: &[String],
         error_mode: ResolveBatchErrorMode,
@@ -934,6 +974,7 @@ impl PolymarketDataClient {
         unique_condition_ids.dedup();
 
         for chunk in unique_condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
+            let mut unresolved_in_chunk: Vec<String> = chunk.to_vec();
             let params = GetGammaMarketsParams {
                 condition_ids: Some(chunk.join(",")),
                 closed: Some(true),
@@ -970,6 +1011,9 @@ impl PolymarketDataClient {
                                 .push(resolved.condition_id.clone());
                         }
                     }
+
+                    unresolved_in_chunk
+                        .retain(|condition_id| !resolved_by_condition.contains_key(condition_id));
                 }
                 Err(e) => {
                     let message = format!(
@@ -977,17 +1021,54 @@ impl PolymarketDataClient {
                         chunk.len()
                     );
                     log::warn!("{message}");
-                    if stats.error.is_none() {
-                        stats.error = Some(message);
-                    }
-                    stats.failed_condition_ids.extend(chunk.iter().cloned());
+                }
+            }
 
-                    if error_mode == ResolveBatchErrorMode::StopOnFirstError {
-                        break;
+            for condition_id in unresolved_in_chunk {
+                match clob_public_client.get_market(&condition_id).await {
+                    Ok(market) => {
+                        let Some(resolved) = build_resolved_market_from_clob_market(&market) else {
+                            continue;
+                        };
+
+                        stats.resolved_markets += 1;
+                        let emitted = Self::apply_condition_resolution(
+                            ctx,
+                            &resolved.condition_id,
+                            &resolved.winning_asset_id,
+                            &resolved.winning_outcome,
+                        );
+
+                        if emitted > 0 {
+                            stats
+                                .emitted_condition_ids
+                                .push(resolved.condition_id.clone());
+                        }
+                    }
+                    Err(e) => {
+                        let message = format!(
+                            "Resolve fallback via CLOB failed for condition_id={condition_id}: {e}"
+                        );
+                        log::warn!("{message}");
+                        if stats.error.is_none() {
+                            stats.error = Some(message);
+                        }
+                        stats.failed_condition_ids.push(condition_id);
                     }
                 }
             }
+
+            if error_mode == ResolveBatchErrorMode::StopOnFirstError
+                && !stats.failed_condition_ids.is_empty()
+            {
+                break;
+            }
         }
+
+        stats.failed_condition_ids.sort();
+        stats.failed_condition_ids.dedup();
+        stats.emitted_condition_ids.sort();
+        stats.emitted_condition_ids.dedup();
 
         stats
     }
@@ -1434,6 +1515,7 @@ impl PolymarketDataClient {
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
             gamma_client: self.provider.http_client().clone(),
+            clob_public_client: self.clob_public_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
@@ -1483,6 +1565,7 @@ impl PolymarketDataClient {
 
         let cancellation = self.cancellation_token.clone();
         let gamma_client = self.provider.http_client().clone();
+        let clob_public_client = self.clob_public_client.clone();
         let clock = self.clock;
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
@@ -1494,6 +1577,7 @@ impl PolymarketDataClient {
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
             gamma_client: gamma_client.clone(),
+            clob_public_client: clob_public_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
@@ -1533,6 +1617,7 @@ impl PolymarketDataClient {
 
                         let _ = Self::fetch_and_apply_resolutions_by_condition_ids(
                             &gamma_client,
+                            &clob_public_client,
                             &ctx,
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
@@ -2215,6 +2300,7 @@ impl DataClient for PolymarketDataClient {
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
             gamma_client: self.provider.http_client().clone(),
+            clob_public_client: self.clob_public_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
@@ -2277,6 +2363,7 @@ impl DataClient for PolymarketDataClient {
 
             let stats = Self::fetch_and_apply_resolutions_by_condition_ids(
                 &gamma_client,
+                &ctx.clob_public_client,
                 &ctx,
                 &condition_ids,
                 ResolveBatchErrorMode::StopOnFirstError,
@@ -2642,7 +2729,13 @@ impl DataClient for PolymarketDataClient {
 mod tests {
     use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration as StdDuration};
 
-    use axum::{Router, extract::State, response::Json, routing::get};
+    use axum::{
+        Router,
+        extract::{Path, State},
+        http::StatusCode,
+        response::Json,
+        routing::get,
+    };
     use nautilus_common::{
         live::runner::replace_data_event_sender,
         messages::{DataResponse, data::RequestCustomData},
@@ -3061,6 +3154,9 @@ mod tests {
             RetryConfig::default(),
         )
         .expect("gamma client");
+        let clob_public_client =
+            PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 5)
+                .expect("clob client");
 
         let ctx = WsMessageContext {
             clock: get_atomic_clock_realtime(),
@@ -3068,6 +3164,7 @@ mod tests {
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             gamma_client,
+            clob_public_client,
             filters: vec![],
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
@@ -3283,6 +3380,22 @@ mod tests {
         .expect("valid gamma market")
     }
 
+    fn make_clob_market_value(
+        condition_id: &str,
+        winner_token_id: &str,
+        loser_token_id: &str,
+        closed: bool,
+    ) -> Value {
+        serde_json::json!({
+            "condition_id": condition_id,
+            "closed": closed,
+            "tokens": [
+                {"token_id": winner_token_id, "outcome": "Yes", "winner": true},
+                {"token_id": loser_token_id, "outcome": "No", "winner": false}
+            ]
+        })
+    }
+
     fn load_gamma_market_fixture(filename: &str) -> GammaMarket {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_data")
@@ -3291,9 +3404,18 @@ mod tests {
         serde_json::from_str(&content).expect("invalid gamma fixture json")
     }
 
+    fn load_clob_market_fixture(filename: &str) -> ClobMarketResponse {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(filename);
+        let content = std::fs::read_to_string(path).expect("fixture missing");
+        serde_json::from_str(&content).expect("invalid clob fixture json")
+    }
+
     #[derive(Clone, Default)]
     struct TestServerState {
         gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+        clob_market_by_condition: Arc<tokio::sync::Mutex<ahash::AHashMap<String, Value>>>,
     }
 
     async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -3306,6 +3428,21 @@ mod tests {
         Json(body)
     }
 
+    async fn handle_clob_market(
+        State(state): State<TestServerState>,
+        Path(condition_id): Path<String>,
+    ) -> (StatusCode, Json<Value>) {
+        let body = state.clob_market_by_condition.lock().await;
+        if let Some(value) = body.get(&condition_id) {
+            (StatusCode::OK, Json(value.clone()))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error":"market not found"})),
+            )
+        }
+    }
+
     async fn start_mock_server(state: TestServerState) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -3313,6 +3450,7 @@ mod tests {
         let addr = listener.local_addr().expect("local_addr");
         let router = Router::new()
             .route("/markets", get(handle_gamma_markets))
+            .route("/markets/{condition_id}", get(handle_clob_market))
             .with_state(state);
 
         tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
@@ -3370,6 +3508,7 @@ mod tests {
             token_meta: client.token_meta.clone(),
             instruments: client.instruments.clone(),
             gamma_client: client.provider.http_client().clone(),
+            clob_public_client: client.clob_public_client.clone(),
             filters: client.provider.filters(),
             order_books: client.order_books.clone(),
             last_quotes: client.last_quotes.clone(),
@@ -3546,6 +3685,37 @@ mod tests {
         let closed_non_binary =
             load_gamma_market_fixture("gamma_market_closed_nonbinary_legacy.json");
         assert!(build_strict_resolved_market(&closed_non_binary).is_none());
+    }
+
+    #[rstest]
+    fn build_resolved_market_from_clob_market_real_samples() {
+        let accepting_false =
+            load_clob_market_fixture("clob_market_closed_binary_accepting_false.json");
+        let resolved_false = build_resolved_market_from_clob_market(&accepting_false)
+            .expect("expected resolved market for accepting=false fixture");
+        assert_eq!(
+            resolved_false.condition_id,
+            "0x8ccc3f4951ff02c1d34b87988752b4444ad17228732780a6cf22afefe8478bb6"
+        );
+        assert_eq!(resolved_false.winning_outcome, "No");
+        assert_eq!(
+            resolved_false.winning_asset_id,
+            "89711174926330519158043401581181146613785179104141808554061413232025882707365"
+        );
+
+        let accepting_true =
+            load_clob_market_fixture("clob_market_closed_binary_accepting_true.json");
+        let resolved_true = build_resolved_market_from_clob_market(&accepting_true)
+            .expect("expected resolved market for accepting=true fixture");
+        assert_eq!(
+            resolved_true.condition_id,
+            "0xd57eed0d44f5b8ca54925d8d6ff440b146b3e6e071da18136ee3ee572d34479e"
+        );
+        assert_eq!(resolved_true.winning_outcome, "Yes");
+        assert_eq!(
+            resolved_true.winning_asset_id,
+            "22978793223071892222859460592277435458011604214087068523744633723809814935807"
+        );
     }
 
     #[rstest]
@@ -4322,6 +4492,207 @@ mod tests {
 
         let closes = count_instrument_close_events(&events);
         assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_data_manual_fallback_uses_clob_when_gamma_is_not_strict() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(serde_json::json!([
+            make_gamma_market_value_with_outcome_prices(
+                "0xCOND-REQ",
+                "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
+                Some("[\"0.58\",\"0.42\"]"),
+                Some(true),
+                Some(false),
+            )
+        ]));
+        state.clob_market_by_condition.lock().await.insert(
+            "0xCOND-REQ".to_string(),
+            make_clob_market_value("0xCOND-REQ", "0xTOKEN_YES", "0xTOKEN_NO", true),
+        );
+
+        let addr = start_mock_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        let request = RequestCustomData::new(
+            ClientId::from("POLYMARKET"),
+            DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.request_data(request).expect("request_data");
+
+        wait_until_async(
+            || async {
+                !client
+                    .resolve_poll_watchlist
+                    .contains_key(&"0xCOND-REQ".to_string())
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(2), |events| {
+            events.iter().any(is_resolve_response) && count_instrument_close_events(events) >= 2
+        })
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Data(response)) => Some(response),
+                _ => None,
+            })
+            .expect("expected custom data response");
+        let custom = response
+            .data
+            .as_ref()
+            .downcast_ref::<ModelCustomData>()
+            .expect("expected CustomData response payload");
+        let summary = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketResolveRequestSummaryData>()
+            .expect("expected resolve summary payload");
+        assert_eq!(summary.resolved_markets, 1);
+        assert_eq!(
+            summary.emitted_condition_ids,
+            vec!["0xCOND-REQ".to_string()]
+        );
+
+        let closes = count_instrument_close_events(&events);
+        assert_eq!(closes, 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_fallback_clob_success_after_gamma_error_does_not_mark_failed() {
+        let state = TestServerState::default();
+        state.clob_market_by_condition.lock().await.insert(
+            "0xCOND-REQ".to_string(),
+            make_clob_market_value("0xCOND-REQ", "0xTOKEN_YES", "0xTOKEN_NO", true),
+        );
+
+        let addr = start_mock_server(state).await;
+        let (client, _data_rx) = create_test_client(addr);
+        let ws_ctx = make_client_ws_ctx(&client);
+
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_sub(60_000_000_000),
+        );
+        let inst_yes = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let inst_no = seed_instrument_with_context(
+            &ws_ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-REQ"),
+                expiration_ns: Some(expiration_ns),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
+
+        let failing_gamma = PolymarketGammaHttpClient::new(
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            RetryConfig {
+                max_retries: 0,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(200),
+                immediate_first: true,
+                max_elapsed_ms: Some(200),
+            },
+        )
+        .expect("gamma client");
+
+        let stats = PolymarketDataClient::fetch_and_apply_resolutions_by_condition_ids(
+            &failing_gamma,
+            &client.clob_public_client,
+            &ws_ctx,
+            &["0xCOND-REQ".to_string()],
+            ResolveBatchErrorMode::StopOnFirstError,
+        )
+        .await;
+
+        assert_eq!(stats.resolved_markets, 1);
+        assert_eq!(stats.emitted_condition_ids, vec!["0xCOND-REQ".to_string()]);
+        assert!(stats.failed_condition_ids.is_empty());
+        assert_eq!(stats.error, None);
     }
 
     #[rstest]
