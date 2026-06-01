@@ -137,6 +137,12 @@ pub struct PolymarketDataClientConfig {
     /// Whether to subscribe to new market discovery events via WebSocket.
     #[builder(default)]
     pub subscribe_new_markets: bool,
+    /// Maximum concurrent instrument fetches spawned from `new_market` events.
+    ///
+    /// This bounds adapter-side fan-out during event bursts and prevents
+    /// request storms against Gamma.
+    #[builder(default = 8)]
+    pub new_market_fetch_max_concurrency: usize,
     /// Whether subscribe and request commands referencing an unknown instrument should
     /// trigger an ad-hoc load via the instrument provider. Concurrent misses within
     /// `auto_load_debounce_ms` are coalesced into a single batched request.
@@ -348,6 +354,7 @@ http_timeout_secs = 30
 ws_max_subscriptions = 50
 update_instruments_interval_mins = 5
 subscribe_new_markets = true
+new_market_fetch_max_concurrency = 16
 auto_load_debounce_ms = 250
 ",
         )
@@ -357,6 +364,7 @@ auto_load_debounce_ms = 250
         assert_eq!(config.ws_max_subscriptions, 50);
         assert_eq!(config.update_instruments_interval_mins, Some(5));
         assert!(config.subscribe_new_markets);
+        assert_eq!(config.new_market_fetch_max_concurrency, 16);
         assert_eq!(config.auto_load_debounce_ms, 250);
         assert!(config.instrument_config.is_none());
         assert!(config.filters.is_empty());

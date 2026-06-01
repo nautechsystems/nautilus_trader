@@ -85,8 +85,6 @@ use crate::{
     },
 };
 
-const NEW_MARKET_FETCH_MAX_CONCURRENCY: usize = 8;
-
 struct NewMarketInflightGuard {
     inflight_keys: Arc<DashMap<String, ()>>,
     key: String,
@@ -324,6 +322,12 @@ impl PolymarketDataClient {
         let data_sender = get_data_event_sender();
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
+        let fetch_max_concurrency = config.new_market_fetch_max_concurrency.max(1);
+        if config.new_market_fetch_max_concurrency == 0 {
+            log::warn!(
+                "PolymarketDataClientConfig.new_market_fetch_max_concurrency=0 is invalid, clamping to 1"
+            );
+        }
 
         Self {
             clock,
@@ -347,7 +351,7 @@ impl PolymarketDataClient {
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
-                NEW_MARKET_FETCH_MAX_CONCURRENCY,
+                fetch_max_concurrency,
             )),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
@@ -2193,7 +2197,7 @@ mod tests {
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
-                NEW_MARKET_FETCH_MAX_CONCURRENCY,
+                PolymarketDataClientConfig::default().new_market_fetch_max_concurrency,
             )),
             subscribe_new_markets: false,
             new_market_filter: None,
@@ -2233,6 +2237,41 @@ mod tests {
         PolymarketDataClient::new(
             ClientId::from("POLY-TEST"),
             PolymarketDataClientConfig::default(),
+            gamma,
+            clob,
+            data_api,
+            ws,
+        )
+    }
+
+    fn make_client_with_fetch_concurrency(concurrency: usize) -> PolymarketDataClient {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let gamma = PolymarketGammaHttpClient::new(
+            Some("http://localhost".to_string()),
+            1,
+            RetryConfig::default(),
+        )
+        .expect("gamma client");
+        let clob = PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 1)
+            .expect("clob client");
+        let data_api = PolymarketDataApiHttpClient::new(Some("http://localhost".to_string()), 1)
+            .expect("data api client");
+        let ws = PolymarketWebSocketClient::new_market(
+            Some("ws://localhost/ws/market".to_string()),
+            false,
+            TransportBackend::default(),
+        );
+
+        let config = PolymarketDataClientConfig {
+            new_market_fetch_max_concurrency: concurrency,
+            ..PolymarketDataClientConfig::default()
+        };
+
+        PolymarketDataClient::new(
+            ClientId::from("POLY-TEST"),
+            config,
             gamma,
             clob,
             data_api,
@@ -2796,6 +2835,12 @@ mod tests {
                 .is_empty()
         );
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    fn new_market_fetch_concurrency_clamps_zero_to_one() {
+        let client = make_client_with_fetch_concurrency(0);
+        assert_eq!(client.new_market_fetch_semaphore.available_permits(), 1);
     }
 
     #[rstest]

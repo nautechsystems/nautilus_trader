@@ -203,6 +203,11 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<bool>())
         .transpose()?
         .unwrap_or(default.subscribe_new_markets);
+    let new_market_fetch_max_concurrency =
+        getattr_optional(obj, "new_market_fetch_max_concurrency")?
+            .map(|value| value.extract::<usize>())
+            .transpose()?
+            .unwrap_or(default.new_market_fetch_max_concurrency);
     let auto_load_missing_instruments = getattr_optional(obj, "auto_load_missing_instruments")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -235,6 +240,7 @@ fn extract_data_config_from_pyobject(
         ws_max_subscriptions,
         update_instruments_interval_mins,
         subscribe_new_markets,
+        new_market_fetch_max_concurrency,
         auto_load_missing_instruments,
         auto_load_debounce_ms,
         auto_load_max_retries,
@@ -393,6 +399,9 @@ mod tests {
                 .set_item("subscribe_new_markets", false)
                 .unwrap();
             config_kwargs
+                .set_item("new_market_fetch_max_concurrency", 13)
+                .unwrap();
+            config_kwargs
                 .set_item("base_url_gamma", "https://gamma.example")
                 .unwrap();
             config_kwargs
@@ -442,6 +451,7 @@ mod tests {
             assert!(!instrument_config.log_warnings);
             assert_eq!(rust_config.update_instruments_interval_mins, Some(1));
             assert!(!rust_config.subscribe_new_markets);
+            assert_eq!(rust_config.new_market_fetch_max_concurrency, 13);
             assert_eq!(
                 rust_config.base_url_gamma.as_deref(),
                 Some("https://gamma.example")
