@@ -26,6 +26,7 @@ use bincode::config::{Configuration, standard};
 use redb::{
     CommitError, Database, DatabaseError, Durability, ReadOnlyDatabase, ReadTransaction,
     ReadableDatabase, ReadableTable, StorageError, TableDefinition, TableError, TransactionError,
+    WriteTransaction,
 };
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -181,41 +182,22 @@ impl RedbMarkerBackend {
     }
 
     fn initialize_fresh(db: &Database, manifest: &MarkerManifest) -> Result<(), EventStoreError> {
-        let manifest_bytes = encode_value("marker manifest", manifest)?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        let txn = begin_immediate_write(db)?;
         {
             txn.open_table(CURSOR_SNAPSHOTS_TABLE)
                 .map_err(map_table_err)?;
             txn.open_table(HIFI_MARKERS_TABLE).map_err(map_table_err)?;
             txn.open_table(MARKER_GAPS_TABLE).map_err(map_table_err)?;
             txn.open_table(STREAM_DICT_TABLE).map_err(map_table_err)?;
-
-            let mut manifest_table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
         }
+        insert_marker_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
     }
 
     fn write_manifest(db: &Database, manifest: &MarkerManifest) -> Result<(), EventStoreError> {
-        let manifest_bytes = encode_value("marker manifest", manifest)?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
-        {
-            let mut table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
-        }
+        let txn = begin_immediate_write(db)?;
+        insert_marker_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
     }
@@ -318,28 +300,14 @@ impl MarkerBackend for RedbMarkerBackend {
         let record_bytes = encode_value("cursor snapshot", &stored)?;
         let mut updated = state.manifest.clone();
         updated.snapshot_count += 1;
-        let manifest_bytes = encode_value("marker manifest", &updated)?;
-
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
-        {
-            let mut table = txn
-                .open_table(CURSOR_SNAPSHOTS_TABLE)
-                .map_err(map_table_err)?;
-            table
-                .insert(snapshot.marker_seq, record_bytes.as_slice())
-                .map_err(map_storage_err)?;
-
-            let mut manifest_table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
-        }
-        txn.commit().map_err(map_commit_err)?;
+        append_u64_marker_record(
+            db,
+            CURSOR_SNAPSHOTS_TABLE,
+            snapshot.marker_seq,
+            record_bytes.as_slice(),
+            &updated,
+        )?;
 
         state.manifest = updated;
         Ok(())
@@ -354,26 +322,14 @@ impl MarkerBackend for RedbMarkerBackend {
         let record_bytes = encode_value("hifi marker", &stored)?;
         let mut updated = state.manifest.clone();
         updated.hifi_count += 1;
-        let manifest_bytes = encode_value("marker manifest", &updated)?;
-
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
-        {
-            let mut table = txn.open_table(HIFI_MARKERS_TABLE).map_err(map_table_err)?;
-            table
-                .insert(marker.marker_seq, record_bytes.as_slice())
-                .map_err(map_storage_err)?;
-
-            let mut manifest_table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
-        }
-        txn.commit().map_err(map_commit_err)?;
+        append_u64_marker_record(
+            db,
+            HIFI_MARKERS_TABLE,
+            marker.marker_seq,
+            record_bytes.as_slice(),
+            &updated,
+        )?;
 
         state.manifest = updated;
         Ok(())
@@ -388,26 +344,14 @@ impl MarkerBackend for RedbMarkerBackend {
         let record_bytes = encode_value("marker gap", &stored)?;
         let mut updated = state.manifest.clone();
         updated.gap_count += 1;
-        let manifest_bytes = encode_value("marker manifest", &updated)?;
-
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
-        {
-            let mut table = txn.open_table(MARKER_GAPS_TABLE).map_err(map_table_err)?;
-            table
-                .insert(gap.from_marker_seq, record_bytes.as_slice())
-                .map_err(map_storage_err)?;
-
-            let mut manifest_table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
-        }
-        txn.commit().map_err(map_commit_err)?;
+        append_u64_marker_record(
+            db,
+            MARKER_GAPS_TABLE,
+            gap.from_marker_seq,
+            record_bytes.as_slice(),
+            &updated,
+        )?;
 
         state.manifest = updated;
         Ok(())
@@ -422,13 +366,10 @@ impl MarkerBackend for RedbMarkerBackend {
         let record_bytes = encode_value("stream dict entry", &stored)?;
         let mut updated = state.manifest.clone();
         updated.dict_count += 1;
-        let manifest_bytes = encode_value("marker manifest", &updated)?;
         let mut inserted = false;
 
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        let txn = begin_immediate_write(db)?;
         {
             let mut table = txn.open_table(STREAM_DICT_TABLE).map_err(map_table_err)?;
             let already = table.get(entry.slot).map_err(map_storage_err)?.is_some();
@@ -442,12 +383,7 @@ impl MarkerBackend for RedbMarkerBackend {
         }
 
         if inserted {
-            let mut manifest_table = txn
-                .open_table(MARKER_MANIFEST_TABLE)
-                .map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, manifest_bytes.as_slice())
-                .map_err(map_storage_err)?;
+            insert_marker_manifest(&txn, &updated)?;
         }
 
         txn.commit().map_err(map_commit_err)?;
@@ -597,6 +533,44 @@ impl MarkerBackend for RedbMarkerBackend {
     }
 }
 
+fn append_u64_marker_record(
+    db: &Database,
+    table_def: TableDefinition<u64, &[u8]>,
+    key: u64,
+    record_bytes: &[u8],
+    manifest: &MarkerManifest,
+) -> Result<(), EventStoreError> {
+    let txn = begin_immediate_write(db)?;
+    {
+        let mut table = txn.open_table(table_def).map_err(map_table_err)?;
+        table.insert(key, record_bytes).map_err(map_storage_err)?;
+    }
+    insert_marker_manifest(&txn, manifest)?;
+    txn.commit().map_err(map_commit_err)?;
+    Ok(())
+}
+
+fn begin_immediate_write(db: &Database) -> Result<WriteTransaction, EventStoreError> {
+    let mut txn = db.begin_write().map_err(map_transaction_err)?;
+    txn.set_durability(Durability::Immediate)
+        .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+    Ok(txn)
+}
+
+fn insert_marker_manifest(
+    txn: &WriteTransaction,
+    manifest: &MarkerManifest,
+) -> Result<(), EventStoreError> {
+    let manifest_bytes = encode_value("marker manifest", manifest)?;
+    let mut table = txn
+        .open_table(MARKER_MANIFEST_TABLE)
+        .map_err(map_table_err)?;
+    table
+        .insert(MANIFEST_KEY, manifest_bytes.as_slice())
+        .map_err(map_storage_err)?;
+    Ok(())
+}
+
 fn encode_value<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>, EventStoreError> {
     bincode::serde::encode_to_vec(value, BINCODE_CONFIG)
         .map_err(|e| EventStoreError::Backend(format!("encode {label}: {e}")))
@@ -681,8 +655,8 @@ mod tests {
         manifest::RunStatus,
         markers::{
             DataClass, DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerGapReason,
-            MarkerManifest, StreamCursor, StreamDictEntry, compute_dict_hash, compute_gap_hash,
-            compute_hifi_hash, compute_marker_hash,
+            MarkerManifest, MarkerVerifier, StreamCursor, StreamDictEntry, compute_dict_hash,
+            compute_gap_hash, compute_hifi_hash, compute_marker_hash,
         },
     };
 
@@ -917,6 +891,57 @@ mod tests {
         assert_eq!(persisted.hifi_count, 1);
         assert_eq!(persisted.gap_count, 1);
         assert_eq!(persisted.dict_count, 1);
+    }
+
+    #[rstest]
+    fn unsealed_appends_persist_manifest_counts_for_verifier(temp_dir: TempDir) {
+        let run_id = "1700000000-redb-unsealed-counts";
+        let path = marker_path(temp_dir.path(), "trader-001", run_id);
+        let s1 = snapshot(1, 1);
+        let h1 = hifi(2);
+        let g1 = gap(3, 3);
+        let first_dict = dict(0, DataClass::Quote, "ETHUSDT.BINANCE");
+        let remap_dict = dict(0, DataClass::Trade, "BTCUSDT.BINANCE");
+        let second_dict = dict(1, DataClass::Trade, "BTCUSDT.BINANCE");
+
+        {
+            let mut backend = RedbMarkerBackend::new(&path);
+            backend.open_run(manifest(run_id)).expect("open run");
+            backend
+                .append_snapshot(&s1, compute_marker_hash(&s1))
+                .expect("append snapshot");
+            backend
+                .append_hifi(&h1, compute_hifi_hash(&h1))
+                .expect("append hifi");
+            backend
+                .append_gap(&g1, compute_gap_hash(&g1))
+                .expect("append gap");
+            backend
+                .put_dict(&first_dict, compute_dict_hash(&first_dict))
+                .expect("put dict 0");
+            backend
+                .put_dict(&remap_dict, compute_dict_hash(&remap_dict))
+                .expect("re-put dict 0");
+            backend
+                .put_dict(&second_dict, compute_dict_hash(&second_dict))
+                .expect("put dict 1");
+        }
+
+        let read_only =
+            RedbMarkerBackend::open_read_only_file(&path).expect("open read-only marker file");
+        let persisted = read_only.manifest().expect("manifest");
+        let report = MarkerVerifier::scan(&read_only, 42).expect("scan");
+
+        assert_eq!(persisted.status, RunStatus::Running);
+        assert_eq!(persisted.snapshot_count, 1);
+        assert_eq!(persisted.hifi_count, 1);
+        assert_eq!(persisted.gap_count, 1);
+        assert_eq!(persisted.dict_count, 2);
+        assert_eq!(report.snapshots_scanned, 1);
+        assert_eq!(report.hifi_scanned, 1);
+        assert_eq!(report.gaps_scanned, 1);
+        assert_eq!(report.dict_entries_scanned, 2);
+        assert!(report.is_clean(), "findings was: {:?}", report.findings);
     }
 
     #[rstest]
