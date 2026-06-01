@@ -150,6 +150,42 @@ impl BacktestEngineConfig {
     }
 
     #[getter]
+    #[pyo3(name = "timeout_connection")]
+    fn py_timeout_connection(&self) -> f64 {
+        self.timeout_connection.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_reconciliation")]
+    fn py_timeout_reconciliation(&self) -> f64 {
+        self.timeout_reconciliation.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_portfolio")]
+    fn py_timeout_portfolio(&self) -> f64 {
+        self.timeout_portfolio.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_disconnection")]
+    fn py_timeout_disconnection(&self) -> f64 {
+        self.timeout_disconnection.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "delay_post_stop")]
+    fn py_delay_post_stop(&self) -> f64 {
+        self.delay_post_stop.as_secs_f64()
+    }
+
+    #[getter]
+    #[pyo3(name = "timeout_shutdown")]
+    fn py_timeout_shutdown(&self) -> f64 {
+        self.timeout_shutdown.as_secs_f64()
+    }
+
+    #[getter]
     #[pyo3(name = "cache")]
     fn py_cache(&self) -> Option<CacheConfig> {
         self.cache.clone()

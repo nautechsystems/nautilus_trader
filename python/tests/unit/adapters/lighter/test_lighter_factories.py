@@ -34,7 +34,7 @@ from nautilus_trader.model import TraderId
 lighter_exec_tester = load_example_module("lighter", "exec_tester")
 
 
-def test_lighter_factories_expose_python_v2_names() -> None:
+def test_lighter_factories_expose_python_names() -> None:
     data_factory = LighterDataClientFactory()
     exec_factory = LighterExecutionClientFactory()
 

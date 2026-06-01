@@ -158,3 +158,8 @@ name = "deribit-option-chain"
 path = "examples/node_option_chain.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

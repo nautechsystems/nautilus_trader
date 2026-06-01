@@ -38,7 +38,7 @@ SMOKE_API_PASSPHRASE = "test_passphrase"
 okx_exec_tester = load_example_module("okx", "exec_tester")
 
 
-def test_okx_factories_expose_python_v2_names() -> None:
+def test_okx_factories_expose_python_names() -> None:
     data_factory = OKXDataClientFactory()
     exec_factory = OKXExecutionClientFactory()
 

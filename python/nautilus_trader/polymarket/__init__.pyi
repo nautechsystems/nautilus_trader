@@ -7,7 +7,9 @@ from nautilus_trader import model
 
 __all__ = [
     "PolymarketDataClientConfig",
+    "PolymarketDataClientFactory",
     "PolymarketExecClientConfig",
+    "PolymarketExecutionClientFactory",
     "PolymarketInstrumentProviderConfig",
     "SignatureType",
 ]
@@ -34,6 +36,11 @@ class PolymarketDataClientConfig:
     ) -> None: ...
 
 @typing.final
+class PolymarketDataClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+
+@typing.final
 class PolymarketExecClientConfig:
     def __init__(
         self,
@@ -54,6 +61,11 @@ class PolymarketExecClientConfig:
         retry_delay_max_ms: int | None = None,
         ack_timeout_secs: int | None = None,
     ) -> None: ...
+
+@typing.final
+class PolymarketExecutionClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
 
 @typing.final
 class PolymarketInstrumentProviderConfig:

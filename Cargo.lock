@@ -6608,6 +6608,7 @@ dependencies = [
  "nautilus-analysis",
  "nautilus-architect-ax",
  "nautilus-backtest",
+ "nautilus-betfair",
  "nautilus-binance",
  "nautilus-bitmex",
  "nautilus-blockchain",

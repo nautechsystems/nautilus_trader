@@ -31,7 +31,9 @@ __all__ = [
 
 @typing.final
 class DydxDataClientConfig:
-    def __init__(self, proxy_url: str | None = None) -> None: ...
+    def __init__(
+        self, proxy_url: str | None = None, network: DydxNetwork | None = None
+    ) -> None: ...
 
 @typing.final
 class DydxDataClientFactory:
@@ -41,7 +43,14 @@ class DydxDataClientFactory:
 @typing.final
 class DydxExecClientConfig:
     def __init__(
-        self, trader_id: model.TraderId, account_id: model.AccountId, proxy_url: str | None = None
+        self,
+        trader_id: model.TraderId,
+        account_id: model.AccountId,
+        proxy_url: str | None = None,
+        network: DydxNetwork | None = None,
+        private_key: str | None = None,
+        wallet_address: str | None = None,
+        subaccount_number: int = 0,
     ) -> None: ...
 
 @typing.final

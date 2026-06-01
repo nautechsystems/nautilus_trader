@@ -17,6 +17,8 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
+from typing import ClassVar
 
 
 _EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "examples"
@@ -32,3 +34,102 @@ def load_example_module(adapter: str, module: str) -> ModuleType:
     sys.modules[module_name] = loaded_module
     spec.loader.exec_module(loaded_module)
     return loaded_module
+
+
+class _CaptureNode:
+    def __init__(self, captured: dict[str, object]) -> None:
+        self._captured = captured
+
+    def add_native_actor(self, config: object) -> None:
+        self._captured["actor_config"] = config
+
+    def add_native_strategy(self, config: object) -> None:
+        self._captured["strategy_config"] = config
+
+    def run(self) -> None:
+        self._captured["run_called"] = True
+
+
+class _CaptureBuilder:
+    def __init__(self, captured: dict[str, object]) -> None:
+        self._captured = captured
+
+    def with_reconciliation(self, reconciliation: bool) -> "_CaptureBuilder":
+        self._captured["reconciliation"] = reconciliation
+        return self
+
+    def with_risk_engine_config(self, config: object) -> "_CaptureBuilder":
+        self._captured["risk_engine_config"] = config
+        return self
+
+    def add_data_client(self, *args: object) -> "_CaptureBuilder":
+        self._captured["data_client_args"] = args
+        return self
+
+    def add_exec_client(self, *args: object) -> "_CaptureBuilder":
+        self._captured["exec_client_args"] = args
+        return self
+
+    def add_simulated_exec_client(self, *args: object) -> "_CaptureBuilder":
+        self._captured["simulated_exec_client_args"] = args
+        return self
+
+    def build(self) -> _CaptureNode:
+        return _CaptureNode(self._captured)
+
+
+class _CaptureLiveNode:
+    captured: ClassVar[dict[str, object]]
+
+    @staticmethod
+    def builder(name: str, trader_id: object, environment: object) -> _CaptureBuilder:
+        _CaptureLiveNode.captured["builder_args"] = (name, trader_id, environment)
+        return _CaptureBuilder(_CaptureLiveNode.captured)
+
+
+class _CaptureExecTesterConfig:
+    captured: ClassVar[dict[str, object]]
+
+    def __init__(self, **kwargs: object) -> None:
+        self.captured["exec_tester_kwargs"] = kwargs
+
+
+class _CaptureDataTesterConfig:
+    captured: ClassVar[dict[str, object]]
+
+    def __init__(self, **kwargs: object) -> None:
+        self.captured["data_tester_kwargs"] = kwargs
+
+
+def capture_exec_tester_main(
+    monkeypatch: Any,
+    module: ModuleType,
+    extra_args: list[str],
+) -> dict[str, object]:
+    captured: dict[str, object] = {}
+    _CaptureExecTesterConfig.captured = captured
+    _CaptureLiveNode.captured = captured
+
+    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
+    monkeypatch.setattr(module, "ExecTesterConfig", _CaptureExecTesterConfig)
+    monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
+
+    module.main()
+    return captured
+
+
+def capture_data_tester_main(
+    monkeypatch: Any,
+    module: ModuleType,
+    extra_args: list[str],
+) -> dict[str, object]:
+    captured: dict[str, object] = {}
+    _CaptureDataTesterConfig.captured = captured
+    _CaptureLiveNode.captured = captured
+
+    monkeypatch.setattr(sys, "argv", ["data_tester.py", *extra_args])
+    monkeypatch.setattr(module, "DataTesterConfig", _CaptureDataTesterConfig)
+    monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
+
+    module.main()
+    return captured

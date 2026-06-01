@@ -131,3 +131,8 @@ name = "tardis-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]

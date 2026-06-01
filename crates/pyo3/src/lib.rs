@@ -222,6 +222,16 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    #[cfg(feature = "betfair")]
+    {
+        let n = "betfair";
+        let submodule = pyo3::wrap_pymodule!(nautilus_betfair::python::betfair);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+        #[cfg(feature = "cython-compat")]
+        re_export_module_attributes(m, n)?;
+    }
+
     let n = "binance";
     let submodule = pyo3::wrap_pymodule!(nautilus_binance::python::binance);
     m.add_wrapped(submodule)?;
