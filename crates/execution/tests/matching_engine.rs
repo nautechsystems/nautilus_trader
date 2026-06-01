@@ -32,13 +32,13 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{
-        fee::{FeeModelAny, FixedFeeModel},
+        fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel},
         fill::{BestPriceFillModel, DefaultFillModel, FillModelAny},
     },
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, InstrumentClose, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, InstrumentClose, OptionGreeks, QuoteTick, TradeTick,
         stubs::OrderBookDeltaTestBuilder,
     },
     enums::{
@@ -11539,6 +11539,167 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     assert_eq!(settlement_fill.last_qty, position.quantity);
     assert_eq!(settlement_fill.last_px, Price::from("1000.00"));
     assert_eq!(settlement_fill.position_id, Some(position.id));
+}
+
+#[rstest]
+fn test_capped_option_fee_uses_underlying_mid_quote(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let venue = "DERIBIT";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::CryptoOption(crypto_option_call_btc(
+        venue,
+        expiration_ns,
+        Price::from("50000.00"),
+    ));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            InstrumentId::from(format!("BTC.{venue}").as_str()),
+            Price::from("49990.00"),
+            Price::from("50010.00"),
+            Quantity::from(1),
+            Quantity::from(1),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+
+    let fee_model = FeeModelAny::CappedOption(
+        CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
+    );
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = OrderMatchingEngine::new(
+        option.clone(),
+        1,
+        FillModelAny::default(),
+        fee_model,
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let ask = OrderBookDeltaTestBuilder::new(option.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("200.00"),
+            Quantity::from("1.0"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(option.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .client_order_id(ClientOrderId::from("DERIBIT-FEE-MID-QUOTE"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    let fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id == ClientOrderId::from("DERIBIT-FEE-MID-QUOTE") =>
+            {
+                Some(fill)
+            }
+            _ => None,
+        })
+        .expect("expected option fill");
+    let commission = fill.commission.expect("expected commission");
+
+    assert_eq!(commission.currency, Currency::USD());
+    assert_eq!(commission.as_decimal(), dec!(15.00));
+}
+
+#[rstest]
+fn test_capped_option_fee_uses_option_greeks_underlying_price(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let venue = "DERIBIT";
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let option = InstrumentAny::CryptoOption(crypto_option_call_btc(
+        venue,
+        expiration_ns,
+        Price::from("50000.00"),
+    ));
+
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+    cache.borrow_mut().add_option_greeks(OptionGreeks {
+        instrument_id: option.id(),
+        underlying_price: Some(50000.0),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(1),
+        ..Default::default()
+    });
+
+    let fee_model = FeeModelAny::CappedOption(
+        CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
+    );
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = OrderMatchingEngine::new(
+        option.clone(),
+        1,
+        FillModelAny::default(),
+        fee_model,
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let ask = OrderBookDeltaTestBuilder::new(option.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("200.00"),
+            Quantity::from("1.0"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(option.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .client_order_id(ClientOrderId::from("DERIBIT-FEE-OPTION-GREEKS"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    let fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id == ClientOrderId::from("DERIBIT-FEE-OPTION-GREEKS") =>
+            {
+                Some(fill)
+            }
+            _ => None,
+        })
+        .expect("expected option fill");
+    let commission = fill.commission.expect("expected commission");
+
+    assert_eq!(commission.currency, Currency::USD());
+    assert_eq!(commission.as_decimal(), dec!(15.00));
 }
 
 #[rstest]

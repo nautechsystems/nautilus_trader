@@ -27,7 +27,10 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_execution::models::{
-    fee::{FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel},
+    fee::{
+        CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
+        TieredNotionalOptionFeeModel,
+    },
     fill::{
         BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
         LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
@@ -1073,6 +1076,14 @@ pub(crate) fn pyobject_to_fee_model_any(
 
     if let Ok(m) = obj.extract::<PerContractFeeModel>() {
         return Ok(FeeModelAny::PerContract(m));
+    }
+
+    if let Ok(m) = obj.extract::<CappedOptionFeeModel>() {
+        return Ok(FeeModelAny::CappedOption(m));
+    }
+
+    if let Ok(m) = obj.extract::<TieredNotionalOptionFeeModel>() {
+        return Ok(FeeModelAny::TieredNotionalOption(m));
     }
 
     let type_name = obj.get_type().name()?;

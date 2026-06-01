@@ -4687,9 +4687,10 @@ impl OrderMatchingEngine {
             }
         }
 
+        let underlying_px = self.fee_underlying_price();
         let commission = self
             .fee_model
-            .get_commission(order, last_qty, last_px, &self.instrument)
+            .get_commission_with_context(order, last_qty, last_px, &self.instrument, underlying_px)
             .unwrap_or_else(|e| {
                 panic!(
                     "Failed to compute commission for {}: {}",
@@ -4845,6 +4846,30 @@ impl OrderMatchingEngine {
                 _ => {}
             }
         }
+    }
+
+    fn fee_underlying_price(&self) -> Option<Price> {
+        if !matches!(
+            self.instrument,
+            InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
+        ) {
+            return None;
+        }
+
+        let underlying = self.instrument.underlying()?;
+        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
+        let instrument_id = self.instrument.id();
+        let cache = self.cache.borrow();
+        cache
+            .price(&underlying_id, PriceType::Last)
+            .or_else(|| cache.price(&underlying_id, PriceType::Mark))
+            .or_else(|| cache.price(&underlying_id, PriceType::Mid))
+            .or_else(|| {
+                cache
+                    .option_greeks(&instrument_id)
+                    .and_then(|greeks| greeks.underlying_price)
+                    .map(|price| Price::new(price, FIXED_PRECISION))
+            })
     }
 
     fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {

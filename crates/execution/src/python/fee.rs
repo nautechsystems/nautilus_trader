@@ -18,8 +18,12 @@
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::types::Money;
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
-use crate::models::fee::{FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel};
+use crate::models::fee::{
+    CappedOptionFeeModel, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
+    TieredNotionalOptionFeeModel,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -64,6 +68,48 @@ impl PerContractFeeModel {
     #[new]
     fn py_new(commission: Money) -> PyResult<Self> {
         Self::new(commission).map_err(to_pyruntime_err)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CappedOptionFeeModel {
+    /// Creates a new `CappedOptionFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied rate is negative.
+    #[new]
+    #[pyo3(signature = (maker_rate=None, taker_rate=None, cap_rate=None))]
+    fn py_new(
+        maker_rate: Option<Decimal>,
+        taker_rate: Option<Decimal>,
+        cap_rate: Option<Decimal>,
+    ) -> PyResult<Self> {
+        Self::new(maker_rate, taker_rate, cap_rate).map_err(to_pyruntime_err)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl TieredNotionalOptionFeeModel {
+    /// Creates a new `TieredNotionalOptionFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied rate is negative.
+    #[new]
+    #[pyo3(signature = (maker_rate=None, taker_rate=None))]
+    fn py_new(maker_rate: Option<Decimal>, taker_rate: Option<Decimal>) -> PyResult<Self> {
+        Self::new(maker_rate, taker_rate).map_err(to_pyruntime_err)
     }
 
     fn __repr__(&self) -> String {
