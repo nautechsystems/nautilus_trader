@@ -116,6 +116,32 @@ def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
     return [f"{key}={summary[key]}" for key in sorted(summary)]
 
 
+_BACKTEST_PARITY_TS_START = 1_577_836_800_000_000_000
+_BACKTEST_PARITY_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
+_BACKTEST_PARITY_SUMMARY_LINES = [
+    "account.SIM.balance.USD.free=1000017.20 USD",
+    "account.SIM.balance.USD.locked=0.00 USD",
+    "account.SIM.balance.USD.total=1000017.20 USD",
+    "account.SIM.base_currency=USD",
+    "account.SIM.event_count=3",
+    "account.SIM.id=SIM-001",
+    "account.SIM.type=MARGIN",
+    "iterations=5",
+    "orders.closed=2",
+    "orders.emulated=0",
+    "orders.inflight=0",
+    "orders.open=0",
+    "orders.total=2",
+    "positions.closed=1",
+    "positions.open=0",
+    "positions.snapshots=0",
+    "positions.total=1",
+    "positions.total_with_snapshots=1",
+    "total_events=4",
+    "venues.total=1",
+]
+
+
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup_method(self):
         self.engine = _engine(snapshot_orders=True, snapshot_positions=True)
@@ -617,11 +643,79 @@ def test_correct_account_balance_from_issue_2632():
         "positions.snapshots=0",
         "positions.total=1",
         "positions.total_with_snapshots=1",
-        "total_events=6",
+        "total_events=4",
         "venues.total=1",
     ]
 
     engine.dispose()
+
+
+def test_backtest_result_summary_parity_smoke():
+    engine = _engine()
+    venue = Venue("SIM")
+    usd = Currency.from_str("USD")
+    instrument = TestInstrumentProvider.audusd_sim()
+
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=usd,
+        starting_balances=[Money(1_000_000.0, usd)],
+    )
+    engine.add_instrument(instrument)
+    engine.add_data(_backtest_parity_quotes(instrument))
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path=TICK_SCHEDULED_STRATEGY,
+            config_path=TICK_SCHEDULED_CONFIG,
+            config={
+                "instrument_id": str(instrument.id),
+                "actions": [(2, "BUY", "100000"), (4, "SELL", "100000")],
+            },
+        ),
+    )
+
+    engine.run()
+    result = engine.get_result()
+    account = engine.cache.account_for_venue(venue)
+
+    assert account is not None
+    assert account.balance_total(usd) == Money(1_000_017.20, usd)
+    assert account.balance_free(usd) == Money(1_000_017.20, usd)
+    assert account.balance_locked(usd) == Money(0, usd)
+    assert result.total_events == 4
+    assert result.total_orders == 2
+    assert engine.cache.orders_total_count() == 2
+    assert engine.cache.orders_open_count() == 0
+    assert engine.cache.orders_closed_count() == 2
+    assert result.total_positions == 1
+    assert engine.cache.positions_total_count() == 1
+    assert engine.cache.positions_open_count() == 0
+    assert engine.cache.positions_closed_count() == 1
+    assert len(engine.cache.position_snapshots()) == 0
+    assert _canonical_summary_lines(result.summary) == _BACKTEST_PARITY_SUMMARY_LINES
+
+    engine.dispose()
+
+
+def _backtest_parity_quotes(instrument) -> list[QuoteTick]:
+    quotes: list[QuoteTick] = []
+
+    for idx, bid_price in enumerate(_BACKTEST_PARITY_BID_PRICES):
+        ts = _BACKTEST_PARITY_TS_START + idx * 60_000_000_000
+        quotes.append(
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str(bid_price),
+                ask_price=Price.from_str(bid_price),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=ts,
+                ts_init=ts,
+            ),
+        )
+    return quotes
 
 
 def _build_pnl_quotes(audusd, periods: int, scenario: str) -> list[QuoteTick]:

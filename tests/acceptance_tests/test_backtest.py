@@ -116,6 +116,32 @@ def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
     return [f"{key}={summary[key]}" for key in sorted(summary)]
 
 
+_BACKTEST_PARITY_TS_START = 1_577_836_800_000_000_000
+_BACKTEST_PARITY_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
+_BACKTEST_PARITY_SUMMARY_LINES = [
+    "account.SIM.balance.USD.free=1000017.20 USD",
+    "account.SIM.balance.USD.locked=0.00 USD",
+    "account.SIM.balance.USD.total=1000017.20 USD",
+    "account.SIM.base_currency=USD",
+    "account.SIM.event_count=3",
+    "account.SIM.id=SIM-001",
+    "account.SIM.type=MARGIN",
+    "iterations=5",
+    "orders.closed=2",
+    "orders.emulated=0",
+    "orders.inflight=0",
+    "orders.open=0",
+    "orders.total=2",
+    "positions.closed=1",
+    "positions.open=0",
+    "positions.snapshots=0",
+    "positions.total=1",
+    "positions.total_with_snapshots=1",
+    "total_events=4",
+    "venues.total=1",
+]
+
+
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
@@ -965,6 +991,101 @@ class StratTest(Strategy):
             self.log.warning(
                 f"> account balance: total {self._account.balance(USDT).total.as_decimal()}",
             )
+
+
+class BacktestParitySmokeConfig(StrategyConfig):  # type: ignore [misc]
+    instrument_id: InstrumentId
+
+
+class BacktestParitySmoke(Strategy):
+    def __init__(self, config: BacktestParitySmokeConfig) -> None:
+        super().__init__(config)
+        self._tick_count = 0
+
+    def on_start(self) -> None:
+        self.subscribe_quote_ticks(self.config.instrument_id)
+
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        self._tick_count += 1
+        if self._tick_count == 2:
+            order = self.order_factory.market(
+                instrument_id=self.config.instrument_id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(100_000),
+            )
+            self.submit_order(order)
+        elif self._tick_count == 4:
+            order = self.order_factory.market(
+                instrument_id=self.config.instrument_id,
+                order_side=OrderSide.SELL,
+                quantity=Quantity.from_int(100_000),
+            )
+            self.submit_order(order)
+
+
+def test_backtest_result_summary_parity_smoke() -> None:
+    config = BacktestEngineConfig(
+        trader_id=TraderId("BACKTESTER-001"),
+        logging=LoggingConfig(bypass_logging=True),
+        run_analysis=False,
+    )
+    engine = BacktestEngine(config=config)
+    venue = Venue("SIM")
+
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
+
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
+    engine.add_instrument(instrument)
+    engine.add_data(_backtest_parity_quotes(instrument))
+    engine.add_strategy(
+        BacktestParitySmoke(BacktestParitySmokeConfig(instrument_id=instrument.id)),
+    )
+
+    engine.run()
+    result = engine.get_result()
+    account = engine.portfolio.account(venue)
+
+    assert account is not None
+    assert account.balance_total(USD) == Money(1_000_017.20, USD)
+    assert account.balance_free(USD) == Money(1_000_017.20, USD)
+    assert account.balance_locked(USD) == Money(0, USD)
+    assert result.total_orders == 2
+    assert engine.cache.orders_total_count() == 2
+    assert engine.cache.orders_open_count() == 0
+    assert engine.cache.orders_closed_count() == 2
+    assert result.total_positions == 1
+    assert engine.cache.positions_total_count() == 1
+    assert engine.cache.positions_open_count() == 0
+    assert engine.cache.positions_closed_count() == 1
+    assert len(engine.cache.position_snapshots()) == 0
+    assert _canonical_summary_lines(result.summary) == _BACKTEST_PARITY_SUMMARY_LINES
+
+    engine.dispose()
+
+
+def _backtest_parity_quotes(instrument: Instrument) -> list[QuoteTick]:
+    quotes: list[QuoteTick] = []
+
+    for idx, bid_price in enumerate(_BACKTEST_PARITY_BID_PRICES):
+        ts = _BACKTEST_PARITY_TS_START + idx * 60_000_000_000
+        quotes.append(
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str(bid_price),
+                ask_price=Price.from_str(bid_price),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=ts,
+                ts_init=ts,
+            ),
+        )
+    return quotes
 
 
 def test_correct_account_balance_from_issue_2632() -> None:

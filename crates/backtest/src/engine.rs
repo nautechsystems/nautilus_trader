@@ -54,7 +54,6 @@ use nautilus_model::{
     enums::{AccountType, AggregationSource, BookType},
     identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
     position::Position,
     types::Price,
 };
@@ -987,7 +986,7 @@ impl BacktestEngine {
 
         let cache = self.kernel.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
-        let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
+        let total_events = self.kernel.exec_engine.borrow().event_count() as usize;
         let total_orders = orders.len();
         let positions: Vec<Position> = cache
             .positions(None, None, None, None, None)
@@ -1669,7 +1668,7 @@ impl BacktestEngine {
     fn log_post_run(&self) {
         let cache = self.kernel.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
-        let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
+        let total_events = self.kernel.exec_engine.borrow().event_count() as usize;
         let total_orders = orders.len();
         let positions: Vec<Position> = cache
             .positions(None, None, None, None, None)
