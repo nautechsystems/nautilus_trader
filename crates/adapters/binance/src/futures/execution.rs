@@ -646,7 +646,7 @@ impl BinanceFuturesExecutionClient {
             let dispatch_state = self.dispatch_state.clone();
 
             let mut cancel_builder = BinanceCancelOrderParamsBuilder::default();
-            cancel_builder.symbol(instrument_id.symbol.to_string());
+            cancel_builder.symbol(format_binance_symbol(&instrument_id));
 
             if let Some(venue_id) = venue_order_id {
                 match venue_id.inner().parse::<i64>() {
@@ -1264,7 +1264,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(None);
         };
 
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&instrument_id);
         let order_id = cmd
             .venue_order_id
             .as_ref()
@@ -1338,7 +1338,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let mut reports = Vec::new();
 
         if cmd.open_only {
-            let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
+            let symbol = cmd.instrument_id.map(|id| format_binance_symbol(&id));
             let mut builder = BinanceOpenOrdersParamsBuilder::default();
 
             if let Some(s) = symbol {
@@ -1369,7 +1369,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.symbol().as_str() == order.symbol.as_str())
+                        .find(|i| i.raw_symbol().as_str() == order.symbol.as_str())
                         && let Ok(report) = order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1400,7 +1400,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.symbol().as_str() == algo_order.symbol.as_str())
+                        .find(|i| i.raw_symbol().as_str() == algo_order.symbol.as_str())
                         && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1413,7 +1413,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 }
             }
         } else if let Some(instrument_id) = cmd.instrument_id {
-            let symbol = instrument_id.symbol.to_string();
+            let symbol = format_binance_symbol(&instrument_id);
             let start_time = cmd
                 .start
                 .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
@@ -1461,7 +1461,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(Vec::new());
         };
 
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&instrument_id);
         let start_time = cmd
             .start
             .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
@@ -1506,7 +1506,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
+        let symbol = cmd.instrument_id.map(|id| format_binance_symbol(&id));
 
         let mut builder = BinancePositionRiskParamsBuilder::default();
 
@@ -1529,7 +1529,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             if let Some(instrument) = cache
                 .instruments(&BINANCE_VENUE, None)
                 .into_iter()
-                .find(|i| i.symbol().as_str() == position.symbol.as_str())
+                .find(|i| i.raw_symbol().as_str() == position.symbol.as_str())
                 && let Ok(report) = self.create_position_report(
                     &position,
                     instrument.id(),
@@ -1605,7 +1605,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let account_id = self.core.account_id;
         let clock = self.clock;
 
-        let symbol = command.instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&command.instrument_id);
         let order_id = command
             .venue_order_id
             .map(|id| {
@@ -2079,12 +2079,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             let order_id = venue_order_id.inner().parse::<i64>().unwrap_or(0);
                             if order_id != 0 {
                                 BatchCancelItem::by_order_id(
-                                    command.instrument_id.symbol.to_string(),
+                                    format_binance_symbol(&command.instrument_id),
                                     order_id,
                                 )
                             } else {
                                 BatchCancelItem::by_client_order_id(
-                                    command.instrument_id.symbol.to_string(),
+                                    format_binance_symbol(&command.instrument_id),
                                     encode_broker_id(
                                         &cancel.client_order_id,
                                         BINANCE_NAUTILUS_FUTURES_BROKER_ID,
@@ -2093,7 +2093,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             }
                         } else {
                             BatchCancelItem::by_client_order_id(
-                                command.instrument_id.symbol.to_string(),
+                                format_binance_symbol(&command.instrument_id),
                                 encode_broker_id(
                                     &cancel.client_order_id,
                                     BINANCE_NAUTILUS_FUTURES_BROKER_ID,
