@@ -705,8 +705,8 @@ impl WsDispatchState {
 
     /// Drop the cached position snapshot without emitting flat reports.
     /// Used at connect time so a stale prior-session entry cannot leak past
-    /// the strict-await gate when the initial venue frame is empty (the
-    /// consumption loop's empty-snapshot guard would otherwise preserve it).
+    /// the strict-await gate before the next `account_all_positions` frame
+    /// replaces the cache.
     pub(crate) fn clear_position_cache(&self) {
         self.last_positions.lock().expect(MUTEX_POISONED).clear();
     }
