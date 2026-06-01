@@ -271,32 +271,16 @@ mod imp {
 
             let tx = self.tx.as_ref().ok_or(SubmitError::Closed)?;
             let ts_publish = self.clock.get_time_ns();
-            let mut pending = WriterMessage::Entry { draft, ts_publish };
+            let pending = WriterMessage::Entry { draft, ts_publish };
             let start = Instant::now();
 
-            // Check elapsed before each try_send (including after a sleep) so that a
-            // stall which exceeds the threshold fires halt even when the next attempt
-            // would have succeeded. The first iteration's elapsed is ~0, so it falls
-            // through to try_send.
-            loop {
-                let elapsed = start.elapsed();
-
-                if elapsed >= self.halt_threshold {
-                    self.signal_backpressure_stall(elapsed);
-                    return Err(SubmitError::HaltSignaled {
-                        stalled_for: elapsed,
-                        threshold: self.halt_threshold,
-                    });
-                }
-
-                match tx.try_send(pending) {
-                    Ok(()) => return Ok(()),
-                    Err(TrySendError::Full(returned)) => {
-                        pending = returned;
-                        thread::sleep(SUBMIT_RETRY_INTERVAL);
-                    }
-                    Err(TrySendError::Disconnected(_)) => return Err(SubmitError::Closed),
-                }
+            match self.enqueue_with_backpressure(tx, pending, start) {
+                Ok(()) => Ok(()),
+                Err(EnqueueFailure::Stalled(elapsed)) => Err(SubmitError::HaltSignaled {
+                    stalled_for: elapsed,
+                    threshold: self.halt_threshold,
+                }),
+                Err(EnqueueFailure::Closed) => Err(SubmitError::Closed),
             }
         }
 
@@ -332,31 +316,22 @@ mod imp {
 
             let tx = self.tx.as_ref().ok_or(EventStoreError::Closed)?;
             let (ack_tx, ack_rx) = mpsc::sync_channel::<Result<SnapshotAnchor, EventStoreError>>(1);
-            let mut pending = WriterMessage::RecordSnapshotAnchor {
+            let pending = WriterMessage::RecordSnapshotAnchor {
                 blob_ref: blob_ref.into(),
                 content_hash: content_hash.into(),
                 ack: ack_tx,
             };
             let start = Instant::now();
 
-            loop {
-                let elapsed = start.elapsed();
-
-                if elapsed >= self.halt_threshold {
-                    self.signal_backpressure_stall(elapsed);
-                    return Err(EventStoreError::Backend(format!(
-                        "snapshot anchor submit stalled for {elapsed:?}, halt threshold {:?}",
-                        self.halt_threshold,
-                    )));
-                }
-
-                match tx.try_send(pending) {
-                    Ok(()) => break,
-                    Err(TrySendError::Full(returned)) => {
-                        pending = returned;
-                        thread::sleep(SUBMIT_RETRY_INTERVAL);
+            if let Err(e) = self.enqueue_with_backpressure(tx, pending, start) {
+                match e {
+                    EnqueueFailure::Stalled(elapsed) => {
+                        return Err(EventStoreError::Backend(format!(
+                            "snapshot anchor submit stalled for {elapsed:?}, halt threshold {:?}",
+                            self.halt_threshold,
+                        )));
                     }
-                    Err(TrySendError::Disconnected(_)) => return Err(EventStoreError::Closed),
+                    EnqueueFailure::Closed => return Err(EventStoreError::Closed),
                 }
             }
 
@@ -373,6 +348,35 @@ mod imp {
                 Err(RecvTimeoutError::Disconnected) => Err(EventStoreError::Backend(
                     "snapshot anchor ack channel disconnected".to_string(),
                 )),
+            }
+        }
+
+        fn enqueue_with_backpressure(
+            &self,
+            tx: &SyncSender<WriterMessage>,
+            mut pending: WriterMessage,
+            start: Instant,
+        ) -> Result<(), EnqueueFailure> {
+            // Check elapsed before each try_send (including after a sleep) so that a
+            // stall which exceeds the threshold fires halt even when the next attempt
+            // would have succeeded. The first iteration's elapsed is ~0, so it falls
+            // through to try_send.
+            loop {
+                let elapsed = start.elapsed();
+
+                if elapsed >= self.halt_threshold {
+                    self.signal_backpressure_stall(elapsed);
+                    return Err(EnqueueFailure::Stalled(elapsed));
+                }
+
+                match tx.try_send(pending) {
+                    Ok(()) => return Ok(()),
+                    Err(TrySendError::Full(returned)) => {
+                        pending = returned;
+                        thread::sleep(SUBMIT_RETRY_INTERVAL);
+                    }
+                    Err(TrySendError::Disconnected(_)) => return Err(EnqueueFailure::Closed),
+                }
             }
         }
 
@@ -420,6 +424,11 @@ mod imp {
             }
             result
         }
+    }
+
+    enum EnqueueFailure {
+        Stalled(Duration),
+        Closed,
     }
 
     impl Drop for EventStoreWriter {
