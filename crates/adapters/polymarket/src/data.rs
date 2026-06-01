@@ -63,7 +63,7 @@ use nautilus_model::{
     },
     enums::{BookType, InstrumentCloseType, MarketStatusAction},
     events::PositionEvent,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, PositionId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     types::Price,
@@ -163,6 +163,7 @@ struct TrackedInstrument {
     instrument_id: InstrumentId,
     token_id: String,
     price_precision: u8,
+    open_position_ids: AHashSet<PositionId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -360,6 +361,7 @@ fn binary_option_context(
         instrument_id: instrument.id(),
         token_id: token_id.clone(),
         price_precision: instrument.price_precision(),
+        open_position_ids: AHashSet::new(),
     };
 
     Some((condition_id, token_id, expiration_ns, tracked))
@@ -368,6 +370,7 @@ fn binary_option_context(
 fn upsert_resolve_watch_entry_from_instrument(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     instrument: &InstrumentAny,
+    position_id: PositionId,
 ) {
     let Some((condition_id, token_id, expiration_ns, tracked)) = binary_option_context(instrument)
     else {
@@ -384,13 +387,24 @@ fn upsert_resolve_watch_entry_from_instrument(
                 paused: false,
             });
         entry.expiration_ns = expiration_ns;
-        entry.tracked.insert(token_id.clone(), tracked.clone());
+        entry
+            .tracked
+            .entry(token_id.clone())
+            .and_modify(|existing| {
+                existing.open_position_ids.insert(position_id);
+            })
+            .or_insert_with(|| {
+                let mut seeded = tracked.clone();
+                seeded.open_position_ids.insert(position_id);
+                seeded
+            });
     });
 }
 
 fn remove_resolve_watch_instrument(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     instrument: &InstrumentAny,
+    position_id: PositionId,
 ) {
     let Some((condition_id, token_id, _expiration_ns, _tracked)) =
         binary_option_context(instrument)
@@ -401,7 +415,17 @@ fn remove_resolve_watch_instrument(
     watchlist.rcu(|entries| {
         let remove_entry = match entries.get_mut(&condition_id) {
             Some(entry) => {
-                entry.tracked.remove(&token_id);
+                let remove_token = match entry.tracked.get_mut(&token_id) {
+                    Some(tracked) => {
+                        tracked.open_position_ids.remove(&position_id);
+                        tracked.open_position_ids.is_empty()
+                    }
+                    None => false,
+                };
+
+                if remove_token {
+                    entry.tracked.remove(&token_id);
+                }
                 entry.tracked.is_empty()
             }
             None => false,
@@ -428,14 +452,21 @@ fn update_resolve_watchlist_from_position_event(
         return;
     };
 
+    let position_id = match event {
+        PositionEvent::PositionOpened(position) => position.position_id,
+        PositionEvent::PositionChanged(position) => position.position_id,
+        PositionEvent::PositionClosed(position) => position.position_id,
+        PositionEvent::PositionAdjusted(position) => position.position_id,
+    };
+
     match event {
         PositionEvent::PositionClosed(_) => {
-            remove_resolve_watch_instrument(watchlist, instrument);
+            remove_resolve_watch_instrument(watchlist, instrument, position_id);
         }
         PositionEvent::PositionOpened(_)
         | PositionEvent::PositionChanged(_)
         | PositionEvent::PositionAdjusted(_) => {
-            upsert_resolve_watch_entry_from_instrument(watchlist, instrument);
+            upsert_resolve_watch_entry_from_instrument(watchlist, instrument, position_id);
         }
     }
 }
@@ -587,14 +618,22 @@ fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMa
     }
 
     let asset_ids = parse_json_string_array(&market.clob_token_ids)?;
-    let outcomes = parse_json_string_array(&market.outcomes).unwrap_or_default();
+    if asset_ids.len() != 2 {
+        return None;
+    }
+
+    let outcomes = parse_json_string_array(&market.outcomes)?;
+    if outcomes.len() != 2 {
+        return None;
+    }
+
     let prices = parse_outcome_prices(&market.outcome_prices)?;
+    if prices.len() != 2 {
+        return None;
+    }
     let winner_idx = strict_winner_index(&prices)?;
     let winning_asset_id = asset_ids.get(winner_idx)?.clone();
-    let winning_outcome = outcomes
-        .get(winner_idx)
-        .cloned()
-        .unwrap_or_else(|| "UNKNOWN".to_string());
+    let winning_outcome = outcomes.get(winner_idx)?.clone();
 
     Some(StrictResolvedMarket {
         condition_id: market.condition_id.clone(),
@@ -795,6 +834,44 @@ pub struct PolymarketDataClient {
 }
 
 impl PolymarketDataClient {
+    fn merge_resolve_watch_entry(ctx: &WsMessageContext, entry: ResolveWatchEntry) {
+        let _guard = ctx
+            .resolve_watch_apply_mutex
+            .lock()
+            .expect("resolve_watch_apply_mutex poisoned");
+        let condition_id = entry.condition_id.clone();
+        let incoming_expiration_ns = entry.expiration_ns;
+        let incoming_paused = entry.paused;
+        let incoming_tracked = entry.tracked;
+
+        ctx.resolve_poll_watchlist.rcu(|entries| {
+            if let Some(existing) = entries.get_mut(&condition_id) {
+                existing.expiration_ns = existing.expiration_ns.max(incoming_expiration_ns);
+                existing.paused |= incoming_paused;
+
+                for (token_id, incoming) in &incoming_tracked {
+                    if let Some(current) = existing.tracked.get_mut(token_id.as_str()) {
+                        current
+                            .open_position_ids
+                            .extend(incoming.open_position_ids.iter().copied());
+                    } else {
+                        existing.tracked.insert(token_id.clone(), incoming.clone());
+                    }
+                }
+            } else {
+                entries.insert(
+                    condition_id.clone(),
+                    ResolveWatchEntry {
+                        condition_id: condition_id.clone(),
+                        expiration_ns: incoming_expiration_ns,
+                        tracked: incoming_tracked.clone(),
+                        paused: incoming_paused,
+                    },
+                );
+            }
+        });
+    }
+
     /// Creates a new [`PolymarketDataClient`].
     pub fn new(
         client_id: ClientId,
@@ -1489,21 +1566,24 @@ impl PolymarketDataClient {
         winning_asset_id: &str,
         winning_outcome: &str,
     ) -> usize {
-        let _guard = ctx
-            .resolve_watch_apply_mutex
-            .lock()
-            .expect("resolve_watch_apply_mutex poisoned");
-        let Some(entry) = ctx
-            .resolve_poll_watchlist
-            .get_cloned(&condition_id.to_string())
-        else {
-            log::debug!(
-                "Ignoring resolution for condition_id={condition_id}: no local watch entry"
-            );
-            return 0;
-        };
+        let entry = {
+            let _guard = ctx
+                .resolve_watch_apply_mutex
+                .lock()
+                .expect("resolve_watch_apply_mutex poisoned");
+            let Some(entry) = ctx
+                .resolve_poll_watchlist
+                .get_cloned(&condition_id.to_string())
+            else {
+                log::debug!(
+                    "Ignoring resolution for condition_id={condition_id}: no local watch entry"
+                );
+                return 0;
+            };
 
-        ctx.resolve_poll_watchlist.remove(&condition_id.to_string());
+            ctx.resolve_poll_watchlist.remove(&condition_id.to_string());
+            entry
+        };
 
         if entry.tracked.is_empty() {
             return 0;
@@ -1511,8 +1591,9 @@ impl PolymarketDataClient {
 
         let ts_init = ctx.clock.get_time_ns();
         let reason = Ustr::from(&format!("Winner: {winning_asset_id} ({winning_outcome})"));
+        let tracked_instruments: Vec<TrackedInstrument> = entry.tracked.values().cloned().collect();
 
-        for tracked in entry.tracked.values() {
+        for tracked in &tracked_instruments {
             let status = InstrumentStatus::new(
                 tracked.instrument_id,
                 MarketStatusAction::Close,
@@ -1530,15 +1611,16 @@ impl PolymarketDataClient {
                     "Failed to emit instrument status for {}: {e}",
                     tracked.instrument_id
                 );
-                ctx.resolve_poll_watchlist
-                    .insert(condition_id.to_string(), entry.clone());
+                Self::merge_resolve_watch_entry(ctx, entry);
                 return 0;
             }
 
             let close_price = if tracked.token_id == winning_asset_id {
-                Price::new(1.0, tracked.price_precision)
+                Price::from_decimal_dp(rust_decimal::Decimal::ONE, tracked.price_precision)
+                    .expect("valid decimal close price")
             } else {
-                Price::new(0.0, tracked.price_precision)
+                Price::from_decimal_dp(rust_decimal::Decimal::ZERO, tracked.price_precision)
+                    .expect("valid decimal close price")
             };
             let close = InstrumentClose::new(
                 tracked.instrument_id,
@@ -1556,13 +1638,12 @@ impl PolymarketDataClient {
                     "Failed to emit instrument close for {}: {e}",
                     tracked.instrument_id
                 );
-                ctx.resolve_poll_watchlist
-                    .insert(condition_id.to_string(), entry.clone());
+                Self::merge_resolve_watch_entry(ctx, entry);
                 return 0;
             }
         }
 
-        entry.tracked.len()
+        tracked_instruments.len()
     }
 
     fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
@@ -3070,12 +3151,15 @@ mod tests {
         inst
     }
 
-    fn stub_position_opened_event(instrument_id: InstrumentId) -> PositionEvent {
+    fn stub_position_opened_event_with_position_id(
+        instrument_id: InstrumentId,
+        position_id: &str,
+    ) -> PositionEvent {
         PositionEvent::PositionOpened(PositionOpened {
             trader_id: TraderId::from("TRADER-001"),
             strategy_id: StrategyId::from("STRATEGY-001"),
             instrument_id,
-            position_id: PositionId::new("P-1"),
+            position_id: PositionId::new(position_id),
             account_id: AccountId::from("ACCOUNT-001"),
             opening_order_id: ClientOrderId::from("ENTRY-1"),
             entry: OrderSide::Buy,
@@ -3092,12 +3176,19 @@ mod tests {
         })
     }
 
-    fn stub_position_closed_event(instrument_id: InstrumentId) -> PositionEvent {
+    fn stub_position_opened_event(instrument_id: InstrumentId) -> PositionEvent {
+        stub_position_opened_event_with_position_id(instrument_id, "P-1")
+    }
+
+    fn stub_position_closed_event_with_position_id(
+        instrument_id: InstrumentId,
+        position_id: &str,
+    ) -> PositionEvent {
         PositionEvent::PositionClosed(PositionClosed {
             trader_id: TraderId::from("TRADER-001"),
             strategy_id: StrategyId::from("STRATEGY-001"),
             instrument_id,
-            position_id: PositionId::new("P-1"),
+            position_id: PositionId::new(position_id),
             account_id: AccountId::from("ACCOUNT-001"),
             opening_order_id: ClientOrderId::from("ENTRY-1"),
             closing_order_id: Some(ClientOrderId::from("EXIT-1")),
@@ -3121,6 +3212,10 @@ mod tests {
             ts_event: UnixNanos::from(2),
             ts_init: UnixNanos::from(2),
         })
+    }
+
+    fn stub_position_closed_event(instrument_id: InstrumentId) -> PositionEvent {
+        stub_position_closed_event_with_position_id(instrument_id, "P-1")
     }
 
     fn make_market_resolved(
@@ -3359,6 +3454,25 @@ mod tests {
         );
         assert!(build_strict_resolved_market(&ambiguous).is_none());
 
+        let malformed_token_count = make_gamma_market_with_outcome_prices(
+            "0xCOND",
+            "[\"0xYES\",\"0xNO\",\"0xMAYBE\"]",
+            Some("[\"1\",\"0\",\"0\"]"),
+            Some(true),
+            Some(false),
+        );
+        assert!(build_strict_resolved_market(&malformed_token_count).is_none());
+
+        let mut malformed_outcome_count = make_gamma_market_with_outcome_prices(
+            "0xCOND",
+            "[\"0xYES\",\"0xNO\"]",
+            Some("[\"1\",\"0\"]"),
+            Some(true),
+            Some(false),
+        );
+        malformed_outcome_count.outcomes = "[\"Yes\",\"No\",\"Other\"]".to_string();
+        assert!(build_strict_resolved_market(&malformed_outcome_count).is_none());
+
         // Real Gamma/CLOB data contains some resolved markets with
         // `closed=true` and `acceptingOrders=true`; these are still resolvable.
         let accepting_true = make_gamma_market_with_outcome_prices(
@@ -3517,6 +3631,24 @@ mod tests {
             .get("0xCOND-BTC")
             .expect("expected watch entry for condition");
         assert_eq!(entry.tracked.len(), 2);
+        assert_eq!(
+            entry
+                .tracked
+                .get("0xTOKEN_YES")
+                .expect("expected yes tracked")
+                .open_position_ids
+                .len(),
+            1
+        );
+        assert_eq!(
+            entry
+                .tracked
+                .get("0xTOKEN_NO")
+                .expect("expected no tracked")
+                .open_position_ids
+                .len(),
+            1
+        );
         assert!(!entry.paused);
         drop(watchlist);
 
@@ -3544,6 +3676,79 @@ mod tests {
     }
 
     #[rstest]
+    fn position_events_keep_token_watched_until_last_position_id_closes() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let yes = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event_with_position_id(yes.id(), "P-1"),
+        );
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event_with_position_id(yes.id(), "P-2"),
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get("0xCOND-BTC")
+            .expect("expected watch entry for condition");
+        let yes_tracked = entry
+            .tracked
+            .get("0xTOKEN_YES")
+            .expect("expected tracked yes token");
+        assert_eq!(yes_tracked.open_position_ids.len(), 2);
+        drop(watchlist);
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_closed_event_with_position_id(yes.id(), "P-1"),
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get("0xCOND-BTC")
+            .expect("expected condition still watched");
+        let yes_tracked = entry
+            .tracked
+            .get("0xTOKEN_YES")
+            .expect("expected tracked yes token");
+        assert_eq!(yes_tracked.open_position_ids.len(), 1);
+        assert!(
+            yes_tracked
+                .open_position_ids
+                .contains(&PositionId::new("P-2"))
+        );
+        drop(watchlist);
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_closed_event_with_position_id(yes.id(), "P-2"),
+        );
+
+        assert!(
+            !ctx.resolve_poll_watchlist
+                .contains_key(&"0xCOND-BTC".to_string())
+        );
+    }
+
+    #[rstest]
     fn resolve_watch_selection_deduplicates_shared_condition_ids_and_pauses_timed_out_entries() {
         let now_ns = UnixNanos::from(2_000_000_000_000);
         let mut watchlist = ahash::AHashMap::new();
@@ -3555,6 +3760,7 @@ mod tests {
                 instrument_id: InstrumentId::from("0xCOND-A-0xYES.POLYMARKET"),
                 token_id: "0xYES".to_string(),
                 price_precision: 3,
+                open_position_ids: AHashSet::new(),
             },
         );
         tracked.insert(
@@ -3563,6 +3769,7 @@ mod tests {
                 instrument_id: InstrumentId::from("0xCOND-A-0xNO.POLYMARKET"),
                 token_id: "0xNO".to_string(),
                 price_precision: 3,
+                open_position_ids: AHashSet::new(),
             },
         );
         watchlist.insert(
@@ -3610,6 +3817,7 @@ mod tests {
                         instrument_id: InstrumentId::from("0xCOND-PAUSED-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
+                        open_position_ids: AHashSet::new(),
                     },
                 )]),
                 paused: true,
@@ -3626,6 +3834,7 @@ mod tests {
                         instrument_id: InstrumentId::from("0xCOND-ACTIVE-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
+                        open_position_ids: AHashSet::new(),
                     },
                 )]),
                 paused: false,
@@ -3656,6 +3865,7 @@ mod tests {
                         instrument_id: InstrumentId::from("0xCOND-ACTIVE-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
+                        open_position_ids: AHashSet::new(),
                     },
                 )]),
                 paused: false,
@@ -3741,8 +3951,14 @@ mod tests {
         let no_close = no_close.expect("expected no close");
         assert_eq!(yes_close.close_type, InstrumentCloseType::ContractExpired);
         assert_eq!(no_close.close_type, InstrumentCloseType::ContractExpired);
-        assert_eq!(yes_close.close_price.as_f64(), 1.0);
-        assert_eq!(no_close.close_price.as_f64(), 0.0);
+        assert_eq!(
+            yes_close.close_price.as_decimal(),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(
+            no_close.close_price.as_decimal(),
+            rust_decimal::Decimal::ZERO
+        );
         assert!(
             !ctx.resolve_poll_watchlist
                 .contains_key(&"0xCOND-BTC".to_string())
@@ -3776,6 +3992,137 @@ mod tests {
 
         PolymarketDataClient::handle_market_message(resolved, &ctx);
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn market_resolved_emit_failure_merges_watch_entry_back() {
+        let (ctx, data_rx) = make_ws_ctx();
+        let expiration_ns = UnixNanos::from(1_000_000_000);
+        let yes = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+        let no = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_NO",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_slug: Some("btc-updown-5m"),
+                market_id: Some("1778973900"),
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(expiration_ns),
+            },
+        );
+
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+        update_resolve_watchlist_from_position_event(
+            &ctx.resolve_poll_watchlist,
+            &ctx.instruments,
+            &stub_position_opened_event(no.id()),
+        );
+
+        drop(data_rx);
+
+        PolymarketDataClient::handle_market_message(
+            make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO"),
+            &ctx,
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get("0xCOND-BTC")
+            .expect("expected watch entry restored after emit failure");
+        assert_eq!(entry.tracked.len(), 2);
+    }
+
+    #[rstest]
+    fn merge_resolve_watch_entry_unions_existing_token_state() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let condition_id = "0xCOND-BTC".to_string();
+        let token_yes = "0xTOKEN_YES".to_string();
+        let token_no = "0xTOKEN_NO".to_string();
+        let mut existing_tracked = ahash::AHashMap::new();
+        existing_tracked.insert(
+            token_yes.clone(),
+            TrackedInstrument {
+                instrument_id: InstrumentId::from("0xCOND-BTC-0xTOKEN_YES.POLYMARKET"),
+                token_id: token_yes.clone(),
+                price_precision: 3,
+                open_position_ids: AHashSet::from_iter([PositionId::new("P-EXISTING")]),
+            },
+        );
+        ctx.resolve_poll_watchlist.insert(
+            condition_id.clone(),
+            ResolveWatchEntry {
+                condition_id: condition_id.clone(),
+                expiration_ns: UnixNanos::from(1_000),
+                tracked: existing_tracked,
+                paused: false,
+            },
+        );
+
+        let mut incoming_tracked = ahash::AHashMap::new();
+        incoming_tracked.insert(
+            token_yes.clone(),
+            TrackedInstrument {
+                instrument_id: InstrumentId::from("0xCOND-BTC-0xTOKEN_YES.POLYMARKET"),
+                token_id: token_yes.clone(),
+                price_precision: 3,
+                open_position_ids: AHashSet::from_iter([PositionId::new("P-INCOMING")]),
+            },
+        );
+        incoming_tracked.insert(
+            token_no.clone(),
+            TrackedInstrument {
+                instrument_id: InstrumentId::from("0xCOND-BTC-0xTOKEN_NO.POLYMARKET"),
+                token_id: token_no,
+                price_precision: 3,
+                open_position_ids: AHashSet::from_iter([PositionId::new("P-NO")]),
+            },
+        );
+
+        PolymarketDataClient::merge_resolve_watch_entry(
+            &ctx,
+            ResolveWatchEntry {
+                condition_id: condition_id.clone(),
+                expiration_ns: UnixNanos::from(2_000),
+                tracked: incoming_tracked,
+                paused: true,
+            },
+        );
+
+        let watchlist = ctx.resolve_poll_watchlist.load();
+        let entry = watchlist
+            .get(&condition_id)
+            .expect("expected merged condition entry");
+        assert!(entry.paused);
+        assert_eq!(entry.expiration_ns, UnixNanos::from(2_000));
+        assert_eq!(entry.tracked.len(), 2);
+        let yes = entry
+            .tracked
+            .get(&token_yes)
+            .expect("expected merged yes token");
+        assert!(
+            yes.open_position_ids
+                .contains(&PositionId::new("P-EXISTING"))
+        );
+        assert!(
+            yes.open_position_ids
+                .contains(&PositionId::new("P-INCOMING"))
+        );
     }
 
     #[rstest]
@@ -3819,8 +4166,16 @@ mod tests {
             },
         );
 
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
         pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
 
         let request = RequestCustomData::new(
@@ -3927,8 +4282,16 @@ mod tests {
             },
         );
 
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
 
         let request = RequestCustomData::new(
             ClientId::from("POLYMARKET"),
@@ -4034,7 +4397,11 @@ mod tests {
         ];
 
         for instrument in &instruments {
-            upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, instrument);
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                instrument,
+                PositionId::new("P-1"),
+            );
         }
 
         let mut params = Params::new();
@@ -4143,8 +4510,16 @@ mod tests {
                 ..SeedInstrumentContext::default()
             },
         );
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
         pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
 
         let mut params = Params::new();
@@ -4249,8 +4624,16 @@ mod tests {
                 ..SeedInstrumentContext::default()
             },
         );
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_yes);
-        upsert_resolve_watch_entry_from_instrument(&client.resolve_poll_watchlist, &inst_no);
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_yes,
+            PositionId::new("P-1"),
+        );
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst_no,
+            PositionId::new("P-2"),
+        );
 
         client.spawn_resolve_poll_task();
 
