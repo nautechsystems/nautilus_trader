@@ -84,33 +84,10 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ResolvedSpotMarketDataMode {
-    Sbe,
-    JsonPublic,
-}
-
 #[derive(Debug, Clone)]
 enum SpotWsClient {
     Sbe(BinanceSpotWebSocketClient),
     JsonPublic(BinanceSpotPublicJsonWebSocketClient),
-}
-
-fn resolve_spot_market_data_mode(
-    configured_mode: SpotMarketDataMode,
-    has_ed25519_credentials: bool,
-) -> ResolvedSpotMarketDataMode {
-    match configured_mode {
-        SpotMarketDataMode::Auto => {
-            if has_ed25519_credentials {
-                ResolvedSpotMarketDataMode::Sbe
-            } else {
-                ResolvedSpotMarketDataMode::JsonPublic
-            }
-        }
-        SpotMarketDataMode::Sbe => ResolvedSpotMarketDataMode::Sbe,
-        SpotMarketDataMode::JsonPublic => ResolvedSpotMarketDataMode::JsonPublic,
-    }
 }
 
 fn looks_like_spot_sbe_ws_url(base_url: &str) -> bool {
@@ -151,7 +128,7 @@ pub struct BinanceSpotDataClient {
     config: BinanceDataClientConfig,
     http_client: BinanceSpotHttpClient,
     ws_client: SpotWsClient,
-    spot_market_data_mode: ResolvedSpotMarketDataMode,
+    spot_market_data_mode: SpotMarketDataMode,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -168,6 +145,7 @@ impl BinanceSpotDataClient {
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: BinanceDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
+        let spot_market_data_mode = config.spot_market_data_mode;
 
         let http_client = BinanceSpotHttpClient::new(
             config.environment,
@@ -186,39 +164,35 @@ impl BinanceSpotDataClient {
             .copied()
             .unwrap_or(BinanceProductType::Spot);
 
-        let creds = resolve_credentials(
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.environment,
-            product_type,
-        )
-        .inspect_err(|e| match config.spot_market_data_mode {
-            SpotMarketDataMode::Sbe => log::warn!(
-                "Failed to resolve Binance API credentials ({e}). \
-                 Spot SBE WebSocket streams require an Ed25519 API key. \
-                 Set the appropriate env vars for your environment, \
-                 or provide api_key/api_secret in the data client config"
-            ),
-            SpotMarketDataMode::Auto => log::info!(
-                "Failed to resolve Binance Ed25519 credentials ({e}); \
-                 Spot market data mode AUTO will fall back to public JSON streams"
-            ),
-            SpotMarketDataMode::JsonPublic => {}
-        })
-        .ok();
-
-        let spot_market_data_mode =
-            resolve_spot_market_data_mode(config.spot_market_data_mode, creds.is_some());
+        let creds = if spot_market_data_mode == SpotMarketDataMode::Sbe {
+            resolve_credentials(
+                config.api_key.clone(),
+                config.api_secret.clone(),
+                config.environment,
+                product_type,
+            )
+            .inspect_err(|e| {
+                log::warn!(
+                    "Failed to resolve Binance API credentials ({e}). \
+                     Spot SBE WebSocket streams require an Ed25519 API key. \
+                     Set the appropriate env vars for your environment, \
+                     or provide api_key/api_secret in the data client config"
+                );
+            })
+            .ok()
+        } else {
+            None
+        };
 
         let ws_client = match spot_market_data_mode {
-            ResolvedSpotMarketDataMode::Sbe => SpotWsClient::Sbe(BinanceSpotWebSocketClient::new(
+            SpotMarketDataMode::Sbe => SpotWsClient::Sbe(BinanceSpotWebSocketClient::new(
                 config.base_url_ws.clone(),
                 creds.as_ref().map(|(k, _)| k.clone()),
                 creds.as_ref().map(|(_, s)| s.clone()),
                 Some(20), // Heartbeat interval
                 config.transport_backend,
             )?),
-            ResolvedSpotMarketDataMode::JsonPublic => {
+            SpotMarketDataMode::JsonPublic => {
                 SpotWsClient::JsonPublic(BinanceSpotPublicJsonWebSocketClient::new(
                     Some(resolve_spot_json_ws_url(
                         config.base_url_ws.clone(),
@@ -231,11 +205,7 @@ impl BinanceSpotDataClient {
         };
         let data_sender = get_data_event_sender();
 
-        log::info!(
-            "Resolved Spot market data mode: configured={:?}, resolved={:?}",
-            config.spot_market_data_mode,
-            spot_market_data_mode,
-        );
+        log::info!("Configured Spot market data mode: {spot_market_data_mode:?}");
 
         Ok(Self {
             clock,
@@ -432,8 +402,8 @@ impl BinanceSpotDataClient {
 
     fn quote_stream_suffix(&self) -> &'static str {
         match self.spot_market_data_mode {
-            ResolvedSpotMarketDataMode::Sbe => "bestBidAsk",
-            ResolvedSpotMarketDataMode::JsonPublic => "bookTicker",
+            SpotMarketDataMode::Sbe => "bestBidAsk",
+            SpotMarketDataMode::JsonPublic => "bookTicker",
         }
     }
 }
@@ -508,7 +478,7 @@ impl DataClient for BinanceSpotDataClient {
             return Ok(());
         }
 
-        if self.spot_market_data_mode == ResolvedSpotMarketDataMode::Sbe
+        if self.spot_market_data_mode == SpotMarketDataMode::Sbe
             && let SpotWsClient::Sbe(client) = &self.ws_client
             && !client.has_credentials()
         {
@@ -1060,27 +1030,8 @@ mod tests {
     use crate::common::{consts::BINANCE_SPOT_WS_URL, enums::BinanceEnvironment};
 
     #[rstest]
-    fn test_resolve_spot_market_data_mode_auto_without_credentials() {
-        assert_eq!(
-            resolve_spot_market_data_mode(SpotMarketDataMode::Auto, false),
-            ResolvedSpotMarketDataMode::JsonPublic
-        );
-    }
-
-    #[rstest]
-    fn test_resolve_spot_market_data_mode_auto_with_credentials() {
-        assert_eq!(
-            resolve_spot_market_data_mode(SpotMarketDataMode::Auto, true),
-            ResolvedSpotMarketDataMode::Sbe
-        );
-    }
-
-    #[rstest]
-    fn test_resolve_spot_market_data_mode_explicit_sbe() {
-        assert_eq!(
-            resolve_spot_market_data_mode(SpotMarketDataMode::Sbe, false),
-            ResolvedSpotMarketDataMode::Sbe
-        );
+    fn test_spot_market_data_mode_default_is_sbe() {
+        assert_eq!(SpotMarketDataMode::default(), SpotMarketDataMode::Sbe);
     }
 
     #[rstest]

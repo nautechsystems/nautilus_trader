@@ -98,9 +98,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
         Live USD-M Futures data overrides are normalized onto the matching
         `/market` and `/public` routes.
-    spot_market_data_mode : BinanceSpotMarketDataMode, default AUTO
+    spot_market_data_mode : BinanceSpotMarketDataMode, default SBE
         Spot market-data transport mode.
-        - `AUTO`: use SBE when Ed25519 credentials are available, otherwise public JSON.
         - `SBE`: force SBE streams (requires Ed25519 credentials).
         - `JSON_PUBLIC`: force public JSON streams (no credentials required).
     proxy_url : str, optional
@@ -126,7 +125,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: BinanceEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    spot_market_data_mode: BinanceSpotMarketDataMode = BinanceSpotMarketDataMode.AUTO
+    spot_market_data_mode: BinanceSpotMarketDataMode = BinanceSpotMarketDataMode.SBE
     proxy_url: str | None = None
     us: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60

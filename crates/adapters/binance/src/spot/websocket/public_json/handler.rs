@@ -208,14 +208,10 @@ impl BinanceSpotPublicWsHandler {
             }
         };
 
-        if json.get("result").is_some() || json.get("id").is_some() {
-            self.handle_subscription_response(&json);
-            return vec![];
-        }
-
         if let Some(code) = json.get("code")
             && let Some(code) = code.as_i64()
         {
+            self.handle_subscription_response(&json);
             let msg = json
                 .get("msg")
                 .and_then(|m| m.as_str())
@@ -229,11 +225,18 @@ impl BinanceSpotPublicWsHandler {
             )];
         }
 
+        if json.get("result").is_some() || json.get("id").is_some() {
+            self.handle_subscription_response(&json);
+            return vec![];
+        }
+
         self.handle_stream_data(&json)
     }
 
     fn handle_subscription_response(&mut self, json: &serde_json::Value) {
-        if let Ok(response) = serde_json::from_value::<BinanceSpotWsResponse>(json.clone()) {
+        if json.get("result").is_some()
+            && let Ok(response) = serde_json::from_value::<BinanceSpotWsResponse>(json.clone())
+        {
             if let Some(streams) = self.pending_requests.remove(&response.id) {
                 if response.result.is_none() {
                     for stream in &streams {
@@ -409,6 +412,45 @@ mod tests {
             .await;
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], BinanceSpotPublicWsMessage::Reconnected));
+    }
+
+    #[tokio::test]
+    async fn test_handle_raw_message_error_with_id_emits_error() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(2));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let mut handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions,
+            request_id_counter,
+        );
+        handler
+            .pending_requests
+            .insert(1, vec!["btcusdt@trade".to_string()]);
+
+        let payload = json!({
+            "code": 2,
+            "msg": "Invalid request",
+            "id": 1
+        });
+
+        let out = handler
+            .handle_raw_message(payload.to_string().into_bytes())
+            .await;
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            BinanceSpotPublicWsMessage::Error(err) => {
+                assert_eq!(err.code, 2);
+                assert_eq!(err.msg, "Invalid request");
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
+        assert!(handler.pending_requests.is_empty());
     }
 
     #[rstest]

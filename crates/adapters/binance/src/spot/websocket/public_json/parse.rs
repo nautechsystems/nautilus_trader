@@ -15,6 +15,8 @@
 
 //! Parsing utilities for Binance Spot public JSON WebSocket messages.
 
+use std::str::FromStr;
+
 use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
@@ -30,6 +32,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use super::messages::{
     BinanceSpotBookTickerMsg, BinanceSpotKlineMsg, BinanceSpotPartialDepthMsg, BinanceSpotTradeMsg,
@@ -38,6 +41,26 @@ use crate::common::{
     enums::BinanceKlineInterval,
     parse::{parse_price_at_precision, parse_quantity_at_precision},
 };
+
+fn parse_positive_price(raw: &str, precision: u8, field: &str) -> anyhow::Result<Price> {
+    parse_price_at_precision(raw, precision)
+        .ok_or_else(|| anyhow::anyhow!("invalid {field} `{raw}`"))
+}
+
+fn parse_positive_quantity(raw: &str, precision: u8, field: &str) -> anyhow::Result<Quantity> {
+    parse_quantity_at_precision(raw, precision)
+        .ok_or_else(|| anyhow::anyhow!("invalid {field} `{raw}`"))
+}
+
+fn parse_non_negative_quantity(raw: &str, precision: u8, field: &str) -> anyhow::Result<Quantity> {
+    let decimal = Decimal::from_str(raw).with_context(|| format!("invalid {field} `{raw}`"))?;
+    if decimal.is_sign_negative() {
+        anyhow::bail!("invalid {field} `{raw}`");
+    }
+
+    Quantity::from_decimal_dp(decimal, precision)
+        .map_err(|e| anyhow::anyhow!("invalid {field} `{raw}`: {e}"))
+}
 
 /// Parses a trade message into a `TradeTick`.
 ///
@@ -53,14 +76,8 @@ pub fn parse_trade(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = msg
-        .price
-        .parse::<f64>()
-        .with_context(|| format!("invalid trade price `{}`", msg.price))?;
-    let size = msg
-        .quantity
-        .parse::<f64>()
-        .with_context(|| format!("invalid trade quantity `{}`", msg.quantity))?;
+    let price = parse_positive_price(&msg.price, price_precision, "trade price")?;
+    let size = parse_positive_quantity(&msg.quantity, size_precision, "trade quantity")?;
 
     let aggressor_side = if msg.is_buyer_maker {
         AggressorSide::Seller
@@ -72,8 +89,8 @@ pub fn parse_trade(
 
     Ok(TradeTick::new(
         instrument_id,
-        Price::new(price, price_precision),
-        Quantity::new(size, size_precision),
+        price,
+        size,
         aggressor_side,
         TradeId::new(msg.trade_id.to_string()),
         ts_event,
@@ -95,22 +112,10 @@ pub fn parse_book_ticker(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = msg
-        .best_bid_price
-        .parse::<f64>()
-        .with_context(|| format!("invalid bid price `{}`", msg.best_bid_price))?;
-    let bid_size = msg
-        .best_bid_qty
-        .parse::<f64>()
-        .with_context(|| format!("invalid bid quantity `{}`", msg.best_bid_qty))?;
-    let ask_price = msg
-        .best_ask_price
-        .parse::<f64>()
-        .with_context(|| format!("invalid ask price `{}`", msg.best_ask_price))?;
-    let ask_size = msg
-        .best_ask_qty
-        .parse::<f64>()
-        .with_context(|| format!("invalid ask quantity `{}`", msg.best_ask_qty))?;
+    let bid_price = parse_positive_price(&msg.best_bid_price, price_precision, "bid price")?;
+    let bid_size = parse_positive_quantity(&msg.best_bid_qty, size_precision, "bid quantity")?;
+    let ask_price = parse_positive_price(&msg.best_ask_price, price_precision, "ask price")?;
+    let ask_size = parse_positive_quantity(&msg.best_ask_qty, size_precision, "ask quantity")?;
 
     // Spot bookTicker payloads on public streams do not consistently include
     // event timestamps; fall back to receive time when absent.
@@ -122,10 +127,10 @@ pub fn parse_book_ticker(
 
     Ok(QuoteTick::new(
         instrument_id,
-        Price::new(bid_price, price_precision),
-        Price::new(ask_price, price_precision),
-        Quantity::new(bid_size, size_precision),
-        Quantity::new(ask_size, size_precision),
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
         ts_event,
         ts_init,
     ))
@@ -279,42 +284,128 @@ pub fn parse_kline(
     let spec = interval_to_bar_spec(msg.kline.interval);
     let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
 
-    let open = msg
-        .kline
-        .open
-        .parse::<f64>()
-        .with_context(|| format!("invalid open price `{}`", msg.kline.open))?;
-    let high = msg
-        .kline
-        .high
-        .parse::<f64>()
-        .with_context(|| format!("invalid high price `{}`", msg.kline.high))?;
-    let low = msg
-        .kline
-        .low
-        .parse::<f64>()
-        .with_context(|| format!("invalid low price `{}`", msg.kline.low))?;
-    let close = msg
-        .kline
-        .close
-        .parse::<f64>()
-        .with_context(|| format!("invalid close price `{}`", msg.kline.close))?;
-    let volume = msg
-        .kline
-        .volume
-        .parse::<f64>()
-        .with_context(|| format!("invalid volume `{}`", msg.kline.volume))?;
+    let open = parse_positive_price(&msg.kline.open, price_precision, "open price")?;
+    let high = parse_positive_price(&msg.kline.high, price_precision, "high price")?;
+    let low = parse_positive_price(&msg.kline.low, price_precision, "low price")?;
+    let close = parse_positive_price(&msg.kline.close, price_precision, "close price")?;
+    let volume = parse_non_negative_quantity(&msg.kline.volume, size_precision, "volume")?;
 
     let ts_event = UnixNanos::from_millis(msg.kline.close_time as u64);
 
     Ok(Some(Bar::new(
-        bar_type,
-        Price::new(open, price_precision),
-        Price::new(high, price_precision),
-        Price::new(low, price_precision),
-        Price::new(close, price_precision),
-        Quantity::new(volume, size_precision),
-        ts_event,
-        ts_init,
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::{
+        common::parse::parse_spot_instrument_sbe,
+        spot::http::models::{
+            BinanceLotSizeFilterSbe, BinancePriceFilterSbe, BinanceSymbolFiltersSbe,
+            BinanceSymbolSbe,
+        },
+    };
+
+    fn sample_instrument() -> InstrumentAny {
+        let symbol = BinanceSymbolSbe {
+            symbol: "ETHUSDT".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            status: 0,
+            order_types: 0,
+            iceberg_allowed: true,
+            oco_allowed: true,
+            oto_allowed: false,
+            quote_order_qty_market_allowed: true,
+            allow_trailing_stop: true,
+            cancel_replace_allowed: true,
+            amend_allowed: true,
+            is_spot_trading_allowed: true,
+            is_margin_trading_allowed: false,
+            filters: BinanceSymbolFiltersSbe {
+                price_filter: Some(BinancePriceFilterSbe {
+                    price_exponent: -8,
+                    min_price: 1,
+                    max_price: 100_000_000_000_000,
+                    tick_size: 1,
+                }),
+                lot_size_filter: Some(BinanceLotSizeFilterSbe {
+                    qty_exponent: -8,
+                    min_qty: 1,
+                    max_qty: 900_000_000_000,
+                    step_size: 1,
+                }),
+            },
+            permissions: vec![vec!["SPOT".to_string()]],
+        };
+
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        parse_spot_instrument_sbe(&symbol, ts, ts).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_trade_preserves_decimal_precision() {
+        let instrument = sample_instrument();
+        let msg = BinanceSpotTradeMsg {
+            event_type: "trade".to_string(),
+            event_time: 1_700_000_000_000,
+            symbol: Ustr::from("ETHUSDT"),
+            trade_id: 42,
+            price: "123.45678901".to_string(),
+            quantity: "0.10000001".to_string(),
+            trade_time: 1_700_000_000_001,
+            is_buyer_maker: false,
+        };
+
+        let tick = parse_trade(&msg, &instrument, UnixNanos::from(1)).unwrap();
+        assert_eq!(
+            tick.price.as_decimal(),
+            Decimal::from_str("123.45678901").unwrap()
+        );
+        assert_eq!(
+            tick.size.as_decimal(),
+            Decimal::from_str("0.10000001").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_ticker_preserves_decimal_precision() {
+        let instrument = sample_instrument();
+        let msg = BinanceSpotBookTickerMsg {
+            event_type: None,
+            event_time: None,
+            symbol: Ustr::from("ETHUSDT"),
+            book_update_id: 100,
+            best_bid_price: "123.45678901".to_string(),
+            best_bid_qty: "1.23000000".to_string(),
+            best_ask_price: "123.45678909".to_string(),
+            best_ask_qty: "4.56000000".to_string(),
+            transaction_time: Some(1_700_000_000_002),
+        };
+
+        let quote = parse_book_ticker(&msg, &instrument, UnixNanos::from(1)).unwrap();
+        assert_eq!(
+            quote.bid_price.as_decimal(),
+            Decimal::from_str("123.45678901").unwrap()
+        );
+        assert_eq!(
+            quote.ask_price.as_decimal(),
+            Decimal::from_str("123.45678909").unwrap()
+        );
+        assert_eq!(
+            quote.bid_size.as_decimal(),
+            Decimal::from_str("1.23000000").unwrap()
+        );
+        assert_eq!(
+            quote.ask_size.as_decimal(),
+            Decimal::from_str("4.56000000").unwrap()
+        );
+    }
 }

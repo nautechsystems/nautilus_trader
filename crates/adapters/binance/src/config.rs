@@ -40,12 +40,8 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
 )]
 pub enum SpotMarketDataMode {
-    /// Automatically select the best mode:
-    /// - Ed25519 credentials available -> SBE
-    /// - otherwise -> public JSON streams
     #[default]
-    Auto,
-    /// Force Spot SBE streams (requires Ed25519 credentials).
+    /// Spot SBE streams (requires Ed25519 credentials).
     Sbe,
     /// Force Spot public JSON streams (does not require credentials).
     JsonPublic,
@@ -84,9 +80,7 @@ pub struct BinanceDataClientConfig {
     pub api_secret: Option<String>,
     /// Spot market-data transport mode.
     ///
-    /// - `Auto` selects SBE when Ed25519 credentials are available and
-    ///   falls back to public JSON streams otherwise.
-    /// - `Sbe` forces SBE streams and requires Ed25519 credentials.
+    /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
     /// - `JsonPublic` forces public JSON streams with no credentials.
     #[builder(default)]
     pub spot_market_data_mode: SpotMarketDataMode,
@@ -223,7 +217,7 @@ instrument_status_poll_secs = 600
             config.product_types,
             vec![BinanceProductType::Spot, BinanceProductType::UsdM]
         );
-        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Auto);
+        assert_eq!(config.spot_market_data_mode, SpotMarketDataMode::Sbe);
         assert_eq!(config.instrument_status_poll_secs, 600);
     }
 

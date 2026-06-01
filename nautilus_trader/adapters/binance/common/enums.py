@@ -207,7 +207,6 @@ class BinanceSpotMarketDataMode(Enum):
     Represents a Binance Spot market-data transport mode.
     """
 
-    AUTO = "Auto"
     SBE = "Sbe"
     JSON_PUBLIC = "JsonPublic"
 
