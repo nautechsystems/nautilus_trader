@@ -90,7 +90,7 @@ pub struct KernelConfig {
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
     /// The timeout for all clients to connect and initialize.
-    #[builder(default = Duration::from_secs(120))]
+    #[builder(default = Duration::from_secs(60))]
     pub timeout_connection: Duration,
     /// The timeout for execution state to reconcile.
     #[builder(default = Duration::from_secs(30))]
@@ -273,6 +273,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_kernel_config_default_connection_timeout() {
+        let config = KernelConfig::default();
+
+        assert_eq!(config.timeout_connection, Duration::from_secs(60));
+    }
 
     #[rstest]
     fn test_streaming_config_toml_round_trip() {

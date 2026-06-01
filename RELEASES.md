@@ -64,6 +64,7 @@ Released on TBD (UTC).
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 
 ### Breaking Changes
+- Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
 - Changed `nautilus_pyo3.get_exchange_rate` to return `decimal.Decimal` instead of `float`
 - Changed DeFi pool-event and snapshot types to require `ts_event`/`ts_init` timestamps (was optional `timestamp`)
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -73,7 +74,7 @@ Released on TBD (UTC).
 - Changed Deribit `DeribitWebSocketClient.with_credentials` to accept `api_key`/`api_secret` after `environment`
 - Changed order event `reconciliation` and `due_post_only` from `u8` to `bool` (changes JSON/Arrow schemas)
 - Changed Deribit combos to land as `CryptoOptionSpread`/`CryptoFuturesSpread` instead of `OptionSpread`/`FuturesSpread`; `FuturesSpread`/`OptionSpread` once again guarantee whole-contract sizing
-- Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
+- Changed `NautilusKernelConfig.timeout_connection` default from 120 to 60 seconds (#4179)
 
 ### Security
 - Fixed DataFFI PyCapsules to reject mismatched types and prevent repeated `CVec` drops
@@ -99,6 +100,7 @@ Released on TBD (UTC).
 - Fixed `DefiDataEngine` exposing zero-state pool profiler during snapshot bootstrap
 - Fixed pool profiler `AlreadyInitialized` error when hypersync replay revisits `Initialize` after snapshot restore
 - Fixed `LiveNode` signal handling during startup connection wait (#4102), thanks @filipmacek
+- Fixed `NautilusKernelConfig.timeout_connection` default at 60 seconds (#4179), thanks for reporting @triyys
 - Fixed Python `ShutdownSystem` dict serialization to round-trip `correlation_id` (was previously dropped)
 - Fixed Python v2 order-book wranglers writing raw fixed-point bytes in big-endian (needed little-endian) (#4111), thanks for reporting @fabz1
 - Fixed Python v2 type stub generation failing to locate `libpython` under uv-managed interpreters

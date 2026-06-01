@@ -73,7 +73,7 @@ config = TradingNodeConfig(
 |--------------------------|--------------|---------------------------------------------|
 | `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
-| `timeout_connection`     | 30.0         | Connection timeout in seconds.              |
+| `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
 | `timeout_reconciliation` | 10.0         | Reconciliation timeout in seconds.          |
 | `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
 | `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |

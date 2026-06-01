@@ -37,6 +37,7 @@ def test_engine_config_defaults():
     assert config.save_state is False
     assert config.bypass_logging is False
     assert config.run_analysis is True
+    assert config.timeout_connection == 60.0
 
 
 def test_engine_config_with_params():

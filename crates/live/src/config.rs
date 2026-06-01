@@ -580,7 +580,7 @@ pub struct LiveNodeConfig {
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
     /// The timeout for all clients to connect and initialize.
-    #[builder(default = Duration::from_secs(120))]
+    #[builder(default = Duration::from_secs(60))]
     pub timeout_connection: Duration,
     /// The timeout for execution state to reconcile.
     #[builder(default = Duration::from_secs(30))]
@@ -940,6 +940,7 @@ mod tests {
         assert_eq!(config.data_engine.qsize, 100_000);
         assert_eq!(config.risk_engine.qsize, 100_000);
         assert_eq!(config.exec_engine.qsize, 100_000);
+        assert_eq!(config.timeout_connection, Duration::from_secs(60));
         assert!(config.exec_engine.reconciliation);
         assert!(!config.exec_engine.filter_unclaimed_external_orders);
         assert!(config.data_clients.is_empty());
