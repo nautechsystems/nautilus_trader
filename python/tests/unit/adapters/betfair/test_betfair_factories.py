@@ -30,6 +30,9 @@ from nautilus_trader.model import TraderId
 
 
 BETFAIR = "BETFAIR"
+SMOKE_USERNAME = "test_user"
+SMOKE_PASSWORD = "test_password"
+SMOKE_APP_KEY = "test_app_key"
 betfair_data_tester = load_example_module("betfair", "data_tester")
 betfair_exec_tester = load_example_module("betfair", "exec_tester")
 
@@ -47,7 +50,13 @@ def test_live_node_builder_accepts_betfair_data_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(account_currency="GBP", market_ids=["1.234567890"]),
+            BetfairDataConfig(
+                account_currency="GBP",
+                username=SMOKE_USERNAME,
+                password=SMOKE_PASSWORD,
+                app_key=SMOKE_APP_KEY,
+                market_ids=["1.234567890"],
+            ),
         )
         .build()
     )
@@ -66,7 +75,13 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(account_currency="GBP", market_ids=["1.234567890"]),
+            BetfairDataConfig(
+                account_currency="GBP",
+                username=SMOKE_USERNAME,
+                password=SMOKE_PASSWORD,
+                app_key=SMOKE_APP_KEY,
+                market_ids=["1.234567890"],
+            ),
         )
         .add_exec_client(
             None,
@@ -75,6 +90,9 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
                 trader_id=trader_id,
                 account_id=account_id,
                 account_currency="GBP",
+                username=SMOKE_USERNAME,
+                password=SMOKE_PASSWORD,
+                app_key=SMOKE_APP_KEY,
                 stream_market_ids_filter=["1.234567890"],
             ),
         )

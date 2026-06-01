@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import base64
+
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import capture_exec_tester_main
@@ -31,6 +33,11 @@ from nautilus_trader.model import TraderId
 
 
 POLYMARKET = "POLYMARKET"
+SMOKE_PRIVATE_KEY = "0x" + "0" * 63 + "1"
+SMOKE_API_KEY = "test_api_key"
+SMOKE_API_SECRET = base64.urlsafe_b64encode(b"test_secret").decode()
+SMOKE_PASSPHRASE = "test_passphrase"
+SMOKE_FUNDER = "0x0000000000000000000000000000000000000000"
 polymarket_data_tester = load_example_module("polymarket", "data_tester")
 polymarket_exec_tester = load_example_module("polymarket", "exec_tester")
 
@@ -82,6 +89,11 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
             PolymarketExecClientConfig(
                 trader_id="TESTER-001",
                 account_id="POLYMARKET-001",
+                private_key=SMOKE_PRIVATE_KEY,
+                api_key=SMOKE_API_KEY,
+                api_secret=SMOKE_API_SECRET,
+                passphrase=SMOKE_PASSPHRASE,
+                funder=SMOKE_FUNDER,
                 signature_type=SignatureType.PolyGnosisSafe,
             ),
         )
