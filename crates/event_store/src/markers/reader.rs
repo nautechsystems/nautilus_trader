@@ -73,16 +73,29 @@ impl MarkerReader {
         Ok(folded)
     }
 
+    /// Scans the durable stream dictionary into a map keyed by stream slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError`] when the backend cannot scan the dictionary.
+    pub fn stream_dictionary(
+        &self,
+    ) -> Result<AHashMap<StreamSlot, StreamDictEntry>, EventStoreError> {
+        Ok(self
+            .backend
+            .scan_dict()?
+            .into_iter()
+            .map(|entry| (entry.slot, entry))
+            .collect())
+    }
+
     /// Resolves `slot` to its stream dictionary entry.
     ///
     /// Returns `None` when the slot is unknown or the backend cannot scan the dictionary.
     #[must_use]
     pub fn resolve_slot(&self, slot: StreamSlot) -> Option<StreamDictEntry> {
-        self.backend
-            .scan_dict()
-            .ok()?
-            .into_iter()
-            .find(|entry| entry.slot == slot)
+        let mut dict = self.stream_dictionary().ok()?;
+        dict.remove(&slot)
     }
 }
 

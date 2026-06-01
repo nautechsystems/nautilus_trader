@@ -17,11 +17,12 @@
 
 use std::fmt::Display;
 
+use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 
 use crate::{
     error::EventStoreError,
-    markers::{DataClass, MarkerReader, StreamCursor, StreamDictEntry},
+    markers::{DataClass, MarkerReader, StreamCursor, StreamDictEntry, StreamSlot},
     replay::{
         CatalogReplayRecord, CatalogSliceCoverage, CatalogSlicePlan, CatalogSliceQuery,
         ReplayCatalog,
@@ -62,22 +63,23 @@ where
 {
     let mut folded: Vec<_> = reader.fold_to(event_seq_before)?.into_values().collect();
     folded.sort_by_key(|cursor| cursor.slot);
+    let dict = reader.stream_dictionary()?;
 
     folded
         .into_iter()
-        .map(|cursor| join_stream(reader, catalog, cursor))
+        .map(|cursor| join_stream(&dict, catalog, cursor))
         .collect()
 }
 
 fn join_stream<C>(
-    reader: &MarkerReader,
+    dict: &AHashMap<StreamSlot, StreamDictEntry>,
     catalog: &mut C,
     cursor: StreamCursor,
 ) -> Result<JoinedStream, EventStoreError>
 where
     C: ReplayCatalog + ?Sized,
 {
-    let entry = reader.resolve_slot(cursor.slot).ok_or_else(|| {
+    let entry = dict.get(&cursor.slot).cloned().ok_or_else(|| {
         EventStoreError::Backend(format!(
             "marker stream slot {} missing from dictionary",
             cursor.slot
@@ -108,7 +110,11 @@ where
     };
     let coverage = plan_slice(catalog, &query)?;
     let plan = CatalogSlicePlan { query, coverage };
-    let mut records = load_slice(catalog, &plan)?;
+    let mut records = if plan.is_missing() {
+        Vec::new()
+    } else {
+        load_slice(catalog, &plan)?
+    };
     let candidate = records.len() != expected_count;
     records.truncate(expected_count);
 
@@ -174,8 +180,8 @@ mod tests {
     use crate::{
         manifest::RunStatus,
         markers::{
-            DataClass, DataCursorSnapshot, MarkerBackend, MarkerManifest, MarkerReader,
-            MemoryMarkerBackend, StreamCursor, StreamDictEntry, compute_dict_hash,
+            DataClass, DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerManifest,
+            MarkerReader, MemoryMarkerBackend, StreamCursor, StreamDictEntry, compute_dict_hash,
             compute_marker_hash,
         },
         replay::{
@@ -317,6 +323,26 @@ mod tests {
     }
 
     #[rstest]
+    fn missing_optional_catalog_slice_flags_candidate_without_loading() {
+        let quote = dict(0, DataClass::Quote, "AUD/USD.SIM");
+        let reader = reader_with(
+            vec![quote.clone()],
+            vec![snapshot(1, 5, vec![cursor(0, 2_000, 2)])],
+        );
+        let mut catalog = StubReplayCatalog::new(Vec::new()).with_coverage_files(Vec::new());
+
+        let joined = join_at_entry(&reader, &mut catalog, 5).expect("join");
+
+        assert_eq!(joined.len(), 1);
+        assert_join(&joined[0], quote, cursor(0, 2_000, 2), &[], true);
+        assert_eq!(
+            catalog.plan_queries,
+            vec![query("quotes", "AUD/USD.SIM", 2_000)],
+        );
+        assert!(catalog.load_plans.is_empty());
+    }
+
+    #[rstest]
     fn missing_stream_dict_entry_returns_error() {
         let reader = reader_with(Vec::new(), vec![snapshot(1, 5, vec![cursor(0, 2_000, 1)])]);
         let mut catalog = StubReplayCatalog::new(Vec::new());
@@ -329,6 +355,21 @@ mod tests {
                     message.contains("marker stream slot 0 missing from dictionary"),
                     "message was: {message}",
                 );
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn dictionary_scan_error_is_preserved() {
+        let reader = MarkerReader::new(Box::new(FailingDictBackend));
+        let mut catalog = StubReplayCatalog::new(Vec::new());
+
+        let err = join_at_entry(&reader, &mut catalog, 5).expect_err("dict scan must fail");
+
+        match err {
+            EventStoreError::Backend(message) => {
+                assert_eq!(message, "scan dict failed");
             }
             other => panic!("expected Backend, was {other:?}"),
         }
@@ -376,6 +417,7 @@ mod tests {
         records: Vec<CatalogReplayRecord>,
         plan_queries: Vec<CatalogSliceQuery>,
         load_plans: Vec<CatalogSlicePlan>,
+        coverage_files: Option<Vec<String>>,
         plan_error: Option<String>,
         load_error: Option<String>,
     }
@@ -386,9 +428,15 @@ mod tests {
                 records,
                 plan_queries: Vec::new(),
                 load_plans: Vec::new(),
+                coverage_files: None,
                 plan_error: None,
                 load_error: None,
             }
+        }
+
+        fn with_coverage_files(mut self, files: Vec<String>) -> Self {
+            self.coverage_files = Some(files);
+            self
         }
 
         fn with_plan_error(mut self, message: &str) -> Self {
@@ -414,10 +462,11 @@ mod tests {
             }
 
             self.plan_queries.push(query.clone());
-            Ok(CatalogSliceCoverage::from_files(vec![format!(
-                "{}/{}",
-                query.data_cls, query.identifiers[0]
-            )]))
+            Ok(CatalogSliceCoverage::from_files(
+                self.coverage_files.clone().unwrap_or_else(|| {
+                    vec![format!("{}/{}", query.data_cls, query.identifiers[0])]
+                }),
+            ))
         }
 
         fn load_slice(
@@ -577,5 +626,58 @@ mod tests {
             data_classes,
         );
         assert_eq!(joined.candidate, candidate);
+    }
+
+    #[derive(Debug)]
+    struct FailingDictBackend;
+
+    impl MarkerBackend for FailingDictBackend {
+        fn open_run(&mut self, _: MarkerManifest) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn append_snapshot(
+            &mut self,
+            _: &DataCursorSnapshot,
+            _: [u8; 32],
+        ) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn append_hifi(&mut self, _: &HiFiMarker, _: [u8; 32]) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn append_gap(&mut self, _: &MarkerGap, _: [u8; 32]) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn put_dict(&mut self, _: &StreamDictEntry, _: [u8; 32]) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
+            Ok(vec![snapshot(1, 5, vec![cursor(0, 2_000, 1)])])
+        }
+
+        fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
+            unreachable!("test does not scan high-fidelity markers")
+        }
+
+        fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
+            unreachable!("test does not scan gaps")
+        }
+
+        fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
+            Err(EventStoreError::Backend("scan dict failed".to_string()))
+        }
+
+        fn seal(&mut self, _: RunStatus) -> Result<(), EventStoreError> {
+            unreachable!("test backend is read-only")
+        }
+
+        fn manifest(&self) -> Result<MarkerManifest, EventStoreError> {
+            unreachable!("test does not read manifest")
+        }
     }
 }
