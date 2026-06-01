@@ -141,7 +141,7 @@ pub enum MarkerGapReason {
 pub struct MarkerGap {
     /// The first marker sequence number missing from the sequence.
     pub from_marker_seq: u64,
-    /// The first marker sequence number after the gap.
+    /// The last marker sequence number missing from the sequence.
     pub to_marker_seq: u64,
     /// The reason this gap was recorded.
     pub reason: MarkerGapReason,

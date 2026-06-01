@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data marker sidecar schema types and canonical content hashes.
+//! Data marker sidecar schema types, canonical content hashes, and writer lane.
 //!
 //! The sidecar records the observed order of streaming data at the message-bus boundary as
 //! compact cursor snapshots, joinable back to catalog rows. No market-data payload is
@@ -23,6 +23,7 @@ pub mod backend;
 pub mod cursor;
 pub mod marker;
 pub mod redb;
+pub mod writer;
 
 pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend};
 pub use cursor::CursorState;
@@ -32,3 +33,7 @@ pub use marker::{
     compute_marker_hash,
 };
 pub use redb::RedbMarkerBackend;
+pub use writer::{
+    DEFAULT_MARKER_CHANNEL_CAPACITY, DEFAULT_MARKER_MAX_BATCH, DEFAULT_MARKER_MAX_LATENCY,
+    MarkerMsg, MarkerWriter, MarkerWriterConfig,
+};
