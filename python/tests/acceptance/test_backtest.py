@@ -812,6 +812,8 @@ class TestBacktestPnLAlignmentAcceptance:
         total_positions_with_snapshots = positions_total + snapshot_positions
         assert snapshot_positions > 0
         assert total_positions_with_snapshots > positions_total
+        assert result.total_positions == total_positions_with_snapshots
+        assert result.summary["positions.total"] == str(positions_total)
         assert result.summary["positions.snapshots"] == str(snapshot_positions)
         assert result.summary["positions.total_with_snapshots"] == str(
             total_positions_with_snapshots,

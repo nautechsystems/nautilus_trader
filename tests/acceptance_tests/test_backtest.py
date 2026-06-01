@@ -1449,6 +1449,8 @@ class TestBacktestPnLAlignmentAcceptance:
         positions_total = engine.cache.positions_total_count()
         total_positions_with_snapshots = positions_total + len(snapshots)
         assert total_positions_with_snapshots > positions_total
+        assert result.total_positions == total_positions_with_snapshots
+        assert result.summary["positions.total"] == str(positions_total)
         assert result.summary["positions.snapshots"] == str(len(snapshots))
         assert result.summary["positions.total_with_snapshots"] == str(
             total_positions_with_snapshots,

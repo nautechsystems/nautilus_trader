@@ -993,13 +993,14 @@ impl BacktestEngine {
             .into_iter()
             .map(|p| p.cloned())
             .collect();
-        let total_positions = positions.len();
+        let cached_positions_count = positions.len();
         let snapshot_positions = cache.position_snapshots(None, None).len();
+        let total_positions = Self::total_positions_with_snapshots(&cache, cached_positions_count);
         let summary = self.build_result_summary(
             &cache,
             total_events,
             total_orders,
-            total_positions,
+            cached_positions_count,
             snapshot_positions,
         );
 
@@ -1042,7 +1043,7 @@ impl BacktestEngine {
         cache: &Cache,
         total_events: usize,
         total_orders: usize,
-        total_positions: usize,
+        cached_positions_count: usize,
         snapshot_positions: usize,
     ) -> AHashMap<String, String> {
         let mut summary = AHashMap::new();
@@ -1073,7 +1074,10 @@ impl BacktestEngine {
                 .orders_inflight_count(None, None, None, None, None)
                 .to_string(),
         );
-        summary.insert("positions.total".to_string(), total_positions.to_string());
+        summary.insert(
+            "positions.total".to_string(),
+            cached_positions_count.to_string(),
+        );
         summary.insert(
             "positions.open".to_string(),
             cache
@@ -1092,7 +1096,7 @@ impl BacktestEngine {
         );
         summary.insert(
             "positions.total_with_snapshots".to_string(),
-            (total_positions + snapshot_positions).to_string(),
+            (cached_positions_count + snapshot_positions).to_string(),
         );
 
         let mut venues: Vec<Venue> = self.venues.keys().copied().collect();
@@ -1675,7 +1679,7 @@ impl BacktestEngine {
             .into_iter()
             .map(|p| p.cloned())
             .collect();
-        let total_positions = positions.len();
+        let total_positions = Self::total_positions_with_snapshots(&cache, positions.len());
 
         let config_id = self.run_config_id.as_deref().unwrap_or("None");
         let id = format_optional_uuid(self.run_id.as_ref());
@@ -1712,6 +1716,10 @@ impl BacktestEngine {
 
         let analyzer = self.build_analyzer(&cache, &positions);
         log_portfolio_performance(&analyzer);
+    }
+
+    fn total_positions_with_snapshots(cache: &Cache, cached_positions_count: usize) -> usize {
+        cached_positions_count + cache.position_snapshots(None, None).len()
     }
 
     /// Registers a data client for the given `client_id` if one does not already exist.

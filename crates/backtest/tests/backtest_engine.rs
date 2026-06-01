@@ -1441,6 +1441,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     let cache_rc = engine.kernel().cache();
     let (
         expected_total,
+        cached_positions_count,
         cache_realized_count,
         snapshots_realized,
         snapshots_realized_count,
@@ -1483,6 +1484,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
 
         (
             cache_realized + snapshots_realized,
+            positions.len(),
             cache_realized_count,
             snapshots_realized,
             snapshots_realized_count,
@@ -1493,16 +1495,22 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
 
     let bt_result = engine.get_result();
-    let total_positions_with_snapshots = bt_result.total_positions + snapshot_positions_count;
     assert_eq!(
         bt_result.summary["positions.snapshots"],
         snapshot_positions_count.to_string()
     );
     assert_eq!(
         bt_result.summary["positions.total_with_snapshots"],
-        total_positions_with_snapshots.to_string()
+        bt_result.total_positions.to_string()
     );
-    assert!(total_positions_with_snapshots > bt_result.total_positions);
+    assert_eq!(
+        bt_result.summary["positions.total"],
+        cached_positions_count.to_string()
+    );
+    assert_eq!(
+        bt_result.total_positions,
+        cached_positions_count + snapshot_positions_count
+    );
 
     let expectancy = bt_result
         .stats_pnls
