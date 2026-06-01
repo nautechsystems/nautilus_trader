@@ -32,7 +32,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_common::{
@@ -77,13 +77,32 @@ use crate::{
     providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_configured_instruments},
     websocket::{
         client::PolymarketWebSocketClient,
-        messages::{MarketWsMessage, PolymarketQuotes, PolymarketWsMessage},
+        messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuotes, PolymarketWsMessage},
         parse::{
             parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
             parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
         },
     },
 };
+
+const NEW_MARKET_FETCH_MAX_CONCURRENCY: usize = 8;
+
+struct NewMarketInflightGuard {
+    inflight_keys: Arc<DashMap<String, ()>>,
+    key: String,
+}
+
+impl NewMarketInflightGuard {
+    fn new(inflight_keys: Arc<DashMap<String, ()>>, key: String) -> Self {
+        Self { inflight_keys, key }
+    }
+}
+
+impl Drop for NewMarketInflightGuard {
+    fn drop(&mut self) {
+        self.inflight_keys.remove(&self.key);
+    }
+}
 
 fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -222,6 +241,8 @@ struct WsMessageContext {
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    new_market_inflight_keys: Arc<DashMap<String, ()>>,
+    new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     subscribe_new_markets: bool,
     new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     cancellation_token: CancellationToken,
@@ -255,6 +276,8 @@ pub struct PolymarketDataClient {
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    new_market_inflight_keys: Arc<DashMap<String, ()>>,
+    new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
@@ -262,6 +285,32 @@ pub struct PolymarketDataClient {
 }
 
 impl PolymarketDataClient {
+    fn new_market_dedupe_key(nm: &PolymarketNewMarket) -> String {
+        let condition_id = nm.condition_id.trim();
+        if !condition_id.is_empty() {
+            return format!("cond:{condition_id}");
+        }
+        let market_id = nm.market.as_str().trim();
+        if !market_id.is_empty() {
+            return format!("market:{market_id}");
+        }
+        format!("slug:{}", nm.slug.trim())
+    }
+
+    fn new_market_fetch_condition_id(nm: &PolymarketNewMarket) -> Option<String> {
+        let condition_id = nm.condition_id.trim();
+        if !condition_id.is_empty() {
+            return Some(condition_id.to_string());
+        }
+
+        let market_id = nm.market.as_str().trim();
+        if !market_id.is_empty() {
+            return Some(market_id.to_string());
+        }
+
+        None
+    }
+
     /// Creates a new [`PolymarketDataClient`].
     pub fn new(
         client_id: ClientId,
@@ -296,6 +345,10 @@ impl PolymarketDataClient {
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            new_market_inflight_keys: Arc::new(DashMap::new()),
+            new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                NEW_MARKET_FETCH_MAX_CONCURRENCY,
+            )),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
@@ -737,6 +790,8 @@ impl PolymarketDataClient {
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            new_market_inflight_keys: self.new_market_inflight_keys.clone(),
+            new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
             cancellation_token: cancellation.clone(),
@@ -1070,6 +1125,21 @@ impl PolymarketDataClient {
                     return;
                 }
 
+                let dedupe_key = Self::new_market_dedupe_key(&nm);
+                let fetch_condition_id = Self::new_market_fetch_condition_id(&nm);
+                let slug = nm.slug;
+
+                if ctx
+                    .new_market_inflight_keys
+                    .insert(dedupe_key.clone(), ())
+                    .is_some()
+                {
+                    log::debug!(
+                        "Deduped new market event key='{dedupe_key}' slug='{slug}' (fetch already in-flight)",
+                    );
+                    return;
+                }
+
                 let gamma_client = ctx.gamma_client.clone();
                 let filters = ctx.filters.clone();
                 let token_meta = ctx.token_meta.clone();
@@ -1077,12 +1147,48 @@ impl PolymarketDataClient {
                 let data_sender = ctx.data_sender.clone();
                 let clock = ctx.clock;
                 let cancellation = ctx.cancellation_token.clone();
-                let slug = nm.slug;
+                let inflight_keys = ctx.new_market_inflight_keys.clone();
+                let fetch_semaphore = ctx.new_market_fetch_semaphore.clone();
                 let active = nm.active;
 
                 get_runtime().spawn(async move {
-                    let fetch = gamma_client
-                        .request_instruments_by_slugs_with_retry(vec![slug.clone()]);
+                    let _inflight_guard =
+                        NewMarketInflightGuard::new(inflight_keys, dedupe_key.clone());
+                    let _permit = tokio::select! {
+                        permit = fetch_semaphore.clone().acquire_owned() => {
+                            match permit {
+                                Ok(permit) => permit,
+                                Err(_) => {
+                                    log::debug!("New market fetch semaphore closed");
+                                    return;
+                                }
+                            }
+                        }
+                        () = cancellation.cancelled() => {
+                            log::debug!("New market fetch for '{slug}' cancelled before acquire");
+                            return;
+                        }
+                    };
+
+                    let fetch = async {
+                        if let Some(condition_id) = fetch_condition_id {
+                            let params = GetGammaMarketsParams {
+                                condition_ids: Some(condition_id),
+                                ..Default::default()
+                            };
+                            let (instruments, _transient) = gamma_client
+                                .request_instruments_by_params_with_transient(params)
+                                .await?;
+                            Ok::<Vec<InstrumentAny>, anyhow::Error>(instruments)
+                        } else {
+                            log::warn!(
+                                "New market slug='{slug}' missing condition identifiers; falling back to slug query",
+                            );
+                            gamma_client
+                                .request_instruments_by_slugs_with_retry(vec![slug.clone()])
+                                .await
+                        }
+                    };
 
                     let result = tokio::select! {
                         r = fetch => r,
@@ -1094,6 +1200,13 @@ impl PolymarketDataClient {
 
                     match result {
                         Ok(new_instruments) => {
+                            if new_instruments.is_empty() {
+                                log::warn!(
+                                    "New market fetch returned no instruments for key='{dedupe_key}' slug='{slug}'",
+                                );
+                                return;
+                            }
+
                             for inst in new_instruments {
                                 if cancellation.is_cancelled() {
                                     log::debug!("New market processing cancelled during shutdown");
@@ -1255,12 +1368,36 @@ impl DataClient for PolymarketDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Polymarket data client: {}", self.client_id);
+        self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
+
+        // Stop the WS handler path even when reset is called without a graceful disconnect.
+        self.ws_client.abort();
+        self.ws_client.clear_reconnect_state();
 
         for handle in self.tasks.drain(..) {
             handle.abort();
         }
+
+        self.instruments.store(AHashMap::new());
+        self.token_meta.clear();
+        self.order_books.clear();
+        self.last_quotes.clear();
+
+        self.active_quote_subs = Arc::new(AtomicSet::new());
+        self.active_delta_subs = Arc::new(AtomicSet::new());
+        self.active_trade_subs = Arc::new(AtomicSet::new());
+        self.pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        self.new_market_inflight_keys.clear();
+        self.ws_open_tokens = Arc::new(AtomicSet::new());
+
+        self.pending_auto_loads
+            .lock()
+            .expect("pending_auto_loads mutex poisoned")
+            .clear();
+        self.auto_load_scheduled.store(false, Ordering::Release);
+
+        self.cancellation_token = CancellationToken::new();
         Ok(())
     }
 
@@ -1656,6 +1793,22 @@ impl DataClient for PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        net::SocketAddr,
+        sync::{
+            Arc, Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    use axum::{
+        Router,
+        extract::{RawQuery, State},
+        response::Json,
+        routing::get,
+    };
+    use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::AssetClass,
@@ -1664,7 +1817,9 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::retry::RetryConfig;
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
+    use serde_json::Value;
 
     use super::*;
     use crate::{
@@ -1673,8 +1828,8 @@ mod tests {
             client::WsSubscriptionHandle,
             handler::HandlerCommand,
             messages::{
-                MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote,
-                PolymarketQuotes, PolymarketTickSizeChange,
+                MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketNewMarket,
+                PolymarketQuote, PolymarketQuotes, PolymarketTickSizeChange,
             },
         },
     };
@@ -2000,15 +2155,26 @@ mod tests {
         }
     }
 
-    fn make_ws_ctx() -> (
+    fn make_ws_ctx_with_gamma_base_url(
+        gamma_base_url: &str,
+    ) -> (
         WsMessageContext,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let gamma_client = PolymarketGammaHttpClient::new(
-            Some("http://localhost".to_string()),
-            5,
-            RetryConfig::default(),
+            Some(gamma_base_url.to_string()),
+            2,
+            RetryConfig {
+                max_retries: 0,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+                operation_timeout_ms: Some(2_000),
+                immediate_first: true,
+                max_elapsed_ms: Some(2_000),
+            },
         )
         .expect("gamma client");
 
@@ -2025,12 +2191,53 @@ mod tests {
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            new_market_inflight_keys: Arc::new(DashMap::new()),
+            new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
+                NEW_MARKET_FETCH_MAX_CONCURRENCY,
+            )),
             subscribe_new_markets: false,
             new_market_filter: None,
             cancellation_token: CancellationToken::new(),
         };
 
         (ctx, data_rx)
+    }
+
+    fn make_ws_ctx() -> (
+        WsMessageContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        make_ws_ctx_with_gamma_base_url("http://localhost")
+    }
+
+    fn make_client_for_reset_test() -> PolymarketDataClient {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let gamma = PolymarketGammaHttpClient::new(
+            Some("http://localhost".to_string()),
+            1,
+            RetryConfig::default(),
+        )
+        .expect("gamma client");
+        let clob = PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 1)
+            .expect("clob client");
+        let data_api = PolymarketDataApiHttpClient::new(Some("http://localhost".to_string()), 1)
+            .expect("data api client");
+        let ws = PolymarketWebSocketClient::new_market(
+            Some("ws://localhost/ws/market".to_string()),
+            false,
+            TransportBackend::default(),
+        );
+
+        PolymarketDataClient::new(
+            ClientId::from("POLY-TEST"),
+            PolymarketDataClientConfig::default(),
+            gamma,
+            clob,
+            data_api,
+            ws,
+        )
     }
 
     fn seed_instrument(
@@ -2088,6 +2295,507 @@ mod tests {
             }],
             timestamp: "1700000002000".to_string(),
         })
+    }
+
+    fn make_new_market(slug: &str, active: bool) -> MarketWsMessage {
+        make_new_market_with_ids(
+            slug,
+            &format!("cond-{slug}"),
+            &format!("cond-{slug}"),
+            active,
+        )
+    }
+
+    fn make_new_market_with_condition(
+        slug: &str,
+        condition_id: &str,
+        active: bool,
+    ) -> MarketWsMessage {
+        make_new_market_with_ids(slug, condition_id, condition_id, active)
+    }
+
+    fn make_new_market_with_ids(
+        slug: &str,
+        market: &str,
+        condition_id: &str,
+        active: bool,
+    ) -> MarketWsMessage {
+        MarketWsMessage::NewMarket(Box::new(PolymarketNewMarket {
+            id: format!("id-{slug}"),
+            question: format!("Will {slug} settle true?"),
+            market: Ustr::from(market),
+            slug: slug.to_string(),
+            description: format!("desc-{slug}"),
+            assets_ids: vec![format!("yes-{slug}"), format!("no-{slug}")],
+            outcomes: vec!["Yes".to_string(), "No".to_string()],
+            timestamp: "1700000003000".to_string(),
+            tags: vec![],
+            condition_id: condition_id.to_string(),
+            active,
+            clob_token_ids: vec![format!("yes-{slug}"), format!("no-{slug}")],
+            order_price_min_tick_size: None,
+            group_item_title: None,
+            event_message: None,
+        }))
+    }
+
+    #[derive(Clone, Default)]
+    struct NewMarketFetchTestServerState {
+        total_requests: Arc<AtomicUsize>,
+        inflight_requests: Arc<AtomicUsize>,
+        max_inflight_requests: Arc<AtomicUsize>,
+        seen_condition_ids: Arc<StdMutex<Vec<Option<String>>>>,
+        seen_slugs: Arc<StdMutex<Vec<Option<String>>>>,
+        response_delay_ms: u64,
+    }
+
+    fn query_param(raw_query: Option<String>, key: &str) -> Option<String> {
+        let raw = raw_query?;
+        raw.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let pair_key = parts.next().unwrap_or("");
+            if pair_key != key {
+                return None;
+            }
+            Some(parts.next().unwrap_or("").to_string())
+        })
+    }
+
+    async fn handle_new_market_gamma_markets(
+        RawQuery(raw_query): RawQuery,
+        State(state): State<NewMarketFetchTestServerState>,
+    ) -> Json<Value> {
+        state.total_requests.fetch_add(1, Ordering::SeqCst);
+        let inflight = state.inflight_requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let condition_id = query_param(raw_query.clone(), "condition_ids");
+        let slug = query_param(raw_query, "slug");
+
+        state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned")
+            .push(condition_id);
+        state
+            .seen_slugs
+            .lock()
+            .expect("seen_slugs mutex poisoned")
+            .push(slug);
+
+        loop {
+            let prev = state.max_inflight_requests.load(Ordering::SeqCst);
+            if inflight <= prev {
+                break;
+            }
+
+            if state
+                .max_inflight_requests
+                .compare_exchange(prev, inflight, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
+
+        if state.response_delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(state.response_delay_ms)).await;
+        }
+
+        state.inflight_requests.fetch_sub(1, Ordering::SeqCst);
+        Json(serde_json::json!([]))
+    }
+
+    async fn start_new_market_test_server(state: NewMarketFetchTestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind failed");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/markets", get(handle_new_market_gamma_markets))
+            .with_state(state);
+
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+        addr
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_dedupes_same_slug_and_cleans_inflight_on_cancel() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+
+        PolymarketDataClient::handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
+        PolymarketDataClient::handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), 0);
+        assert_eq!(ctx.new_market_inflight_keys.len(), 1);
+        assert!(
+            ctx.new_market_inflight_keys
+                .contains_key("cond:cond-btc-updown-5m-1")
+        );
+
+        ctx.cancellation_token.cancel();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+
+        loop {
+            if ctx.new_market_inflight_keys.is_empty() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "expected in-flight key cleanup after cancellation"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetches_respect_global_concurrency_cap() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 150,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug_count = 12usize;
+        for idx in 0..slug_count {
+            let slug = format!("asset-{idx}-updown-5m-1");
+            PolymarketDataClient::handle_market_message(make_new_market(&slug, true), &ctx);
+        }
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= slug_count
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for new market fetch tasks to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), slug_count);
+        assert_eq!(state.max_inflight_requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_same_slug_can_refetch_after_previous_completion() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 50,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug = "btc-updown-5m-2";
+        let dedupe_key = "cond:cond-btc-updown-5m-2";
+        PolymarketDataClient::handle_market_message(make_new_market(slug, true), &ctx);
+
+        let deadline_first = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let first_done = state.total_requests.load(Ordering::SeqCst) >= 1
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if first_done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_first,
+                "timed out waiting for first slug fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        PolymarketDataClient::handle_market_message(make_new_market(slug, true), &ctx);
+
+        let deadline_second = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let second_done = state.total_requests.load(Ordering::SeqCst) >= 2
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if second_done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_second,
+                "timed out waiting for second slug fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_cancellation_during_fetch_cleans_inflight_slug() {
+        let state = NewMarketFetchTestServerState {
+            response_delay_ms: 500,
+            ..NewMarketFetchTestServerState::default()
+        };
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let slug = "eth-updown-5m-cancel";
+        let dedupe_key = "cond:cond-eth-updown-5m-cancel";
+        PolymarketDataClient::handle_market_message(make_new_market(slug, true), &ctx);
+
+        let deadline_started = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let started = state.inflight_requests.load(Ordering::SeqCst) > 0
+                && ctx.new_market_inflight_keys.contains_key(dedupe_key);
+
+            if started {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_started,
+                "timed out waiting for in-flight fetch to begin"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        ctx.cancellation_token.cancel();
+
+        let deadline_cleanup = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        loop {
+            if ctx.new_market_inflight_keys.is_empty() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline_cleanup,
+                "expected in-flight key cleanup after cancellation during fetch"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert!(
+            state.max_inflight_requests.load(Ordering::SeqCst) <= 1,
+            "fetch concurrency exceeded configured cap during cancellation path"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_dedupes_mixed_slugs_when_condition_id_matches() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+
+        let condition_id = "0xabc123";
+        PolymarketDataClient::handle_market_message(
+            make_new_market_with_condition("btc-updown-5m-window-a", condition_id, true),
+            &ctx,
+        );
+        PolymarketDataClient::handle_market_message(
+            make_new_market_with_condition("btc-updown-5m-window-b", condition_id, true),
+            &ctx,
+        );
+
+        assert_eq!(state.total_requests.load(Ordering::SeqCst), 0);
+        assert_eq!(ctx.new_market_inflight_keys.len(), 1);
+        assert!(
+            ctx.new_market_inflight_keys.contains_key("cond:0xabc123"),
+            "mixed slug events with same condition_id should dedupe to one in-flight fetch",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetch_prefers_condition_id_query_over_slug_query() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        PolymarketDataClient::handle_market_message(
+            make_new_market_with_ids(
+                "btc-updown-5m-query-check",
+                "0xmarket-condition-query",
+                "0xcondition-query",
+                true,
+            ),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 1
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for condition_id query fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned");
+        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        assert_eq!(condition_ids.len(), 1);
+        assert_eq!(slugs.len(), 1);
+        assert_eq!(condition_ids[0].as_deref(), Some("0xcondition-query"));
+        assert_eq!(
+            slugs[0], None,
+            "condition-aware path should not send slug query for new_market fetch"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_fetch_falls_back_to_slug_when_identifiers_missing() {
+        let state = NewMarketFetchTestServerState::default();
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, _data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        PolymarketDataClient::handle_market_message(
+            make_new_market_with_ids("btc-updown-5m-slug-fallback", "", "", true),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 1
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for slug fallback fetch to complete"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned");
+        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        assert_eq!(condition_ids.len(), 1);
+        assert_eq!(slugs.len(), 1);
+        assert_eq!(condition_ids[0], None);
+        assert_eq!(slugs[0].as_deref(), Some("btc-updown-5m-slug-fallback"));
+    }
+
+    #[rstest]
+    fn new_market_dedupe_key_prefers_condition_then_market_then_slug() {
+        let MarketWsMessage::NewMarket(mut nm) =
+            make_new_market_with_condition("btc-updown-5m-window-a", "0xcond123", true)
+        else {
+            panic!("expected new_market message");
+        };
+
+        assert_eq!(
+            PolymarketDataClient::new_market_dedupe_key(&nm),
+            "cond:0xcond123"
+        );
+
+        nm.condition_id.clear();
+        nm.market = Ustr::from("0xmarket456");
+        assert_eq!(
+            PolymarketDataClient::new_market_dedupe_key(&nm),
+            "market:0xmarket456"
+        );
+
+        nm.market = Ustr::from("");
+        nm.slug = "btc-updown-5m-window-b".to_string();
+        assert_eq!(
+            PolymarketDataClient::new_market_dedupe_key(&nm),
+            "slug:btc-updown-5m-window-b"
+        );
+    }
+
+    #[rstest]
+    fn reset_cancels_old_generation_and_clears_connection_state() {
+        let mut client = make_client_for_reset_test();
+        let old_token = client.cancellation_token.clone();
+
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        client.active_quote_subs.insert(instrument_id);
+        client.active_delta_subs.insert(instrument_id);
+        client.active_trade_subs.insert(instrument_id);
+        client.ws_open_tokens.insert(Ustr::from("0xCOND-0xTOKEN"));
+        client
+            .new_market_inflight_keys
+            .insert("btc-updown-5m-1".to_string(), ());
+        client
+            .pending_snapshot_after_tick_change
+            .insert(instrument_id);
+        client
+            .pending_auto_loads
+            .lock()
+            .expect("pending_auto_loads mutex poisoned")
+            .insert(instrument_id);
+        client.auto_load_scheduled.store(true, Ordering::Release);
+
+        client
+            .reset()
+            .expect("reset should succeed for in-memory state");
+
+        assert!(old_token.is_cancelled());
+        assert!(!client.cancellation_token.is_cancelled());
+
+        assert!(client.active_quote_subs.is_empty());
+        assert!(client.active_delta_subs.is_empty());
+        assert!(client.active_trade_subs.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(client.new_market_inflight_keys.is_empty());
+        assert!(client.pending_snapshot_after_tick_change.is_empty());
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .is_empty()
+        );
+        assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
     }
 
     #[rstest]
