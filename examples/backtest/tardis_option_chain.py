@@ -340,7 +340,6 @@ def main() -> None:
     node.build()
     node.add_strategy_from_config(run_config.id, strategy_config)
     node.run()
-    node.dispose()
 
 
 def load_option_metadata(catalog_path: Path, underlying: str) -> list[OptionMetadata]:

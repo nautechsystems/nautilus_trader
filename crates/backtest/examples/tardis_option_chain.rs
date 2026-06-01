@@ -42,7 +42,10 @@ use nautilus_execution::models::fee::{
     CappedOptionFeeModel, FeeModelAny, TieredNotionalOptionFeeModel,
 };
 use nautilus_model::{
-    data::{QuoteTick, option_chain::OptionChainSlice, option_chain::StrikeRange},
+    data::{
+        QuoteTick,
+        option_chain::{OptionChainSlice, StrikeRange},
+    },
     enums::{AccountType, BookType, OmsType, OrderSide, TimeInForce},
     identifiers::{InstrumentId, OptionSeriesId, StrategyId, Venue},
     instruments::InstrumentAny,
@@ -309,7 +312,6 @@ fn main() -> anyhow::Result<()> {
     ))?;
 
     node.run()?;
-    node.dispose();
 
     Ok(())
 }

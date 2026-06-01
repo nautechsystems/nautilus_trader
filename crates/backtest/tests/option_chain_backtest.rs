@@ -349,9 +349,7 @@ fn run_chain_backtest(
 
     node.run().unwrap();
 
-    let slices = received.borrow().clone();
-    node.dispose();
-    slices
+    received.borrow().clone()
 }
 
 /// At most this many leading updates may be missed before the chain subscription goes live.

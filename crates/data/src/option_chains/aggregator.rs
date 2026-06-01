@@ -419,7 +419,7 @@ impl OptionChainAggregator {
             match buffer.get_mut(&strike) {
                 Some(data) => data.greeks = Some(*greeks),
                 None => {
-                    // No quote yet — park the greeks for later
+                    // No quote yet: park the greeks for later
                     self.pending_greeks.insert(greeks.instrument_id, *greeks);
                 }
             }
@@ -514,7 +514,7 @@ impl OptionChainAggregator {
         let is_delta = matches!(self.strike_range, StrikeRange::Delta { .. });
 
         if !is_delta {
-            // No change → no rebalance
+            // No change: no rebalance
             if self.last_atm_strike == Some(current_atm_strike) {
                 return None;
             }
@@ -830,7 +830,7 @@ mod tests {
 
     #[rstest]
     fn test_check_rebalance_fixed_always_none() {
-        // Fixed range + ATM price set → still returns None
+        // Fixed range + ATM price set: still returns None
         let (mut agg, _, _) = make_aggregator();
         set_atm_via_greeks(&mut agg, 50000.0);
         assert!(agg.check_rebalance(now()).is_none());
@@ -839,7 +839,7 @@ mod tests {
     #[rstest]
     fn test_check_rebalance_no_atm_returns_none() {
         let agg = make_multi_strike_aggregator();
-        // No ATM price set → None
+        // No ATM price set: None
         assert!(agg.check_rebalance(now()).is_none());
     }
 
@@ -848,7 +848,7 @@ mod tests {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM to 50000 and apply initial rebalance
         set_atm_via_greeks(&mut agg, 50000.0);
-        // First check detects ATM shift (from None → 50000)
+        // First check detects ATM shift from None to 50000
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
@@ -865,7 +865,7 @@ mod tests {
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
         // Active: 47500, 50000, 52500 (ATM=50000, +-1 strike)
-        assert_eq!(agg.instrument_ids().len(), 6); // 3 strikes × 2
+        assert_eq!(agg.instrument_ids().len(), 6); // 3 strikes * 2
 
         // Now shift ATM to 55000
         set_atm_via_greeks(&mut agg, 55000.0);
@@ -884,16 +884,16 @@ mod tests {
 
         // Active should be 3 strikes (47500, 50000, 52500)
         let active_ids = agg.instrument_ids();
-        assert_eq!(active_ids.len(), 6); // 3 strikes × 2 (call + put)
+        assert_eq!(active_ids.len(), 6); // 3 strikes * 2 (call + put)
 
         // Now shift to 55000
         set_atm_via_greeks(&mut agg, 55000.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
 
-        // Active should now be (52500, 55000) — 2 strikes at the top end
+        // Active should now be (52500, 55000): 2 strikes at the top end
         let active_ids2 = agg.instrument_ids();
-        assert_eq!(active_ids2.len(), 4); // 2 strikes × 2
+        assert_eq!(active_ids2.len(), 4); // 2 strikes * 2
     }
 
     #[rstest]
@@ -922,7 +922,7 @@ mod tests {
     #[rstest]
     fn test_initial_active_set_empty_when_no_atm() {
         let agg = make_multi_strike_aggregator();
-        // AtmRelative with no ATM price → empty active set (deferred)
+        // AtmRelative with no ATM price: empty active set (deferred)
         assert_eq!(agg.instrument_ids().len(), 0);
         assert_eq!(agg.all_instrument_ids().len(), 10);
     }
@@ -1000,7 +1000,7 @@ mod tests {
         assert!(result);
         assert!(!agg.active_ids().contains(&new_id));
 
-        // Shift ATM to 57500 — rebalance should pick up the new instrument
+        // Shift ATM to 57500: rebalance should pick up the new instrument
         set_atm_via_greeks(&mut agg, 57500.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
@@ -1039,7 +1039,7 @@ mod tests {
         agg.apply_rebalance(&action, now());
         assert_eq!(agg.last_atm_strike(), Some(Price::from("50000")));
 
-        // Move ATM slightly toward 52500 — gap=2500, threshold=50000+0.6*2500=51500
+        // Move ATM slightly toward 52500: gap=2500, threshold=50000+0.6*2500=51500
         // 51000 does NOT cross 51500
         set_atm_via_greeks(&mut agg, 51000.0);
         assert!(agg.check_rebalance(now()).is_none());
@@ -1106,7 +1106,7 @@ mod tests {
         let action = agg.check_rebalance(t0).unwrap();
         agg.apply_rebalance(&action, t0);
 
-        // Shift ATM immediately — cooldown blocks
+        // Shift ATM immediately: cooldown blocks
         set_atm_via_greeks(&mut agg, 55000.0);
         let t1 = UnixNanos::from(t0.as_u64() + 1_000_000_000); // 1s later
         assert!(agg.check_rebalance(t1).is_none());
@@ -1140,7 +1140,7 @@ mod tests {
         let action = agg.check_rebalance(t0).unwrap();
         agg.apply_rebalance(&action, t0);
 
-        // Shift ATM immediately — no cooldown block
+        // Shift ATM immediately: no cooldown block
         set_atm_via_greeks(&mut agg, 55000.0);
         assert!(agg.check_rebalance(t0).is_some());
     }
@@ -1163,7 +1163,7 @@ mod tests {
         agg.update_greeks(&greeks);
         assert_eq!(agg.pending_greeks_count(), 1);
 
-        // Now send the first quote — pending greeks should be consumed
+        // Now send the first quote: pending greeks should be consumed
         let quote = make_quote(call_id, "100.00", "101.00");
         agg.update_quote(&quote);
         assert_eq!(agg.pending_greeks_count(), 0);
@@ -1198,7 +1198,7 @@ mod tests {
             Price::from("51.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(800u64), // ts_event — later
+            UnixNanos::from(800u64), // ts_event: later
             UnixNanos::from(800u64),
         );
         agg.update_quote(&quote2);
@@ -1212,7 +1212,7 @@ mod tests {
     fn test_snapshot_ts_event_fallback_when_no_quotes() {
         let (agg, _, _) = make_aggregator();
         let slice = agg.snapshot(UnixNanos::from(1000u64));
-        // No quotes → ts_event falls back to ts_init
+        // No quotes: ts_event falls back to ts_init
         assert_eq!(slice.ts_event, UnixNanos::from(1000u64));
     }
 
@@ -1312,7 +1312,7 @@ mod tests {
         agg.update_quote(&quote);
         assert_eq!(agg.call_buffer_len(), 1);
 
-        // Remove original — sibling still shares the strike+kind
+        // Remove original: sibling still shares the strike+kind
         let _ = agg.remove_instrument(&call_id);
         assert_eq!(agg.call_buffer_len(), 1); // buffer preserved
         assert!(agg.instruments().contains_key(&sibling_id));
@@ -1383,7 +1383,7 @@ mod tests {
         agg.update_quote(&quote);
         assert_eq!(agg.call_buffer_len(), 1);
 
-        // Send greeks at expiry timestamp — should be dropped
+        // Send greeks at expiry timestamp: should be dropped
         let greeks = OptionGreeks {
             instrument_id: call_id,
             ts_event: UnixNanos::from(1_700_000_000_000_000_000u64),
@@ -1528,7 +1528,7 @@ mod tests {
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.30);
 
         let active = agg.recompute_active_set();
-        // |−0.30| == target, so the 45000 strike (both legs) is selected.
+        // |-0.30| == target, so the 45000 strike (both legs) is selected.
         assert_eq!(active.len(), 2);
         assert!(active.contains(&option_id(45000, OptionKind::Put)));
         assert!(active.contains(&option_id(45000, OptionKind::Call)));

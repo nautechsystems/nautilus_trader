@@ -327,16 +327,6 @@ impl CappedOptionFeeModel {
             cap: cap_rate,
         })
     }
-
-    fn rate(&self, order: &OrderAny, instrument: &InstrumentAny) -> anyhow::Result<Decimal> {
-        let rate = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => self.maker_rate.unwrap_or_else(|| instrument.maker_fee()),
-            Some(LiquiditySide::Taker) => self.taker_rate.unwrap_or_else(|| instrument.taker_fee()),
-            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
-        };
-        check_fee_rate(Some(rate), "fee_rate")?;
-        Ok(rate)
-    }
 }
 
 impl Default for CappedOptionFeeModel {
@@ -365,7 +355,7 @@ impl FeeModel for CappedOptionFeeModel {
         underlying_px: Option<Price>,
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "CappedOptionFeeModel")?;
-        let rate = self.rate(order, instrument)?;
+        let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
         let rate_fee = if instrument.is_inverse() {
             rate
         } else {
@@ -374,11 +364,7 @@ impl FeeModel for CappedOptionFeeModel {
             rate * underlying_px.as_decimal()
         };
         let cap_fee = self.cap * fill_px.as_decimal();
-        let fee_per_contract = if rate_fee < cap_fee {
-            rate_fee
-        } else {
-            cap_fee
-        };
+        let fee_per_contract = rate_fee.min(cap_fee);
         let total = fee_per_contract * fill_quantity.as_decimal();
         Money::from_decimal(total, commission_currency(instrument)).map_err(Into::into)
     }
@@ -416,16 +402,6 @@ impl TieredNotionalOptionFeeModel {
             taker_rate,
         })
     }
-
-    fn rate(&self, order: &OrderAny, instrument: &InstrumentAny) -> anyhow::Result<Decimal> {
-        let rate = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => self.maker_rate.unwrap_or_else(|| instrument.maker_fee()),
-            Some(LiquiditySide::Taker) => self.taker_rate.unwrap_or_else(|| instrument.taker_fee()),
-            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
-        };
-        check_fee_rate(Some(rate), "fee_rate")?;
-        Ok(rate)
-    }
 }
 
 impl Default for TieredNotionalOptionFeeModel {
@@ -443,11 +419,26 @@ impl FeeModel for TieredNotionalOptionFeeModel {
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "TieredNotionalOptionFeeModel")?;
-        let rate = self.rate(order, instrument)?;
+        let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
         let notional = instrument.calculate_notional_value(fill_quantity, fill_px, Some(false));
         let total = notional.as_decimal() * rate;
         Money::from_decimal(total, notional.currency).map_err(Into::into)
     }
+}
+
+fn option_fee_rate(
+    order: &OrderAny,
+    instrument: &InstrumentAny,
+    maker_rate: Option<Decimal>,
+    taker_rate: Option<Decimal>,
+) -> anyhow::Result<Decimal> {
+    let rate = match order.liquidity_side() {
+        Some(LiquiditySide::Maker) => maker_rate.unwrap_or_else(|| instrument.maker_fee()),
+        Some(LiquiditySide::Taker) => taker_rate.unwrap_or_else(|| instrument.taker_fee()),
+        Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
+    };
+    check_fee_rate(Some(rate), "fee_rate")?;
+    Ok(rate)
 }
 
 fn check_fee_rate(rate: Option<Decimal>, name: &str) -> anyhow::Result<()> {
