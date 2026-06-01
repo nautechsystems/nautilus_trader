@@ -67,7 +67,9 @@ use serde::{
     de::{self, Visitor},
 };
 
-use crate::datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND};
+use crate::datetime::{
+    NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+};
 
 /// Represents a duration in nanoseconds.
 pub type DurationNanos = u64;
@@ -102,10 +104,35 @@ impl UnixNanos {
         self.0
     }
 
+    /// Returns the timestamp as seconds, truncating sub-second precision.
+    #[must_use]
+    pub const fn as_seconds(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_SECOND
+    }
+
     /// Returns the timestamp as milliseconds, truncating sub-millisecond precision.
     #[must_use]
     pub const fn as_millis(&self) -> u64 {
         self.0 / NANOSECONDS_IN_MILLISECOND
+    }
+
+    /// Returns the timestamp as microseconds, truncating sub-microsecond precision.
+    #[must_use]
+    pub const fn as_micros(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_MICROSECOND
+    }
+
+    /// Creates a new [`UnixNanos`] from a second timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result overflows `u64`.
+    #[must_use]
+    pub const fn from_seconds(seconds: u64) -> Self {
+        match seconds.checked_mul(NANOSECONDS_IN_SECOND) {
+            Some(nanos) => Self(nanos),
+            None => panic!("UnixNanos overflow in from_seconds"),
+        }
     }
 
     /// Creates a new [`UnixNanos`] from a millisecond timestamp.
@@ -1351,6 +1378,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_seconds_zero() {
+        let nanos = UnixNanos::from_seconds(0);
+        assert_eq!(nanos.as_u64(), 0);
+    }
+
+    #[rstest]
+    fn test_from_seconds_one() {
+        let nanos = UnixNanos::from_seconds(1);
+        assert_eq!(nanos.as_u64(), 1_000_000_000);
+    }
+
+    #[rstest]
+    fn test_from_seconds_realistic_timestamp() {
+        let nanos = UnixNanos::from_seconds(1_700_000_000);
+        assert_eq!(nanos.as_u64(), 1_700_000_000_000_000_000);
+        assert_eq!(
+            nanos.to_datetime_utc(),
+            Utc.with_ymd_and_hms(2023, 11, 14, 22, 13, 20).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_from_seconds_max_safe() {
+        let max_seconds = u64::MAX / 1_000_000_000;
+        let nanos = UnixNanos::from_seconds(max_seconds);
+        assert_eq!(nanos.as_u64(), max_seconds * 1_000_000_000);
+    }
+
+    #[rstest]
     fn test_from_millis_zero() {
         let nanos = UnixNanos::from_millis(0);
         assert_eq!(nanos.as_u64(), 0);
@@ -1395,11 +1451,29 @@ mod tests {
 
     #[rstest]
     #[case(0, 0)]
+    #[case(999_999_999, 0)]
+    #[case(1_000_000_000, 1)]
+    #[case(1_700_000_000_123_456_789, 1_700_000_000)]
+    fn test_as_seconds(#[case] nanos: u64, #[case] expected: u64) {
+        assert_eq!(UnixNanos::from(nanos).as_seconds(), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
     #[case(999_999, 0)]
     #[case(1_000_000, 1)]
     #[case(1_700_000_000_000_123_456, 1_700_000_000_000)]
     fn test_as_millis(#[case] nanos: u64, #[case] expected: u64) {
         assert_eq!(UnixNanos::from(nanos).as_millis(), expected);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(999, 0)]
+    #[case(1_000, 1)]
+    #[case(1_700_000_000_000_123_456, 1_700_000_000_000_123)]
+    fn test_as_micros(#[case] nanos: u64, #[case] expected: u64) {
+        assert_eq!(UnixNanos::from(nanos).as_micros(), expected);
     }
 
     #[rstest]
@@ -1449,7 +1523,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_millis_and_micros_consistency() {
+    fn test_from_seconds_millis_and_micros_consistency() {
+        assert_eq!(UnixNanos::from_seconds(1), UnixNanos::from_millis(1_000));
+        assert_eq!(
+            UnixNanos::from_seconds(60),
+            UnixNanos::from_micros(60_000_000)
+        );
         assert_eq!(
             UnixNanos::from_millis(1_000),
             UnixNanos::from_micros(1_000_000)
@@ -1473,6 +1552,12 @@ mod tests {
         let micros = 1_700_000_000_000_123_u64;
         let nanos = UnixNanos::from_micros(micros);
         assert_eq!(nanos.as_u64() % 1_000_000, 123_000);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "UnixNanos overflow in from_seconds")]
+    fn test_from_seconds_overflow_panics() {
+        let _ = UnixNanos::from_seconds(u64::MAX / 1_000_000_000 + 1);
     }
 
     #[rstest]
