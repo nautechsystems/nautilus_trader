@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Added Binance Futures open interest request custom data (Rust) (#4109), thanks @graceyangfan
 - Added pending-resolution settlement pipeline for binary options (Rust) (#4101), thanks @graceyangfan
 - Added Coinbase WebSocket `status` channel subscription emitting `InstrumentStatus` events
+- Added Coinbase Python v2 factory bindings and tester examples
 - Added `CryptoFuturesSpread` and `CryptoOptionSpread` instrument types mirroring `CryptoFuture`/`CryptoOption`
 - Added Deribit `option_combo` and `future_combo` parsing as `CryptoOptionSpread`/`CryptoFuturesSpread` instruments
 - Added Deribit combo trade leg parsing (`legs[]`, `combo_id`, `combo_trade_id`) on public trade messages
