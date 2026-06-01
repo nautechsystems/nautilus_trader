@@ -18,45 +18,39 @@ import sys
 import pytest
 from unit.adapters.example_modules import load_example_module
 
-from nautilus_trader.adapters.coinbase import COINBASE
-from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
-from nautilus_trader.adapters.coinbase import CoinbaseDataClientFactory
-from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
-from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
-from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientFactory
+from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LighterDataClientConfig
+from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterEnvironment
+from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import AccountType
 from nautilus_trader.model import TraderId
 
 
-SMOKE_API_KEY = "organizations/test-org/apiKeys/test-key"
-SMOKE_API_SECRET = "test-pem-placeholder"
-coinbase_exec_tester = load_example_module("coinbase", "exec_tester")
+lighter_exec_tester = load_example_module("lighter", "exec_tester")
 
 
-def test_coinbase_factories_expose_python_v2_names() -> None:
-    trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("COINBASE-001")
+def test_lighter_factories_expose_python_v2_names() -> None:
+    data_factory = LighterDataClientFactory()
+    exec_factory = LighterExecutionClientFactory()
 
-    data_factory = CoinbaseDataClientFactory()
-    exec_factory = CoinbaseExecutionClientFactory(trader_id, account_id)
-
-    assert data_factory.name() == COINBASE
-    assert exec_factory.name() == COINBASE
+    assert data_factory.name() == LIGHTER
+    assert exec_factory.name() == LIGHTER
 
 
-def test_live_node_builder_accepts_coinbase_data_factory() -> None:
+def test_live_node_builder_accepts_lighter_data_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
-        LiveNode.builder("COINBASE-DATA-PYTEST-001", trader_id, Environment.LIVE)
+        LiveNode.builder("LIGHTER-DATA-PYTEST-001", trader_id, Environment.LIVE)
         .add_data_client(
             None,
-            CoinbaseDataClientFactory(),
-            CoinbaseDataClientConfig(environment=CoinbaseEnvironment.LIVE),
+            LighterDataClientFactory(),
+            LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
         )
         .build()
     )
@@ -65,26 +59,25 @@ def test_live_node_builder_accepts_coinbase_data_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
+def test_live_node_builder_accepts_lighter_exec_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("COINBASE-001")
+    account_id = AccountId.from_str("LIGHTER-001")
 
     node = (
-        LiveNode.builder("COINBASE-EXEC-PYTEST-001", trader_id, Environment.LIVE)
+        LiveNode.builder("LIGHTER-EXEC-PYTEST-001", trader_id, Environment.LIVE)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
-            CoinbaseDataClientFactory(),
-            CoinbaseDataClientConfig(environment=CoinbaseEnvironment.LIVE),
+            LighterDataClientFactory(),
+            LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
         )
         .add_exec_client(
             None,
-            CoinbaseExecutionClientFactory(trader_id, account_id),
-            CoinbaseExecClientConfig(
-                api_key=SMOKE_API_KEY,
-                api_secret=SMOKE_API_SECRET,
-                environment=CoinbaseEnvironment.LIVE,
-                account_type=AccountType.CASH,
+            LighterExecutionClientFactory(),
+            LighterExecClientConfig(
+                trader_id=trader_id,
+                account_id=account_id,
+                environment=LighterEnvironment.TESTNET,
             ),
         )
         .build()
@@ -95,16 +88,17 @@ def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
 
 
 @pytest.mark.parametrize(
-    ("extra_args", "expected"),
+    ("extra_args", "expected_buys", "expected_dry_run"),
     [
-        ([], False),
-        (["--limit-sells"], True),
+        ([], False, True),
+        (["--live-orders"], True, False),
     ],
 )
-def test_coinbase_exec_tester_limit_sells_are_explicit(
+def test_lighter_exec_tester_limit_sells_stay_disabled(
     monkeypatch: pytest.MonkeyPatch,
     extra_args: list[str],
-    expected: bool,
+    expected_buys: bool,
+    expected_dry_run: bool,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -142,14 +136,14 @@ def test_coinbase_exec_tester_limit_sells_are_explicit(
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", "--live-orders", *extra_args])
-    monkeypatch.setattr(coinbase_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
-    monkeypatch.setattr(coinbase_exec_tester, "LiveNode", CapturingLiveNode)
+    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
+    monkeypatch.setattr(lighter_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
+    monkeypatch.setattr(lighter_exec_tester, "LiveNode", CapturingLiveNode)
 
-    coinbase_exec_tester.main()
+    lighter_exec_tester.main()
 
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
-    assert kwargs["enable_limit_buys"] is True
-    assert kwargs["enable_limit_sells"] is expected
-    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is expected_buys
+    assert kwargs["enable_limit_sells"] is False
+    assert kwargs["dry_run"] is expected_dry_run
