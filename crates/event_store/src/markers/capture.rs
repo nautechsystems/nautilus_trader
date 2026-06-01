@@ -172,7 +172,7 @@ mod tests {
     use std::{
         any::Any,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicU64, Ordering},
         },
         time::Duration,
@@ -182,15 +182,17 @@ mod tests {
     use nautilus_system::event_store::DataMarkerClass;
     use rstest::rstest;
 
-    use super::*;
+    use super::{
+        super::test_support::{SharedMemoryMarker, SharedMemoryMarkerState},
+        *,
+    };
     use crate::{
         Topic,
-        error::EventStoreError,
         manifest::RunStatus,
         markers::{
             DataClass, DataCursorSnapshot, DataMarkerExtractor, DataMarkerExtractorRegistry,
-            HiFiMarker, MarkerBackend, MarkerGap, MarkerManifest, MarkerWriter, MarkerWriterConfig,
-            MemoryMarkerBackend, StreamDictEntry,
+            HiFiMarker, MarkerBackend, MarkerManifest, MarkerWriter, MarkerWriterConfig,
+            StreamDictEntry,
         },
     };
 
@@ -226,104 +228,6 @@ mod tests {
         fn fingerprint(&self, msg: &dyn Any) -> Option<[u8; 32]> {
             msg.downcast_ref::<TestQuote>()
                 .map(|quote| quote.fingerprint)
-        }
-    }
-
-    #[derive(Debug)]
-    struct SharedMemoryMarker(Arc<Mutex<MemoryMarkerBackend>>);
-
-    impl SharedMemoryMarker {
-        fn new() -> (Self, Arc<Mutex<MemoryMarkerBackend>>) {
-            let shared = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
-            (Self(Arc::clone(&shared)), shared)
-        }
-    }
-
-    impl MarkerBackend for SharedMemoryMarker {
-        fn open_run(&mut self, _: MarkerManifest) -> Result<(), EventStoreError> {
-            unreachable!("test wrapper does not forward open_run")
-        }
-
-        fn append_snapshot(
-            &mut self,
-            snapshot: &DataCursorSnapshot,
-            hash: [u8; 32],
-        ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .append_snapshot(snapshot, hash)
-        }
-
-        fn append_hifi(
-            &mut self,
-            marker: &HiFiMarker,
-            hash: [u8; 32],
-        ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .append_hifi(marker, hash)
-        }
-
-        fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .append_gap(gap, hash)
-        }
-
-        fn put_dict(
-            &mut self,
-            entry: &StreamDictEntry,
-            hash: [u8; 32],
-        ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .put_dict(entry, hash)
-        }
-
-        fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .scan_snapshots()
-        }
-
-        fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .scan_hifi()
-        }
-
-        fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .scan_gaps()
-        }
-
-        fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .scan_dict()
-        }
-
-        fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .seal(status)
-        }
-
-        fn manifest(&self) -> Result<MarkerManifest, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory marker poisoned")
-                .manifest()
         }
     }
 
@@ -367,7 +271,7 @@ mod tests {
     fn open_capture(
         config: &DataMarkerConfig,
         submit_counter: Arc<AtomicU64>,
-    ) -> (DataMarkerCapture, Arc<Mutex<MemoryMarkerBackend>>) {
+    ) -> (DataMarkerCapture, SharedMemoryMarkerState) {
         let (wrapper, shared) = SharedMemoryMarker::new();
         shared
             .lock()
@@ -392,7 +296,7 @@ mod tests {
         )
     }
 
-    fn snapshots(shared: &Arc<Mutex<MemoryMarkerBackend>>) -> Vec<DataCursorSnapshot> {
+    fn snapshots(shared: &SharedMemoryMarkerState) -> Vec<DataCursorSnapshot> {
         shared
             .lock()
             .expect("shared marker")
@@ -400,7 +304,7 @@ mod tests {
             .expect("scan snapshots")
     }
 
-    fn hifi(shared: &Arc<Mutex<MemoryMarkerBackend>>) -> Vec<HiFiMarker> {
+    fn hifi(shared: &SharedMemoryMarkerState) -> Vec<HiFiMarker> {
         shared
             .lock()
             .expect("shared marker")
@@ -408,7 +312,7 @@ mod tests {
             .expect("scan hifi")
     }
 
-    fn dict(shared: &Arc<Mutex<MemoryMarkerBackend>>) -> Vec<StreamDictEntry> {
+    fn dict(shared: &SharedMemoryMarkerState) -> Vec<StreamDictEntry> {
         shared
             .lock()
             .expect("shared marker")

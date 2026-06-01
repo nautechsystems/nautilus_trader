@@ -19,17 +19,21 @@
 //! compact cursor snapshots, joinable back to catalog rows. No market-data payload is
 //! persisted.
 
-pub mod backend;
-pub mod capture;
-pub mod cursor;
-pub mod extractor;
+mod backend;
+mod capture;
+mod cursor;
+mod extractor;
+mod marker;
+mod reader;
+mod redb;
+mod verifier;
+mod writer;
+
 #[cfg(feature = "persistence")]
-pub mod join;
-pub mod marker;
-pub mod reader;
-pub mod redb;
-pub mod verifier;
-pub mod writer;
+mod join;
+
+#[cfg(test)]
+mod test_support;
 
 pub use backend::{MarkerBackend, MarkerManifest, MemoryMarkerBackend, StoredMarkerRecord};
 pub use capture::DataMarkerCapture;
