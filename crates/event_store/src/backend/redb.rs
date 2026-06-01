@@ -31,6 +31,7 @@ use nautilus_core::UnixNanos;
 use redb::{
     CommitError, Database, DatabaseError, Durability, ReadOnlyDatabase, ReadTransaction,
     ReadableDatabase, ReadableTable, StorageError, TableDefinition, TableError, TransactionError,
+    WriteTransaction,
 };
 
 use crate::{
@@ -308,39 +309,22 @@ impl RedbBackend {
     }
 
     fn initialize_fresh(db: &Database, manifest: &RunManifest) -> Result<(), EventStoreError> {
-        let bytes = bincode::serde::encode_to_vec(manifest, BINCODE_CONFIG)
-            .map_err(|e| EventStoreError::Backend(format!("encode manifest: {e}")))?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        let txn = begin_immediate_write(db)?;
         {
             txn.open_table(ENTRIES_TABLE).map_err(map_table_err)?;
             txn.open_table(CLIENT_ORDER_INDEX).map_err(map_table_err)?;
             txn.open_table(VENUE_ORDER_INDEX).map_err(map_table_err)?;
             txn.open_table(SNAPSHOT_ANCHOR_TABLE)
                 .map_err(map_table_err)?;
-
-            let mut manifest_table = txn.open_table(MANIFEST_TABLE).map_err(map_table_err)?;
-            manifest_table
-                .insert(MANIFEST_KEY, bytes.as_slice())
-                .map_err(map_storage_err)?;
         }
+        insert_run_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
     }
 
     fn write_manifest(db: &Database, manifest: &RunManifest) -> Result<(), EventStoreError> {
-        let bytes = bincode::serde::encode_to_vec(manifest, BINCODE_CONFIG)
-            .map_err(|e| EventStoreError::Backend(format!("encode manifest: {e}")))?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
-        {
-            let mut table = txn.open_table(MANIFEST_TABLE).map_err(map_table_err)?;
-            table
-                .insert(MANIFEST_KEY, bytes.as_slice())
-                .map_err(map_storage_err)?;
-        }
+        let txn = begin_immediate_write(db)?;
+        insert_run_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
     }
@@ -518,9 +502,7 @@ impl EventStore for RedbBackend {
             .collect::<Result<_, _>>()?;
 
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        let txn = begin_immediate_write(db)?;
         {
             let mut entries_table = txn.open_table(ENTRIES_TABLE).map_err(map_table_err)?;
             let mut client_table = txn.open_table(CLIENT_ORDER_INDEX).map_err(map_table_err)?;
@@ -706,9 +688,7 @@ impl EventStore for RedbBackend {
         let bytes = bincode::serde::encode_to_vec(&anchor, BINCODE_CONFIG)
             .map_err(|e| EventStoreError::Backend(format!("encode snapshot anchor: {e}")))?;
         let db = state.db.read_write()?;
-        let mut txn = db.begin_write().map_err(map_transaction_err)?;
-        txn.set_durability(Durability::Immediate)
-            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        let txn = begin_immediate_write(db)?;
         {
             let mut table = txn
                 .open_table(SNAPSHOT_ANCHOR_TABLE)
@@ -760,6 +740,26 @@ impl EventStore for RedbBackend {
     fn high_watermark(&self) -> Result<u64, EventStoreError> {
         Ok(self.state()?.high_watermark)
     }
+}
+
+fn begin_immediate_write(db: &Database) -> Result<WriteTransaction, EventStoreError> {
+    let mut txn = db.begin_write().map_err(map_transaction_err)?;
+    txn.set_durability(Durability::Immediate)
+        .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+    Ok(txn)
+}
+
+fn insert_run_manifest(
+    txn: &WriteTransaction,
+    manifest: &RunManifest,
+) -> Result<(), EventStoreError> {
+    let bytes = bincode::serde::encode_to_vec(manifest, BINCODE_CONFIG)
+        .map_err(|e| EventStoreError::Backend(format!("encode manifest: {e}")))?;
+    let mut table = txn.open_table(MANIFEST_TABLE).map_err(map_table_err)?;
+    table
+        .insert(MANIFEST_KEY, bytes.as_slice())
+        .map_err(map_storage_err)?;
+    Ok(())
 }
 
 fn map_storage_err(err: StorageError) -> EventStoreError {
