@@ -62,6 +62,13 @@ signing path as perps and options; the in-repo fixtures under
 `crates/adapters/derive/test_data/spot/` capture the spot instrument, order book, ticker, and
 trade field shapes the parser and execution paths are pinned to.
 
+:::warning
+Spot trading has had less live exercise than perpetuals and options. Testnet accepts and cancels a
+passive `ETH-USDC` limit order at the `0.1 ETH` minimum amount, and mainnet place/cancel has been
+exercised manually. Public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
+successfully but can be low-volume, so expect sparse trade frames.
+:::
+
 ## Environments
 
 Configure the environment with the `DeriveEnvironment` enum on either client config.
