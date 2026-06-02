@@ -38,7 +38,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::{
@@ -124,6 +124,33 @@ pub(crate) fn parse_price_at_precision(raw: &str, precision: u8) -> Option<Price
     }
 
     Price::from_decimal_dp(decimal, precision).ok()
+}
+
+/// Parses a required venue decimal string.
+pub(crate) fn parse_required_decimal(raw: &str, field: &str) -> anyhow::Result<Decimal> {
+    Decimal::from_str(raw).map_err(|e| anyhow::anyhow!("invalid {field}='{raw}': {e}"))
+}
+
+/// Parses a required venue quantity string into a `Quantity` at the given precision.
+pub(crate) fn parse_required_quantity_at_precision(
+    raw: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Quantity> {
+    let decimal = parse_required_decimal(raw, field)?;
+    Quantity::from_decimal_dp(decimal, precision)
+        .map_err(|e| anyhow::anyhow!("invalid {field}='{raw}' at precision {precision}: {e}"))
+}
+
+/// Parses a required venue price string into a `Price` at the given precision.
+pub(crate) fn parse_required_price_at_precision(
+    raw: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Price> {
+    let decimal = parse_required_decimal(raw, field)?;
+    Price::from_decimal_dp(decimal, precision)
+        .map_err(|e| anyhow::anyhow!("invalid {field}='{raw}' at precision {precision}: {e}"))
 }
 
 /// Re-precisions an existing `Quantity` to the given precision via `Decimal`.
@@ -923,10 +950,9 @@ pub fn parse_fill_report_sbe(
         size_precision,
     );
 
-    // Commission still uses Decimal → f64 since Money::new takes f64
     let comm_exp = trade.commission_exponent as i32;
     let comm_dec = Decimal::new(trade.commission_mantissa, (-comm_exp) as u32);
-    let commission = Money::new(comm_dec.to_f64().unwrap_or(0.0), commission_currency);
+    let commission = Money::from_decimal(comm_dec, commission_currency)?;
 
     // Determine order side from is_buyer
     let order_side = if trade.is_buyer {
@@ -992,11 +1018,10 @@ pub fn parse_klines_to_bars(
             price_precision,
         );
 
-        // Volume is 128-bit so we still use Decimal path for now
         let volume_mantissa = i128::from_le_bytes(kline.volume);
         let volume_dec =
             Decimal::from_i128_with_scale(volume_mantissa, (-klines.qty_exponent as i32) as u32);
-        let volume = Quantity::new(volume_dec.to_f64().unwrap_or(0.0), size_precision);
+        let volume = Quantity::from_decimal_dp(volume_dec, size_precision)?;
 
         let ts_event = UnixNanos::from_micros(kline.open_time as u64);
 

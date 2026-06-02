@@ -56,6 +56,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
@@ -81,6 +82,10 @@ use crate::{
         },
         encoder::{decode_broker_id, encode_broker_id},
         enums::{BinanceProductType, BinanceSide, BinanceTimeInForce},
+        parse::{
+            parse_required_decimal, parse_required_price_at_precision,
+            parse_required_quantity_at_precision,
+        },
     },
     config::BinanceExecClientConfig,
     spot::{
@@ -1708,11 +1713,37 @@ fn dispatch_tracked_execution_report(
 
             if state.has_emitted_accepted(&client_order_id) {
                 // Already accepted: this New is a cancel-replace result
-                let price: f64 = report.price.parse().unwrap_or(0.0);
-                let quantity: f64 = report.original_qty.parse().unwrap_or(0.0);
-                let trigger_price: f64 = report.stop_price.parse().unwrap_or(0.0);
-                let trigger = if trigger_price > 0.0 {
-                    Some(Price::new(trigger_price, price_precision))
+                let Some(price) = parse_spot_execution_report_price(
+                    report,
+                    &report.price,
+                    price_precision,
+                    "price",
+                ) else {
+                    return;
+                };
+                let Some(quantity) = parse_spot_execution_report_quantity(
+                    report,
+                    &report.original_qty,
+                    size_precision,
+                    "original_qty",
+                ) else {
+                    return;
+                };
+                let Some(stop_price) =
+                    parse_spot_execution_report_decimal(report, &report.stop_price, "stop_price")
+                else {
+                    return;
+                };
+                let trigger = if stop_price > Decimal::ZERO {
+                    let Some(trigger_price) = parse_spot_execution_report_price(
+                        report,
+                        &report.stop_price,
+                        price_precision,
+                        "stop_price",
+                    ) else {
+                        return;
+                    };
+                    Some(trigger_price)
                 } else {
                     None
                 };
@@ -1721,14 +1752,14 @@ fn dispatch_tracked_execution_report(
                     identity.strategy_id,
                     identity.instrument_id,
                     client_order_id,
-                    Quantity::new(quantity, size_precision),
+                    quantity,
                     UUID4::new(),
                     ts_event,
                     ts_init,
                     false,
                     Some(venue_order_id),
                     Some(account_id),
-                    Some(Price::new(price, price_precision)),
+                    Some(price),
                     trigger,
                     None,  // protection_price
                     false, // is_quote_quantity
@@ -1777,15 +1808,46 @@ fn dispatch_tracked_execution_report(
                 ts_init,
             );
 
-            let last_qty: f64 = report.last_filled_qty.parse().unwrap_or(0.0);
-            let last_px: f64 = report.last_filled_price.parse().unwrap_or(0.0);
-            let commission: f64 = report.commission.parse().unwrap_or(0.0);
+            let Some(last_qty) = parse_spot_execution_report_quantity(
+                report,
+                &report.last_filled_qty,
+                size_precision,
+                "last_filled_qty",
+            ) else {
+                return;
+            };
+            let Some(last_px) = parse_spot_execution_report_price(
+                report,
+                &report.last_filled_price,
+                price_precision,
+                "last_filled_price",
+            ) else {
+                return;
+            };
+            let Some(commission) =
+                parse_spot_execution_report_decimal(report, &report.commission, "commission")
+            else {
+                return;
+            };
             let commission_currency = report
                 .commission_asset
                 .as_ref()
                 .map_or_else(Currency::USDT, |a| {
                     Currency::get_or_create_crypto(a.as_str())
                 });
+            let commission_money = match Money::from_decimal(commission, commission_currency) {
+                Ok(money) => money,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to build Spot commission money for symbol={}, order_id={}, \
+                        trade_id={}: {e}",
+                        report.symbol,
+                        report.order_id,
+                        report.trade_id,
+                    );
+                    return;
+                }
+            };
 
             let liquidity_side = if report.is_maker {
                 LiquiditySide::Maker
@@ -1803,8 +1865,8 @@ fn dispatch_tracked_execution_report(
                 TradeId::new(report.trade_id.to_string()),
                 identity.order_side,
                 identity.order_type,
-                Quantity::new(last_qty, size_precision),
-                Price::new(last_px, price_precision),
+                last_qty,
+                last_px,
                 commission_currency,
                 liquidity_side,
                 UUID4::new(),
@@ -1812,15 +1874,22 @@ fn dispatch_tracked_execution_report(
                 ts_init,
                 false,
                 None,
-                Some(Money::new(commission, commission_currency)),
+                Some(commission_money),
             );
 
             state.insert_filled(client_order_id);
             emitter.send_order_event(OrderEventAny::Filled(filled));
 
-            let cum_qty: f64 = report.cumulative_filled_qty.parse().unwrap_or(0.0);
-            let orig_qty: f64 = report.original_qty.parse().unwrap_or(0.0);
-            if (orig_qty - cum_qty) <= 0.0 {
+            let cumulative_qty = parse_spot_execution_report_decimal(
+                report,
+                &report.cumulative_filled_qty,
+                "cumulative_filled_qty",
+            );
+            let original_qty =
+                parse_spot_execution_report_decimal(report, &report.original_qty, "original_qty");
+            if let (Some(original_qty), Some(cumulative_qty)) = (original_qty, cumulative_qty)
+                && original_qty <= cumulative_qty
+            {
                 state.cleanup_terminal(client_order_id);
             }
         }
@@ -1878,6 +1947,65 @@ fn dispatch_tracked_execution_report(
             );
         }
     }
+}
+
+fn parse_spot_execution_report_quantity(
+    report: &BinanceSpotExecutionReport,
+    raw: &str,
+    precision: u8,
+    field: &str,
+) -> Option<Quantity> {
+    match parse_required_quantity_at_precision(raw, precision, field) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            warn_invalid_spot_execution_report_field(report, field, &e);
+            None
+        }
+    }
+}
+
+fn parse_spot_execution_report_price(
+    report: &BinanceSpotExecutionReport,
+    raw: &str,
+    precision: u8,
+    field: &str,
+) -> Option<Price> {
+    match parse_required_price_at_precision(raw, precision, field) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            warn_invalid_spot_execution_report_field(report, field, &e);
+            None
+        }
+    }
+}
+
+fn parse_spot_execution_report_decimal(
+    report: &BinanceSpotExecutionReport,
+    raw: &str,
+    field: &str,
+) -> Option<Decimal> {
+    match parse_required_decimal(raw, field) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            warn_invalid_spot_execution_report_field(report, field, &e);
+            None
+        }
+    }
+}
+
+fn warn_invalid_spot_execution_report_field(
+    report: &BinanceSpotExecutionReport,
+    field: &str,
+    error: &anyhow::Error,
+) {
+    log::warn!(
+        "Failed to parse Spot execution report {field} for symbol={}, order_id={}, \
+        trade_id={}, client_order_id={}: {error}",
+        report.symbol,
+        report.order_id,
+        report.trade_id,
+        report.client_order_id,
+    );
 }
 
 /// Dispatches an untracked execution report as execution reports for reconciliation.
@@ -2252,6 +2380,48 @@ mod tests {
             _ => unreachable!(),
         }
         let _ = client_order_id;
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_execution_report_invalid_fill_qty_skips_filled_event() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_dispatch_state(
+            ClientOrderId::from("O-20200101-000000-000-000-0"),
+            InstrumentId::from("ETHUSDT.BINANCE"),
+        );
+        let ws_authenticated = tokio::sync::Notify::new();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        let trade_json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_trade.json",
+        );
+        let mut report: BinanceSpotExecutionReport = serde_json::from_str(&trade_json).unwrap();
+        report.last_filled_qty = "not-a-number".to_string();
+
+        dispatch_ws_trading_message(
+            BinanceSpotWsTradingMessage::ExecutionReport(Box::new(report)),
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            clock,
+            &dispatch_state,
+            &ws_authenticated,
+            &seen_trade_ids,
+        );
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        assert!(
+            events
+                .iter()
+                .all(|e| !matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))),
+            "invalid fill quantity must not emit OrderFilled",
+        );
     }
 
     #[rstest]
