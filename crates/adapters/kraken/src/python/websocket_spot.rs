@@ -55,7 +55,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas, OrderBookDeltas_API},
+    data::{BarType, Data, OrderBookDeltas_API},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
     },
@@ -76,6 +76,7 @@ use crate::{
     config::KrakenDataClientConfig,
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
+        level_2::L2BookState,
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
             resync::retry_l3_resync,
@@ -83,8 +84,8 @@ use crate::{
         },
         messages::KrakenSpotWsMessage,
         parse::{
-            parse_book_deltas, parse_quote_tick, parse_trade_tick, parse_ws_bar,
-            parse_ws_fill_report, parse_ws_order_status_report,
+            parse_quote_tick, parse_trade_tick, parse_ws_bar, parse_ws_fill_report,
+            parse_ws_order_status_report,
         },
     },
 };
@@ -251,9 +252,11 @@ impl KrakenSpotWebSocketClient {
                 let mut l3_states: AHashMap<String, L3State> = AHashMap::new();
                 let l3_hasher = BookOrderIdHasher::new();
                 let l3_depths = client.l3_depths_handle();
+                let l2_depths = client.l2_depths_handle();
                 let l3_instruments = client.instruments_handle();
                 let l3_validate = client.validate_l3_checksum();
                 let client_for_l3_resync = client.clone();
+                let mut l2_books = L2BookState::default();
 
                 while let Some(msg) = stream.next().await {
                     let ts_init = clock.get_time_ns();
@@ -317,7 +320,7 @@ impl KrakenSpotWebSocketClient {
                         }
                         KrakenSpotWsMessage::Book {
                             data,
-                            is_snapshot: _,
+                            is_snapshot,
                         } => {
                             let instruments = instruments_map.load();
 
@@ -329,13 +332,18 @@ impl KrakenSpotWebSocketClient {
                                 let instrument = instruments.get(&instrument_id);
 
                                 if let Some(inst) = instrument {
-                                    let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
-                                    match parse_book_deltas(book, inst, sequence, ts_init) {
-                                        Ok(delta_vec) => {
-                                            if delta_vec.is_empty() {
-                                                continue;
-                                            }
-                                            let deltas = OrderBookDeltas::new(inst.id(), delta_vec);
+                                    let sequence = book_sequence.load(Ordering::Relaxed);
+                                    let depth = l2_depths.get(book.symbol.as_str());
+                                    match l2_books.process_book(
+                                        book,
+                                        inst,
+                                        sequence,
+                                        is_snapshot,
+                                        depth,
+                                        ts_init,
+                                    ) {
+                                        Ok(Some((deltas, next_sequence))) => {
+                                            book_sequence.store(next_sequence, Ordering::Relaxed);
                                             Python::attach(|py| {
                                                 let py_obj = data_to_pycapsule(
                                                     py,
@@ -346,6 +354,7 @@ impl KrakenSpotWebSocketClient {
                                                 );
                                             });
                                         }
+                                        Ok(None) => {}
                                         Err(e) => {
                                             log::error!("Failed to parse book deltas: {e}");
                                         }
