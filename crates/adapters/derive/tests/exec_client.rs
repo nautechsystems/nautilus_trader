@@ -5961,6 +5961,291 @@ async fn test_submit_option_order_resolves_option_instrument_for_signing() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_option_fok_limit_posts_fok_and_emits_filled() {
+    // TC-E99: option FOK limit orders use the ordinary option signing path
+    // but must preserve the FOK instruction sent to the venue.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.get_instrument_response.lock().await =
+        option_instrument_json("ETH-20260626-3500-C", "C", "3500");
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial AccountState",
+    )
+    .await;
+
+    let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-OPT-FOK");
+    let order = build_limit_order_with_time_in_force(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("100"),
+        Quantity::from("1.00"),
+        TimeInForce::Fok,
+        false,
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted",
+    )
+    .await;
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.submitted_orders.lock().await.is_empty() }
+        },
+        "private/order posted",
+    )
+    .await;
+    {
+        let posts = ws_state.submitted_orders.lock().await;
+        assert_eq!(
+            posts[0]["instrument_name"].as_str(),
+            Some("ETH-20260626-3500-C"),
+        );
+        assert_eq!(posts[0]["time_in_force"].as_str(), Some("fok"));
+        assert_eq!(posts[0]["order_type"].as_str(), Some("limit"));
+    }
+
+    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
+    let open_frame = json!([order_json_with(
+        "ord-opt-fok-1",
+        client_order_id.as_str(),
+        "buy",
+        "ETH-20260626-3500-C",
+        1_700_000_001_000_i64,
+        "open",
+    )]);
+    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Accepted(_))),
+        "OrderAccepted on option FOK Open",
+    )
+    .await;
+
+    let trades_channel = format!("{TEST_SUBACCOUNT}.trades");
+    let trade_frame = json!([trade_json_with_label(
+        "trade-opt-fok-1",
+        "ord-opt-fok-1",
+        "ETH-20260626-3500-C",
+        client_order_id.as_str(),
+    )]);
+    ws_state.push_notification(make_subscription_frame(&trades_channel, &trade_frame));
+
+    let filled = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_))),
+        "OrderFilled on option FOK .trades",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = filled {
+        assert_eq!(filled.client_order_id, client_order_id);
+        assert_eq!(filled.venue_order_id.as_str(), "ord-opt-fok-1");
+        assert_eq!(filled.trade_id.as_str(), "trade-opt-fok-1");
+        assert_eq!(filled.order_side, OrderSide::Buy);
+        assert_eq!(filled.last_qty.as_decimal(), dec!(1));
+    } else {
+        unreachable!();
+    }
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_option_order_posts_private_cancel_and_emits_canceled() {
+    // TC-E100: option cancels must keep the option symbol on private/cancel
+    // and route the terminal `.orders` update back to the tracked order.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.get_instrument_response.lock().await =
+        option_instrument_json("ETH-20260626-3500-C", "C", "3500");
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial AccountState",
+    )
+    .await;
+
+    let instrument_id = InstrumentId::from("ETH-20260626-3500-C.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-OPT-CANCEL");
+    let venue_order_id = VenueOrderId::from("ord-opt-cancel-1");
+    let order = build_limit_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("100"),
+        Quantity::from("1.00"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted",
+    )
+    .await;
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.submitted_orders.lock().await.is_empty() }
+        },
+        "private/order posted",
+    )
+    .await;
+
+    let orders_channel = format!("{TEST_SUBACCOUNT}.orders");
+    let open_frame = json!([order_json_with(
+        venue_order_id.as_str(),
+        client_order_id.as_str(),
+        "buy",
+        "ETH-20260626-3500-C",
+        1_700_000_001_000_i64,
+        "open",
+    )]);
+    ws_state.push_notification(make_subscription_frame(&orders_channel, &open_frame));
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Accepted(_))),
+        "OrderAccepted on option Open",
+    )
+    .await;
+
+    let cancel = CancelOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        instrument_id,
+        client_order_id,
+        Some(venue_order_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.cancel_order(cancel).expect("cancel_order Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.cancelled_orders.lock().await.is_empty() }
+        },
+        "private/cancel posted",
+    )
+    .await;
+    {
+        let posts = ws_state.cancelled_orders.lock().await;
+        assert_eq!(
+            posts[0]["instrument_name"].as_str(),
+            Some("ETH-20260626-3500-C"),
+        );
+        assert_eq!(posts[0]["order_id"].as_str(), Some("ord-opt-cancel-1"));
+        assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
+    }
+
+    let cancel_frame = json!([order_json_with(
+        "ord-opt-cancel-1",
+        client_order_id.as_str(),
+        "buy",
+        "ETH-20260626-3500-C",
+        1_700_000_002_000_i64,
+        "cancelled",
+    )]);
+    ws_state.push_notification(make_subscription_frame(&orders_channel, &cancel_frame));
+
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Canceled(_))),
+        "OrderCanceled on option cancel",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = event {
+        assert_eq!(canceled.client_order_id, client_order_id);
+        assert_eq!(
+            canceled.venue_order_id.map(|v| v.as_str().to_string()),
+            Some("ord-opt-cancel-1".to_string()),
+        );
+    } else {
+        unreachable!();
+    }
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_position_status_reports_option_position() {
+    // TC-E101: option positions use the same reconciliation report path, but
+    // the instrument id must preserve the full option symbol.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut option_position = sample_position_json("ETH-20260626-3500-C", "-2");
+    option_position["instrument_type"] = json!("option");
+    option_position["average_price"] = json!("80");
+    *rest_state.positions_response.lock().await = json!({
+        "positions": [option_position],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_client(rest_state, ws_state).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("ETH-20260626-3500-C.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = tc
+        .client
+        .generate_position_status_reports(&cmd)
+        .await
+        .expect("positions");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id.symbol.as_str(),
+        "ETH-20260626-3500-C"
+    );
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].signed_decimal_qty, dec!(-2));
+    assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_second_submit_resolves_instrument_from_cache_without_refetch() {
     // The instrument cache is keyed by InstrumentId over an AtomicMap: once an
     // order resolves an instrument via public/get_instrument, a later order for
