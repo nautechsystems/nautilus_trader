@@ -524,7 +524,7 @@ impl AccountsManager {
                         instrument.settlement_currency(),
                         base_currency
                     );
-                    continue;
+                    return None;
                 }
             }
 
@@ -1460,6 +1460,64 @@ mod tests {
             );
         } else {
             panic!("Expected CashAccount");
+        }
+    }
+
+    #[rstest]
+    fn test_update_orders_margin_init_xrate_unavailable_returns_none() {
+        let eur = Currency::EUR();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::new(1_000_000.0, eur),
+                Money::new(0.0, eur),
+                Money::new(1_000_000.0, eur),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(eur),
+        );
+        let mut account = MarginAccount::new(account_state, true);
+        let instrument = audusd_sim();
+        let prior_margin = Money::new(10.0, eur);
+        account.update_initial_margin(instrument.id(), prior_margin);
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("0.80000"))
+            .build();
+
+        let submitted = order_submitted_for(&order);
+        let accepted = order_accepted_for(&order, VenueOrderId::new("1"));
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        let mut account = AccountAny::Margin(account);
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_none(), "xrate-unavailable must return None");
+
+        match account {
+            AccountAny::Margin(margin_account) => {
+                assert_eq!(margin_account.initial_margin(instrument.id()), prior_margin);
+                assert_eq!(margin_account.balance_locked(Some(eur)), Some(prior_margin));
+            }
+            _ => panic!("Expected MarginAccount"),
         }
     }
 
