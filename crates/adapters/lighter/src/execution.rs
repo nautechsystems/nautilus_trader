@@ -3280,6 +3280,7 @@ mod tests {
         clock::TestClock,
         factories::OrderFactory,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
+        testing::wait_until_async,
     };
     use nautilus_model::{
         data::QuoteTick,
@@ -4348,7 +4349,7 @@ mod tests {
             .update_leverage(instrument_id, 500, LighterPositionMarginMode::Isolated)
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_spawned_tasks(&client).await;
         assert_nonce_reusable(&client.dispatch);
     }
 
@@ -4385,7 +4386,7 @@ mod tests {
             .update_leverage(instrument_id, 1, LighterPositionMarginMode::Cross)
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_spawned_tasks(&client).await;
         assert_nonce_reusable(&client.dispatch);
     }
 
@@ -4400,8 +4401,16 @@ mod tests {
             .update_leverage(instrument_id, 10_000, LighterPositionMarginMode::Isolated)
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_spawned_tasks(&client).await;
         assert_nonce_reusable(&client.dispatch);
+    }
+
+    async fn wait_for_spawned_tasks(client: &LighterExecutionClient) {
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(2),
+        )
+        .await;
     }
 
     fn mark_all_streams_ready(client: &LighterExecutionClient) {

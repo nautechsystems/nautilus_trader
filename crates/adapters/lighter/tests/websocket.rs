@@ -387,10 +387,19 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
 }
 
 async fn await_subscription_count(client: &LighterWebSocketClient, target: usize) {
-    let started = std::time::Instant::now();
-    while client.subscription_count() < target && started.elapsed() < Duration::from_secs(2) {
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    wait_until_async(
+        || async { client.subscription_count() >= target },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
+async fn await_subscription_count_at_most(client: &LighterWebSocketClient, target: usize) {
+    wait_until_async(
+        || async { client.subscription_count() <= target },
+        Duration::from_secs(2),
+    )
+    .await;
 }
 
 /// Returns a clone of the order_book fixture rewritten to target a specific
@@ -1254,10 +1263,7 @@ async fn test_subscription_count_tracks_subscribe_then_ack() {
         .expect("unsubscribe_book");
     await_unsubscribe_count(&state, 1).await;
 
-    let started = std::time::Instant::now();
-    while harness.client.subscription_count() > 0 && started.elapsed() < Duration::from_secs(2) {
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    await_subscription_count_at_most(&harness.client, 0).await;
     assert_eq!(
         harness.client.subscription_count(),
         0,

@@ -338,9 +338,7 @@ For reference, the Greeks that Nautilus computes:
 | Vega       | `v`    | Sensitivity to a 1 percentage point change in implied volatility (dV/dVol).   |
 | Theta      | `t`    | Daily time decay: change in option price per calendar day (dV/dt / 365.25).   |
 | Rho        | `r`    | Sensitivity to a change in the risk‑free interest rate (dV/dr).               |
-| ITM prob   | -      | Probability that the option finishes in the money.                            |
-
-For calls, ITM probability is `P(S_T > K)`. For puts, it is `P(S_T < K)`.
+| ITM prob   | -      | Probability that the option finishes in the money: P(ϕS_T > ϕK), where ϕ = 1 for calls and ϕ = -1 for puts. |
 
 ## Examples
 

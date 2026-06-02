@@ -530,6 +530,10 @@ impl LiveNode {
     ///
     /// Always returns an error explaining that the `plugin` feature is required.
     #[cfg(not(feature = "plugin"))]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "signature mirrors the plugin-enabled API"
+    )]
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
         let _ = config;
         anyhow::bail!("LiveNode::add_plugin requires the `plugin` feature")
