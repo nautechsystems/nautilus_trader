@@ -42,6 +42,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
+- **scorecard.yml**: OpenSSF Scorecard posture scan on `develop` pushes, weekly schedule, and
+  manual dispatch. Publishes badge/API results and uploads SARIF to code scanning.
 
 ## Security
 
@@ -74,6 +76,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Code scanning**: CodeQL analyzes Python and Rust code on PRs to `master`, pushes to `nightly`,
   and manual dispatch. Zizmor runs in `security-audit.yml` and uploads SARIF when token
   permissions allow it.
+- **OpenSSF Scorecard**: `scorecard.yml` publishes repository posture results for the public
+  badge/API and uploads SARIF to code scanning.
 
 ### Build and publish controls
 
@@ -170,7 +174,8 @@ All workflows read these GitHub variables:
 - `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: Extra endpoints needed by the security audit jobs.
 
 Some workflows add job-specific endpoints inline (e.g., `upload.pypi.org:443` for publishing,
-`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds).
+`auth.docker.io:443` and `registry-1.docker.io:443` for Docker builds, and
+`api.scorecard.dev:443` for Scorecard result publishing).
 
 Security audit jobs do not use deployment environments. They do not need environment secrets, and
 environment branch policies block same-repo contributor PRs before the audit steps can start.
