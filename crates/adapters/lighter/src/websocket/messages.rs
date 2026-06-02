@@ -30,7 +30,10 @@ use nautilus_model::{
     reports::PositionStatusReport,
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor},
+};
 use serde_json::value::RawValue;
 use ustr::Ustr;
 
@@ -685,25 +688,43 @@ fn deserialize_trade_vec<'de, D>(deserializer: D) -> Result<Vec<LighterTrade>, D
 where
     D: serde::Deserializer<'de>,
 {
-    let value = serde_json::Value::deserialize(deserializer)?;
-    match value {
-        serde_json::Value::Null => Ok(Vec::new()),
-        serde_json::Value::Array(_) => {
-            serde_json::from_value(value).map_err(serde::de::Error::custom)
+    struct TradeVecVisitor;
+
+    impl<'de> Visitor<'de> for TradeVecVisitor {
+        type Value = Vec<LighterTrade>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("trade array, object keyed by market, or null")
         }
-        serde_json::Value::Object(map) => {
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Vec::new())
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Vec::new())
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut trades = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(trade) = seq.next_element::<LighterTrade>()? {
+                trades.push(trade);
+            }
+            Ok(trades)
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
             let mut trades = Vec::new();
-            for value in map.into_values() {
-                let mut market_trades: Vec<LighterTrade> =
-                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            while let Some((_, mut market_trades)) =
+                map.next_entry::<IgnoredAny, Vec<LighterTrade>>()?
+            {
                 trades.append(&mut market_trades);
             }
             Ok(trades)
         }
-        other => Err(serde::de::Error::custom(format!(
-            "expected trade array, object, or null, was {other}"
-        ))),
     }
+
+    deserializer.deserialize_any(TradeVecVisitor)
 }
 
 #[cfg(test)]
@@ -880,6 +901,23 @@ mod tests {
             } => {
                 assert!(liquidation_trades.is_empty());
                 assert!(trades.is_empty());
+            }
+            _ => panic!("expected trade frame"),
+        }
+    }
+
+    #[rstest]
+    fn test_trade_frame_deserializes_object_trades() {
+        let mut payload: Value = serde_json::from_str(WS_TRADE_UPDATE).unwrap();
+        let trades = payload.get_mut("trades").unwrap().take();
+        payload["trades"] = serde_json::json!({ "0": trades });
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        match frame {
+            LighterWsFrame::Trade { trades, .. } => {
+                assert_eq!(trades.len(), 1);
+                assert_eq!(trades[0].trade_id_str.as_deref(), Some("16164557907"));
             }
             _ => panic!("expected trade frame"),
         }
