@@ -81,9 +81,15 @@ pub type QuantityRaw = u64;
 // -----------------------------------------------------------------------------
 
 /// The maximum raw quantity integer value.
+///
+/// `QUANTITY_MAX` and `FIXED_SCALAR` are cast to `QuantityRaw` before multiplying, so the
+/// scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+/// fits within `QuantityRaw`'s range in both high-precision (u128) and standard-precision
+/// (u64) modes, so the multiplication cannot overflow.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
-pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
+pub static QUANTITY_RAW_MAX: QuantityRaw =
+    (QUANTITY_MAX as QuantityRaw) * (FIXED_SCALAR as QuantityRaw);
 
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
@@ -905,6 +911,17 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_max_quantity_round_trips_through_raw() {
+        // Regression: a lossy `f64` scalar previously left `QUANTITY_RAW_MAX` below the raw
+        // produced by `new` at the maximum, causing spurious panics and overflow errors.
+        let qty = Quantity::new(QUANTITY_MAX, 0);
+
+        assert_eq!(qty.raw, QUANTITY_RAW_MAX);
+        assert!(Quantity::from_raw_checked(qty.raw, 0).is_ok());
+        assert!(qty.checked_add(Quantity::zero(0)).is_some());
+    }
 
     #[rstest]
     fn test_check_quantity_positive() {
