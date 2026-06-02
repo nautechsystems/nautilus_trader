@@ -60,6 +60,8 @@ class BacktestEngineConfig:
     @property
     def save_state(self) -> bool: ...
     @property
+    def shutdown_on_error(self) -> bool: ...
+    @property
     def bypass_logging(self) -> bool: ...
     @property
     def run_analysis(self) -> bool: ...
@@ -92,6 +94,7 @@ class BacktestEngineConfig:
         trader_id: model.TraderId | None = None,
         load_state: bool | None = None,
         save_state: bool | None = None,
+        shutdown_on_error: bool | None = None,
         bypass_logging: bool | None = None,
         run_analysis: bool | None = None,
         timeout_connection: int | None = None,

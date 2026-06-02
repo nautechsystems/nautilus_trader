@@ -39,6 +39,7 @@ def test_engine_config_defaults():
     config = BacktestEngineConfig()
     assert config.load_state is False
     assert config.save_state is False
+    assert config.shutdown_on_error is False
     assert config.bypass_logging is False
     assert config.run_analysis is True
     assert config.timeout_connection == 60.0
@@ -48,11 +49,13 @@ def test_engine_config_with_params():
     config = BacktestEngineConfig(
         load_state=True,
         save_state=True,
+        shutdown_on_error=True,
         bypass_logging=True,
         run_analysis=False,
     )
     assert config.load_state is True
     assert config.save_state is True
+    assert config.shutdown_on_error is True
     assert config.bypass_logging is True
     assert config.run_analysis is False
 

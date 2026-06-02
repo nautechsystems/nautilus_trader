@@ -177,9 +177,6 @@ def test_live_exec_engine_config_rejects_unsupported_args():
     with pytest.raises(TypeError, match="purge_from_database"):
         LiveExecEngineConfig(purge_from_database=True)
 
-    with pytest.raises(TypeError, match="graceful_shutdown_on_error"):
-        LiveExecEngineConfig(graceful_shutdown_on_error=True)
-
     with pytest.raises(TypeError, match="qsize"):
         LiveExecEngineConfig(qsize=1)
 
@@ -201,6 +198,7 @@ def test_live_node_config_defaults():
     assert isinstance(config, LiveNodeConfig)
     assert config.load_state is False
     assert config.save_state is False
+    assert config.shutdown_on_error is False
     assert config.timeout_connection_secs == 60.0
 
 

@@ -697,8 +697,8 @@ impl LiveNode {
 
         self.handle.set_state(NodeState::Starting);
 
-        self.kernel.start_async().await;
         self.kernel.reset_shutdown_flag();
+        self.kernel.start_async().await;
 
         if self.kernel.is_event_store_replay() {
             log::info!(
@@ -1067,8 +1067,8 @@ impl LiveNode {
         log::info!("Event loop starting");
 
         self.handle.set_state(NodeState::Starting);
-        self.kernel.start_async().await;
         self.kernel.reset_shutdown_flag();
+        self.kernel.start_async().await;
 
         if self.kernel.is_event_store_replay() {
             log::info!(
@@ -1085,12 +1085,11 @@ impl LiveNode {
         }
 
         let stop_handle = self.handle.clone();
-        let shutdown_flag = self.kernel.shutdown_flag();
         let mut pending = PendingEvents::default();
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
-        // TODO: Add ctrl_c, stop_handle, and shutdown_flag monitoring here to
+        // TODO: Add ctrl_c, stop_handle, and shutdown monitoring here to
         // allow aborting a hanging connect future.
         drive_with_event_buffering(
             self.kernel.connect_data_clients(),
@@ -1321,7 +1320,7 @@ impl LiveNode {
                     if stop_handle.should_stop() {
                         log::info!("Received stop signal from handle");
                         self.initiate_shutdown();
-                    } else if shutdown_flag.get() {
+                    } else if self.kernel.is_shutdown_requested() {
                         log::info!("Received ShutdownSystem command, shutting down");
                         self.initiate_shutdown();
                     }

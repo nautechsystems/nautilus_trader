@@ -254,7 +254,7 @@ impl LiveDataEngineConfig {
         clippy::needless_pass_by_value,
         reason = "PyO3 #[new] requires owned params"
     )]
-    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None, graceful_shutdown_on_error=None))]
+    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
         time_bars_timestamp_on_close: Option<bool>,
@@ -268,7 +268,6 @@ impl LiveDataEngineConfig {
         emit_quotes_from_book_depths: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
-        graceful_shutdown_on_error: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let time_bars_interval_type = match time_bars_interval_type {
@@ -293,8 +292,6 @@ impl LiveDataEngineConfig {
                 .unwrap_or(default.emit_quotes_from_book_depths),
             external_clients,
             debug: debug.unwrap_or(default.debug),
-            graceful_shutdown_on_error: graceful_shutdown_on_error
-                .unwrap_or(default.graceful_shutdown_on_error),
             qsize: default.qsize,
         })
     }
@@ -313,14 +310,13 @@ impl LiveDataEngineConfig {
 impl LiveRiskEngineConfig {
     /// Configuration for live risk engines.
     #[new]
-    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, debug=None, graceful_shutdown_on_error=None))]
+    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, debug=None))]
     fn py_new(
         bypass: Option<bool>,
         max_order_submit_rate: Option<String>,
         max_order_modify_rate: Option<String>,
         max_notional_per_order: Option<HashMap<String, Py<PyAny>>>,
         debug: Option<bool>,
-        graceful_shutdown_on_error: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let max_order_submit_rate =
@@ -342,8 +338,6 @@ impl LiveRiskEngineConfig {
             max_order_modify_rate,
             max_notional_per_order,
             debug: debug.unwrap_or(default.debug),
-            graceful_shutdown_on_error: graceful_shutdown_on_error
-                .unwrap_or(default.graceful_shutdown_on_error),
             qsize: default.qsize,
         })
     }
@@ -473,7 +467,6 @@ impl LiveExecEngineConfig {
             purge_from_database: default.purge_from_database,
             debug: debug.unwrap_or(default.debug),
             own_books_audit_interval_secs,
-            graceful_shutdown_on_error: default.graceful_shutdown_on_error,
             qsize: default.qsize,
         })
     }
@@ -722,12 +715,13 @@ impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
         load_state: Option<bool>,
         save_state: Option<bool>,
+        shutdown_on_error: Option<bool>,
         logging: Option<LoggerConfig>,
         instance_id: Option<UUID4>,
         timeout_connection_secs: Option<f64>,
@@ -761,6 +755,7 @@ impl LiveNodeConfig {
             trader_id: trader_id.unwrap_or(default.trader_id),
             load_state: load_state.unwrap_or(default.load_state),
             save_state: save_state.unwrap_or(default.save_state),
+            shutdown_on_error: shutdown_on_error.unwrap_or(default.shutdown_on_error),
             logging: logging.unwrap_or(default.logging),
             instance_id,
             timeout_connection: to_duration(
@@ -829,6 +824,11 @@ impl LiveNodeConfig {
     #[getter]
     fn save_state(&self) -> bool {
         self.save_state
+    }
+
+    #[getter]
+    fn shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
     }
 
     #[getter]

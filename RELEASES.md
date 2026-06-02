@@ -64,10 +64,12 @@ Released on TBD (UTC).
 - Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
 - Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
+- Added `shutdown_on_error` to stop Rust backtests and live nodes after error logs
 - Added Tardis option greeks ingestion to the catalog for backtest replay
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
+- Removed live engine `graceful_shutdown_on_error`; use node-level `shutdown_on_error` instead
 - Changed `nautilus_pyo3.get_exchange_rate` to return `decimal.Decimal` instead of `float`
 - Changed DeFi pool-event and snapshot types to require `ts_event`/`ts_init` timestamps (was optional `timestamp`)
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert

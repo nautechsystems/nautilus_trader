@@ -16,7 +16,11 @@
 use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
-    sync::{Mutex, OnceLock, atomic::Ordering, mpsc::SendError},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+        mpsc::SendError,
+    },
 };
 
 use ahash::AHashMap;
@@ -101,6 +105,143 @@ static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
 /// Global handle to the logging thread - only one thread exists per process.
 static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+
+static SHUTDOWN_ON_ERROR: OnceLock<ShutdownOnError> = OnceLock::new();
+
+/// The first error log captured after shutdown-on-error is armed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShutdownOnErrorTrigger {
+    /// The UNIX timestamp (ns) of the error log.
+    pub timestamp: UnixNanos,
+    /// The log component that emitted the error.
+    pub component: Ustr,
+    /// The formatted error log message.
+    pub message: String,
+}
+
+#[derive(Debug, Default)]
+struct ShutdownOnError {
+    armed: AtomicBool,
+    triggered: AtomicBool,
+    pending: Mutex<Option<ShutdownOnErrorTrigger>>,
+}
+
+impl ShutdownOnError {
+    fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::Acquire)
+    }
+
+    fn arm(&self, enabled: bool) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.take();
+        }
+        self.triggered.store(false, Ordering::Release);
+        self.armed.store(enabled, Ordering::Release);
+    }
+
+    fn disarm(&self) {
+        self.armed.store(false, Ordering::Release);
+        self.triggered.store(false, Ordering::Release);
+
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.take();
+        }
+    }
+
+    fn maybe_record_trigger<F>(
+        &self,
+        level: Level,
+        timestamp: UnixNanos,
+        component: Ustr,
+        message: F,
+    ) where
+        F: FnOnce() -> String,
+    {
+        if !self.armed.load(Ordering::Acquire) || level != Level::Error {
+            return;
+        }
+
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+
+        if self
+            .triggered
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        *pending = Some(ShutdownOnErrorTrigger {
+            timestamp,
+            component,
+            message: message(),
+        });
+    }
+
+    fn take_trigger(&self) -> Option<ShutdownOnErrorTrigger> {
+        if !self.triggered.load(Ordering::Acquire) {
+            return None;
+        }
+
+        self.pending
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.take())
+    }
+
+    fn try_drain_trigger<F>(&self, drain: F) -> bool
+    where
+        F: FnOnce(&ShutdownOnErrorTrigger) -> bool,
+    {
+        if !self.triggered.load(Ordering::Acquire) {
+            return false;
+        }
+
+        let Ok(mut pending) = self.pending.lock() else {
+            return false;
+        };
+
+        let Some(trigger) = pending.as_ref() else {
+            return false;
+        };
+
+        if !drain(trigger) {
+            return false;
+        }
+
+        pending.take();
+        true
+    }
+}
+
+/// Arms shutdown-on-error handling for the current run.
+pub fn arm_shutdown_on_error(enabled: bool) {
+    shutdown_on_error().arm(enabled);
+}
+
+/// Disarms shutdown-on-error handling and clears any pending trigger.
+pub fn disarm_shutdown_on_error() {
+    shutdown_on_error().disarm();
+}
+
+/// Returns and clears the pending shutdown-on-error trigger, if one was recorded.
+pub fn take_shutdown_on_error_trigger() -> Option<ShutdownOnErrorTrigger> {
+    shutdown_on_error().take_trigger()
+}
+
+/// Conditionally drains the pending shutdown-on-error trigger.
+pub fn try_drain_shutdown_on_error_trigger<F>(drain: F) -> bool
+where
+    F: FnOnce(&ShutdownOnErrorTrigger) -> bool,
+{
+    shutdown_on_error().try_drain_trigger(drain)
+}
+
+fn shutdown_on_error() -> &'static ShutdownOnError {
+    SHUTDOWN_ON_ERROR.get_or_init(ShutdownOnError::default)
+}
 
 /// Producer-side filtering policy derived from [`LoggerConfig`].
 #[derive(Debug, Clone)]
@@ -609,19 +750,29 @@ impl<'kvs> log::kv::VisitSource<'kvs> for FieldCollector {
 
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        !LOGGING_BYPASSED.load(Ordering::Relaxed)
-            && (metadata.level() == Level::Error
-                || metadata.level() <= self.config.stdout_level
-                || metadata.level() <= self.config.fileout_level)
+        if LOGGING_BYPASSED.load(Ordering::Relaxed) {
+            return metadata.level() == Level::Error && shutdown_on_error().is_armed();
+        }
+
+        metadata.level() == Level::Error
+            || metadata.level() <= self.config.stdout_level
+            || metadata.level() <= self.config.fileout_level
     }
 
     fn log(&self, record: &log::Record) {
-        if self.enabled(record.metadata()) {
-            let level = record.level();
+        let level = record.level();
 
+        if LOGGING_BYPASSED.load(Ordering::Relaxed) {
+            if level == Level::Error {
+                record_shutdown_on_error(record, level);
+            }
+            return;
+        }
+
+        if self.enabled(record.metadata()) {
             if let Some(filter_policy) = &self.filter_policy {
-                // Probe only the component before filtering. Skipped logs should not pay for
-                // timestamps, message formatting, or non-reserved structured-field strings.
+                // Probe only the component before filtering. Filtered error logs still need
+                // enough payload to trigger shutdown-on-error.
                 let mut probe = ComponentProbe::new();
                 let _ = record.key_values().visit(&mut probe);
                 let component = probe
@@ -629,6 +780,14 @@ impl Log for Logger {
                     .unwrap_or_else(|| intern_repeated(record.metadata().target()));
 
                 if filter_policy.should_skip(&component, level) {
+                    if level == Level::Error {
+                        shutdown_on_error().maybe_record_trigger(
+                            level,
+                            current_log_timestamp(),
+                            component,
+                            || format!("{}", record.args()),
+                        );
+                    }
                     return;
                 }
 
@@ -637,14 +796,22 @@ impl Log for Logger {
                 let _ = record.key_values().visit(&mut collector);
                 let color = collector.color.unwrap_or_else(|| level.into());
 
-                self.send_log_line(LogLine {
+                let line = LogLine {
                     timestamp,
                     level,
                     color,
                     component,
                     message: format!("{}", record.args()),
                     fields: collector.fields,
-                });
+                };
+
+                shutdown_on_error().maybe_record_trigger(
+                    line.level,
+                    line.timestamp,
+                    line.component,
+                    || line.message.clone(),
+                );
+                self.send_log_line(line);
                 return;
             }
 
@@ -666,6 +833,12 @@ impl Log for Logger {
                 fields: collector.fields,
             };
 
+            shutdown_on_error().maybe_record_trigger(
+                line.level,
+                line.timestamp,
+                line.component,
+                || line.message.clone(),
+            );
             self.send_log_line(line);
         }
     }
@@ -680,6 +853,18 @@ impl Log for Logger {
             eprintln!("Error sending flush log event: {e}");
         }
     }
+}
+
+fn record_shutdown_on_error(record: &log::Record, level: Level) {
+    let mut probe = ComponentProbe::new();
+    let _ = record.key_values().visit(&mut probe);
+    let component = probe
+        .component
+        .unwrap_or_else(|| intern_repeated(record.metadata().target()));
+
+    shutdown_on_error().maybe_record_trigger(level, current_log_timestamp(), component, || {
+        format!("{}", record.args())
+    });
 }
 
 impl Logger {
@@ -1772,6 +1957,155 @@ mod tests {
             },
             testing::wait_until,
         };
+
+        #[rstest]
+        fn test_shutdown_on_error_records_once_then_rearms() {
+            disarm_shutdown_on_error();
+
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let logger = Logger::new_for_benchmark(LoggerConfig::default(), tx);
+
+            arm_shutdown_on_error(false);
+            let args = format_args!("Disabled error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("RunComponent")
+                .build();
+            log::Log::log(&logger, &record);
+            assert_eq!(take_shutdown_on_error_trigger(), None);
+
+            arm_shutdown_on_error(true);
+            let args = format_args!("First error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("RunComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let args = format_args!("Second error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("RunComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let first = take_shutdown_on_error_trigger().unwrap();
+            assert_eq!(first.component, Ustr::from("RunComponent"));
+            assert_eq!(first.message, "First error");
+            assert_eq!(take_shutdown_on_error_trigger(), None);
+
+            arm_shutdown_on_error(true);
+            let args = format_args!("Third error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("RunComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let third = take_shutdown_on_error_trigger().unwrap();
+            assert_eq!(third.component, Ustr::from("RunComponent"));
+            assert_eq!(third.message, "Third error");
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let logger = Logger::new_for_benchmark(
+                LoggerConfig {
+                    log_components_only: true,
+                    ..Default::default()
+                },
+                tx,
+            );
+
+            arm_shutdown_on_error(true);
+            let args = format_args!("Filtered error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("FilteredComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let trigger = take_shutdown_on_error_trigger().unwrap();
+            assert_eq!(trigger.component, Ustr::from("FilteredComponent"));
+            assert_eq!(trigger.message, "Filtered error");
+            assert!(matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+            disarm_shutdown_on_error();
+        }
+
+        #[rstest]
+        fn test_shutdown_on_error_records_bypassed_error() {
+            LOGGING_BYPASSED.store(false, Ordering::Relaxed);
+            disarm_shutdown_on_error();
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let logger = Logger::new_for_benchmark(LoggerConfig::default(), tx);
+            let metadata = log::Metadata::builder()
+                .level(Level::Error)
+                .target("BypassedComponent")
+                .build();
+
+            logging_set_bypass();
+            arm_shutdown_on_error(false);
+            assert!(!log::Log::enabled(&logger, &metadata));
+
+            arm_shutdown_on_error(true);
+            assert!(log::Log::enabled(&logger, &metadata));
+
+            let args = format_args!("Bypassed error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("BypassedComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let trigger = take_shutdown_on_error_trigger().unwrap();
+            assert_eq!(trigger.component, Ustr::from("BypassedComponent"));
+            assert_eq!(trigger.message, "Bypassed error");
+            assert!(matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+
+            LOGGING_BYPASSED.store(false, Ordering::Relaxed);
+            disarm_shutdown_on_error();
+        }
+
+        #[rstest]
+        fn test_shutdown_on_error_failed_drain_keeps_trigger_pending() {
+            LOGGING_BYPASSED.store(false, Ordering::Relaxed);
+            disarm_shutdown_on_error();
+
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let logger = Logger::new_for_benchmark(LoggerConfig::default(), tx);
+
+            arm_shutdown_on_error(true);
+            let args = format_args!("Pending error");
+            let record = log::Record::builder()
+                .args(args)
+                .level(Level::Error)
+                .target("PendingComponent")
+                .build();
+            log::Log::log(&logger, &record);
+
+            let drained = try_drain_shutdown_on_error_trigger(|trigger| {
+                assert_eq!(trigger.component, Ustr::from("PendingComponent"));
+                assert_eq!(trigger.message, "Pending error");
+                false
+            });
+            assert!(!drained);
+
+            let trigger = take_shutdown_on_error_trigger().unwrap();
+            assert_eq!(trigger.component, Ustr::from("PendingComponent"));
+            assert_eq!(trigger.message, "Pending error");
+            disarm_shutdown_on_error();
+        }
 
         #[rstest]
         fn test_logging_to_file() {

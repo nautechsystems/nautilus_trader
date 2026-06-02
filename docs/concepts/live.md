@@ -362,6 +362,30 @@ from fills and adjusts to reconstruct positions accurately.
 - **Synthetic fill**: a calculated fill report representing missing activity, priced to achieve the correct average position.
 - **Tolerance**: position matching uses configurable price tolerance (default 0.0001 = 0.01%) to absorb minor calculation differences.
 
+## Shutdown on error
+
+Set `LiveNodeConfig.shutdown_on_error=True` so that a Rust error log requests a live node
+shutdown. The Rust logger records the first `log::error!` emitted after the kernel
+starts, including error logs from other threads, and the kernel publishes a `ShutdownSystem`
+command when the live event loop next checks for shutdown.
+
+The shutdown request follows the normal live node stop path. The node stops the trader,
+awaits the post-stop delay, disconnects clients, and stops the engines. It does not abort
+the process.
+
+```python
+from nautilus_trader.live import LiveNodeConfig
+
+config = LiveNodeConfig(shutdown_on_error=True)
+```
+
+Error logs suppressed by component filters or logging bypass mode still request shutdown.
+The trigger is cleared and re-armed when a new kernel run starts, so a process can restart
+a node without reinitializing the logging system. The per-engine
+`graceful_shutdown_on_error` option has been removed; configure shutdown-on-error at the
+node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Python
+`logging.error(...)` calls.
+
 ## Related guides
 
 - [Configure a live trading node](../how_to/configure_live_trading.md) - Node and engine configuration.

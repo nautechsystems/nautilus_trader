@@ -76,7 +76,6 @@ class LiveDataEngineConfig:
         emit_quotes_from_book_depths: bool | None = None,
         external_clients: typing.Sequence[model.ClientId] | None = None,
         debug: bool | None = None,
-        graceful_shutdown_on_error: bool | None = None,
     ) -> LiveDataEngineConfig: ...
 
 @typing.final
@@ -207,6 +206,8 @@ class LiveNodeConfig:
     @property
     def save_state(self) -> bool: ...
     @property
+    def shutdown_on_error(self) -> bool: ...
+    @property
     def timeout_connection_secs(self) -> float: ...
     @property
     def timeout_reconciliation_secs(self) -> float: ...
@@ -226,6 +227,7 @@ class LiveNodeConfig:
         trader_id: model.TraderId | None = None,
         load_state: bool | None = None,
         save_state: bool | None = None,
+        shutdown_on_error: bool | None = None,
         logging: common.LoggerConfig | None = None,
         instance_id: core.UUID4 | None = None,
         timeout_connection_secs: float | None = None,
@@ -253,7 +255,6 @@ class LiveRiskEngineConfig:
         max_order_modify_rate: str | None = None,
         max_notional_per_order: typing.Mapping[str, typing.Any] | None = None,
         debug: bool | None = None,
-        graceful_shutdown_on_error: bool | None = None,
     ) -> LiveRiskEngineConfig: ...
 
 @typing.final

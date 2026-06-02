@@ -117,6 +117,11 @@ pub struct BacktestEngineConfig {
     /// If trading strategy state should be saved to the database on stop.
     #[builder(default)]
     pub save_state: bool,
+    /// If the system should request shutdown when an error log is emitted.
+    ///
+    /// Filtered or bypassed error logs still request shutdown.
+    #[builder(default)]
+    pub shutdown_on_error: bool,
     /// The logging configuration for the kernel.
     #[builder(default)]
     pub logging: LoggerConfig,
@@ -181,6 +186,10 @@ impl NautilusKernelConfig for BacktestEngineConfig {
 
     fn save_state(&self) -> bool {
         self.save_state
+    }
+
+    fn shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
     }
 
     fn logging(&self) -> LoggerConfig {

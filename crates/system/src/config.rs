@@ -37,6 +37,10 @@ pub trait NautilusKernelConfig: Debug {
     fn load_state(&self) -> bool;
     /// Returns if trading strategy state should be saved to the database on stop.
     fn save_state(&self) -> bool;
+    /// Returns if the system should request shutdown when an error log is emitted.
+    ///
+    /// Filtered or bypassed error logs still request shutdown.
+    fn shutdown_on_error(&self) -> bool;
     /// Returns the logging configuration for the kernel.
     fn logging(&self) -> LoggerConfig;
     /// Returns the unique instance identifier for the kernel.
@@ -84,6 +88,11 @@ pub struct KernelConfig {
     /// If trading strategy state should be saved to the database on stop.
     #[builder(default)]
     pub save_state: bool,
+    /// If the system should request shutdown when an error log is emitted.
+    ///
+    /// Filtered or bypassed error logs still request shutdown.
+    #[builder(default)]
+    pub shutdown_on_error: bool,
     /// The logging configuration for the kernel.
     #[builder(default)]
     pub logging: LoggerConfig,
@@ -138,6 +147,10 @@ impl NautilusKernelConfig for KernelConfig {
 
     fn save_state(&self) -> bool {
         self.save_state
+    }
+
+    fn shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
     }
 
     fn logging(&self) -> LoggerConfig {
