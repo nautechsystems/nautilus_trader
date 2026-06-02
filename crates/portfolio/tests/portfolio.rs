@@ -18,7 +18,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
-    msgbus::{self, MessagingSwitchboard},
+    msgbus::{self, MessageBus, MessagingSwitchboard, TypedHandler},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -711,6 +711,223 @@ fn test_order_endpoint_then_topic_publishes_account_state_once(
     assert_eq!(captured[0].account_id, cash_account_state.account_id);
     assert_eq!(captured[0].event_id, account_last_event.event_id);
     assert_ne!(captured[0].event_id, cash_account_state.event_id);
+}
+
+#[rstest]
+fn test_position_update_publishes_margin_account_state(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    let account_state = get_margin_account(Some(account_id.as_str()));
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("1.00000"),
+        PositionId::new("P-ACCOUNT-STATE"),
+    );
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let captured = captured.borrow();
+    let account_last_event = portfolio
+        .cache()
+        .borrow()
+        .account(&account_id)
+        .unwrap()
+        .last_event()
+        .unwrap();
+
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, account_id);
+    assert_eq!(captured[0].event_id, account_last_event.event_id);
+    assert!(
+        captured[0]
+            .margins
+            .iter()
+            .any(|margin| margin.instrument_id == Some(instrument_audusd.id()))
+    );
+}
+
+#[rstest]
+fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    let account_state = get_margin_account(Some(account_id.as_str()));
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("1.00000"),
+        PositionId::new("P-FILL-THEN-POSITION"),
+    );
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        OrderEventAny::Filled(fill),
+    );
+
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let captured = captured.borrow();
+    let account_last_event = portfolio
+        .cache()
+        .borrow()
+        .account(&account_id)
+        .unwrap()
+        .last_event()
+        .unwrap();
+
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, account_id);
+    assert_eq!(captured[0].event_id, account_last_event.event_id);
+}
+
+#[rstest]
+fn test_cash_fill_endpoint_then_position_publishes_account_state_once(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    cash_account_state: AccountState,
+    instrument_audusd: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = cash_account_state.account_id;
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(simple_cache)),
+        Rc::new(RefCell::new(clock)),
+        None,
+    );
+    portfolio.update_account(&cash_account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    let initial_event_count = portfolio
+        .cache()
+        .borrow()
+        .account(&account_id)
+        .unwrap()
+        .event_count();
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("1.00000"),
+        PositionId::new("P-CASH-FILL-THEN-POSITION"),
+    );
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        OrderEventAny::Filled(fill),
+    );
+
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let captured = captured.borrow();
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+    let account_last_event = account.last_event().unwrap();
+
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].account_id, account_id);
+    assert_eq!(captured[0].event_id, account_last_event.event_id);
+    assert_eq!(account.event_count(), initial_event_count + 1);
 }
 
 #[rstest]

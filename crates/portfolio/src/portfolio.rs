@@ -2367,10 +2367,13 @@ fn update_order(
         clock.borrow().timestamp_ns(),
     );
 
-    let publish_account_state =
-        !matches!(source, OrderUpdateSource::Endpoint) || matches!(event, OrderEventAny::Filled(_));
+    let is_fill = matches!(event, OrderEventAny::Filled(_));
+    let suppress_margin_fill_account_state =
+        is_fill && matches!(working_account, AccountAny::Margin(_));
+    let publish_account_state = !matches!(source, OrderUpdateSource::Endpoint) && !is_fill;
 
     if !publish_account_state
+        && !suppress_margin_fill_account_state
         && let Some(account_state) = account_state.as_ref()
         && let Err(e) = working_account.apply(account_state.clone())
     {
@@ -2517,43 +2520,51 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
-    let account = cache.borrow().account_owned(&event.account_id());
-
-    match account {
+    let account = { cache.borrow().account_owned(&account_id) };
+    let account_state_to_publish = match account {
         Some(AccountAny::Margin(margin_account)) => {
-            if !margin_account.calculate_account_state {
-                return; // Nothing to calculate
-            }
+            if margin_account.calculate_account_state {
+                let instrument = { cache.borrow().instrument(&instrument_id).cloned() };
+                if let Some(instrument) = instrument {
+                    let result = inner.borrow_mut().accounts.update_positions(
+                        &margin_account,
+                        &instrument,
+                        positions_open.iter().collect(),
+                        clock.borrow().timestamp_ns(),
+                    );
 
-            let instrument = match cache.borrow().instrument(&instrument_id).cloned() {
-                Some(instrument) => instrument,
-                None => {
+                    if let Some((margin_account, account_state)) = result {
+                        cache
+                            .borrow_mut()
+                            .update_account(&AccountAny::Margin(margin_account))
+                            .unwrap();
+                        Some(account_state)
+                    } else {
+                        margin_account.last_event()
+                    }
+                } else {
                     log::error!("Cannot update position: no instrument found for {instrument_id}");
-                    return;
+                    margin_account.last_event()
                 }
-            };
-
-            let result = inner.borrow_mut().accounts.update_positions(
-                &margin_account,
-                &instrument,
-                positions_open.iter().collect(),
-                clock.borrow().timestamp_ns(),
-            );
-
-            if let Some((margin_account, _)) = result {
-                cache
-                    .borrow_mut()
-                    .update_account(&AccountAny::Margin(margin_account))
-                    .unwrap();
+            } else {
+                margin_account.last_event()
             }
         }
-        Some(_) => {}
+        Some(account) => account.last_event(),
         None => {
             log::error!(
                 "Cannot update position: no account registered for {}",
                 event.account_id()
             );
+            None
         }
+    };
+
+    if let Some(account_state) = account_state_to_publish {
+        msgbus::publish_account_state(
+            format!("events.account.{account_id}").into(),
+            &account_state,
+        );
     }
 }
 
@@ -2562,7 +2573,15 @@ fn update_account(
     inner: &Rc<RefCell<PortfolioState>>,
     event: &AccountState,
 ) {
-    if let Err(e) = cache.borrow_mut().update_account_state(event) {
+    let already_applied = {
+        cache
+            .borrow()
+            .account(&event.account_id)
+            .and_then(|account| account.last_event())
+            .is_some_and(|last_event| last_event.event_id == event.event_id)
+    };
+
+    if !already_applied && let Err(e) = cache.borrow_mut().update_account_state(event) {
         log::error!("Failed to update account state: {e}");
         return;
     }
