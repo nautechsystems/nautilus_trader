@@ -87,6 +87,16 @@ use crate::common::{
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
 const BINANCE_ORDERS_RATE_KEY: &str = "binance:orders";
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchCancelParams {
+    symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    order_id_list: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    orig_client_order_id_list: Option<String>,
+}
+
 /// Raw HTTP client for Binance Futures REST API.
 #[derive(Debug, Clone)]
 pub struct BinanceRawFuturesHttpClient {
@@ -931,11 +941,11 @@ impl BinanceRawFuturesHttpClient {
             .await
     }
 
-    /// Cancels multiple orders in a single request (up to 5 orders).
+    /// Cancels multiple orders in a single request (up to 10 orders).
     ///
     /// # Errors
     ///
-    /// Returns an error if the batch exceeds 5 orders or the request fails.
+    /// Returns an error if the batch exceeds 10 orders or the request fails.
     pub async fn batch_cancel_orders(
         &self,
         cancels: &[BatchCancelItem],
@@ -944,14 +954,74 @@ impl BinanceRawFuturesHttpClient {
             return Ok(Vec::new());
         }
 
-        if cancels.len() > 5 {
+        if cancels.len() > 10 {
             return Err(BinanceFuturesHttpError::ValidationError(
-                "Batch cancel limit is 5 orders maximum".to_string(),
+                "Batch cancel limit is 10 orders maximum".to_string(),
             ));
         }
 
-        self.batch_request_delete("batchOrders", cancels, true)
+        let params = Self::batch_cancel_params(cancels)?;
+        self.request_delete("batchOrders", Some(&params), true, true)
             .await
+    }
+
+    fn batch_cancel_params(
+        cancels: &[BatchCancelItem],
+    ) -> BinanceFuturesHttpResult<BatchCancelParams> {
+        let symbol = cancels[0].symbol.clone();
+        let mut order_ids = Vec::new();
+        let mut client_order_ids = Vec::new();
+
+        for cancel in cancels {
+            if cancel.symbol != symbol {
+                return Err(BinanceFuturesHttpError::ValidationError(
+                    "Batch cancel orders must use the same symbol".to_string(),
+                ));
+            }
+
+            if let Some(order_id) = cancel.order_id {
+                order_ids.push(order_id);
+            }
+
+            if let Some(client_order_id) = &cancel.orig_client_order_id {
+                client_order_ids.push(client_order_id.clone());
+            }
+        }
+
+        if order_ids.is_empty() && client_order_ids.is_empty() {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Batch cancel requires at least one order ID or client order ID".to_string(),
+            ));
+        }
+
+        if !order_ids.is_empty() && !client_order_ids.is_empty() {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Batch cancel requires either order IDs or client order IDs, not both".to_string(),
+            ));
+        }
+
+        let order_id_list = if order_ids.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&order_ids)
+                    .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?,
+            )
+        };
+        let orig_client_order_id_list = if client_order_ids.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&client_order_ids)
+                    .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?,
+            )
+        };
+
+        Ok(BatchCancelParams {
+            symbol,
+            order_id_list,
+            orig_client_order_id_list,
+        })
     }
 
     /// Submits a new algo order (conditional order).
@@ -2021,14 +2091,14 @@ impl BinanceFuturesHttpClient {
         }
     }
 
-    /// Cancels multiple orders in a single request (up to 5 orders).
+    /// Cancels multiple orders in a single request (up to 10 orders).
     ///
     /// Each cancel in the batch is processed independently. The response contains
     /// the result for each cancel, which can be either a success or an error.
     ///
     /// # Errors
     ///
-    /// Returns an error if the batch exceeds 5 orders or the request fails.
+    /// Returns an error if the batch exceeds 10 orders or the request fails.
     pub async fn batch_cancel_orders(
         &self,
         cancels: &[BatchCancelItem],
@@ -2514,6 +2584,104 @@ mod tests {
             None,
         )
         .expect("Failed to create test client")
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_builds_order_id_list() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_order_id("BTCUSDT", 456),
+        ];
+
+        let params = BinanceRawFuturesHttpClient::batch_cancel_params(&items).unwrap();
+
+        assert_eq!(params.symbol, "BTCUSDT");
+        assert_eq!(params.order_id_list.as_deref(), Some("[123,456]"));
+        assert_eq!(params.orig_client_order_id_list, None);
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_builds_client_order_id_list() {
+        let items = vec![
+            BatchCancelItem::by_client_order_id("BTCUSDT", "first-order"),
+            BatchCancelItem::by_client_order_id("BTCUSDT", "second-order"),
+        ];
+
+        let params = BinanceRawFuturesHttpClient::batch_cancel_params(&items).unwrap();
+
+        assert_eq!(params.symbol, "BTCUSDT");
+        assert_eq!(params.order_id_list, None);
+        assert_eq!(
+            params.orig_client_order_id_list.as_deref(),
+            Some("[\"first-order\",\"second-order\"]"),
+        );
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_mixed_symbols() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_order_id("ETHUSDT", 456),
+        ];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "same symbol");
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_mixed_id_types() {
+        let items = vec![
+            BatchCancelItem::by_order_id("BTCUSDT", 123),
+            BatchCancelItem::by_client_order_id("BTCUSDT", "client-order"),
+        ];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "not both");
+    }
+
+    #[rstest]
+    fn test_batch_cancel_params_rejects_items_without_ids() {
+        let items = vec![BatchCancelItem {
+            symbol: "BTCUSDT".to_string(),
+            order_id: None,
+            orig_client_order_id: None,
+        }];
+
+        let result = BinanceRawFuturesHttpClient::batch_cancel_params(&items);
+
+        assert_validation_error(result, "at least one order ID or client order ID");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_cancel_orders_rejects_more_than_ten_items() {
+        let client = create_test_raw_client();
+        let items = (0..11)
+            .map(|order_id| BatchCancelItem::by_order_id("BTCUSDT", order_id))
+            .collect::<Vec<_>>();
+
+        let result = client.batch_cancel_orders(&items).await;
+
+        match result {
+            Err(BinanceFuturesHttpError::ValidationError(message)) => {
+                assert!(message.contains("10 orders maximum"));
+            }
+            other => panic!("Expected ValidationError, was {other:?}"),
+        }
+    }
+
+    fn assert_validation_error(
+        result: BinanceFuturesHttpResult<BatchCancelParams>,
+        expected_message: &str,
+    ) {
+        match result {
+            Err(BinanceFuturesHttpError::ValidationError(message)) => {
+                assert!(message.contains(expected_message));
+            }
+            other => panic!("Expected ValidationError, was {other:?}"),
+        }
     }
 
     #[rstest]

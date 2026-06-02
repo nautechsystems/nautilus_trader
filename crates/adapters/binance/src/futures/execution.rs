@@ -646,7 +646,7 @@ impl BinanceFuturesExecutionClient {
             let dispatch_state = self.dispatch_state.clone();
 
             let mut cancel_builder = BinanceCancelOrderParamsBuilder::default();
-            cancel_builder.symbol(instrument_id.symbol.to_string());
+            cancel_builder.symbol(format_binance_symbol(&instrument_id));
 
             if let Some(venue_id) = venue_order_id {
                 match venue_id.inner().parse::<i64>() {
@@ -1264,7 +1264,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(None);
         };
 
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&instrument_id);
         let order_id = cmd
             .venue_order_id
             .as_ref()
@@ -1338,7 +1338,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let mut reports = Vec::new();
 
         if cmd.open_only {
-            let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
+            let symbol = cmd.instrument_id.map(|id| format_binance_symbol(&id));
             let mut builder = BinanceOpenOrdersParamsBuilder::default();
 
             if let Some(s) = symbol {
@@ -1369,7 +1369,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.symbol().as_str() == order.symbol.as_str())
+                        .find(|i| i.raw_symbol().as_str() == order.symbol.as_str())
                         && let Ok(report) = order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1400,7 +1400,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.symbol().as_str() == algo_order.symbol.as_str())
+                        .find(|i| i.raw_symbol().as_str() == algo_order.symbol.as_str())
                         && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1413,7 +1413,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 }
             }
         } else if let Some(instrument_id) = cmd.instrument_id {
-            let symbol = instrument_id.symbol.to_string();
+            let symbol = format_binance_symbol(&instrument_id);
             let start_time = cmd
                 .start
                 .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
@@ -1461,7 +1461,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(Vec::new());
         };
 
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&instrument_id);
         let start_time = cmd
             .start
             .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
@@ -1506,7 +1506,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
+        let symbol = cmd.instrument_id.map(|id| format_binance_symbol(&id));
 
         let mut builder = BinancePositionRiskParamsBuilder::default();
 
@@ -1529,7 +1529,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             if let Some(instrument) = cache
                 .instruments(&BINANCE_VENUE, None)
                 .into_iter()
-                .find(|i| i.symbol().as_str() == position.symbol.as_str())
+                .find(|i| i.raw_symbol().as_str() == position.symbol.as_str())
                 && let Ok(report) = self.create_position_report(
                     &position,
                     instrument.id(),
@@ -1605,7 +1605,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let account_id = self.core.account_id;
         let clock = self.clock;
 
-        let symbol = command.instrument_id.symbol.to_string();
+        let symbol = format_binance_symbol(&command.instrument_id);
         let order_id = command
             .venue_order_id
             .map(|id| {
@@ -2056,7 +2056,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        const BATCH_SIZE: usize = 5;
+        const BATCH_SIZE: usize = 10;
 
         if cmd.cancels.is_empty() {
             return Ok(());
@@ -2071,101 +2071,107 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let clock = self.clock;
 
         self.spawn_task("batch_cancel_orders", async move {
+            let symbol = format_binance_symbol(&command.instrument_id);
+
             for chunk in command.cancels.chunks(BATCH_SIZE) {
-                let batch_items: Vec<BatchCancelItem> = chunk
-                    .iter()
-                    .map(|cancel| {
-                        if let Some(venue_order_id) = cancel.venue_order_id {
-                            let order_id = venue_order_id.inner().parse::<i64>().unwrap_or(0);
-                            if order_id != 0 {
-                                BatchCancelItem::by_order_id(
-                                    command.instrument_id.symbol.to_string(),
-                                    order_id,
-                                )
-                            } else {
-                                BatchCancelItem::by_client_order_id(
-                                    command.instrument_id.symbol.to_string(),
-                                    encode_broker_id(
-                                        &cancel.client_order_id,
-                                        BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-                                    ),
-                                )
-                            }
-                        } else {
-                            BatchCancelItem::by_client_order_id(
-                                command.instrument_id.symbol.to_string(),
-                                encode_broker_id(
-                                    &cancel.client_order_id,
-                                    BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-                                ),
-                            )
-                        }
-                    })
-                    .collect();
+                let mut order_id_batch = Vec::new();
+                let mut client_order_id_batch = Vec::new();
 
-                match http_client.batch_cancel_orders(&batch_items).await {
-                    Ok(results) => {
-                        for (i, result) in results.iter().enumerate() {
-                            let cancel = &chunk[i];
-
-                            match result {
-                                BatchOrderResult::Success(response) => {
-                                    let venue_order_id =
-                                        VenueOrderId::new(response.order_id.to_string());
-                                    let canceled_event = OrderCanceled::new(
-                                        trader_id,
-                                        cancel.strategy_id,
-                                        cancel.instrument_id,
-                                        cancel.client_order_id,
-                                        UUID4::new(),
-                                        cancel.ts_init,
-                                        clock.get_time_ns(),
-                                        false,
-                                        Some(venue_order_id),
-                                        Some(account_id),
-                                    );
-
-                                    emitter
-                                        .send_order_event(OrderEventAny::Canceled(canceled_event));
-                                }
-                                BatchOrderResult::Error(error) => {
-                                    let rejected = OrderCancelRejected::new(
-                                        trader_id,
-                                        cancel.strategy_id,
-                                        cancel.instrument_id,
-                                        cancel.client_order_id,
-                                        format!(
-                                            "batch-cancel-error: code={}, msg={}",
-                                            error.code, error.msg
-                                        )
-                                        .into(),
-                                        UUID4::new(),
-                                        clock.get_time_ns(),
-                                        cancel.ts_init,
-                                        false,
-                                        cancel.venue_order_id,
-                                        Some(account_id),
-                                    );
-
-                                    emitter
-                                        .send_order_event(OrderEventAny::CancelRejected(rejected));
-                                }
-                            }
+                for cancel in chunk {
+                    if let Some(venue_order_id) = cancel.venue_order_id {
+                        let order_id = venue_order_id.inner().parse::<i64>().unwrap_or(0);
+                        if order_id != 0 {
+                            order_id_batch.push((
+                                BatchCancelItem::by_order_id(symbol.clone(), order_id),
+                                cancel.clone(),
+                            ));
+                            continue;
                         }
                     }
-                    Err(e) => {
-                        if is_local_http_command_failure(&e) {
-                            log::warn!(
-                                "Batch cancel command failed local validation for {} orders: {e}",
-                                chunk.len()
-                            );
-                        } else {
-                            log::error!(
-                                "Ambiguous batch cancel request failure for {} orders, awaiting reconciliation: {e}",
-                                chunk.len()
-                            );
+
+                    client_order_id_batch.push((
+                        BatchCancelItem::by_client_order_id(
+                            symbol.clone(),
+                            encode_broker_id(
+                                &cancel.client_order_id,
+                                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+                            ),
+                        ),
+                        cancel.clone(),
+                    ));
+                }
+
+                for batch in [order_id_batch, client_order_id_batch] {
+                    if batch.is_empty() {
+                        continue;
+                    }
+
+                    let batch_len = batch.len();
+                    let (batch_items, batch_cancels): (Vec<_>, Vec<_>) =
+                        batch.into_iter().unzip();
+
+                    match http_client.batch_cancel_orders(&batch_items).await {
+                        Ok(results) => {
+                            for (cancel, result) in batch_cancels.iter().zip(results.iter()) {
+                                match result {
+                                    BatchOrderResult::Success(response) => {
+                                        let venue_order_id =
+                                            VenueOrderId::new(response.order_id.to_string());
+                                        let canceled_event = OrderCanceled::new(
+                                            trader_id,
+                                            cancel.strategy_id,
+                                            cancel.instrument_id,
+                                            cancel.client_order_id,
+                                            UUID4::new(),
+                                            cancel.ts_init,
+                                            clock.get_time_ns(),
+                                            false,
+                                            Some(venue_order_id),
+                                            Some(account_id),
+                                        );
+
+                                        emitter.send_order_event(OrderEventAny::Canceled(
+                                            canceled_event,
+                                        ));
+                                    }
+                                    BatchOrderResult::Error(error) => {
+                                        let rejected = OrderCancelRejected::new(
+                                            trader_id,
+                                            cancel.strategy_id,
+                                            cancel.instrument_id,
+                                            cancel.client_order_id,
+                                            format!(
+                                                "batch-cancel-error: code={}, msg={}",
+                                                error.code, error.msg
+                                            )
+                                            .into(),
+                                            UUID4::new(),
+                                            clock.get_time_ns(),
+                                            cancel.ts_init,
+                                            false,
+                                            cancel.venue_order_id,
+                                            Some(account_id),
+                                        );
+
+                                        emitter.send_order_event(OrderEventAny::CancelRejected(
+                                            rejected,
+                                        ));
+                                    }
+                                }
+                            }
                         }
-                        return Err(e.into());
+                        Err(e) => {
+                            if is_local_http_command_failure(&e) {
+                                log::warn!(
+                                    "Batch cancel command failed local validation for {batch_len} orders: {e}",
+                                );
+                            } else {
+                                log::error!(
+                                    "Ambiguous batch cancel request failure for {batch_len} orders, awaiting reconciliation: {e}",
+                                );
+                            }
+                            return Err(e.into());
+                        }
                     }
                 }
             }
