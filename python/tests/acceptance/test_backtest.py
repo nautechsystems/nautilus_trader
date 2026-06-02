@@ -43,6 +43,8 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
@@ -63,6 +65,9 @@ BAR_ENTRY_EXIT_CONFIG = "strategies.acceptance:BarEntryExitConfig"
 
 TICK_SCHEDULED_STRATEGY = "strategies.acceptance:TickScheduled"
 TICK_SCHEDULED_CONFIG = "strategies.acceptance:TickScheduledConfig"
+
+MULTI_INSTRUMENT_TICK_SCHEDULED_STRATEGY = "strategies.acceptance:MultiInstrumentTickScheduled"
+MULTI_INSTRUMENT_TICK_SCHEDULED_CONFIG = "strategies.acceptance:MultiInstrumentTickScheduledConfig"
 
 CASCADING_STOP_STRATEGY = "strategies.acceptance:CascadingStop"
 CASCADING_STOP_CONFIG = "strategies.acceptance:CascadingStopConfig"
@@ -118,6 +123,7 @@ def _canonical_summary_lines(summary: dict[str, str]) -> list[str]:
 
 _BACKTEST_PARITY_TS_START = 1_577_836_800_000_000_000
 _BACKTEST_PARITY_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
+_BACKTEST_PARITY_ETH_BID_PRICES = ("2000.00", "2000.00", "2000.50", "2001.00", "2001.00")
 _BACKTEST_PARITY_SUMMARY_LINES = [
     "account.SIM.balance.USD.free=1000017.20 USD",
     "account.SIM.balance.USD.locked=0.00 USD",
@@ -139,6 +145,38 @@ _BACKTEST_PARITY_SUMMARY_LINES = [
     "positions.total_with_snapshots=1",
     "total_events=4",
     "venues.total=1",
+]
+_BACKTEST_CASH_MARGIN_SUMMARY_LINES = [
+    "account.BINANCE.balance.ETH.free=10.00000000 ETH",
+    "account.BINANCE.balance.ETH.locked=0.00000000 ETH",
+    "account.BINANCE.balance.ETH.total=10.00000000 ETH",
+    "account.BINANCE.balance.USDT.free=100000.29995000 USDT",
+    "account.BINANCE.balance.USDT.locked=0.00000000 USDT",
+    "account.BINANCE.balance.USDT.total=100000.29995000 USDT",
+    "account.BINANCE.base_currency=None",
+    "account.BINANCE.event_count=3",
+    "account.BINANCE.id=BINANCE-001",
+    "account.BINANCE.type=CASH",
+    "account.SIM.balance.USD.free=1000017.20 USD",
+    "account.SIM.balance.USD.locked=0.00 USD",
+    "account.SIM.balance.USD.total=1000017.20 USD",
+    "account.SIM.base_currency=USD",
+    "account.SIM.event_count=3",
+    "account.SIM.id=SIM-001",
+    "account.SIM.type=MARGIN",
+    "iterations=10",
+    "orders.closed=4",
+    "orders.emulated=0",
+    "orders.inflight=0",
+    "orders.open=0",
+    "orders.total=4",
+    "positions.closed=2",
+    "positions.open=0",
+    "positions.snapshots=0",
+    "positions.total=2",
+    "positions.total_with_snapshots=2",
+    "total_events=8",
+    "venues.total=2",
 ]
 
 
@@ -699,6 +737,124 @@ def test_backtest_result_summary_parity_smoke():
     engine.dispose()
 
 
+def test_backtest_cash_margin_account_order_fill_position_parity_golden():
+    engine = _engine(risk_bypass=True)
+    sim = Venue("SIM")
+    binance = Venue("BINANCE")
+    usd = Currency.from_str("USD")
+    eth = Currency.from_str("ETH")
+    usdt = Currency.from_str("USDT")
+    audusd = TestInstrumentProvider.audusd_sim()
+    ethusdt = TestInstrumentProvider.ethusdt_binance()
+
+    engine.add_venue(
+        venue=sim,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=usd,
+        starting_balances=[Money(1_000_000.0, usd)],
+    )
+    engine.add_venue(
+        venue=binance,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(10.0, eth), Money(100_000.0, usdt)],
+    )
+    engine.add_instrument(audusd)
+    engine.add_instrument(ethusdt)
+    engine.add_data(_cash_margin_parity_quotes(audusd, _BACKTEST_PARITY_BID_PRICES))
+    engine.add_data(_cash_margin_parity_quotes(ethusdt, _BACKTEST_PARITY_ETH_BID_PRICES))
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path=MULTI_INSTRUMENT_TICK_SCHEDULED_STRATEGY,
+            config_path=MULTI_INSTRUMENT_TICK_SCHEDULED_CONFIG,
+            config={
+                "instrument_actions": {
+                    str(audusd.id): [(2, "BUY", "100000"), (4, "SELL", "100000")],
+                    str(ethusdt.id): [(2, "BUY", "0.50000"), (4, "SELL", "0.50000")],
+                },
+            },
+        ),
+    )
+
+    engine.run()
+    result = engine.get_result()
+    sim_account = engine.cache.account_for_venue(sim)
+    binance_account = engine.cache.account_for_venue(binance)
+
+    assert sim_account is not None
+    assert binance_account is not None
+    assert sim_account.balance_total(usd) == Money(1_000_017.20, usd)
+    assert sim_account.balance_free(usd) == Money(1_000_017.20, usd)
+    assert sim_account.balance_locked(usd) == Money(0, usd)
+    assert binance_account.balance_total(eth) == Money(10.0, eth)
+    assert binance_account.balance_free(eth) == Money(10.0, eth)
+    assert binance_account.balance_locked(eth) == Money(0.0, eth)
+    assert binance_account.balance_total(usdt) == Money(100_000.29995000, usdt)
+    assert binance_account.balance_free(usdt) == Money(100_000.29995000, usdt)
+    assert binance_account.balance_locked(usdt) == Money(0.0, usdt)
+
+    assert result.iterations == 10
+    assert result.total_events == 8
+    assert result.total_orders == 4
+    assert result.total_positions == 2
+    assert engine.cache.orders_total_count() == 4
+    assert engine.cache.orders_closed_count() == 4
+    assert engine.cache.orders_open_count() == 0
+    assert engine.cache.positions_total_count() == 2
+    assert engine.cache.positions_closed_count() == 2
+    assert engine.cache.positions_open_count() == 0
+    assert len(engine.cache.position_snapshots()) == 0
+    assert _canonical_summary_lines(result.summary) == _BACKTEST_CASH_MARGIN_SUMMARY_LINES
+
+    aud_orders = {order.side: order for order in engine.cache.orders(instrument_id=audusd.id)}
+    eth_orders = {order.side: order for order in engine.cache.orders(instrument_id=ethusdt.id)}
+    _assert_filled_market_order(
+        aud_orders[OrderSide.BUY],
+        OrderSide.BUY,
+        Quantity.from_int(100_000),
+        0.7,
+        ["1.40 USD"],
+    )
+    _assert_filled_market_order(
+        aud_orders[OrderSide.SELL],
+        OrderSide.SELL,
+        Quantity.from_int(100_000),
+        0.7002,
+        ["1.40 USD"],
+    )
+    _assert_filled_market_order(
+        eth_orders[OrderSide.BUY],
+        OrderSide.BUY,
+        Quantity.from_str("0.50000"),
+        2000.0,
+        ["0.10000000 USDT"],
+    )
+    _assert_filled_market_order(
+        eth_orders[OrderSide.SELL],
+        OrderSide.SELL,
+        Quantity.from_str("0.50000"),
+        2001.0,
+        ["0.10005000 USDT"],
+    )
+    _assert_closed_position(
+        engine.cache.positions(instrument_id=audusd.id)[0],
+        0.7,
+        0.7002,
+        Money(17.20, usd),
+        ["2.80 USD"],
+    )
+    _assert_closed_position(
+        engine.cache.positions(instrument_id=ethusdt.id)[0],
+        2000.0,
+        2001.0,
+        Money(0.29995000, usdt),
+        ["0.20005000 USDT"],
+    )
+
+    engine.dispose()
+
+
 def _backtest_parity_quotes(instrument) -> list[QuoteTick]:
     quotes: list[QuoteTick] = []
 
@@ -716,6 +872,65 @@ def _backtest_parity_quotes(instrument) -> list[QuoteTick]:
             ),
         )
     return quotes
+
+
+def _cash_margin_parity_quotes(instrument, bid_prices: tuple[str, ...]) -> list[QuoteTick]:
+    quotes: list[QuoteTick] = []
+
+    for idx, bid_price in enumerate(bid_prices):
+        ts = _BACKTEST_PARITY_TS_START + idx * 60_000_000_000
+        quotes.append(
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str(bid_price),
+                ask_price=Price.from_str(bid_price),
+                bid_size=Quantity(1_000_000, precision=instrument.size_precision),
+                ask_size=Quantity(1_000_000, precision=instrument.size_precision),
+                ts_event=ts,
+                ts_init=ts,
+            ),
+        )
+    return quotes
+
+
+def _assert_filled_market_order(
+    order,
+    side: OrderSide,
+    quantity: Quantity,
+    avg_px: float,
+    commissions: list[str],
+) -> None:
+    assert order.side == side
+    assert order.status == OrderStatus.FILLED
+    assert order.quantity == quantity
+    filled_qty = getattr(order, "filled_qty", None)
+    if filled_qty is None:
+        assert order.to_dict()["filled_qty"] == str(quantity)
+    else:
+        assert filled_qty == quantity
+    order_avg_px = getattr(order, "avg_px", None)
+    if order_avg_px is None:
+        assert float(order.to_dict()["avg_px"]) == avg_px
+    else:
+        assert order_avg_px == avg_px
+    raw_commissions = order.commissions()
+    values = raw_commissions.values() if hasattr(raw_commissions, "values") else raw_commissions
+    assert [str(commission) for commission in values] == commissions
+
+
+def _assert_closed_position(
+    position,
+    avg_px_open: float,
+    avg_px_close: float,
+    realized_pnl: Money,
+    commissions: list[str],
+) -> None:
+    assert position.is_closed
+    assert position.event_count == 2
+    assert position.avg_px_open == avg_px_open
+    assert position.avg_px_close == avg_px_close
+    assert position.realized_pnl == realized_pnl
+    assert [str(commission) for commission in position.commissions()] == commissions
 
 
 def _build_pnl_quotes(audusd, periods: int, scenario: str) -> list[QuoteTick]:
