@@ -54,6 +54,7 @@ impl BacktestEngineConfig {
         trader_id = None,
         load_state = None,
         save_state = None,
+        shutdown_on_error = None,
         bypass_logging = None,
         run_analysis = None,
         timeout_connection = None,
@@ -76,6 +77,7 @@ impl BacktestEngineConfig {
         trader_id: Option<TraderId>,
         load_state: Option<bool>,
         save_state: Option<bool>,
+        shutdown_on_error: Option<bool>,
         bypass_logging: Option<bool>,
         run_analysis: Option<bool>,
         timeout_connection: Option<u64>,
@@ -99,6 +101,7 @@ impl BacktestEngineConfig {
             trader_id: trader_id.unwrap_or_default(),
             load_state: load_state.unwrap_or(defaults.load_state),
             save_state: save_state.unwrap_or(defaults.save_state),
+            shutdown_on_error: shutdown_on_error.unwrap_or(defaults.shutdown_on_error),
             bypass_logging: bypass_logging.unwrap_or(defaults.bypass_logging),
             run_analysis: run_analysis.unwrap_or(defaults.run_analysis),
             timeout_connection: Duration::from_secs(timeout_connection.unwrap_or(60)),
@@ -135,6 +138,12 @@ impl BacktestEngineConfig {
     #[pyo3(name = "save_state")]
     const fn py_save_state(&self) -> bool {
         self.save_state
+    }
+
+    #[getter]
+    #[pyo3(name = "shutdown_on_error")]
+    const fn py_shutdown_on_error(&self) -> bool {
+        self.shutdown_on_error
     }
 
     #[getter]

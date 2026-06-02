@@ -27,7 +27,10 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_execution::models::{
-    fee::{FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel},
+    fee::{
+        CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
+        TieredNotionalOptionFeeModel,
+    },
     fill::{
         BestPriceFillModel, CompetitionAwareFillModel, DefaultFillModel, FillModelAny,
         LimitOrderPartialFillModel, MarketHoursFillModel, OneTickSlippageFillModel,
@@ -49,6 +52,15 @@ use nautilus_model::{
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, StrategyId, TraderId, Venue},
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price},
+};
+#[cfg(feature = "examples")]
+use nautilus_trading::examples::{
+    actors::{BookImbalanceActor, BookImbalanceActorConfig},
+    strategies::{
+        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+        HurstVpinDirectionalConfig,
+    },
 };
 use nautilus_trading::{
     ImportableStrategyConfig,
@@ -617,66 +629,33 @@ impl PyBacktestEngine {
         Ok(())
     }
 
-    /// Adds a native Rust strategy from its config.
+    /// Adds a compiled-in native Rust strategy from its type name and config.
     ///
-    /// The config type determines which built-in strategy is constructed.
+    /// The type name determines which built-in strategy is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_strategy")]
-    fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_trading::examples::strategies::{
-            CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
-            DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
-            GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
-        };
-
-        if let Ok(config) = config.extract::<EmaCrossConfig>() {
-            self.0
-                .add_strategy(EmaCross::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
-            self.0
-                .add_strategy(GridMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
-            self.0
-                .add_strategy(CompositeMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
-            self.0
-                .add_strategy(DeltaNeutralVol::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
-            self.0
-                .add_strategy(HurstVpinDirectional::new(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native strategy config type: {type_name}",
-            )))
-        }
+    fn py_add_native_strategy(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = native_strategy_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
+        })?;
+        register(&mut self.0, config)
     }
 
-    /// Adds a native Rust actor from its config.
+    /// Adds a compiled-in native Rust actor from its type name and config.
     ///
-    /// The config type determines which built-in actor is constructed.
+    /// The type name determines which built-in actor is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_actor")]
-    fn py_add_native_actor(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_trading::examples::actors::{BookImbalanceActor, BookImbalanceActorConfig};
-
-        if let Ok(config) = config.extract::<BookImbalanceActorConfig>() {
-            self.0
-                .add_actor(BookImbalanceActor::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native actor config type: {type_name}",
-            )))
-        }
+    fn py_add_native_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        let register = native_actor_register(type_name)
+            .ok_or_else(|| to_pytype_err(format!("Unsupported native actor type: {type_name}")))?;
+        register(&mut self.0, config)
     }
 
     /// Runs the backtest engine.
@@ -882,6 +861,153 @@ impl PyBacktestEngine {
     }
 }
 
+#[cfg(feature = "examples")]
+type NativeStrategyRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+type NativeActorRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+    match type_name {
+        "CompositeMarketMaker" => Some(register_composite_market_maker),
+        "DeltaNeutralVol" => Some(register_delta_neutral_vol),
+        "EmaCross" => Some(register_ema_cross),
+        "GridMarketMaker" => Some(register_grid_market_maker),
+        "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
+    match type_name {
+        "BookImbalanceActor" => Some(register_book_imbalance_actor),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn register_composite_market_maker(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<CompositeMarketMakerConfig>()?;
+    engine
+        .add_strategy(CompositeMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_delta_neutral_vol(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<DeltaNeutralVolConfig>()?;
+    engine
+        .add_strategy(DeltaNeutralVol::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_ema_cross(engine: &mut BacktestEngine, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<EmaCrossConfig>()?;
+    engine
+        .add_strategy(EmaCross::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_grid_market_maker(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<GridMarketMakerConfig>()?;
+    engine
+        .add_strategy(GridMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_hurst_vpin_directional(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<HurstVpinDirectionalConfig>()?;
+    engine
+        .add_strategy(HurstVpinDirectional::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_book_imbalance_actor(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<BookImbalanceActorConfig>()?;
+    engine
+        .add_actor(BookImbalanceActor::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(all(test, feature = "examples"))]
+mod tests {
+    use pyo3::{Python, types::PyDict};
+    use rstest::rstest;
+
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    #[case("CompositeMarketMaker")]
+    #[case("DeltaNeutralVol")]
+    #[case("EmaCross")]
+    #[case("GridMarketMaker")]
+    #[case("HurstVpinDirectional")]
+    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_strategy_register(type_name).is_some());
+    }
+
+    #[rstest]
+    #[case("BookImbalanceActor")]
+    fn test_native_actor_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_actor_register(type_name).is_some());
+    }
+
+    #[rstest]
+    fn test_native_register_rejects_unknown_names() {
+        assert!(super::native_strategy_register("UnknownStrategy").is_none());
+        assert!(super::native_actor_register("UnknownActor").is_none());
+    }
+
+    #[rstest]
+    fn test_native_strategy_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        Python::attach(|py| {
+            let register = super::native_strategy_register("EmaCross").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut engine, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
+    }
+
+    #[rstest]
+    fn test_native_actor_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        Python::attach(|py| {
+            let register = super::native_actor_register("BookImbalanceActor").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut engine, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
+    }
+}
+
 pub(crate) fn pyobject_to_fill_model_any(
     _py: Python,
     obj: &Bound<'_, PyAny>,
@@ -950,6 +1076,14 @@ pub(crate) fn pyobject_to_fee_model_any(
 
     if let Ok(m) = obj.extract::<PerContractFeeModel>() {
         return Ok(FeeModelAny::PerContract(m));
+    }
+
+    if let Ok(m) = obj.extract::<CappedOptionFeeModel>() {
+        return Ok(FeeModelAny::CappedOption(m));
+    }
+
+    if let Ok(m) = obj.extract::<TieredNotionalOptionFeeModel>() {
+        return Ok(FeeModelAny::TieredNotionalOption(m));
     }
 
     let type_name = obj.get_type().name()?;

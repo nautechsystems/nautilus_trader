@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Added portfolio PyO3 bindings and `Strategy.portfolio` access (#4085), thanks @ms32035
 - Added beta-weighted vega greeks against volatility index instruments (#4097), thanks @faysou
 - Added native `OptionGreeks` persistence and backtest replay support (#4132), thanks @Jonah-Chan
+- Added `StrikeRange.delta(...)` to select option-chain strikes by target delta
 - Added deterministic liquidation engine for backtests (#4077), thanks @abhishektang
 - Added configurable logging IO policies (#4158), thanks @sunlei
 - Added Binance Futures liquidation custom data subscriptions (#4095), thanks @graceyangfan
@@ -62,9 +63,13 @@ Released on TBD (UTC).
 - Added OKX spread instrument discovery as `CryptoFuturesSpread` instruments (Rust)
 - Added OKX Nitro spread order execution and reconciliation support (Rust)
 - Added Polymarket adapter bounded-retry auto-load with `auto_load_max_retries` and exponential backoff with jitter (Rust)
+- Added Polymarket `POLY_1271` deposit-wallet signing support (#4053), thanks for reporting @sumuzhao and @sophyphilo
+- Added `shutdown_on_error` to stop Rust backtests and live nodes after error logs
+- Added Tardis option greeks ingestion to the catalog for backtest replay
 
 ### Breaking Changes
 - Renamed custom-data field marker `json` to `serde` (#4133), thanks @faysou
+- Removed live engine `graceful_shutdown_on_error`; use node-level `shutdown_on_error` instead
 - Changed `nautilus_pyo3.get_exchange_rate` to return `decimal.Decimal` instead of `float`
 - Changed DeFi pool-event and snapshot types to require `ts_event`/`ts_init` timestamps (was optional `timestamp`)
 - Changed `PoolProfiler::initialize` and `check_if_initialized` to return `Result` rather than assert
@@ -89,6 +94,7 @@ Released on TBD (UTC).
 - Fixed `BacktestEngine` losing latency-deferred commands at shutdown (Rust) (#4062), thanks for reporting @zhanghaoda
 - Fixed `BacktestEngine` duplicate account state events on reset, thanks for reporting @dfjmax
 - Fixed `PortfolioStatistic.downsample_to_daily_bins` to compound sub-daily returns (#4141), thanks @mahimn01
+- Fixed `MaxDrawdown`, `CAGR`, and `CalmarRatio` Rust trait impls panicking on `calculate_from_realized_pnls` and `calculate_from_positions` (#4174), thanks @mahimn01
 - Fixed matching engine not canceling unmatched IOC/FOK limit orders (Rust) (#4112), thanks for reporting @Jonah-Chan
 - Fixed matching engine L1 slip-through for market orders exhausting top-of-book volume (Rust)
 - Fixed NETTING reconciliation opening phantom reduce-only positions (#4106), thanks for reporting @M-at-ti-a
@@ -138,6 +144,7 @@ Released on TBD (UTC).
 - Added round-trip tests for `correlation_id` in Cap'n Proto, Arrow, and msgpack serialization
 - Added DEX event-signature/parser parity tests across all registered chains
 - Added Derive fuzz targets
+- Added option chain backtest replay tests for slice assembly and snapshot cadence
 - Added Hyperliquid `flatten` binary that cancels working orders and closes perpetual positions
 - Added Hyperliquid Criterion bench groups for inbound pipeline, exec pipeline, and dispatch (Rust)
 - Added OKX Criterion bench groups for inbound pipeline, exec pipeline, dispatch, and HTTP signing (Rust)
@@ -173,6 +180,7 @@ Released on TBD (UTC).
 - Added concept-guide section on mixed-instrument order lists covering downstream caveats and OMS guards
 - Added backtesting guide notes for funding settlement flows
 - Added FFI and Rust unsafe-code guidance for `PyCapsule` ownership and scoped TLS access
+- Added Polymarket integration guide notes for `POLY_1271` deposit wallets
 - Refined `BacktestEngine` shutdown notes with `on_stop` venue-latency ordering and pre-stop fill caveats
 - Refined Coinbase integration guide for instrument-status, funding rate backlog, and order rejection wording
 - Refined OKX integration guide with product capabilities and Nitro spread order notes

@@ -26,7 +26,7 @@ use nautilus_common::{
     messages::system::ShutdownSystem,
     msgbus::{self, MessagingSwitchboard},
     nautilus_actor,
-    testing::wait_until_async,
+    testing::{wait_until, wait_until_async},
 };
 use nautilus_core::UUID4;
 use nautilus_live::{
@@ -446,6 +446,34 @@ mod serial_tests {
         });
 
         let result = node.run().await;
+
+        assert!(result.is_ok());
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_error_log_triggers_graceful_shutdown() {
+        let config = LiveNodeConfig {
+            shutdown_on_error: true,
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let state_handle = handle.clone();
+
+        let log_thread = std::thread::spawn(move || {
+            wait_until(|| state_handle.is_running(), Duration::from_secs(5));
+            log::error!("LiveNode shutdown-on-error smoke test");
+        });
+
+        let result = node.run().await;
+        log_thread.join().unwrap();
 
         assert!(result.is_ok());
         assert_eq!(handle.state(), NodeState::Stopped);

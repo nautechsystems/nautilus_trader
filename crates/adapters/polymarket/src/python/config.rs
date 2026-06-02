@@ -83,7 +83,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -102,6 +102,10 @@ impl PolymarketDataClientConfig {
         auto_load_retry_delay_initial_secs: Option<f64>,
         auto_load_retry_delay_max_secs: Option<f64>,
         new_market_fetch_max_concurrency: Option<usize>,
+        resolve_poll_enabled: Option<bool>,
+        resolve_poll_interval_secs: Option<u64>,
+        resolve_poll_grace_secs: Option<u64>,
+        resolve_poll_max_wait_secs: Option<u64>,
     ) -> Self {
         let default = Self::default();
 
@@ -129,6 +133,13 @@ impl PolymarketDataClientConfig {
                 .unwrap_or(default.auto_load_retry_delay_initial_secs),
             auto_load_retry_delay_max_secs: auto_load_retry_delay_max_secs
                 .unwrap_or(default.auto_load_retry_delay_max_secs),
+            resolve_poll_enabled: resolve_poll_enabled.unwrap_or(default.resolve_poll_enabled),
+            resolve_poll_interval_secs: resolve_poll_interval_secs
+                .unwrap_or(default.resolve_poll_interval_secs),
+            resolve_poll_grace_secs: resolve_poll_grace_secs
+                .unwrap_or(default.resolve_poll_grace_secs),
+            resolve_poll_max_wait_secs: resolve_poll_max_wait_secs
+                .unwrap_or(default.resolve_poll_max_wait_secs),
             filters: Vec::new(),
             new_market_filter: None,
             transport_backend: default.transport_backend,
@@ -208,7 +219,7 @@ impl PolymarketExecClientConfig {
 mod tests {
     use pyo3::{
         Bound, Python,
-        types::{PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTuple},
+        types::{PyAnyMethods, PyDict, PyDictMethods, PyTuple},
     };
     use rstest::rstest;
 
@@ -219,11 +230,7 @@ mod tests {
         args: Option<&Bound<'_, PyTuple>>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PolymarketDataClientConfig {
-        let module = PyModule::new(py, "polymarket").expect("module");
-        crate::python::polymarket(py, &module).expect("polymarket module");
-        let cls = module
-            .getattr("PolymarketDataClientConfig")
-            .expect("PolymarketDataClientConfig");
+        let cls = py.get_type::<PolymarketDataClientConfig>();
 
         let config = match args {
             Some(args) => cls.call(args, kwargs),

@@ -26,7 +26,8 @@ use std::{
 };
 
 use nautilus_event_store::{
-    EventStoreError, IndexDrift, Verifier, VerifyError, VerifyFinding, VerifyReport,
+    EventStoreError, IndexDrift, MarkerCountKind, MarkerFinding, MarkerRecordKind, MarkerVerifier,
+    MarkerVerifyReport, RedbMarkerBackend, Verifier, VerifyError, VerifyFinding, VerifyReport,
 };
 
 const EXIT_CLEAN: u8 = 0;
@@ -41,6 +42,11 @@ const WORKER_SLEEP_ENV: &str = "NAUTILUS_EVENT_STORE_VERIFY_SLEEP_WORKER_MS";
 enum WorkerOutput {
     Exited(Output),
     TimedOut { output: Output, timeout: Duration },
+}
+
+enum MarkerScan {
+    Absent,
+    Present(MarkerVerifyReport),
 }
 
 fn main() -> ExitCode {
@@ -144,34 +150,109 @@ fn verify_run_file_worker(path: &Path) -> ExitCode {
 
 fn verify_run_file_inner(path: &Path) -> ExitCode {
     match Verifier::open_redb_file(path).and_then(|verifier| verifier.verify()) {
-        Ok(report) => print_report(&report),
+        Ok(report) => match scan_marker_sidecar(path, &report) {
+            Ok(markers) => print_report(&report, &markers),
+            Err((marker_path, err)) => print_marker_error(marker_path.as_path(), &err),
+        },
         Err(e) => print_error(path, &e),
     }
 }
 
-fn print_report(report: &VerifyReport) -> ExitCode {
-    if report.is_clean() {
+fn scan_marker_sidecar(
+    path: &Path,
+    entry_report: &VerifyReport,
+) -> Result<MarkerScan, (PathBuf, VerifyError)> {
+    let Some(marker_path) = marker_sidecar_path(path) else {
+        return Ok(MarkerScan::Absent);
+    };
+
+    if !marker_path.exists() {
+        return Ok(MarkerScan::Absent);
+    }
+
+    let backend = RedbMarkerBackend::open_read_only_file(&marker_path)
+        .map_err(|e| (marker_path.clone(), VerifyError::Backend(e)))?;
+    let report = MarkerVerifier::scan(&backend, entry_report.high_watermark)
+        .map_err(|e| (marker_path.clone(), VerifyError::Backend(e)))?;
+    Ok(MarkerScan::Present(report))
+}
+
+fn marker_sidecar_path(path: &Path) -> Option<PathBuf> {
+    let stem = path.file_stem()?;
+    let mut file_name = stem.to_os_string();
+    file_name.push(".markers.redb");
+    Some(path.with_file_name(file_name))
+}
+
+fn print_report(report: &VerifyReport, markers: &MarkerScan) -> ExitCode {
+    let marker_findings = marker_finding_count(markers);
+
+    if report.is_clean() && marker_findings == 0 {
         println!(
-            "clean run_id={} status={:?} high_watermark={} entries_scanned={}",
-            report.run_id, report.status, report.high_watermark, report.entries_scanned,
+            "clean run_id={} status={:?} high_watermark={} entries_scanned={} {}",
+            report.run_id,
+            report.status,
+            report.high_watermark,
+            report.entries_scanned,
+            marker_summary(markers),
         );
         return ExitCode::from(EXIT_CLEAN);
     }
 
     println!(
-        "corrupt run_id={} status={:?} high_watermark={} entries_scanned={} findings={} quarantine=not-performed",
+        "corrupt run_id={} status={:?} high_watermark={} entries_scanned={} findings={} marker_findings={} {} quarantine=not-performed",
         report.run_id,
         report.status,
         report.high_watermark,
         report.entries_scanned,
-        report.findings.len(),
+        report.findings.len() + marker_findings,
+        marker_findings,
+        marker_summary(markers),
     );
 
     for finding in &report.findings {
         print_finding(finding);
     }
 
+    if let MarkerScan::Present(report) = markers {
+        for finding in &report.findings {
+            print_marker_finding(finding);
+        }
+    }
+
     ExitCode::from(EXIT_CORRUPT)
+}
+
+fn marker_finding_count(markers: &MarkerScan) -> usize {
+    match markers {
+        MarkerScan::Absent => 0,
+        MarkerScan::Present(report) => report.findings.len(),
+    }
+}
+
+fn marker_summary(markers: &MarkerScan) -> String {
+    match markers {
+        MarkerScan::Absent => "markers=absent".to_string(),
+        MarkerScan::Present(report) if report.is_clean() => format!(
+            "markers=clean marker_run_id={} marker_status={:?} marker_snapshots_scanned={} marker_hifi_scanned={} marker_gaps_scanned={} marker_dict_entries_scanned={}",
+            report.run_id,
+            report.status,
+            report.snapshots_scanned,
+            report.hifi_scanned,
+            report.gaps_scanned,
+            report.dict_entries_scanned,
+        ),
+        MarkerScan::Present(report) => format!(
+            "markers=corrupt marker_run_id={} marker_status={:?} marker_snapshots_scanned={} marker_hifi_scanned={} marker_gaps_scanned={} marker_dict_entries_scanned={} marker_findings={}",
+            report.run_id,
+            report.status,
+            report.snapshots_scanned,
+            report.hifi_scanned,
+            report.gaps_scanned,
+            report.dict_entries_scanned,
+            report.findings.len(),
+        ),
+    }
 }
 
 fn print_error(path: &Path, err: &VerifyError) -> ExitCode {
@@ -185,6 +266,24 @@ fn print_error(path: &Path, err: &VerifyError) -> ExitCode {
     }
 
     eprintln!("error path={} error=\"{}\"", path.display(), err);
+    ExitCode::from(EXIT_ERROR)
+}
+
+fn print_marker_error(path: &Path, err: &VerifyError) -> ExitCode {
+    if matches!(err, VerifyError::Backend(EventStoreError::Corrupted(_))) {
+        println!(
+            "corrupt path={} markers=error error=\"{}\" quarantine=not-performed",
+            path.display(),
+            err,
+        );
+        return ExitCode::from(EXIT_CORRUPT);
+    }
+
+    eprintln!(
+        "error path={} markers=error error=\"{}\"",
+        path.display(),
+        err
+    );
     ExitCode::from(EXIT_ERROR)
 }
 
@@ -219,6 +318,126 @@ fn print_index_drift(kind: nautilus_event_store::IndexKind, key: &str, drift: In
         IndexDrift::TargetCorrupted { stored_seq } => {
             println!("- index drift {kind:?} key={key}: corrupted target seq {stored_seq}");
         }
+    }
+}
+
+fn print_marker_finding(finding: &MarkerFinding) {
+    match finding {
+        MarkerFinding::ManifestCountMismatch {
+            kind,
+            manifest_count,
+            scanned_count,
+        } => {
+            println!(
+                "- marker manifest count mismatch {}: manifest={manifest_count} scanned={scanned_count}",
+                marker_count_name(*kind),
+            );
+        }
+        MarkerFinding::MarkerSeqGap {
+            from_marker_seq,
+            to_marker_seq,
+        } => {
+            println!("- marker seq gap from {from_marker_seq} to {to_marker_seq}");
+        }
+        MarkerFinding::MarkerSeqOverlap {
+            from_marker_seq,
+            to_marker_seq,
+        } => {
+            println!("- marker seq overlap from {from_marker_seq} to {to_marker_seq}");
+        }
+        MarkerFinding::InvalidMarkerGap {
+            from_marker_seq,
+            to_marker_seq,
+        } => {
+            println!("- invalid marker gap from {from_marker_seq} to {to_marker_seq}");
+        }
+        MarkerFinding::EventSeqRegressed {
+            marker_seq,
+            previous_event_seq_before,
+            event_seq_before,
+        } => {
+            println!(
+                "- marker event seq regressed marker_seq={marker_seq}: previous={previous_event_seq_before} current={event_seq_before}",
+            );
+        }
+        MarkerFinding::EventSeqExceedsHighWatermark {
+            marker_seq,
+            event_seq_before,
+            high_watermark,
+        } => {
+            println!(
+                "- marker event seq exceeds high watermark marker_seq={marker_seq}: event_seq_before={event_seq_before} high_watermark={high_watermark}",
+            );
+        }
+        MarkerFinding::CursorCountRegressed {
+            marker_seq,
+            slot,
+            previous_count,
+            count,
+        } => {
+            println!(
+                "- marker cursor count regressed marker_seq={marker_seq} slot={slot}: previous={previous_count} current={count}",
+            );
+        }
+        MarkerFinding::CursorTsInitRegressed {
+            marker_seq,
+            slot,
+            previous_ts_init_hi,
+            ts_init_hi,
+        } => {
+            println!(
+                "- marker cursor ts_init_hi regressed marker_seq={marker_seq} slot={slot}: previous={} current={}",
+                previous_ts_init_hi.as_u64(),
+                ts_init_hi.as_u64(),
+            );
+        }
+        MarkerFinding::HashMismatch {
+            record,
+            marker_seq,
+            slot,
+        } => {
+            print_marker_hash_mismatch(*record, *marker_seq, *slot);
+        }
+    }
+}
+
+fn print_marker_hash_mismatch(
+    record: MarkerRecordKind,
+    marker_seq: Option<u64>,
+    slot: Option<u32>,
+) {
+    match (marker_seq, slot) {
+        (Some(marker_seq), Some(slot)) => println!(
+            "- marker hash mismatch {} marker_seq={marker_seq} slot={slot}",
+            marker_record_name(record),
+        ),
+        (Some(marker_seq), None) => println!(
+            "- marker hash mismatch {} marker_seq={marker_seq}",
+            marker_record_name(record),
+        ),
+        (None, Some(slot)) => println!(
+            "- marker hash mismatch {} slot={slot}",
+            marker_record_name(record),
+        ),
+        (None, None) => println!("- marker hash mismatch {}", marker_record_name(record)),
+    }
+}
+
+fn marker_record_name(record: MarkerRecordKind) -> &'static str {
+    match record {
+        MarkerRecordKind::Snapshot => "snapshot",
+        MarkerRecordKind::HiFi => "hifi",
+        MarkerRecordKind::Gap => "gap",
+        MarkerRecordKind::Dict => "dict",
+    }
+}
+
+fn marker_count_name(kind: MarkerCountKind) -> &'static str {
+    match kind {
+        MarkerCountKind::Snapshot => "snapshot",
+        MarkerCountKind::HiFi => "hifi",
+        MarkerCountKind::Gap => "gap",
+        MarkerCountKind::Dict => "dict",
     }
 }
 

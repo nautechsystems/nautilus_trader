@@ -70,7 +70,10 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
-    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+    common::{
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+        enums::SignatureType,
+    },
     config::PolymarketExecClientConfig,
     execution::PolymarketExecutionClient,
 };
@@ -306,8 +309,12 @@ async fn handle_get_trades(State(state): State<TestServerState>) -> Response {
     Json(load_json("http_trades_page.json")).into_response()
 }
 
-async fn handle_get_balance(State(state): State<TestServerState>) -> Response {
+async fn handle_get_balance(State(state): State<TestServerState>, headers: HeaderMap) -> Response {
     *state.last_path.lock().await = "/balance-allowance".to_string();
+    *state.last_headers.lock().await = headers
+        .iter()
+        .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
+        .collect();
     Json(load_json("http_balance_allowance_collateral.json")).into_response()
 }
 
@@ -526,6 +533,90 @@ async fn test_exec_client_creation() {
     assert_eq!(client.account_id(), AccountId::from("POLYMARKET-001"));
     assert_eq!(client.venue(), *POLYMARKET_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_poly1271_requires_distinct_funder() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("POLYMARKET-001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *POLYMARKET_CLIENT_ID,
+        *POLYMARKET_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Cash,
+        None,
+        cache,
+    );
+    let mut config = create_test_exec_config(addr);
+    config.signature_type = SignatureType::Poly1271;
+    config.funder = Some("0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb".to_string());
+
+    let error = PolymarketExecutionClient::new(core, config).unwrap_err();
+
+    assert!(
+        error.to_string().contains(
+            "POLY_1271 signature type requires a deposit wallet funder distinct from the signing address"
+        )
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_poly1271_uses_funder_for_api_auth() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("POLYMARKET-001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *POLYMARKET_CLIENT_ID,
+        *POLYMARKET_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Cash,
+        None,
+        cache,
+    );
+    let mut config = create_test_exec_config(addr);
+    let funder = "0x1111111111111111111111111111111111111111".to_string();
+    config.signature_type = SignatureType::Poly1271;
+    config.funder = Some(funder.clone());
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+    let mut client = PolymarketExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(*POLYMARKET_CLIENT_ID),
+        AccountId::from("POLYMARKET-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let headers = state.last_headers.lock().await;
+
+    assert!(
+        matches!(event, ExecutionEvent::Account(_)),
+        "Expected Account event, was {event:?}"
+    );
+    assert_eq!(headers.get("poly_address"), Some(&funder));
 }
 
 #[rstest]

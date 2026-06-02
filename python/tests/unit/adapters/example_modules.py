@@ -40,10 +40,12 @@ class _CaptureNode:
     def __init__(self, captured: dict[str, object]) -> None:
         self._captured = captured
 
-    def add_native_actor(self, config: object) -> None:
+    def add_native_actor(self, type_name: str, config: object) -> None:
+        self._captured["actor_type_name"] = type_name
         self._captured["actor_config"] = config
 
-    def add_native_strategy(self, config: object) -> None:
+    def add_native_strategy(self, type_name: str, config: object) -> None:
+        self._captured["strategy_type_name"] = type_name
         self._captured["strategy_config"] = config
 
     def run(self) -> None:
@@ -115,6 +117,7 @@ def capture_exec_tester_main(
     monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
 
     module.main()
+    assert captured["strategy_type_name"] == "ExecTester"
     return captured
 
 
@@ -132,4 +135,5 @@ def capture_data_tester_main(
     monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
 
     module.main()
+    assert captured["actor_type_name"] == "DataTester"
     return captured

@@ -423,6 +423,9 @@ async fn submit_signed_spot_order(
         referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
         reduce_only: reduce_only.then_some(true),
         mmp: None,
+        trigger_price: None,
+        trigger_price_type: None,
+        trigger_type: None,
     };
     fs::write(
         format!("{out_dir}/{label}_request.json"),

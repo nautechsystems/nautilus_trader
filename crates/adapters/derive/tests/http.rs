@@ -333,6 +333,9 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
         referral_code: "nautilus".to_string(),
         reduce_only: None,
         mmp: None,
+        trigger_price: None,
+        trigger_price_type: None,
+        trigger_type: None,
     };
     let order = client.submit_order(&payload).await.unwrap();
 

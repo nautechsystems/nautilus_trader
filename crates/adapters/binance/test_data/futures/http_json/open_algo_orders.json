@@ -1,0 +1,19 @@
+[
+  {
+    "algoId": 123456789,
+    "clientAlgoId": "test-algo-order-1",
+    "algoType": "CONDITIONAL",
+    "type": "STOP_MARKET",
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "positionSide": "BOTH",
+    "timeInForce": "GTC",
+    "quantity": "0.001",
+    "algoStatus": "NEW",
+    "triggerPrice": "45000.00",
+    "workingType": "MARK_PRICE",
+    "reduceOnly": false,
+    "createTime": 1625474304765,
+    "updateTime": 1625474304765
+  }
+]

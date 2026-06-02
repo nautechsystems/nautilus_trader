@@ -444,8 +444,23 @@ impl LighterWebSocketClient {
     /// cannot be queued.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_subscribe(LighterWsChannel::OrderBook(market_index), None)
-            .await
+        self.send_cmd(HandlerCommand::SetBookDeltasSub {
+            market_index,
+            subscribed: true,
+        })
+        .await?;
+
+        if let Err(e) = self.subscribe_order_book_stream(market_index).await {
+            let _ = self
+                .send_cmd(HandlerCommand::SetBookDeltasSub {
+                    market_index,
+                    subscribed: false,
+                })
+                .await;
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     /// Unsubscribe from L2 order-book updates.
@@ -459,8 +474,12 @@ impl LighterWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_unsubscribe(LighterWsChannel::OrderBook(market_index))
-            .await
+        self.send_cmd(HandlerCommand::SetBookDeltasSub {
+            market_index,
+            subscribed: false,
+        })
+        .await?;
+        self.unsubscribe_order_book_stream(market_index).await
     }
 
     /// Subscribe to depth-10 snapshots derived from the same `order_book`
@@ -480,8 +499,18 @@ impl LighterWebSocketClient {
             subscribed: true,
         })
         .await?;
-        self.send_subscribe(LighterWsChannel::OrderBook(market_index), None)
-            .await
+
+        if let Err(e) = self.subscribe_order_book_stream(market_index).await {
+            let _ = self
+                .send_cmd(HandlerCommand::SetDepth10Sub {
+                    market_index,
+                    subscribed: false,
+                })
+                .await;
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     /// Unsubscribe from depth-10 snapshots.
@@ -503,7 +532,8 @@ impl LighterWebSocketClient {
             market_index,
             subscribed: false,
         })
-        .await
+        .await?;
+        self.unsubscribe_order_book_stream(market_index).await
     }
 
     /// Subscribe to ticker (best bid/offer) updates.
@@ -774,16 +804,62 @@ impl LighterWebSocketClient {
         auth: Option<String>,
     ) -> Result<(), LighterWsError> {
         let topic = channel.topic_key();
-        self.subscription_args
-            .insert(topic, (channel.clone(), auth.clone()));
-        self.send_cmd(HandlerCommand::Subscribe { channel, auth })
+        let previous = self
+            .subscription_args
+            .insert(topic.clone(), (channel.clone(), auth.clone()));
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::Subscribe { channel, auth })
             .await
+        {
+            if let Some(previous) = previous {
+                self.subscription_args.insert(topic, previous);
+            } else {
+                self.subscription_args.remove(&topic);
+            }
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     async fn send_unsubscribe(&self, channel: LighterWsChannel) -> Result<(), LighterWsError> {
         let topic = channel.topic_key();
+        self.send_cmd(HandlerCommand::Unsubscribe { channel })
+            .await?;
         self.subscription_args.remove(&topic);
-        self.send_cmd(HandlerCommand::Unsubscribe { channel }).await
+        Ok(())
+    }
+
+    async fn subscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+        let channel = LighterWsChannel::OrderBook(market_index);
+        let topic = channel.topic_key();
+
+        if !self.subscriptions.add_reference(topic.as_str()) {
+            return Ok(());
+        }
+
+        if let Err(e) = self.send_subscribe(channel, None).await {
+            self.subscriptions.remove_reference(topic.as_str());
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn unsubscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+        let channel = LighterWsChannel::OrderBook(market_index);
+        let topic = channel.topic_key();
+
+        if !self.subscriptions.remove_reference(topic.as_str()) {
+            return Ok(());
+        }
+
+        if let Err(e) = self.send_unsubscribe(channel).await {
+            self.subscriptions.add_reference(topic.as_str());
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     async fn send_cmd(&self, cmd: HandlerCommand) -> Result<(), LighterWsError> {

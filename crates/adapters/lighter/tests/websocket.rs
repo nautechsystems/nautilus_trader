@@ -387,10 +387,19 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
 }
 
 async fn await_subscription_count(client: &LighterWebSocketClient, target: usize) {
-    let started = std::time::Instant::now();
-    while client.subscription_count() < target && started.elapsed() < Duration::from_secs(2) {
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    wait_until_async(
+        || async { client.subscription_count() >= target },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
+async fn await_subscription_count_at_most(client: &LighterWebSocketClient, target: usize) {
+    wait_until_async(
+        || async { client.subscription_count() <= target },
+        Duration::from_secs(2),
+    )
+    .await;
 }
 
 /// Returns a clone of the order_book fixture rewritten to target a specific
@@ -407,6 +416,32 @@ fn book_update_frame_for_market(market_index: i16) -> Value {
     let mut frame = load_json("ws_order_book_update.json");
     frame["channel"] = json!(format!("order_book:{market_index}"));
     frame
+}
+
+fn book_update_frame_with_cached_changes() -> Value {
+    json!({
+        "channel": "order_book:0",
+        "last_updated_at": 1778138389656150_u64,
+        "offset": 2165,
+        "order_book": {
+            "code": 0,
+            "asks": [
+                {"price": "2325.00", "size": "0.0000"},
+                {"price": "2341.25", "size": "1.0000"},
+                {"price": "2330.00", "size": "0.1200"}
+            ],
+            "bids": [
+                {"price": "2000.00", "size": "0.0500"},
+                {"price": "1999.00", "size": "0.0100"}
+            ],
+            "offset": 2165,
+            "nonce": 904846,
+            "last_updated_at": 1778138389656150_u64,
+            "begin_nonce": 904845
+        },
+        "timestamp": 1778138583602_u64,
+        "type": "update/order_book"
+    })
 }
 
 #[tokio::test]
@@ -741,28 +776,93 @@ async fn test_order_book_depth10_emits_on_snapshot() {
         .await
         .expect("subscribe_book_depth10");
 
-    // Drain emitted events until the snapshot Deltas + Depth10 pair appears.
-    let mut saw_deltas = false;
-    let mut saw_depth10 = false;
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("depth10 event");
+    assert!(
+        matches!(event, NautilusWsMessage::Depth10(_)),
+        "expected Depth10 on snapshot, was {event:?}",
+    );
 
-    for _ in 0..4 {
-        let Some(event) = next_event_within(&mut harness.client, Duration::from_secs(2)).await
-        else {
-            break;
-        };
+    let next = next_event_within(&mut harness.client, Duration::from_millis(200)).await;
+    assert!(
+        !matches!(next, Some(NautilusWsMessage::Deltas(_))),
+        "depth10-only subscription must not emit Deltas",
+    );
 
-        match event {
-            NautilusWsMessage::Deltas(_) => saw_deltas = true,
-            NautilusWsMessage::Depth10(_) => saw_depth10 = true,
-            _ => {}
-        }
+    harness.client.disconnect().await.expect("disconnect");
+}
 
-        if saw_deltas && saw_depth10 {
-            break;
-        }
-    }
-    assert!(saw_deltas, "expected Deltas on snapshot");
-    assert!(saw_depth10, "expected Depth10 on snapshot");
+#[tokio::test]
+async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    harness
+        .client
+        .subscribe_book(id)
+        .await
+        .expect("subscribe_book");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("snapshot deltas");
+    assert!(matches!(event, NautilusWsMessage::Deltas(_)));
+
+    state
+        .enqueue_push(book_update_frame_with_cached_changes())
+        .await;
+    harness
+        .client
+        .subscribe_quotes(id)
+        .await
+        .expect("trigger incremental push");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("incremental deltas");
+    assert!(matches!(event, NautilusWsMessage::Deltas(_)));
+
+    harness
+        .client
+        .subscribe_book_depth10(id)
+        .await
+        .expect("subscribe_book_depth10");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let order_book_subs = state
+        .subscribes()
+        .await
+        .into_iter()
+        .filter(|sub| sub["channel"] == "order_book/0")
+        .count();
+    assert_eq!(
+        order_book_subs, 1,
+        "late depth10 must reuse the active order_book stream",
+    );
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("cached depth10");
+    let NautilusWsMessage::Depth10(depth) = event else {
+        panic!("expected cached Depth10, was {event:?}");
+    };
+
+    assert_eq!(depth.sequence, 904846);
+    assert_eq!(depth.bids[0].price, Price::from("2000.00"));
+    assert_eq!(depth.bids[0].size, Quantity::from("0.0500"));
+    assert_eq!(depth.bids[1].price, Price::from("1999.00"));
+    assert_eq!(depth.bids[1].size, Quantity::from("0.0100"));
+    assert_eq!(depth.asks[0].price, Price::from("2330.00"));
+    assert_eq!(depth.asks[0].size, Quantity::from("0.1200"));
+    assert_eq!(depth.asks[1].price, Price::from("2341.25"));
+    assert_eq!(depth.asks[1].size, Quantity::from("1.0000"));
 
     harness.client.disconnect().await.expect("disconnect");
 }
@@ -1254,10 +1354,7 @@ async fn test_subscription_count_tracks_subscribe_then_ack() {
         .expect("unsubscribe_book");
     await_unsubscribe_count(&state, 1).await;
 
-    let started = std::time::Instant::now();
-    while harness.client.subscription_count() > 0 && started.elapsed() < Duration::from_secs(2) {
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    await_subscription_count_at_most(&harness.client, 0).await;
     assert_eq!(
         harness.client.subscription_count(),
         0,

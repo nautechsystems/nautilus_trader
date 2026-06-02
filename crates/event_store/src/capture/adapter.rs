@@ -36,7 +36,7 @@ use std::{
     fmt::Debug,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -85,6 +85,7 @@ pub struct BusCaptureAdapter {
     registry: Arc<EncoderRegistry>,
     halt: HaltCallback,
     halted: AtomicBool,
+    submit_counter: Option<Arc<AtomicU64>>,
 }
 
 impl Debug for BusCaptureAdapter {
@@ -114,7 +115,15 @@ impl BusCaptureAdapter {
             registry,
             halt,
             halted: AtomicBool::new(false),
+            submit_counter: None,
         }
+    }
+
+    /// Shares an entry-submit counter with the data-marker capture path.
+    #[must_use]
+    pub fn with_submit_counter(mut self, submit_counter: Arc<AtomicU64>) -> Self {
+        self.submit_counter = Some(submit_counter);
+        self
     }
 
     /// Returns whether the adapter has fail-stopped.
@@ -201,7 +210,12 @@ impl BusCaptureAdapter {
         };
 
         match self.writer.submit(draft) {
-            Ok(()) => Ok(true),
+            Ok(()) => {
+                if let Some(submit_counter) = self.submit_counter.as_ref() {
+                    submit_counter.fetch_add(1, Ordering::AcqRel);
+                }
+                Ok(true)
+            }
             Err(e) => {
                 self.fail_stop(&e);
                 Err(CaptureError::Submit(e))
@@ -243,7 +257,10 @@ fn halt_reason_from_submit(err: &SubmitError) -> HaltReason {
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, Mutex},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
         time::Duration,
     };
 
@@ -488,6 +505,49 @@ mod tests {
         assert!(!captured_flag);
         assert_eq!(writer.high_watermark(), 0);
         assert!(!adapter.is_halted());
+    }
+
+    #[rstest]
+    fn submit_counter_increments_on_each_captured_entry(
+        captured_halt: (HaltCallback, Arc<Mutex<Vec<HaltReason>>>),
+    ) {
+        let (halt, _captured) = captured_halt;
+        let (writer, _backend) = writer_with_open_run("run-submit-counter", Arc::clone(&halt));
+        let submit_counter = Arc::new(AtomicU64::new(1));
+        let adapter = BusCaptureAdapter::new(Arc::clone(&writer), stub_registry(), halt)
+            .with_submit_counter(Arc::clone(&submit_counter));
+
+        adapter
+            .capture::<StubCommand>(
+                Topic::from("exec.command.SubmitOrder"),
+                &StubCommand {
+                    client_order_id: "O-counter-1".to_string(),
+                },
+                Headers::empty(),
+                UnixNanos::from(100),
+            )
+            .expect("first capture");
+        adapter
+            .capture::<UnknownMessage>(
+                Topic::from("data.market.unknown"),
+                &UnknownMessage,
+                Headers::empty(),
+                UnixNanos::from(101),
+            )
+            .expect("unknown type");
+        adapter
+            .capture::<StubEvent>(
+                Topic::from("exec.event.OrderFilled"),
+                &StubEvent {
+                    client_order_id: "O-counter-1".to_string(),
+                    venue_order_id: "V-counter-1".to_string(),
+                },
+                Headers::empty(),
+                UnixNanos::from(102),
+            )
+            .expect("second capture");
+
+        assert_eq!(submit_counter.load(Ordering::Acquire), 3);
     }
 
     #[rstest]

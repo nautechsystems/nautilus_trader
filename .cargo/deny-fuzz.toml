@@ -1,0 +1,85 @@
+# cargo-deny configuration for standalone adapter fuzz crates.
+# Keep production dependency policy in deny.toml; this file only covers fuzz roots.
+
+[graph]
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+unused-ignored-advisory = "allow"
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
+]
+
+[licenses]
+unused-allowed-license = "allow"
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-2-Clause-Patent",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "ISC",
+  "MPL-2.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "Zlib",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "0BSD",
+  "LGPL-3.0-or-later",
+  "Unlicense",
+  "bzip2-1.0.6",
+  "NCSA",
+]
+
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ecgfp5"
+version = "*"
+expression = "MIT"
+license-files = [{ path = "../LICENSE", hash = 0xbc960f5f }]
+
+[[licenses.clarify]]
+name = "implied-vol"
+version = "*"
+expression = "MIT"
+license-files = [{ path = "LICENSE", hash = 0xb0803f0e }]
+
+[licenses.private]
+ignore = true
+registries = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unused-allowed-source = "allow"
+unknown-registry = "deny"
+unknown-git = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = ["https://github.com/pornin/ecgfp5"]
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

@@ -173,6 +173,77 @@ pub struct RunIdentity {
 /// the representation stays stable across processes and platforms.
 pub type RunId = String;
 
+/// Default maximum interval between data-marker cursor snapshots when no entry boundary occurs.
+pub const DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+/// Default capacity of the data-marker writer's bounded submit channel.
+pub const DEFAULT_DATA_MARKER_CHANNEL_CAPACITY: usize = 10_000;
+
+/// Market-data class enabled for data-marker capture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DataMarkerClass {
+    /// Order-book delta stream.
+    BookDeltas,
+    /// Level-10 order-book snapshot stream.
+    BookDepth10,
+    /// Quote (level-1 bid/ask) stream.
+    Quote,
+    /// Trade (last sale) stream.
+    Trade,
+    /// Bar (OHLCV aggregate) stream.
+    Bar,
+}
+
+impl DataMarkerClass {
+    /// All builtin data-marker classes in canonical order.
+    pub const ALL: [Self; 5] = [
+        Self::BookDeltas,
+        Self::BookDepth10,
+        Self::Quote,
+        Self::Trade,
+        Self::Bar,
+    ];
+}
+
+/// Opt-in data-marker sidecar settings for an event-store run.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataMarkerConfig {
+    /// Market-data classes captured into marker cursors.
+    #[serde(default = "default_data_marker_classes")]
+    pub classes: Vec<DataMarkerClass>,
+    /// Maximum interval between cursor snapshots when data advances without entry submissions.
+    #[serde(default = "default_data_marker_safety_flush_interval")]
+    pub safety_flush_interval: Duration,
+    /// Capacity of the marker writer's bounded submit channel.
+    #[serde(default = "default_data_marker_channel_capacity")]
+    pub channel_capacity: usize,
+    /// Instrument identifiers that emit one high-fidelity marker per observed data message.
+    #[serde(default)]
+    pub high_fidelity: Vec<String>,
+}
+
+impl Default for DataMarkerConfig {
+    fn default() -> Self {
+        Self {
+            classes: default_data_marker_classes(),
+            safety_flush_interval: DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL,
+            channel_capacity: DEFAULT_DATA_MARKER_CHANNEL_CAPACITY,
+            high_fidelity: Vec::new(),
+        }
+    }
+}
+
+fn default_data_marker_classes() -> Vec<DataMarkerClass> {
+    DataMarkerClass::ALL.to_vec()
+}
+
+const fn default_data_marker_safety_flush_interval() -> Duration {
+    DEFAULT_DATA_MARKER_SAFETY_FLUSH_INTERVAL
+}
+
+const fn default_data_marker_channel_capacity() -> usize {
+    DEFAULT_DATA_MARKER_CHANNEL_CAPACITY
+}
+
 /// Configuration for the kernel-managed event store run lifecycle.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventStoreConfig {
@@ -188,6 +259,9 @@ pub struct EventStoreConfig {
     /// records it as the parent link for the fresh child run, and then skips engines, clients,
     /// trader startup, and live reconciliation. Quarantined runs are rejected.
     pub replay_from_run_id: Option<RunId>,
+    /// Data-marker sidecar settings. `None` disables marker capture for the run.
+    #[serde(default)]
+    pub data_markers: Option<DataMarkerConfig>,
     /// Capacity of the writer's bounded submit channel.
     pub channel_capacity: usize,
     /// Maximum entries collected before the writer forces a commit.
@@ -208,6 +282,7 @@ impl Default for EventStoreConfig {
             identity: RunIdentity::default(),
             retention: RetentionMode::default(),
             replay_from_run_id: None,
+            data_markers: None,
             channel_capacity: 10_000,
             max_batch_entries: 100,
             max_batch_latency: Duration::from_millis(5),
@@ -238,6 +313,24 @@ mod tests {
         assert_eq!(restored.retention, config.retention);
         assert_eq!(restored.replay_from_run_id, config.replay_from_run_id);
         assert_eq!(restored.identity, config.identity);
+        assert_eq!(restored.data_markers, config.data_markers);
+    }
+
+    #[rstest]
+    fn data_marker_config_serde_roundtrip() {
+        let config = EventStoreConfig {
+            data_markers: Some(DataMarkerConfig {
+                classes: vec![DataMarkerClass::Quote, DataMarkerClass::BookDeltas],
+                safety_flush_interval: Duration::from_millis(250),
+                channel_capacity: 512,
+                high_fidelity: vec!["ETHUSDT-PERP.BINANCE".to_string()],
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).expect("serialize");
+        let restored: EventStoreConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.data_markers, config.data_markers);
     }
 
     #[rstest]
@@ -266,5 +359,13 @@ mod tests {
         assert_eq!(config.retention, RetentionMode::Full);
         assert!(config.replay_from_run_id.is_none());
         assert_eq!(config.identity, RunIdentity::default());
+        assert!(config.data_markers.is_none());
+    }
+
+    #[rstest]
+    fn data_markers_default_is_none() {
+        let config = EventStoreConfig::default();
+
+        assert!(config.data_markers.is_none());
     }
 }

@@ -18,7 +18,9 @@
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{Address, B256, U256};
 use anyhow::Context;
-use nautilus_core::serialization::{deserialize_decimal, serialize_decimal_as_str};
+use nautilus_core::serialization::{
+    deserialize_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+};
 use nautilus_model::orders::{Order, OrderAny};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -27,8 +29,14 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::DERIVE_NAUTILUS_REFERRAL_CODE,
-        enums::{DeriveOrderSide, DeriveOrderType, DeriveTimeInForce},
-        parse::{order_side_to_derive, order_type_to_derive, time_in_force_to_derive},
+        enums::{
+            DeriveOrderSide, DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType,
+            DeriveTriggerType,
+        },
+        parse::{
+            order_side_to_derive, order_type_to_derive, time_in_force_to_derive,
+            trigger_order_type_to_derive, trigger_price_type_to_derive, trigger_type_to_derive,
+        },
     },
     http::models::DeriveInstrument,
     signing::{
@@ -107,6 +115,32 @@ pub struct DeriveOrderParams {
     /// MMP flag, omitted unless set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
+    /// Trigger price for `private/trigger_order`; omitted for normal orders.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub trigger_price: Option<Decimal>,
+    /// Trigger price source for `private/trigger_order`; omitted for normal orders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_price_type: Option<DeriveTriggerPriceType>,
+    /// Trigger side for `private/trigger_order`; omitted for normal orders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_type: Option<DeriveTriggerType>,
+}
+
+/// Params for `private/trigger_order`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+pub struct DeriveTriggerOrderParams {
+    /// New signed trigger order body.
+    #[serde(flatten)]
+    pub order: DeriveOrderParams,
+    /// WebSocket connection id supplied by the client.
+    pub conn_id: String,
+    /// Client-supplied Derive trigger order id.
+    pub order_id: String,
 }
 
 /// Params for `private/replace`.
@@ -117,6 +151,25 @@ pub struct DeriveReplaceParams {
     pub order: DeriveOrderParams,
     /// Venue order id to atomically cancel.
     pub order_id_to_cancel: String,
+}
+
+/// Params for `private/cancel_trigger_order`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+pub struct DeriveCancelTriggerOrderParams {
+    /// Owning subaccount identifier.
+    pub subaccount_id: u64,
+    /// Venue order id.
+    pub order_id: String,
+}
+
+impl DeriveCancelTriggerOrderParams {
+    #[must_use]
+    pub fn new(subaccount_id: u64, order_id: impl Into<String>) -> Self {
+        Self {
+            subaccount_id,
+            order_id: order_id.into(),
+        }
+    }
 }
 
 /// Params for `private/cancel`.
@@ -212,6 +265,20 @@ pub struct DeriveGetOpenOrdersParams {
 }
 
 impl DeriveGetOpenOrdersParams {
+    #[must_use]
+    pub const fn new(subaccount_id: u64) -> Self {
+        Self { subaccount_id }
+    }
+}
+
+/// Params for `private/get_trigger_orders`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+pub struct DeriveGetTriggerOrdersParams {
+    /// Owning subaccount identifier.
+    pub subaccount_id: u64,
+}
+
+impl DeriveGetTriggerOrdersParams {
     #[must_use]
     pub const fn new(subaccount_id: u64) -> Self {
         Self { subaccount_id }
@@ -386,6 +453,8 @@ pub fn order_to_derive_payload(
     validate_order_support(order)?;
     let limit_price = resolve_limit_price(order, explicit_price)?;
     let amount = order.quantity().as_decimal();
+    let order_type = order_type_to_derive(order.order_type())?;
+    let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
     build_signed_order_params(
         order,
         instrument,
@@ -400,7 +469,80 @@ pub fn order_to_derive_payload(
         max_fee,
         limit_price,
         amount,
+        order_type,
+        time_in_force,
+        None,
     )
+}
+
+/// Builds typed params for a signed `private/trigger_order` request.
+///
+/// Derive stores trigger orders off-book until the venue trigger worker
+/// submits the signed child order. `conn_id` and `order_id` are client-supplied
+/// fields required by the WebSocket-only endpoint.
+///
+/// # Errors
+///
+/// Returns an error when the order is not one of StopMarket, StopLimit,
+/// MarketIfTouched, or LimitIfTouched, when the trigger source is not
+/// MarkPrice, when required prices are absent, or when EIP-712 signing fails.
+#[expect(clippy::too_many_arguments)]
+pub fn trigger_order_to_derive_payload(
+    order: &OrderAny,
+    instrument: &DeriveInstrument,
+    subaccount_id: u64,
+    wallet: Address,
+    signer: &PrivateKeySigner,
+    nonce: u64,
+    signature_expiry_sec: i64,
+    module_address: Address,
+    domain_separator: B256,
+    action_typehash: B256,
+    max_fee: Decimal,
+    explicit_price: Option<Decimal>,
+    conn_id: impl Into<String>,
+    order_id: impl Into<String>,
+) -> anyhow::Result<DeriveTriggerOrderParams> {
+    validate_trigger_order_support(order)?;
+    let limit_price = resolve_limit_price(order, explicit_price)?;
+    let amount = order.quantity().as_decimal();
+    let order_type = trigger_order_type_to_derive(order.order_type())?;
+    let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
+    let trigger_price = order.trigger_price().ok_or_else(|| {
+        anyhow::anyhow!(
+            "missing trigger price for Derive trigger order {}",
+            order.client_order_id()
+        )
+    })?;
+    let trigger_fields = DeriveTriggerFields {
+        trigger_price: trigger_price.as_decimal(),
+        trigger_price_type: trigger_price_type_to_derive(order.trigger_type())?,
+        trigger_type: trigger_type_to_derive(order.order_type())?,
+    };
+    let order = build_signed_order_params(
+        order,
+        instrument,
+        subaccount_id,
+        wallet,
+        signer,
+        nonce,
+        signature_expiry_sec,
+        module_address,
+        domain_separator,
+        action_typehash,
+        max_fee,
+        limit_price,
+        amount,
+        order_type,
+        time_in_force,
+        Some(trigger_fields),
+    )?;
+
+    Ok(DeriveTriggerOrderParams {
+        order,
+        conn_id: conn_id.into(),
+        order_id: order_id.into(),
+    })
 }
 
 /// Builds typed params for a signed `private/replace` request.
@@ -435,6 +577,8 @@ pub fn order_replace_to_derive_payload(
     validate_order_support(order)?;
     let limit_price = resolve_limit_price(order, explicit_price)?;
     let amount = explicit_quantity.unwrap_or_else(|| order.quantity().as_decimal());
+    let order_type = order_type_to_derive(order.order_type())?;
+    let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
     let order = build_signed_order_params(
         order,
         instrument,
@@ -449,6 +593,9 @@ pub fn order_replace_to_derive_payload(
         max_fee,
         limit_price,
         amount,
+        order_type,
+        time_in_force,
+        None,
     )?;
 
     Ok(DeriveReplaceParams {
@@ -460,6 +607,13 @@ pub fn order_replace_to_derive_payload(
 fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
     order_type_to_derive(order.order_type())?;
     time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
+    Ok(())
+}
+
+fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
+    trigger_order_type_to_derive(order.order_type())?;
+    time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
+    trigger_price_type_to_derive(order.trigger_type())?;
     Ok(())
 }
 
@@ -479,6 +633,13 @@ fn resolve_limit_price(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DeriveTriggerFields {
+    trigger_price: Decimal,
+    trigger_price_type: DeriveTriggerPriceType,
+    trigger_type: DeriveTriggerType,
+}
+
 #[expect(clippy::too_many_arguments)]
 fn build_signed_order_params(
     order: &OrderAny,
@@ -494,10 +655,11 @@ fn build_signed_order_params(
     max_fee: Decimal,
     limit_price: Decimal,
     amount: Decimal,
+    order_type: DeriveOrderType,
+    time_in_force: DeriveTimeInForce,
+    trigger_fields: Option<DeriveTriggerFields>,
 ) -> anyhow::Result<DeriveOrderParams> {
     let direction = order_side_to_derive(order.order_side())?;
-    let order_type = order_type_to_derive(order.order_type())?;
-    let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
 
     let asset_address: Address = instrument
         .base_asset_address
@@ -554,6 +716,9 @@ fn build_signed_order_params(
         referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
         reduce_only: order.is_reduce_only().then_some(true),
         mmp: order.is_post_only().then_some(false),
+        trigger_price: trigger_fields.map(|f| f.trigger_price),
+        trigger_price_type: trigger_fields.map(|f| f.trigger_price_type),
+        trigger_type: trigger_fields.map(|f| f.trigger_type),
     })
 }
 
@@ -609,6 +774,9 @@ mod tests {
             referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
             reduce_only: None,
             mmp: None,
+            trigger_price: None,
+            trigger_price_type: None,
+            trigger_type: None,
         };
 
         let wire = canonical_wire(&params);
@@ -636,6 +804,9 @@ mod tests {
                 referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
                 reduce_only: Some(true),
                 mmp: Some(false),
+                trigger_price: None,
+                trigger_price_type: None,
+                trigger_type: None,
             },
             order_id_to_cancel: "ord-stale-1".to_string(),
         };
@@ -659,6 +830,40 @@ mod tests {
             include_str!("../../test_data/common/private_order_history_params_required.json")
                 .trim_end_matches('\n');
         let round_trip: DeriveGetOrderHistoryParams = serde_json::from_str(&wire).unwrap();
+
+        assert_eq!(wire, expected);
+        assert_eq!(round_trip, params);
+    }
+
+    #[rstest]
+    fn test_trigger_order_params_wire_round_trip_includes_trigger_fields() {
+        let params = DeriveTriggerOrderParams {
+            order: DeriveOrderParams {
+                envelope: fixed_envelope(123_458, "0xfeed"),
+                instrument_name: "ETH-PERP".into(),
+                direction: DeriveOrderSide::Sell,
+                order_type: DeriveOrderType::Market,
+                time_in_force: DeriveTimeInForce::Gtc,
+                limit_price: dec!(3400),
+                amount: dec!(0.1),
+                max_fee: dec!(0.5),
+                label: "client-stop-1".to_string(),
+                referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
+                reduce_only: Some(true),
+                mmp: None,
+                trigger_price: Some(dec!(3450)),
+                trigger_price_type: Some(DeriveTriggerPriceType::Mark),
+                trigger_type: Some(DeriveTriggerType::Stoploss),
+            },
+            conn_id: "conn-1".to_string(),
+            order_id: "trigger-order-1".to_string(),
+        };
+
+        let wire = canonical_wire(&params);
+        let expected =
+            include_str!("../../test_data/common/private_trigger_order_params_stop_market.json")
+                .trim_end_matches('\n');
+        let round_trip: DeriveTriggerOrderParams = serde_json::from_str(&wire).unwrap();
 
         assert_eq!(wire, expected);
         assert_eq!(round_trip, params);
@@ -783,15 +988,34 @@ mod tests {
     }
 
     fn build_test_stop_market_order() -> OrderAny {
-        let mut builder = OrderTestBuilder::new(OrderType::StopMarket);
+        build_test_trigger_order(
+            OrderType::StopMarket,
+            OrderSide::Buy,
+            None,
+            TriggerType::Default,
+        )
+    }
+
+    fn build_test_trigger_order(
+        order_type: OrderType,
+        side: OrderSide,
+        price: Option<Decimal>,
+        trigger_type: TriggerType,
+    ) -> OrderAny {
+        let mut builder = OrderTestBuilder::new(order_type);
         builder
             .instrument_id(InstrumentId::new(Symbol::new("ETH-PERP"), *DERIVE_VENUE))
             .client_order_id(ClientOrderId::from("STRAT-PAYLOAD-STOP"))
-            .side(OrderSide::Buy)
+            .side(side)
             .quantity(Quantity::from_decimal(dec!(1)).unwrap())
             .trigger_price(Price::from_decimal(dec!(3600)).unwrap())
-            .trigger_type(TriggerType::Default)
+            .trigger_type(trigger_type)
             .time_in_force(TimeInForce::Gtc);
+
+        if let Some(price) = price {
+            builder.price(Price::from_decimal(price).unwrap());
+        }
+
         builder.build()
     }
 
@@ -1081,6 +1305,200 @@ mod tests {
         assert!(
             !err.to_string().contains("missing limit price"),
             "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_trigger_order_to_derive_payload_stop_market_uses_mark_trigger() {
+        let order = build_test_trigger_order(
+            OrderType::StopMarket,
+            OrderSide::Sell,
+            None,
+            TriggerType::MarkPrice,
+        );
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+        let payload = trigger_order_to_derive_payload(
+            &order,
+            &instrument,
+            30769,
+            sample_wallet(),
+            &signer,
+            17_000_000_000_007,
+            fresh_expiry_secs(),
+            sample_module(),
+            sample_domain(),
+            sample_typehash(),
+            dec!(1),
+            Some(dec!(3400)),
+            "conn-1",
+            "trigger-1",
+        )
+        .map(to_value)
+        .expect("trigger payload built");
+
+        assert_eq!(payload["conn_id"], "conn-1");
+        assert_eq!(payload["order_id"], "trigger-1");
+        assert_eq!(payload["direction"], "sell");
+        assert_eq!(payload["order_type"], "market");
+        assert_eq!(payload["limit_price"], "3400");
+        assert_eq!(payload["trigger_price"], "3600");
+        assert_eq!(payload["trigger_price_type"], "mark");
+        assert_eq!(payload["trigger_type"], "stoploss");
+    }
+
+    #[rstest]
+    fn test_trigger_order_to_derive_payload_stop_limit_maps_limit_stoploss() {
+        let order = build_test_trigger_order(
+            OrderType::StopLimit,
+            OrderSide::Sell,
+            Some(dec!(3500)),
+            TriggerType::MarkPrice,
+        );
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+        let payload = trigger_order_to_derive_payload(
+            &order,
+            &instrument,
+            30769,
+            sample_wallet(),
+            &signer,
+            17_000_000_000_008,
+            fresh_expiry_secs(),
+            sample_module(),
+            sample_domain(),
+            sample_typehash(),
+            dec!(1),
+            None,
+            "conn-1",
+            "trigger-2",
+        )
+        .map(to_value)
+        .expect("trigger payload built");
+
+        assert_eq!(payload["order_type"], "limit");
+        assert_eq!(payload["limit_price"], "3500");
+        assert_eq!(payload["trigger_type"], "stoploss");
+    }
+
+    #[rstest]
+    #[case(
+        OrderType::MarketIfTouched,
+        DeriveOrderType::Market,
+        DeriveTriggerType::Takeprofit
+    )]
+    #[case(
+        OrderType::LimitIfTouched,
+        DeriveOrderType::Limit,
+        DeriveTriggerType::Takeprofit
+    )]
+    fn test_trigger_order_to_derive_payload_take_profit_types(
+        #[case] order_type: OrderType,
+        #[case] expected_order_type: DeriveOrderType,
+        #[case] expected_trigger_type: DeriveTriggerType,
+    ) {
+        let price = if order_type == OrderType::LimitIfTouched {
+            Some(dec!(3700))
+        } else {
+            None
+        };
+        let explicit_price = if price.is_none() {
+            Some(dec!(3705))
+        } else {
+            None
+        };
+        let order =
+            build_test_trigger_order(order_type, OrderSide::Buy, price, TriggerType::MarkPrice);
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+        let payload = trigger_order_to_derive_payload(
+            &order,
+            &instrument,
+            30769,
+            sample_wallet(),
+            &signer,
+            17_000_000_000_009,
+            fresh_expiry_secs(),
+            sample_module(),
+            sample_domain(),
+            sample_typehash(),
+            dec!(1),
+            explicit_price,
+            "conn-1",
+            "trigger-3",
+        )
+        .expect("trigger payload built");
+
+        assert_eq!(payload.order.order_type, expected_order_type);
+        assert_eq!(payload.order.trigger_type, Some(expected_trigger_type));
+    }
+
+    #[rstest]
+    fn test_trigger_order_to_derive_payload_rejects_index_trigger_price_type() {
+        let order = build_test_trigger_order(
+            OrderType::StopMarket,
+            OrderSide::Buy,
+            None,
+            TriggerType::IndexPrice,
+        );
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+        let err = trigger_order_to_derive_payload(
+            &order,
+            &instrument,
+            30769,
+            sample_wallet(),
+            &signer,
+            17_000_000_000_010,
+            fresh_expiry_secs(),
+            sample_module(),
+            sample_domain(),
+            sample_typehash(),
+            dec!(1),
+            Some(dec!(3618)),
+            "conn-1",
+            "trigger-4",
+        )
+        .expect_err("index trigger price type must fail");
+
+        assert!(
+            err.to_string()
+                .contains("Derive currently accepts only MarkPrice"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_trigger_order_to_derive_payload_maps_default_trigger_type_to_mark() {
+        let order = build_test_trigger_order(
+            OrderType::StopMarket,
+            OrderSide::Buy,
+            None,
+            TriggerType::Default,
+        );
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+        let payload = trigger_order_to_derive_payload(
+            &order,
+            &instrument,
+            30769,
+            sample_wallet(),
+            &signer,
+            17_000_000_000_011,
+            fresh_expiry_secs(),
+            sample_module(),
+            sample_domain(),
+            sample_typehash(),
+            dec!(1),
+            Some(dec!(3618)),
+            "conn-1",
+            "trigger-5",
+        )
+        .expect("default trigger type should map to mark");
+
+        assert_eq!(
+            payload.order.trigger_price_type,
+            Some(DeriveTriggerPriceType::Mark),
         );
     }
 

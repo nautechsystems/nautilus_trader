@@ -74,7 +74,16 @@ impl PyStrikeRange {
         }
     }
 
-    /// Returns the variant name (`Fixed`, `AtmRelative`, or `AtmPercent`).
+    /// Creates a `StrikeRange::Delta` variant.
+    #[staticmethod]
+    #[pyo3(name = "delta")]
+    fn py_delta(target: f64, tolerance: f64) -> Self {
+        Self {
+            inner: StrikeRange::Delta { target, tolerance },
+        }
+    }
+
+    /// Returns the variant name (`Fixed`, `AtmRelative`, `AtmPercent`, or `Delta`).
     #[getter]
     #[pyo3(name = "kind")]
     fn py_kind(&self) -> &'static str {
@@ -82,6 +91,7 @@ impl PyStrikeRange {
             StrikeRange::Fixed(_) => "Fixed",
             StrikeRange::AtmRelative { .. } => "AtmRelative",
             StrikeRange::AtmPercent { .. } => "AtmPercent",
+            StrikeRange::Delta { .. } => "Delta",
         }
     }
 

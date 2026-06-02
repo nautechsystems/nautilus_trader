@@ -26,11 +26,11 @@ use std::{
     any::Any,
     cell::RefCell,
     fmt::Debug,
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -52,7 +52,7 @@ use nautilus_core::{
 use nautilus_execution::engine::SnapshotAnchorer;
 use nautilus_system::{
     KernelEventStore as KernelEventStoreTrait, RegisteredComponents,
-    event_store::{EventStoreConfig, RetentionMode},
+    event_store::{DataMarkerClass, DataMarkerConfig, EventStoreConfig, RetentionMode},
 };
 use ustr::Ustr;
 
@@ -60,8 +60,12 @@ use crate::{
     BusCaptureAdapter, CacheReplayError, CacheReplayReport, CaptureError, EncoderRegistry,
     EntryDraft, EventStore, EventStoreError, EventStoreWriter, HaltCallback, HaltReason, Headers,
     RedbBackend, RunId, RunManifest, RunStatus, ScanDirection, Topic, WriterConfig,
-    compute_snapshot_content_hash, default_registry, restore_cache_from_sealed_run,
-    validate_event_store_replay_source,
+    compute_snapshot_content_hash, default_registry,
+    markers::{
+        DataClass, DataMarkerCapture, DataMarkerExtractorRegistry, MarkerBackend, MarkerManifest,
+        MarkerWriter, MarkerWriterConfig, RedbMarkerBackend,
+    },
+    restore_cache_from_sealed_run, validate_event_store_replay_source,
 };
 
 const RUN_STARTED_TOPIC: &str = "run.lifecycle.RunStarted";
@@ -94,6 +98,9 @@ type RegistryFactory = dyn Fn() -> EncoderRegistry + Send + Sync + 'static;
 type BackendOpenResult = Result<Box<dyn EventStore + Send>, EventStoreError>;
 type BackendOpener =
     dyn Fn(&EventStoreConfig, &RunManifest) -> BackendOpenResult + Send + Sync + 'static;
+type MarkerRegistryFactory =
+    dyn Fn(&[DataClass]) -> DataMarkerExtractorRegistry + Send + Sync + 'static;
+type SharedMarkerCapture = Rc<RefCell<Option<DataMarkerCapture>>>;
 
 /// Non-serialized lifecycle policy for advanced event-store callers.
 ///
@@ -104,6 +111,7 @@ type BackendOpener =
 pub struct EventStoreLifecycleOptions {
     registry_factory: Arc<RegistryFactory>,
     backend_opener: Arc<BackendOpener>,
+    marker_registry_factory: Arc<MarkerRegistryFactory>,
 }
 
 impl Debug for EventStoreLifecycleOptions {
@@ -118,6 +126,7 @@ impl Default for EventStoreLifecycleOptions {
         Self {
             registry_factory: Arc::new(default_registry),
             backend_opener: Arc::new(default_backend_opener),
+            marker_registry_factory: Arc::new(DataMarkerExtractorRegistry::default_registry),
         }
     }
 }
@@ -155,12 +164,26 @@ impl EventStoreLifecycleOptions {
         self
     }
 
+    /// Uses a caller-supplied data-marker extractor registry factory for each opened run.
+    #[must_use]
+    pub fn with_marker_registry_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn(&[DataClass]) -> DataMarkerExtractorRegistry + Send + Sync + 'static,
+    {
+        self.marker_registry_factory = Arc::new(factory);
+        self
+    }
+
     fn build_registry(&self) -> EncoderRegistry {
         (self.registry_factory)()
     }
 
     fn open_backend(&self, config: &EventStoreConfig, manifest: &RunManifest) -> BackendOpenResult {
         (self.backend_opener)(config, manifest)
+    }
+
+    fn build_marker_registry(&self, classes: &[DataClass]) -> DataMarkerExtractorRegistry {
+        (self.marker_registry_factory)(classes)
     }
 }
 
@@ -261,6 +284,7 @@ impl HaltSignal {
 pub struct EventStoreSession {
     writer: Option<Arc<EventStoreWriter>>,
     adapter: Option<Arc<BusCaptureAdapter>>,
+    marker_capture: Option<SharedMarkerCapture>,
     manifest: RunManifest,
     halt_signal: HaltSignal,
 }
@@ -273,6 +297,7 @@ impl Debug for EventStoreSession {
             .field("instance_id", &self.manifest.instance_id)
             .field("halted", &self.halt_signal.is_halted())
             .field("writer_attached", &self.writer.is_some())
+            .field("marker_capture_attached", &self.marker_capture.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -354,19 +379,24 @@ impl EventStoreSession {
         // try_unwrap. The kernel clears the bus tap before this site, so dropping the
         // session-side adapter clone here is the last release before close.
         self.adapter = None;
+        let marker_capture = self.marker_capture.take();
 
         let Some(writer_arc) = self.writer.take() else {
+            close_marker_capture(marker_capture);
             return Ok(());
         };
-        let writer = Arc::try_unwrap(writer_arc).map_err(|_| {
-            EventStoreError::Backend(
+        let Ok(writer) = Arc::try_unwrap(writer_arc) else {
+            close_marker_capture(marker_capture);
+            return Err(EventStoreError::Backend(
                 "event store writer has multiple owners; clear the bus tap before close"
                     .to_string(),
-            )
-        })?;
+            ));
+        };
 
         let run_ended = run_ended_draft(ts_init);
-        writer.close(run_ended)?;
+        let result = writer.close(run_ended);
+        close_marker_capture(marker_capture);
+        result?;
         Ok(())
     }
 }
@@ -376,7 +406,16 @@ impl Drop for EventStoreSession {
         // Drop without close: release adapter then writer so the writer thread exits
         // unsealed; the next boot recovers.
         self.adapter.take();
+        self.marker_capture.take();
         self.writer.take();
+    }
+}
+
+fn close_marker_capture(marker_capture: Option<SharedMarkerCapture>) {
+    if let Some(marker_capture) = marker_capture
+        && let Some(capture) = marker_capture.borrow_mut().take()
+    {
+        capture.close();
     }
 }
 
@@ -544,7 +583,7 @@ impl EventStoreLifecycle {
         );
 
         if let Some(adapter) = session.adapter() {
-            install_bus_tap(Arc::clone(adapter), clock);
+            install_bus_tap(Arc::clone(adapter), session.marker_capture.clone(), clock);
         }
         self.session = Some(session);
         Ok(())
@@ -905,18 +944,127 @@ pub fn open_run_with_options(
         config.run_started_timeout,
     )?;
 
-    let adapter = Arc::new(BusCaptureAdapter::new(
+    let (marker_capture, submit_counter) =
+        build_marker_capture(config, &manifest, writer.high_watermark(), clock, options);
+    let mut adapter = BusCaptureAdapter::new(
         Arc::clone(&writer),
         Arc::new(options.build_registry()),
         halt_signal.callback(),
-    ));
+    );
+
+    if let Some(submit_counter) = submit_counter {
+        adapter = adapter.with_submit_counter(submit_counter);
+    }
+    let adapter = Arc::new(adapter);
 
     Ok(EventStoreSession {
         writer: Some(writer),
         adapter: Some(adapter),
+        marker_capture,
         manifest,
         halt_signal,
     })
+}
+
+fn build_marker_capture(
+    config: &EventStoreConfig,
+    manifest: &RunManifest,
+    initial_submit_counter: u64,
+    clock: &'static AtomicTime,
+    options: &EventStoreLifecycleOptions,
+) -> (Option<SharedMarkerCapture>, Option<Arc<AtomicU64>>) {
+    let Some(marker_config) = config.data_markers.as_ref() else {
+        return (None, None);
+    };
+
+    match open_marker_capture(
+        config,
+        manifest,
+        marker_config,
+        initial_submit_counter,
+        clock,
+        options,
+    ) {
+        Ok((capture, submit_counter)) => (
+            Some(Rc::new(RefCell::new(Some(capture)))),
+            Some(submit_counter),
+        ),
+        Err(e) => {
+            log::warn!(
+                "Data marker sidecar disabled for run {} after marker setup failed: {e}",
+                manifest.run_id,
+            );
+            (None, None)
+        }
+    }
+}
+
+fn open_marker_capture(
+    config: &EventStoreConfig,
+    manifest: &RunManifest,
+    marker_config: &DataMarkerConfig,
+    initial_submit_counter: u64,
+    clock: &'static AtomicTime,
+    options: &EventStoreLifecycleOptions,
+) -> Result<(DataMarkerCapture, Arc<AtomicU64>), EventStoreError> {
+    let classes = marker_config
+        .classes
+        .iter()
+        .copied()
+        .map(data_marker_class_to_data_class)
+        .collect::<Vec<_>>();
+    let marker_manifest = marker_manifest_for(manifest, classes.clone(), marker_config);
+    let marker_path = marker_file_path(config, &manifest.instance_id, &manifest.run_id);
+    let mut marker_backend = RedbMarkerBackend::new(marker_path);
+    marker_backend.open_run(marker_manifest)?;
+    let writer = MarkerWriter::spawn(
+        Box::new(marker_backend),
+        clock,
+        MarkerWriterConfig {
+            channel_capacity: marker_config.channel_capacity,
+            ..MarkerWriterConfig::default()
+        },
+    )?;
+    let submit_counter = Arc::new(AtomicU64::new(initial_submit_counter));
+    let registry = options.build_marker_registry(&classes);
+    let capture =
+        DataMarkerCapture::new(registry, writer, Arc::clone(&submit_counter), marker_config);
+
+    Ok((capture, submit_counter))
+}
+
+fn marker_file_path(config: &EventStoreConfig, instance_id: &str, run_id: &str) -> PathBuf {
+    config
+        .base_dir
+        .join(instance_id)
+        .join(format!("{run_id}.markers.redb"))
+}
+
+fn marker_manifest_for(
+    manifest: &RunManifest,
+    enabled_classes: Vec<DataClass>,
+    config: &DataMarkerConfig,
+) -> MarkerManifest {
+    MarkerManifest {
+        run_id: manifest.run_id.clone(),
+        enabled_classes,
+        high_fidelity: !config.high_fidelity.is_empty(),
+        snapshot_count: 0,
+        hifi_count: 0,
+        gap_count: 0,
+        dict_count: 0,
+        status: RunStatus::Running,
+    }
+}
+
+const fn data_marker_class_to_data_class(class: DataMarkerClass) -> DataClass {
+    match class {
+        DataMarkerClass::BookDeltas => DataClass::BookDeltas,
+        DataMarkerClass::BookDepth10 => DataClass::BookDepth10,
+        DataMarkerClass::Quote => DataClass::Quote,
+        DataMarkerClass::Trade => DataClass::Trade,
+        DataMarkerClass::Bar => DataClass::Bar,
+    }
 }
 
 fn build_manifest(
@@ -1047,6 +1195,7 @@ fn run_ended_draft(ts_init: UnixNanos) -> EntryDraft {
 /// writer-receive timestamp.
 struct EventStoreBusTap {
     adapter: Arc<BusCaptureAdapter>,
+    marker_capture: Option<SharedMarkerCapture>,
     clock: &'static AtomicTime,
 }
 
@@ -1054,6 +1203,7 @@ impl Debug for EventStoreBusTap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(EventStoreBusTap))
             .field("halted", &self.adapter.is_halted())
+            .field("marker_capture_attached", &self.marker_capture.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -1093,7 +1243,10 @@ impl EventStoreBusTap {
         // Submit failures fire the adapter halt callback before returning; HaltSignal
         // is the observation path. Halted means the signal already fired.
         match self.adapter.capture_any(topic, message, headers, ts_init) {
-            Ok(_) | Err(CaptureError::Halted) => {}
+            Ok(captured) => {
+                self.capture_marker(topic, message, ts_init, captured);
+            }
+            Err(CaptureError::Halted) => {}
             Err(CaptureError::Submit(e)) => {
                 log::error!("Event store capture submit failed on {topic}: {e}");
             }
@@ -1102,10 +1255,35 @@ impl EventStoreBusTap {
             }
         }
     }
+
+    fn capture_marker(&self, topic: Topic, message: &dyn Any, ts_init: UnixNanos, captured: bool) {
+        let Some(marker_capture) = self.marker_capture.as_ref() else {
+            return;
+        };
+        let mut marker_capture = marker_capture.borrow_mut();
+        let Some(capture) = marker_capture.as_mut() else {
+            return;
+        };
+
+        if captured {
+            capture.on_entry_submitted(ts_init);
+        } else {
+            capture.observe_publish(topic, message, ts_init);
+        }
+        capture.maybe_safety_flush(ts_init);
+    }
 }
 
-fn install_bus_tap(adapter: Arc<BusCaptureAdapter>, clock: &'static AtomicTime) {
-    let tap: Rc<dyn BusTap> = Rc::new(EventStoreBusTap { adapter, clock });
+fn install_bus_tap(
+    adapter: Arc<BusCaptureAdapter>,
+    marker_capture: Option<SharedMarkerCapture>,
+    clock: &'static AtomicTime,
+) {
+    let tap: Rc<dyn BusTap> = Rc::new(EventStoreBusTap {
+        adapter,
+        marker_capture,
+        clock,
+    });
     msgbus::set_bus_tap(tap);
 }
 
@@ -1177,6 +1355,7 @@ mod tests {
     };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
+        data::stubs::{quote_ethusdt_binance, stub_deltas},
         enums::TimeInForce,
         events::{
             OrderEventAny, OrderFilled,
@@ -1188,13 +1367,14 @@ mod tests {
         },
         types::{Currency, Money, Price, Quantity},
     };
-    use nautilus_system::event_store::RunIdentity;
+    use nautilus_system::event_store::{DataMarkerClass, DataMarkerConfig, RunIdentity};
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
     use crate::{
-        AppendEntry, EncodedPayload, EventStoreEntry, IndexKind, MemoryBackend, SnapshotAnchor,
+        AppendEntry, DataClass, EncodedPayload, EventStoreEntry, IndexKind, MarkerBackend,
+        MemoryBackend, RedbMarkerBackend, SnapshotAnchor,
         capture::builtins::PAYLOAD_TYPE_TIME_EVENT, compute_entry_hash,
     };
 
@@ -1214,6 +1394,7 @@ mod tests {
             },
             retention: RetentionMode::Full,
             replay_from_run_id: None,
+            data_markers: None,
             channel_capacity: 64,
             max_batch_entries: 1,
             max_batch_latency: Duration::from_millis(2),
@@ -1245,6 +1426,32 @@ mod tests {
             ts,
         );
         AppendEntry::without_indices(entry)
+    }
+
+    fn make_submit_order(client_order_id: ClientOrderId) -> SubmitOrder {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let order_init = OrderInitializedSpec::builder()
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1"))
+            .time_in_force(TimeInForce::Gtc)
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(2))
+            .build();
+        SubmitOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BINANCE")),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            order_init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(3),
+            None, // correlation_id
+        )
     }
 
     fn append_run_started(seq: u64) -> AppendEntry {
@@ -2508,6 +2715,266 @@ mod tests {
             .expect("lookup")
             .expect("indexed");
         assert_eq!(by_client, 2);
+    }
+
+    #[rstest]
+    fn kernel_with_markers_captures_snapshots_over_synthetic_bus() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let mut config = make_config(tmp.path().to_path_buf());
+        config.data_markers = Some(DataMarkerConfig {
+            classes: vec![DataMarkerClass::BookDeltas, DataMarkerClass::Quote],
+            safety_flush_interval: Duration::from_secs(1),
+            channel_capacity: 128,
+            high_fidelity: Vec::new(),
+        });
+
+        let mut store =
+            EventStoreLifecycle::boot(Some(config), instance_id, clock_rc).expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let first = make_submit_order(ClientOrderId::from("O-marker-1"));
+        msgbus::send_any_value(MStr::<Endpoint>::from("test.exec.process"), &first);
+
+        let quote = quote_ethusdt_binance();
+        msgbus::publish_quote(MStr::from("data.quotes.BINANCE.ETHUSDT-PERP"), &quote);
+        let deltas = stub_deltas();
+        msgbus::publish_deltas(MStr::from("data.deltas.XNAS.AAPL"), &deltas);
+
+        let second = make_submit_order(ClientOrderId::from("O-marker-2"));
+        msgbus::send_any_value(MStr::<Endpoint>::from("test.exec.process"), &second);
+        wait_for_high_watermark(&store, 3);
+        store.seal(UnixNanos::from(500));
+
+        let marker_path = tmp
+            .path()
+            .join(instance_id.to_string())
+            .join(format!("{run_id}.markers.redb"));
+        let marker = RedbMarkerBackend::open_read_only_file(marker_path).expect("open markers");
+        let snapshots = marker.scan_snapshots().expect("scan snapshots");
+        let dict = marker.scan_dict().expect("scan dict");
+
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].event_seq_before, 3);
+        assert_eq!(snapshots[0].advanced.len(), 2);
+        assert_eq!(
+            snapshots[0]
+                .advanced
+                .iter()
+                .map(|cursor| cursor.count)
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+        assert_eq!(
+            dict.iter()
+                .map(|entry| (entry.data_cls, entry.identifier.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (DataClass::Quote, "ETHUSDT-PERP.BINANCE"),
+                (DataClass::BookDeltas, "AAPL.XNAS"),
+            ],
+        );
+    }
+
+    #[rstest]
+    fn boot_recovery_ignores_marker_sidecar_files() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let mut config = make_config(tmp.path().to_path_buf());
+        config.data_markers = Some(DataMarkerConfig {
+            classes: vec![DataMarkerClass::Quote],
+            safety_flush_interval: Duration::from_secs(1),
+            channel_capacity: 128,
+            high_fidelity: Vec::new(),
+        });
+
+        let mut store =
+            EventStoreLifecycle::boot(Some(config.clone()), instance_id, Rc::clone(&clock_rc))
+                .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+        store.seal(UnixNanos::from(500));
+
+        let marker_path = tmp
+            .path()
+            .join(instance_id.to_string())
+            .join(format!("{run_id}.markers.redb"));
+        assert!(marker_path.exists());
+
+        let rebooted = EventStoreLifecycle::boot(Some(config), instance_id, clock_rc)
+            .expect("boot after marker sidecar");
+
+        assert!(rebooted.recovered().is_empty());
+    }
+
+    #[rstest]
+    fn marker_setup_failure_disables_markers_without_blocking_open() {
+        let tmp = TempDir::new().expect("tempdir");
+        let bad_base = tmp.path().join("not-a-directory");
+        std::fs::write(&bad_base, b"not a directory").expect("write bad base");
+        let memory = Arc::new(Mutex::new(MemoryBackend::new()));
+        let opener_memory = Arc::clone(&memory);
+        let mut config = make_config(bad_base);
+        config.data_markers = Some(DataMarkerConfig {
+            classes: vec![DataMarkerClass::Quote],
+            safety_flush_interval: Duration::from_secs(1),
+            channel_capacity: 128,
+            high_fidelity: Vec::new(),
+        });
+        let options = EventStoreLifecycleOptions::new()
+            .with_encoder_registry(test_registry())
+            .with_backend_opener(move |_, manifest| {
+                opener_memory
+                    .lock()
+                    .expect("memory backend")
+                    .open_run(manifest.clone())?;
+                Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
+            });
+
+        let mut session = open_run_with_options(
+            &config,
+            INSTANCE_ID,
+            "run-marker-setup-fails".to_string(),
+            None,
+            UnixNanos::from(5_000),
+            &RegisteredComponents::default(),
+            HaltSignal::new(),
+            get_atomic_clock_static(),
+            &options,
+        )
+        .expect("open run despite marker failure");
+
+        assert!(session.marker_capture.is_none());
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.test.marker-fallback");
+        session
+            .adapter()
+            .expect("adapter")
+            .capture::<TestAuditMessage>(
+                topic,
+                &TestAuditMessage { value: 11 },
+                Headers::empty(),
+                UnixNanos::from(5_001),
+            )
+            .expect("capture");
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        while session.high_watermark() < 2 {
+            assert!(
+                Instant::now() < deadline,
+                "event-store high_watermark {} did not reach 2 within deadline",
+                session.high_watermark(),
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+        session
+            .close(UnixNanos::from(6_000))
+            .expect("close session");
+
+        let backend = memory.lock().expect("memory backend");
+        let captured = backend
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+
+        assert_eq!(captured.payload_type.as_str(), "TestAuditMessage");
+        assert_eq!(captured.topic.as_ref(), topic.as_str());
+        assert_eq!(captured.payload.as_ref(), &[11]);
+    }
+
+    #[rstest]
+    fn marker_registry_factory_receives_enabled_classes() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+        let seen_classes: Arc<Mutex<Vec<Vec<DataClass>>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_for_factory = Arc::clone(&seen_classes);
+        let mut config = make_config(tmp.path().to_path_buf());
+        config.data_markers = Some(DataMarkerConfig {
+            classes: vec![DataMarkerClass::Trade, DataMarkerClass::Quote],
+            safety_flush_interval: Duration::from_secs(1),
+            channel_capacity: 128,
+            high_fidelity: Vec::new(),
+        });
+        let options =
+            EventStoreLifecycleOptions::new().with_marker_registry_factory(move |classes| {
+                seen_for_factory
+                    .lock()
+                    .expect("seen classes")
+                    .push(classes.to_vec());
+                DataMarkerExtractorRegistry::default_registry(classes)
+            });
+
+        let mut store =
+            EventStoreLifecycle::boot_with_options(Some(config), instance_id, clock_rc, options)
+                .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        store.seal(UnixNanos::from(1_000));
+
+        let seen = seen_classes.lock().expect("seen classes");
+        assert_eq!(seen.as_slice(), &[vec![DataClass::Trade, DataClass::Quote]]);
+    }
+
+    #[rstest]
+    fn markers_disabled_installs_no_file_and_no_cost() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = EventStoreLifecycle::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        assert!(
+            store
+                .session
+                .as_ref()
+                .expect("session")
+                .marker_capture
+                .is_none()
+        );
+
+        let quote = quote_ethusdt_binance();
+        msgbus::publish_quote(MStr::from("data.quotes.BINANCE.ETHUSDT-PERP"), &quote);
+        store.seal(UnixNanos::from(500));
+
+        let marker_path = tmp
+            .path()
+            .join(instance_id.to_string())
+            .join(format!("{run_id}.markers.redb"));
+        assert!(!marker_path.exists());
     }
 
     /// Fired clock events do not pass through normal message bus publish/send calls.

@@ -24,6 +24,8 @@ use crate::wire;
 
 const MARKER_HASH_DOMAIN: &[u8] = b"nautilus-event-store/marker/v1";
 const HIFI_HASH_DOMAIN: &[u8] = b"nautilus-event-store/hifi/v1";
+const DICT_HASH_DOMAIN: &[u8] = b"nautilus-event-store/dict/v1";
+const GAP_HASH_DOMAIN: &[u8] = b"nautilus-event-store/gap/v1";
 
 /// The class of market-data stream being tracked by a sidecar slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -119,7 +121,7 @@ pub struct HiFiMarker {
     /// The ingestion timestamp of the record (`ts_init`).
     #[serde(with = "wire::nanos_as_u64")]
     pub ts_init: UnixNanos,
-    /// Ordinal for records sharing the same `ts_event` within a slot.
+    /// Ordinal among records sharing the same `ts_init` within a slot.
     pub same_ts_ordinal: u32,
     /// A 32-byte fingerprint of the record's content.
     pub record_fingerprint: [u8; 32],
@@ -139,7 +141,7 @@ pub enum MarkerGapReason {
 pub struct MarkerGap {
     /// The first marker sequence number missing from the sequence.
     pub from_marker_seq: u64,
-    /// The first marker sequence number after the gap.
+    /// The last marker sequence number missing from the sequence.
     pub to_marker_seq: u64,
     /// The reason this gap was recorded.
     pub reason: MarkerGapReason,
@@ -194,6 +196,45 @@ pub fn compute_hifi_hash(marker: &HiFiMarker) -> [u8; 32] {
     hasher.update(&marker.ts_init.as_u64().to_be_bytes());
     hasher.update(&marker.same_ts_ordinal.to_be_bytes());
     hasher.update(&marker.record_fingerprint);
+    *hasher.finalize().as_bytes()
+}
+
+/// Computes the canonical BLAKE3 hash of a [`StreamDictEntry`].
+///
+/// The hash is domain-separated by a crate-internal prefix, writes the numeric `slot`
+/// big-endian, and length-prefixes the data-class and identifier strings so a slot remapped to
+/// a different class or identifier cannot frame to the same byte stream. Store the returned
+/// bytes alongside the record; do not add a hash field to the struct itself.
+#[must_use]
+pub fn compute_dict_hash(entry: &StreamDictEntry) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(DICT_HASH_DOMAIN);
+    hasher.update(&entry.slot.to_be_bytes());
+    let class = entry.data_cls.as_str().as_bytes();
+    hasher.update(&(class.len() as u64).to_be_bytes());
+    hasher.update(class);
+    let identifier = entry.identifier.as_bytes();
+    hasher.update(&(identifier.len() as u64).to_be_bytes());
+    hasher.update(identifier);
+    *hasher.finalize().as_bytes()
+}
+
+/// Computes the canonical BLAKE3 hash of a [`MarkerGap`].
+///
+/// The hash is domain-separated by a crate-internal prefix and uses big-endian fixed-width
+/// framing for the sequence bounds plus a one-byte reason discriminant. Store the returned bytes
+/// alongside the record; do not add a hash field to the struct itself.
+#[must_use]
+pub fn compute_gap_hash(gap: &MarkerGap) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(GAP_HASH_DOMAIN);
+    hasher.update(&gap.from_marker_seq.to_be_bytes());
+    hasher.update(&gap.to_marker_seq.to_be_bytes());
+    let reason = match gap.reason {
+        MarkerGapReason::Overflow => 0u8,
+        MarkerGapReason::WriterClosed => 1u8,
+    };
+    hasher.update(&[reason]);
     *hasher.finalize().as_bytes()
 }
 
@@ -259,6 +300,22 @@ mod tests {
         }
     }
 
+    fn baseline_dict() -> StreamDictEntry {
+        StreamDictEntry {
+            slot: 3,
+            data_cls: DataClass::Quote,
+            identifier: "ETHUSDT.BINANCE".to_string(),
+        }
+    }
+
+    fn baseline_gap() -> MarkerGap {
+        MarkerGap {
+            from_marker_seq: 5,
+            to_marker_seq: 9,
+            reason: MarkerGapReason::Overflow,
+        }
+    }
+
     fn hex32(bytes: &[u8; 32]) -> String {
         let mut out = String::with_capacity(64);
         for byte in bytes {
@@ -296,6 +353,38 @@ mod tests {
         assert_eq!(
             hex, "06542408380d8815ef783b9dbde6b3e3ffdf05605bb17e83ad48474557457517",
             "hifi hash wire format changed"
+        );
+    }
+
+    #[rstest]
+    fn dict_hash_is_deterministic() {
+        let entry = baseline_dict();
+        let h1 = compute_dict_hash(&entry);
+        let h2 = compute_dict_hash(&entry);
+
+        assert_eq!(h1, h2);
+
+        // Pinned wire-format vector. Any change to domain, field order, or framing flips this.
+        let hex = hex32(&h1);
+        assert_eq!(
+            hex, "24e702c5ae20b832ad6907676919fa18a89b79e97dde9df7e1de454191f42fda",
+            "dict hash wire format changed"
+        );
+    }
+
+    #[rstest]
+    fn gap_hash_is_deterministic() {
+        let gap = baseline_gap();
+        let h1 = compute_gap_hash(&gap);
+        let h2 = compute_gap_hash(&gap);
+
+        assert_eq!(h1, h2);
+
+        // Pinned wire-format vector. Any change to domain, field order, or framing flips this.
+        let hex = hex32(&h1);
+        assert_eq!(
+            hex, "ec1ae0ea813e9971155c6277e95c43de72da6f22ca1832f072aadd9b91f5a3ec",
+            "gap hash wire format changed"
         );
     }
 
@@ -383,6 +472,30 @@ mod tests {
         mutate(&mut mutated);
 
         assert_ne!(compute_hifi_hash(&base), compute_hifi_hash(&mutated));
+    }
+
+    #[rstest]
+    #[case::slot(|e: &mut StreamDictEntry| e.slot = 99)]
+    #[case::data_cls(|e: &mut StreamDictEntry| e.data_cls = DataClass::Trade)]
+    #[case::identifier(|e: &mut StreamDictEntry| e.identifier = "BTCUSDT.BINANCE".to_string())]
+    fn every_dict_field_affects_hash(#[case] mutate: fn(&mut StreamDictEntry)) {
+        let base = baseline_dict();
+        let mut mutated = base.clone();
+        mutate(&mut mutated);
+
+        assert_ne!(compute_dict_hash(&base), compute_dict_hash(&mutated));
+    }
+
+    #[rstest]
+    #[case::from(|g: &mut MarkerGap| g.from_marker_seq = 99)]
+    #[case::to(|g: &mut MarkerGap| g.to_marker_seq = 99)]
+    #[case::reason(|g: &mut MarkerGap| g.reason = MarkerGapReason::WriterClosed)]
+    fn every_gap_field_affects_hash(#[case] mutate: fn(&mut MarkerGap)) {
+        let base = baseline_gap();
+        let mut mutated = base.clone();
+        mutate(&mut mutated);
+
+        assert_ne!(compute_gap_hash(&base), compute_gap_hash(&mutated));
     }
 
     #[rstest]

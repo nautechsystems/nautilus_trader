@@ -42,14 +42,15 @@ use nautilus_indicators::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, MarkPriceUpdate,
-        OrderBookDelta, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, InstrumentClose,
+        MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, OmsType, OptionKind, OrderSide, PositionAdjustmentType, PriceType,
+        BookType, InstrumentCloseType, OmsType, OptionKind, OrderSide, PositionAdjustmentType,
+        PriceType,
     },
-    events::OrderFilled,
+    events::{OrderEventAny, OrderFilled},
     identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Symbol, TradeId, Venue},
     instruments::{
         CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
@@ -344,6 +345,11 @@ impl Debug for OpenOptionOnQuote {
 impl DataActor for OpenOptionOnQuote {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.opened = false;
         Ok(())
     }
 
@@ -1412,6 +1418,81 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
         result.summary["account.BINANCE.balance.USDT.locked"],
         balance.locked.to_string(),
     );
+}
+
+#[rstest]
+fn test_simulated_venue_config_settlement_prices_used_on_instrument_close(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let settlement_price = Price::from("1010.00");
+    let venue = Venue::from("BINANCE");
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(venue)
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .settlement_prices([(instrument_id, settlement_price)].into_iter().collect())
+        .build();
+    engine.add_venue(venue_config).unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(OpenOptionOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        Data::InstrumentClose(InstrumentClose::new(
+            instrument_id,
+            Price::from("1005.00"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        )),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        expiration_fill_price(&engine, venue, instrument_id),
+        settlement_price
+    );
+
+    engine.reset();
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        expiration_fill_price(&engine, venue, instrument_id),
+        settlement_price
+    );
+}
+
+fn expiration_fill_price(
+    engine: &BacktestEngine,
+    venue: Venue,
+    instrument_id: InstrumentId,
+) -> Price {
+    let cache = engine.kernel().cache.borrow();
+    let closed_orders = cache.orders_closed(Some(&venue), Some(&instrument_id), None, None, None);
+    let expiration_fill = closed_orders
+        .iter()
+        .find_map(|order| match order.last_event() {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id.as_str().starts_with("EXPIRATION-") =>
+            {
+                Some(*fill)
+            }
+            _ => None,
+        })
+        .expect("expected expiration fill");
+
+    expiration_fill.last_px
 }
 
 #[rstest]

@@ -1,0 +1,53 @@
+{
+  "accepting_order_timestamp": "2026-02-27T23:33:23Z",
+  "accepting_orders": false,
+  "active": true,
+  "archived": false,
+  "closed": true,
+  "condition_id": "0x8ccc3f4951ff02c1d34b87988752b4444ad17228732780a6cf22afefe8478bb6",
+  "description": "This market will resolve to \"Yes\" if the Fully Diluted Valuation of Katana's governance token is greater than the value specified in the title 1 day after launch. Otherwise, the market will resolve to \"No.\"\n\nThe token must be actively, publicly transferable and tradable to be considered a launch.\n\nThe FDV will be determined using the total token supply multiplied by the token price.\n\n\"1 day after launch\" is defined as 4:00 PM ET on the calendar day following launch. The resolution source for this market is the most liquid price source available. If Katana (https://x.com/katana) doesn't launch a token by December 31, 2027, 11:59 PM ET, this market will resolve to \"No\".",
+  "enable_order_book": false,
+  "end_date_iso": "2028-01-01T00:00:00Z",
+  "fpmm": "",
+  "game_start_time": null,
+  "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/katana-fdv-above-one-day-after-launch-Bzf6GQgbV-kr.jpg",
+  "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/katana-fdv-above-one-day-after-launch-Bzf6GQgbV-kr.jpg",
+  "is_50_50_outcome": false,
+  "maker_base_fee": 0,
+  "market_slug": "katana-fdv-above-1b-one-day-after-launch-395-996",
+  "minimum_order_size": 5,
+  "minimum_tick_size": 0.001,
+  "neg_risk": false,
+  "neg_risk_market_id": "",
+  "neg_risk_request_id": "",
+  "notifications_enabled": true,
+  "question": "Katana FDV above $1B one day after launch?",
+  "question_id": "0xd2f779abf76c499ddd1114924e69d384691dd8eb23b255b98b5273593068c88e",
+  "rewards": {
+    "max_spread": 4.5,
+    "min_size": 50,
+    "rates": null
+  },
+  "seconds_delay": 0,
+  "tags": [
+    "Crypto",
+    "FDV",
+    "Pre-Market",
+    "Katana"
+  ],
+  "taker_base_fee": 0,
+  "tokens": [
+    {
+      "outcome": "Yes",
+      "price": 0,
+      "token_id": "108872296183993054938831082799825620165440189659433018108548854929333464287226",
+      "winner": false
+    },
+    {
+      "outcome": "No",
+      "price": 1,
+      "token_id": "89711174926330519158043401581181146613785179104141808554061413232025882707365",
+      "winner": true
+    }
+  ]
+}

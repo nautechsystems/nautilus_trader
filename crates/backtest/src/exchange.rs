@@ -217,7 +217,7 @@ impl SimulatedExchange {
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
             matching_engines: AHashMap::new(),
-            settlement_prices: AHashMap::new(),
+            settlement_prices: config.settlement_prices,
             pending_funding_rates: AHashMap::new(),
             funding_settled_through: AHashMap::new(),
             leverages: config.leverages,
@@ -1257,7 +1257,6 @@ impl SimulatedExchange {
             matching_engine.reset();
         }
 
-        self.settlement_prices.clear();
         self.pending_funding_rates.clear();
         self.funding_settled_through.clear();
         self.message_queue.clear();

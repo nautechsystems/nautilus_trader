@@ -170,6 +170,11 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     })
 }
 
+/// Returns the thread-local message bus if one has been set for this thread.
+pub fn try_get_message_bus() -> Option<Rc<RefCell<MessageBus>>> {
+    MESSAGE_BUS.with(|bus| bus.borrow().clone())
+}
+
 /// Observes dispatched bus traffic for the durable event store.
 ///
 /// The bus invokes the registered tap (when present) before each publish, send, or

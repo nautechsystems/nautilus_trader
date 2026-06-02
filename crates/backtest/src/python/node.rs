@@ -34,6 +34,8 @@ use nautilus_trading::{
 };
 use pyo3::{prelude::*, types::PyDict};
 
+#[cfg(feature = "examples")]
+use crate::engine::BacktestEngine;
 use crate::{config::BacktestRunConfig, node::BacktestNode, result::BacktestResult};
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -406,16 +408,15 @@ impl BacktestNode {
         Ok(())
     }
 
-    /// Adds a native Rust strategy from its config to the engine for the given run config.
+    /// Adds a compiled-in native Rust strategy to the engine for the given run config.
     ///
-    /// The config type determines which built-in strategy is constructed.
+    /// The type name determines which built-in strategy is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
-    ///
-    /// Custom native Rust strategies require the native strategy plugin API.
     #[pyo3(name = "add_native_strategy")]
     fn py_add_native_strategy(
         &mut self,
         run_config_id: &str,
+        type_name: &str,
         config: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
         #[cfg(feature = "examples")]
@@ -424,37 +425,15 @@ impl BacktestNode {
                 to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
             })?;
 
-            if let Ok(config) = config.extract::<EmaCrossConfig>() {
-                engine
-                    .add_strategy(EmaCross::from_config(config))
-                    .map_err(to_pyruntime_err)
-            } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
-                engine
-                    .add_strategy(GridMarketMaker::new(config))
-                    .map_err(to_pyruntime_err)
-            } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
-                engine
-                    .add_strategy(CompositeMarketMaker::new(config))
-                    .map_err(to_pyruntime_err)
-            } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
-                engine
-                    .add_strategy(DeltaNeutralVol::new(config))
-                    .map_err(to_pyruntime_err)
-            } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
-                engine
-                    .add_strategy(HurstVpinDirectional::new(config))
-                    .map_err(to_pyruntime_err)
-            } else {
-                let type_name = config.get_type().name()?;
-                Err(to_pytype_err(format!(
-                    "Unsupported native strategy config type: {type_name}",
-                )))
-            }
+            let register = native_strategy_register(type_name).ok_or_else(|| {
+                to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
+            })?;
+            register(engine, config)
         }
 
         #[cfg(not(feature = "examples"))]
         {
-            let _ = (run_config_id, config);
+            let _ = (run_config_id, type_name, config);
             Err(to_pyruntime_err(
                 "add_native_strategy requires the `examples` feature",
             ))
@@ -463,6 +442,110 @@ impl BacktestNode {
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+#[cfg(feature = "examples")]
+type NativeStrategyRegister = for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+    match type_name {
+        "CompositeMarketMaker" => Some(register_composite_market_maker),
+        "DeltaNeutralVol" => Some(register_delta_neutral_vol),
+        "EmaCross" => Some(register_ema_cross),
+        "GridMarketMaker" => Some(register_grid_market_maker),
+        "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn register_composite_market_maker(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<CompositeMarketMakerConfig>()?;
+    engine
+        .add_strategy(CompositeMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_delta_neutral_vol(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<DeltaNeutralVolConfig>()?;
+    engine
+        .add_strategy(DeltaNeutralVol::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_ema_cross(engine: &mut BacktestEngine, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<EmaCrossConfig>()?;
+    engine
+        .add_strategy(EmaCross::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_grid_market_maker(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<GridMarketMakerConfig>()?;
+    engine
+        .add_strategy(GridMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_hurst_vpin_directional(
+    engine: &mut BacktestEngine,
+    config: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    let config = config.extract::<HurstVpinDirectionalConfig>()?;
+    engine
+        .add_strategy(HurstVpinDirectional::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(all(test, feature = "examples"))]
+mod tests {
+    use pyo3::{Python, types::PyDict};
+    use rstest::rstest;
+
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    #[rstest]
+    #[case("CompositeMarketMaker")]
+    #[case("DeltaNeutralVol")]
+    #[case("EmaCross")]
+    #[case("GridMarketMaker")]
+    #[case("HurstVpinDirectional")]
+    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_strategy_register(type_name).is_some());
+    }
+
+    #[rstest]
+    fn test_native_strategy_register_rejects_unknown_name() {
+        assert!(super::native_strategy_register("UnknownStrategy").is_none());
+    }
+
+    #[rstest]
+    fn test_native_strategy_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        Python::attach(|py| {
+            let register = super::native_strategy_register("EmaCross").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut engine, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
     }
 }
 

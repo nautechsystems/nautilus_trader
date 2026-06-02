@@ -30,6 +30,17 @@ use nautilus_core::{
 use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
+#[cfg(feature = "examples")]
+use nautilus_testkit::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
+#[cfg(feature = "examples")]
+use nautilus_trading::examples::{
+    actors::{BookImbalanceActor, BookImbalanceActorConfig},
+    strategies::{
+        CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+        EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+        HurstVpinDirectionalConfig,
+    },
+};
 use nautilus_trading::{
     ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     python::strategy::{PyStrategy, PyStrategyInner},
@@ -42,8 +53,12 @@ use serde_json;
 
 use crate::{
     builder::LiveNodeBuilder,
-    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    config::{
+        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        PluginConfig,
+    },
     node::LiveNode,
+    python::config::coerce_json_config,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -484,70 +499,55 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Adds a native Rust strategy from its config.
-    ///
-    /// The config type determines which built-in strategy is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    ///
-    /// Custom native Rust strategies require the native strategy plugin API.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_strategy")]
-    fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_testkit::{ExecTester, ExecTesterConfig};
-        use nautilus_trading::examples::strategies::{
-            CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
-            DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
-            GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
+    /// Adds a Rust-native plug-in component from a cdylib.
+    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
+    fn py_add_plugin(
+        &mut self,
+        path: String,
+        type_name: String,
+        config: Option<HashMap<String, Py<PyAny>>>,
+        sha256: Option<String>,
+    ) -> PyResult<()> {
+        let config = PluginConfig {
+            path,
+            type_name,
+            config: match config {
+                Some(config) => coerce_json_config(config)?,
+                None => HashMap::new(),
+            },
+            sha256,
         };
 
-        if let Ok(config) = config.extract::<EmaCrossConfig>() {
-            self.add_strategy(EmaCross::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
-            self.add_strategy(GridMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
-            self.add_strategy(CompositeMarketMaker::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
-            self.add_strategy(DeltaNeutralVol::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
-            self.add_strategy(HurstVpinDirectional::new(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<ExecTesterConfig>() {
-            self.add_strategy(ExecTester::new(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native strategy config type: {type_name}",
-            )))
-        }
+        self.add_plugin(config).map_err(to_pyruntime_err)
     }
 
-    /// Adds a native Rust actor from its config.
+    /// Adds a compiled-in native Rust strategy from its type name and config.
     ///
-    /// The config type determines which built-in actor is constructed.
+    /// The type name determines which built-in strategy is constructed.
+    /// All execution happens in Rust; Python is the configuration layer.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_native_strategy")]
+    fn py_add_native_strategy(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = native_strategy_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
+        })?;
+        register(self, config)
+    }
+
+    /// Adds a compiled-in native Rust actor from its type name and config.
+    ///
+    /// The type name determines which built-in actor is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_actor")]
-    fn py_add_native_actor(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        use nautilus_testkit::{DataTester, DataTesterConfig};
-        use nautilus_trading::examples::actors::{BookImbalanceActor, BookImbalanceActorConfig};
-
-        if let Ok(config) = config.extract::<BookImbalanceActorConfig>() {
-            self.add_actor(BookImbalanceActor::from_config(config))
-                .map_err(to_pyruntime_err)
-        } else if let Ok(config) = config.extract::<DataTesterConfig>() {
-            self.add_actor(DataTester::new(config))
-                .map_err(to_pyruntime_err)
-        } else {
-            let type_name = config.get_type().name()?;
-            Err(to_pytype_err(format!(
-                "Unsupported native actor config type: {type_name}",
-            )))
-        }
+    fn py_add_native_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        let register = native_actor_register(type_name)
+            .ok_or_else(|| to_pytype_err(format!("Unsupported native actor type: {type_name}")))?;
+        register(self, config)
     }
 
     #[allow(
@@ -720,6 +720,90 @@ impl LiveNode {
             self.is_running()
         )
     }
+}
+
+#[cfg(feature = "examples")]
+type NativeStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+type NativeActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+
+#[cfg(feature = "examples")]
+fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+    match type_name {
+        "CompositeMarketMaker" => Some(register_composite_market_maker),
+        "DeltaNeutralVol" => Some(register_delta_neutral_vol),
+        "EmaCross" => Some(register_ema_cross),
+        "ExecTester" => Some(register_exec_tester),
+        "GridMarketMaker" => Some(register_grid_market_maker),
+        "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
+    match type_name {
+        "BookImbalanceActor" => Some(register_book_imbalance_actor),
+        "DataTester" => Some(register_data_tester),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn register_composite_market_maker(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<CompositeMarketMakerConfig>()?;
+    node.add_strategy(CompositeMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_delta_neutral_vol(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<DeltaNeutralVolConfig>()?;
+    node.add_strategy(DeltaNeutralVol::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_ema_cross(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<EmaCrossConfig>()?;
+    node.add_strategy(EmaCross::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_exec_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<ExecTesterConfig>()?;
+    node.add_strategy(ExecTester::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_grid_market_maker(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<GridMarketMakerConfig>()?;
+    node.add_strategy(GridMarketMaker::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_hurst_vpin_directional(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<HurstVpinDirectionalConfig>()?;
+    node.add_strategy(HurstVpinDirectional::new(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_book_imbalance_actor(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<BookImbalanceActorConfig>()?;
+    node.add_actor(BookImbalanceActor::from_config(config))
+        .map_err(to_pyruntime_err)
+}
+
+#[cfg(feature = "examples")]
+fn register_data_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    let config = config.extract::<DataTesterConfig>()?;
+    node.add_actor(DataTester::new(config))
+        .map_err(to_pyruntime_err)
 }
 
 /// Python wrapper for `LiveNodeBuilder` that uses interior mutability
@@ -1242,6 +1326,8 @@ mod tests {
         Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
+    #[cfg(feature = "examples")]
+    use rstest::rstest;
 
     use super::LiveNode;
     #[derive(Debug, Default)]
@@ -1500,6 +1586,73 @@ class HistoricalBarsStrategy(Strategy):
             .expect("historical_bar_count should extract");
 
         (on_start, on_historical_bars, historical_bar_count)
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    #[case("CompositeMarketMaker")]
+    #[case("DeltaNeutralVol")]
+    #[case("EmaCross")]
+    #[case("ExecTester")]
+    #[case("GridMarketMaker")]
+    #[case("HurstVpinDirectional")]
+    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_strategy_register(type_name).is_some());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    #[case("BookImbalanceActor")]
+    #[case("DataTester")]
+    fn test_native_actor_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::native_actor_register(type_name).is_some());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_register_rejects_unknown_names() {
+        assert!(super::native_strategy_register("UnknownStrategy").is_none());
+        assert!(super::native_actor_register("UnknownActor").is_none());
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_strategy_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        Python::attach(|py| {
+            let register = super::native_strategy_register("EmaCross").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut node, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
+    }
+
+    #[cfg(feature = "examples")]
+    #[rstest]
+    fn test_native_actor_register_rejects_mismatched_config() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        Python::attach(|py| {
+            let register = super::native_actor_register("DataTester").unwrap();
+            let config = PyDict::new(py);
+            let error = register(&mut node, config.as_any()).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+        });
     }
 
     #[tokio::test(flavor = "current_thread")]
