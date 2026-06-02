@@ -3809,15 +3809,16 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     assert_eq!(updated.trigger_price.unwrap(), Price::from("1481.00"));
 }
 
-// TODO: Engine `update_contingent_order` reads parent leaves_qty from a stale local
-// clone. Cache layer now exposes `order_mut` handles; refactor that helper to read
-// from the live handle so OUO/OCO leaves-qty decisions use post-event state.
 #[rstest]
-#[ignore]
-fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, account_id: AccountId) {
+#[case(ContingencyType::Oco)]
+#[case(ContingencyType::Ouo)]
+fn test_updating_of_contingent_orders(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] contingency_type: ContingencyType,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
-    // Create order matching engine which supports contingent orders
     let engine_config = OrderMatchingEngineConfig {
         support_contingent_orders: true,
         ..Default::default()
@@ -3843,8 +3844,6 @@ fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, accoun
         .process_order_book_delta(&orderbook_delta_sell)
         .unwrap();
 
-    // Create primary limit order and StopMarket OUO orders
-    // and link them together
     let client_order_id_primary = ClientOrderId::from("O-19700101-000000-001-001-1");
     let client_order_id_contingent = ClientOrderId::from("O-19700101-000000-001-001-2");
     let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
@@ -3853,7 +3852,7 @@ fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, accoun
         .price(Price::from("1495.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_primary)
-        .contingency_type(ContingencyType::Ouo)
+        .contingency_type(contingency_type)
         .linked_order_ids(vec![client_order_id_contingent])
         .submit(true)
         .build();
@@ -3864,11 +3863,10 @@ fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, accoun
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_contingent)
         .linked_order_ids(vec![client_order_id_primary])
-        .contingency_type(ContingencyType::Ouo)
+        .contingency_type(contingency_type)
         .submit(true)
         .build();
 
-    // Save orders to cache and process it by engine
     cache
         .borrow_mut()
         .add_order(primary_order.clone(), None, None, false)
@@ -3881,8 +3879,6 @@ fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, accoun
 
     engine_l2.process_order(&mut contingent_stop_market_order, account_id);
 
-    // Modify primary order quantity to 2.000 which will trigger the contingent order
-    // update of the same quantity
     let modify_order_command = ModifyOrder::new(
         TraderId::test_default(),
         Some(ClientId::from("CLIENT-001")),
@@ -3900,11 +3896,6 @@ fn test_updating_of_contingent_orders(instrument_eth_usdt: InstrumentAny, accoun
     );
     engine_l2.process_modify(&modify_order_command, account_id);
 
-    // Check that we have received following sequence of events
-    // 1. OrderAccepted for primary limit order
-    // 2. OrderAccepted for contingent stop market order
-    // 3. OrderUpdated for primary limit order with new quantity of 2.000
-    // 4. OrderUpdated for contingent stop market order with new quantity of 2.000
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     assert_eq!(saved_messages.len(), 4);
     let event1 = saved_messages.first().unwrap();
@@ -4380,18 +4371,18 @@ fn test_modify_partially_filled_order_quantity_below_filled_rejected(
     assert!(rejected.reason.contains("below filled quantity"));
 }
 
-// TODO: Engine `update_contingent_order` reads parent leaves_qty from a stale local
-// clone. Cache layer now exposes `order_mut` handles; refactor that helper to read
-// from the live handle so OUO/OCO leaves-qty decisions use post-event state.
 #[rstest]
-#[ignore]
-fn test_ouo_child_cancelled_when_parent_leaves_zero(
+#[case("0.600", None, Some("0.400"))]
+#[case("1.000", None, None)]
+#[case("0.600", Some("0.400"), None)]
+#[case("0.600", Some("0.600"), None)]
+fn test_ouo_sibling_adjusted_after_resolving_order_fill(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
+    #[case] fill_qty: &str,
+    #[case] sibling_filled_qty: Option<&str>,
+    #[case] expected_sibling_quantity: Option<&str>,
 ) {
-    // Tests that when parent order quantity is reduced to filled_qty (leaves=0),
-    // the OUO child order is cancelled
-
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
     let engine_config = OrderMatchingEngineConfig {
@@ -4406,13 +4397,81 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         None,
     );
 
-    // Add orderbook liquidity at different prices for partial fill
+    let client_order_id_resolving = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let client_order_id_sibling = ClientOrderId::from("O-19700101-000000-001-001-2");
+
+    let mut resolving_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_resolving)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![client_order_id_sibling])
+        .submit(true)
+        .build();
+
+    let mut sibling_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_sibling)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![client_order_id_resolving])
+        .submit(true)
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(resolving_order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(sibling_order.clone(), None, None, false)
+        .unwrap();
+
+    engine_l2.process_order(&mut resolving_order, account_id);
+    engine_l2.process_order(&mut sibling_order, account_id);
+
+    if let Some(sibling_filled_qty) = sibling_filled_qty {
+        let sibling_order = cache
+            .borrow()
+            .order(&client_order_id_sibling)
+            .map(|order| order.clone())
+            .unwrap();
+        let sibling_filled = build_order_filled(
+            sibling_order.trader_id(),
+            sibling_order.strategy_id(),
+            sibling_order.instrument_id(),
+            sibling_order.client_order_id(),
+            sibling_order.venue_order_id().unwrap(),
+            sibling_order.account_id().unwrap(),
+            TradeId::from("T-SIBLING-001"),
+            sibling_order.order_side(),
+            sibling_order.order_type(),
+            Quantity::from(sibling_filled_qty),
+            sibling_order.price().unwrap(),
+            instrument_eth_usdt.quote_currency(),
+            LiquiditySide::Maker,
+            None,
+            None,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(sibling_filled))
+            .unwrap();
+    }
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let fill_qty = Quantity::from(fill_qty);
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
         .book_order(BookOrder::new(
             OrderSide::Sell,
             Price::from("1500.00"),
-            Quantity::from("0.600"), // Partial liquidity
+            fill_qty,
             1,
         ))
         .build();
@@ -4420,7 +4479,73 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         .process_order_book_delta(&orderbook_delta_sell)
         .unwrap();
 
-    // Add bid liquidity far below to not interfere with stop orders
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 2, "events: {saved_messages:?}");
+
+    let fill = match saved_messages.first().unwrap() {
+        OrderEventAny::Filled(filled) => filled,
+        event => panic!("Expected OrderFilled event, was {event:?}"),
+    };
+    assert_eq!(fill.client_order_id, client_order_id_resolving);
+    assert_eq!(fill.last_qty, fill_qty);
+
+    match expected_sibling_quantity {
+        Some(quantity) => {
+            let updated = match saved_messages.get(1).unwrap() {
+                OrderEventAny::Updated(updated) => updated,
+                event => panic!("Expected OrderUpdated event, was {event:?}"),
+            };
+            assert_eq!(updated.client_order_id, client_order_id_sibling);
+            assert_eq!(updated.quantity, Quantity::from(quantity));
+        }
+        None => {
+            let canceled = match saved_messages.get(1).unwrap() {
+                OrderEventAny::Canceled(canceled) => canceled,
+                event => panic!("Expected OrderCanceled event, was {event:?}"),
+            };
+            assert_eq!(canceled.client_order_id, client_order_id_sibling);
+        }
+    }
+}
+
+#[rstest]
+#[case("0.600", None, None, true)]
+#[case("1.000", Some("1495.00"), Some("0.400"), false)]
+fn test_ouo_child_cancelled_after_parent_modify(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] modify_quantity: &str,
+    #[case] modify_price: Option<&str>,
+    #[case] contingent_filled_qty: Option<&str>,
+    #[case] expect_primary_cancel: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let engine_config = OrderMatchingEngineConfig {
+        support_contingent_orders: true,
+        ..Default::default()
+    };
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.600"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
     let orderbook_delta_buy = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
         .book_order(BookOrder::new(
@@ -4434,14 +4559,13 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         .process_order_book_delta(&orderbook_delta_buy)
         .unwrap();
 
-    // Create primary limit order (will be partially filled) and OUO stop order
     let client_order_id_primary = ClientOrderId::from("O-19700101-000000-001-001-1");
     let client_order_id_contingent = ClientOrderId::from("O-19700101-000000-001-001-2");
 
     let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .price(Price::from("1500.00")) // Will match and partially fill
+        .price(Price::from("1500.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_primary)
         .contingency_type(ContingencyType::Ouo)
@@ -4453,7 +4577,7 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
     let mut contingent_stop_order = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
-        .trigger_price(Price::from("1380.00")) // Well below current bid
+        .trigger_price(Price::from("1380.00"))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_contingent)
         .linked_order_ids(vec![client_order_id_primary])
@@ -4461,7 +4585,6 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         .submit(true)
         .build();
 
-    // Save orders to cache
     cache
         .borrow_mut()
         .add_order(primary_order.clone(), None, None, false)
@@ -4471,16 +4594,40 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         .add_order(contingent_stop_order.clone(), None, None, false)
         .unwrap();
 
-    // Process orders - primary will be partially filled (0.6 of 1.0)
     engine_l2.process_order(&mut primary_order, account_id);
     engine_l2.process_order(&mut contingent_stop_order, account_id);
 
-    // Clear messages before modify
+    if let Some(contingent_filled_qty) = contingent_filled_qty {
+        let contingent_stop_order = cache
+            .borrow()
+            .order(&client_order_id_contingent)
+            .map(|order| order.clone())
+            .unwrap();
+        let contingent_filled = build_order_filled(
+            contingent_stop_order.trader_id(),
+            contingent_stop_order.strategy_id(),
+            contingent_stop_order.instrument_id(),
+            contingent_stop_order.client_order_id(),
+            contingent_stop_order.venue_order_id().unwrap(),
+            contingent_stop_order.account_id().unwrap(),
+            TradeId::from("T-CONTINGENT-001"),
+            contingent_stop_order.order_side(),
+            contingent_stop_order.order_type(),
+            Quantity::from(contingent_filled_qty),
+            contingent_stop_order.trigger_price().unwrap(),
+            instrument_eth_usdt.quote_currency(),
+            LiquiditySide::Maker,
+            None,
+            None,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(contingent_filled))
+            .unwrap();
+    }
+
     clear_order_event_handler_messages(&order_event_handler);
 
-    // Modify primary order quantity to exactly filled_qty (0.6)
-    // This makes leaves_qty = 0.6 - 0.6 = 0
-    // Contingent should be cancelled because parent has no remaining quantity
     let modify_order_command = ModifyOrder::new(
         TraderId::test_default(),
         Some(ClientId::from("CLIENT-001")),
@@ -4488,8 +4635,8 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         instrument_eth_usdt.id(),
         client_order_id_primary,
         Some(VenueOrderId::from("V1")),
-        Some(Quantity::from("0.600")),
-        None,
+        Some(Quantity::from(modify_quantity)),
+        modify_price.map(Price::from),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -4498,12 +4645,13 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
     );
     engine_l2.process_modify(&modify_order_command, account_id);
 
-    // Expected events:
-    // 1. OrderUpdated for primary (quantity=0.600, matching filled_qty)
-    // 2. OrderCanceled for contingent (parent leaves_qty is now 0)
-    // 3. OrderCanceled for primary (fully filled after update, leaves_qty=0)
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
-    assert_eq!(saved_messages.len(), 3);
+    let expected_message_count = if expect_primary_cancel { 3 } else { 2 };
+    assert_eq!(
+        saved_messages.len(),
+        expected_message_count,
+        "events: {saved_messages:?}",
+    );
 
     let event1 = saved_messages.first().unwrap();
     let updated_primary = match event1 {
@@ -4511,9 +4659,8 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
         _ => panic!("Expected OrderUpdated event for primary"),
     };
     assert_eq!(updated_primary.client_order_id, client_order_id_primary);
-    assert_eq!(updated_primary.quantity, Quantity::from("0.600"));
+    assert_eq!(updated_primary.quantity, Quantity::from(modify_quantity));
 
-    // Contingent should be cancelled since parent leaves_qty is now 0
     let event2 = saved_messages.get(1).unwrap();
     let cancelled_child = match event2 {
         OrderEventAny::Canceled(cancelled) => cancelled,
@@ -4521,13 +4668,14 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
     };
     assert_eq!(cancelled_child.client_order_id, client_order_id_contingent);
 
-    // Primary is also cancelled since it has leaves_qty = 0
-    let event3 = saved_messages.get(2).unwrap();
-    let cancelled_primary = match event3 {
-        OrderEventAny::Canceled(cancelled) => cancelled,
-        _ => panic!("Expected OrderCanceled event for primary, was {event3:?}"),
-    };
-    assert_eq!(cancelled_primary.client_order_id, client_order_id_primary);
+    if expect_primary_cancel {
+        let event3 = saved_messages.get(2).unwrap();
+        let cancelled_primary = match event3 {
+            OrderEventAny::Canceled(cancelled) => cancelled,
+            _ => panic!("Expected OrderCanceled event for primary, was {event3:?}"),
+        };
+        assert_eq!(cancelled_primary.client_order_id, client_order_id_primary);
+    }
 }
 
 #[rstest]

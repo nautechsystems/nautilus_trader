@@ -607,6 +607,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_reduces_cached_primary_after_first_child_spawn() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("30"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        let (primary, spawned) = {
+            let cache = algo.core.cache();
+            let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
+            let spawned = cache
+                .order(&ClientOrderId::from("O-001-E1"))
+                .map(|o| o.clone())
+                .unwrap();
+            (primary, spawned)
+        };
+
+        assert_eq!(primary.quantity(), Quantity::from("0.6"));
+        assert_eq!(spawned.quantity(), Quantity::from("0.6"));
+        assert_eq!(spawned.exec_spawn_id(), Some(primary_id));
+    }
+
+    #[rstest]
     fn test_twap_calculates_size_schedule_with_remainder() {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);

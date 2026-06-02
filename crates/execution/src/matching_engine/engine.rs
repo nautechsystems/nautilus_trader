@@ -4711,10 +4711,13 @@ impl OrderMatchingEngine {
             liquidity_side,
         );
 
-        let fully_filled = self
+        let post_fill_filled_qty = self
             .cached_filled_qty
             .get(&order.client_order_id())
-            .is_some_and(|qty| qty >= &order.quantity());
+            .copied()
+            .unwrap_or(order.filled_qty());
+        let post_fill_leaves_qty = order.quantity().saturating_sub(post_fill_filled_qty);
+        let fully_filled = post_fill_leaves_qty.is_zero();
 
         if order.is_closed() || fully_filled {
             if self.core.order_exists(order.client_order_id()) {
@@ -4820,16 +4823,26 @@ impl OrderMatchingEngine {
                                 continue;
                             }
 
-                            if order.is_closed() && child_order.is_open() {
+                            let child_filled_qty = self
+                                .cached_filled_qty
+                                .get(&child_order.client_order_id())
+                                .copied()
+                                .unwrap_or(child_order.filled_qty());
+
+                            if post_fill_leaves_qty.is_zero() && child_order.is_open() {
                                 self.cancel_order(&child_order, None);
-                            } else if !order.leaves_qty().is_zero()
-                                && order.leaves_qty() != child_order.leaves_qty()
+                            } else if child_order.is_open()
+                                && child_filled_qty >= post_fill_leaves_qty
+                            {
+                                self.cancel_order(&child_order, Some(false));
+                            } else if !post_fill_leaves_qty.is_zero()
+                                && post_fill_leaves_qty != child_order.leaves_qty()
                             {
                                 let price = child_order.price();
                                 let trigger_price = child_order.trigger_price();
                                 self.update_order(
                                     &mut child_order,
-                                    Some(order.leaves_qty()),
+                                    Some(post_fill_leaves_qty),
                                     price,
                                     trigger_price,
                                     Some(false),
@@ -5422,7 +5435,7 @@ impl OrderMatchingEngine {
                     .is_some_and(|c| c != ContingencyType::NoContingency)
                 && update_contingencies
             {
-                self.update_contingent_order(order);
+                self.update_contingent_order(order, quantity);
             }
             // Pass false since we already handled contingents above
             self.cancel_order(order, Some(false));
@@ -5435,7 +5448,7 @@ impl OrderMatchingEngine {
                 .is_some_and(|c| c != ContingencyType::NoContingency)
             && update_contingencies
         {
-            self.update_contingent_order(order);
+            self.update_contingent_order(order, quantity);
         }
 
         true
@@ -5604,15 +5617,19 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn update_contingent_order(&mut self, order: &OrderAny) {
-        log::debug!("Updating OUO orders from {}", order.client_order_id());
+    fn update_contingent_order(&mut self, order: &OrderAny, parent_quantity: Quantity) {
+        log::debug!(
+            "Updating contingent orders from {}",
+            order.client_order_id()
+        );
+
         if let Some(linked_order_ids) = order.linked_order_ids() {
             let parent_filled_qty = self
                 .cached_filled_qty
                 .get(&order.client_order_id())
                 .copied()
                 .unwrap_or(order.filled_qty());
-            let parent_leaves_qty = order.quantity().saturating_sub(parent_filled_qty);
+            let parent_leaves_qty = parent_quantity.saturating_sub(parent_filled_qty);
 
             for client_order_id in linked_order_ids {
                 let mut child_order = match self.cache.borrow().order(client_order_id) {
