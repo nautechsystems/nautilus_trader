@@ -223,13 +223,43 @@ separate signing path, and reconciliation treats spot instruments like other ins
 classes except for the reduce-only guard described below.
 
 The adapter supports ordinary `private/order` requests: `LIMIT` and `MARKET` orders with
-`GTC`, `IOC`, or `FOK` time-in-force values. It does not encode trigger, algo, or TWAP order
-fields yet. Unsupported Nautilus order types are rejected before
-signing, so they cannot fill at the venue.
+`GTC`, `IOC`, or `FOK` time-in-force values. It also supports Derive trigger orders for the
+Nautilus-native stop and if-touched order types listed below. Unsupported Nautilus order
+types are rejected before signing, so they cannot fill at the venue.
 
 Market orders require a cached quote before submission. After the async submit task resolves the
 instrument, it refreshes the current ticker snapshot and derives the signed slippage-bound
 `limit_price` from that refreshed quote.
+
+#### Conditional orders
+
+Derive trigger orders use the WebSocket-only `private/trigger_order` endpoint, not the normal
+`private/order` endpoint. The venue stores them with `order_status=untriggered` until its
+trigger worker submits the signed child order. Reconciliation therefore reads both
+`private/get_open_orders` and `private/get_trigger_orders`.
+
+Derive mainnet requires trigger-order signatures to expire 30 to 90 days from venue time. The
+adapter signs trigger orders with a fixed 31-day expiry; `signature_expiry_secs` still controls
+ordinary `private/order` and `private/replace` writes.
+
+| Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                         |
+|---------------------|-----------|---------------------|-----------------------|-------------------------------|
+| `StopMarket`        | ✓         | `market`            | `stoploss`            | Uses trigger price as bound.  |
+| `StopLimit`         | ✓         | `limit`             | `stoploss`            | Sends limit and trigger price. |
+| `MarketIfTouched`   | ✓         | `market`            | `takeprofit`          | Uses trigger price as bound.  |
+| `LimitIfTouched`    | ✓         | `limit`             | `takeprofit`          | Sends limit and trigger price. |
+| `MarketToLimit`     | -         | -                   | -                     | *Not supported by Derive*.    |
+| Trailing stops      | -         | -                   | -                     | *Not supported by Derive*.    |
+| TWAP / algo / RFQ   | -         | -                   | -                     | *Not exposed by this adapter*. |
+
+The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to Derive
+`trigger_price_type=mark`. Derive's current error-code reference states that index and
+last-trade trigger price types are not supported yet, so `IndexPrice`, `LastPrice`, `BidAsk`,
+and other trigger price types are rejected locally before signing.
+
+Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter
+therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
+event; cancel and resubmit for trigger updates.
 
 #### Execution instructions
 
@@ -379,7 +409,7 @@ Class/struct: `DeriveExecClientConfig`.
 | `domain_separator`          | `None`    | Optional EIP-712 domain separator override. |
 | `action_typehash`           | `None`    | Optional EIP-712 action typehash override. |
 | `trade_module_address`      | `None`    | Optional Trade module contract address override. |
-| `signature_expiry_secs`     | `600`     | Signature expiry TTL; Derive requires at least five minutes. |
+| `signature_expiry_secs`     | `600`     | Signature expiry TTL for ordinary orders; trigger orders use a fixed 31-day TTL. |
 | `market_order_slippage_bps` | `50`      | Slippage bound for market‑order limit prices. |
 | `transport_backend`         | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
 

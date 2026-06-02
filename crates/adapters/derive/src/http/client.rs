@@ -58,7 +58,7 @@ use crate::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
             DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams, DeriveGetOrderParams,
             DeriveGetPositionsParams, DeriveGetSubaccountParams, DeriveGetTradeHistoryParams,
-            DeriveOrderParams, DeriveReplaceParams,
+            DeriveGetTriggerOrdersParams, DeriveOrderParams, DeriveReplaceParams,
         },
     },
     signing::auth::{AuthHeaders, build_rest_auth_headers},
@@ -540,6 +540,20 @@ impl DeriveHttpClient {
         params: &DeriveGetOpenOrdersParams,
     ) -> Result<DeriveOpenOrdersResult> {
         self.send_private("private/get_open_orders", params).await
+    }
+
+    /// Returns currently untriggered trigger orders for the subaccount.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
+    /// were installed; otherwise propagates transport and venue errors.
+    pub async fn get_trigger_orders(
+        &self,
+        params: &DeriveGetTriggerOrdersParams,
+    ) -> Result<DeriveOpenOrdersResult> {
+        self.send_private("private/get_trigger_orders", params)
+            .await
     }
 
     /// Returns a single order by venue order id.

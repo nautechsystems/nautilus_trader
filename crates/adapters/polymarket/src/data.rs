@@ -2761,13 +2761,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::consts::POLYMARKET_CLIENT_ID,
-        common::enums::PolymarketOrderSide,
+        common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketOrderSide},
         config::PolymarketDataClientConfig,
         http::{clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient},
         websocket::{
-            client::PolymarketWebSocketClient,
-            client::WsSubscriptionHandle,
+            client::{PolymarketWebSocketClient, WsSubscriptionHandle},
             handler::HandlerCommand,
             messages::{
                 MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot,

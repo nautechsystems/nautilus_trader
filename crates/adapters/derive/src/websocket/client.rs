@@ -34,6 +34,7 @@ use alloy::signers::local::PrivateKeySigner;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
+use nautilus_core::UUID4;
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
@@ -65,9 +66,14 @@ use crate::{
         urls,
     },
     http::{
-        models::{DeriveEmptyResult, DeriveOrder, DeriveOrderResult, DeriveReplaceResult},
+        models::{
+            DeriveEmptyResult, DeriveOpenOrdersResult, DeriveOrder, DeriveOrderResult,
+            DeriveReplaceResult,
+        },
         query::{
-            DeriveCancelAllParams, DeriveCancelParams, DeriveOrderParams, DeriveReplaceParams,
+            DeriveCancelAllParams, DeriveCancelParams, DeriveCancelTriggerOrderParams,
+            DeriveGetTriggerOrdersParams, DeriveOrderParams, DeriveReplaceParams,
+            DeriveTriggerOrderParams,
         },
     },
     signing::auth::build_ws_login,
@@ -129,6 +135,7 @@ pub struct DeriveWebSocketClient {
     subscriptions: Arc<DashMap<String, ()>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     request_timeout: Duration,
+    conn_id: Arc<ArcSwap<String>>,
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -151,6 +158,7 @@ pub struct DeriveWebSocketSubscriptionHandle {
 pub struct DeriveWsExecutionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     request_timeout: Duration,
+    conn_id: Arc<ArcSwap<String>>,
 }
 
 impl DeriveWebSocketClient {
@@ -206,6 +214,7 @@ impl DeriveWebSocketClient {
             subscriptions: Arc::new(DashMap::new()),
             task_handle: None,
             request_timeout: WS_REQUEST_TIMEOUT,
+            conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
         }
     }
 
@@ -283,6 +292,7 @@ impl DeriveWebSocketClient {
 
         *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
+        self.conn_id.store(Arc::new(UUID4::new().to_string()));
 
         self.connection_mode.store(client.connection_mode_atomic());
         log::info!("Derive WebSocket connected: {}", self.url);
@@ -298,6 +308,7 @@ impl DeriveWebSocketClient {
         let next_id = Arc::clone(&self.next_id);
         let credentials = self.credentials.clone();
         let subscriptions = Arc::clone(&self.subscriptions);
+        let conn_id = Arc::clone(&self.conn_id);
         let cmd_tx_for_loop = cmd_tx.clone();
         let request_timeout = self.request_timeout;
 
@@ -309,10 +320,13 @@ impl DeriveWebSocketClient {
                 match handler.next().await {
                     Some(DeriveWsMessage::Reconnected) => {
                         log::info!("Derive WebSocket re-establishing session after reconnect");
+                        conn_id.store(Arc::new(UUID4::new().to_string()));
+
                         if out_tx.send(DeriveWsMessage::Reconnected).is_err() {
                             log::debug!("Derive outer receiver dropped, exiting stream loop");
                             break;
                         }
+
                         // Spawn so the loop keeps draining messages while
                         // re-login + resubscribe are in flight.
                         let cmd_tx_async = cmd_tx_for_loop.clone();
@@ -587,6 +601,7 @@ impl DeriveWebSocketClient {
         DeriveWsExecutionHandle {
             cmd_tx: Arc::clone(&self.cmd_tx),
             request_timeout: self.request_timeout,
+            conn_id: Arc::clone(&self.conn_id),
         }
     }
 
@@ -775,6 +790,12 @@ impl DeriveWebSocketSubscriptionHandle {
 }
 
 impl DeriveWsExecutionHandle {
+    /// Returns the current WebSocket connection id used by trigger orders.
+    #[must_use]
+    pub fn conn_id(&self) -> String {
+        self.conn_id.load_full().as_ref().clone()
+    }
+
     /// Submits a signed order via `private/order`.
     ///
     /// `params` must be the fully-built signed body from
@@ -791,6 +812,28 @@ impl DeriveWsExecutionHandle {
         let result: DeriveOrderResult = send_request_typed(
             &cmd_tx,
             methods::PRIVATE_ORDER,
+            params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(result.order)
+    }
+
+    /// Submits a signed trigger order via `private/trigger_order`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn submit_trigger_order(
+        &self,
+        params: &DeriveTriggerOrderParams,
+    ) -> Result<DeriveOrder> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let result: DeriveOrderResult = send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_TRIGGER_ORDER,
             params,
             self.request_timeout,
         )
@@ -836,6 +879,49 @@ impl DeriveWsExecutionHandle {
         )
         .await?;
         Ok(())
+    }
+
+    /// Cancels a single trigger order via `private/cancel_trigger_order`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn cancel_trigger_order(
+        &self,
+        params: &DeriveCancelTriggerOrderParams,
+    ) -> Result<DeriveOrder> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_CANCEL_TRIGGER_ORDER,
+            params,
+            self.request_timeout,
+        )
+        .await
+    }
+
+    /// Returns currently untriggered trigger orders via
+    /// `private/get_trigger_orders`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn get_trigger_orders(
+        &self,
+        params: &DeriveGetTriggerOrdersParams,
+    ) -> Result<DeriveOpenOrdersResult> {
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        send_request_typed(
+            &cmd_tx,
+            methods::PRIVATE_GET_TRIGGER_ORDERS,
+            params,
+            self.request_timeout,
+        )
+        .await
     }
 
     /// Cancels every open order on the subaccount (the venue's

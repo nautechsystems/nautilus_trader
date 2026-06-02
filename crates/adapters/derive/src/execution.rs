@@ -68,7 +68,9 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS, DERIVE_VENUE},
+        consts::{
+            DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS, DERIVE_VENUE, TRIGGER_ORDER_SIGNATURE_TTL,
+        },
         credential::DeriveCredential,
         enums::{DeriveInstrumentType, DeriveOrderSide},
         parse::{derive_rejection_due_post_only, format_instrument_id, format_venue_symbol},
@@ -83,10 +85,11 @@ use crate::{
             parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
         },
         query::{
-            DeriveCancelAllParams, DeriveCancelParams, DeriveGetOpenOrdersParams,
-            DeriveGetOrderHistoryParams, DeriveGetOrderParams, DeriveGetPositionsParams,
-            DeriveGetSubaccountParams, DeriveGetTradeHistoryParams,
-            order_replace_to_derive_payload, order_to_derive_payload,
+            DeriveCancelAllParams, DeriveCancelParams, DeriveCancelTriggerOrderParams,
+            DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams, DeriveGetOrderParams,
+            DeriveGetPositionsParams, DeriveGetSubaccountParams, DeriveGetTradeHistoryParams,
+            DeriveGetTriggerOrdersParams, order_replace_to_derive_payload, order_to_derive_payload,
+            trigger_order_to_derive_payload,
         },
     },
     signing::{
@@ -567,19 +570,36 @@ impl ExecutionClient for DeriveExecutionClient {
 
         let subaccount_id = self.credential.subaccount_id();
         let order = if let Some(venue_order_id) = cmd.venue_order_id {
-            Some(
-                self.http_client
-                    .get_order(&DeriveGetOrderParams::new(
-                        subaccount_id,
-                        venue_order_id.as_str(),
-                    ))
-                    .await?,
-            )
+            match self
+                .http_client
+                .get_order(&DeriveGetOrderParams::new(
+                    subaccount_id,
+                    venue_order_id.as_str(),
+                ))
+                .await
+            {
+                Ok(order) => Some(order),
+                Err(e) => {
+                    let trigger_orders = self
+                        .http_client
+                        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                        .await?
+                        .orders;
+
+                    match trigger_orders
+                        .into_iter()
+                        .find(|o| o.order_id.as_str() == venue_order_id.as_str())
+                    {
+                        Some(order) => Some(order),
+                        None => return Err(e.into()),
+                    }
+                }
+            }
         } else {
             // Derive has no by-label lookup endpoint; scan open orders first,
-            // then fall through to paginated private/get_order_history so
-            // terminal orders (filled, canceled, rejected, expired) still
-            // resolve for reconcilers that only carry the client_order_id.
+            // then trigger orders, then fall through to paginated history so
+            // terminal orders resolve for reconcilers that only carry the
+            // client_order_id.
             let label = cmd.client_order_id.expect("guarded above");
             let open_orders = self
                 .http_client
@@ -589,6 +609,17 @@ impl ExecutionClient for DeriveExecutionClient {
             let mut found = open_orders
                 .into_iter()
                 .find(|o| o.label.as_str() == label.as_str());
+
+            if found.is_none() {
+                let trigger_orders = self
+                    .http_client
+                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                    .await?
+                    .orders;
+                found = trigger_orders
+                    .into_iter()
+                    .find(|o| o.label.as_str() == label.as_str());
+            }
 
             if found.is_none() {
                 let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
@@ -660,15 +691,24 @@ impl ExecutionClient for DeriveExecutionClient {
         let subaccount_id = self.credential.subaccount_id();
         let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
 
-        // open_only routes to private/get_open_orders regardless of window;
-        // the venue endpoint has no time bound but the caller's start/end
-        // is applied below. For full history we walk private/get_order_history
-        // pages, scoped to the optional window.
+        // open_only routes to private/get_open_orders and
+        // private/get_trigger_orders regardless of window; the venue
+        // endpoints have no time bound but the caller's start/end is applied
+        // below. For full history we walk private/get_order_history pages,
+        // scoped to the optional window.
         let orders: Vec<DeriveOrder> = if cmd.open_only {
-            self.http_client
+            let mut orders = self
+                .http_client
                 .get_open_orders(&DeriveGetOpenOrdersParams::new(subaccount_id))
                 .await?
-                .orders
+                .orders;
+            orders.extend(
+                self.http_client
+                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                    .await?
+                    .orders,
+            );
+            orders
         } else {
             let start_ms = cmd.start.map(|t| t.as_millis() as i64);
             let end_ms = cmd.end.map(|t| t.as_millis() as i64);
@@ -958,6 +998,7 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         // Keep the existing OrderDenied path here, then refresh before signing
+        let is_trigger_order = is_derive_trigger_order_type(order.order_type());
         let market_quote = if order.order_type() == OrderType::Market {
             match self.core.cache().quote(&cmd.instrument_id) {
                 Some(_) => Some(()),
@@ -986,18 +1027,18 @@ impl ExecutionClient for DeriveExecutionClient {
         let instruments = self.instruments.clone();
         let instrument_id = cmd.instrument_id;
         let order_for_task = order.clone();
+        let account_id = self.core.account_id;
 
         // Capture identity so the WS dispatch can route subsequent updates
         // for this order to proper events rather than execution reports.
-        self.dispatch_state.register_identity(
-            order.client_order_id(),
-            OrderIdentity {
-                instrument_id: order.instrument_id(),
-                strategy_id: order.strategy_id(),
-                order_side: order.order_side(),
-                order_type: order.order_type(),
-            },
-        );
+        let identity = OrderIdentity {
+            instrument_id: order.instrument_id(),
+            strategy_id: order.strategy_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+        };
+        self.dispatch_state
+            .register_identity(order.client_order_id(), identity);
 
         self.emitter.emit_order_submitted(&order);
 
@@ -1089,6 +1130,45 @@ impl ExecutionClient for DeriveExecutionClient {
                         return Ok(());
                     }
                 }
+            } else if matches!(
+                order_for_task.order_type(),
+                OrderType::StopMarket | OrderType::MarketIfTouched
+            ) {
+                let trigger_price = match order_for_task.trigger_price() {
+                    Some(price) => price.as_decimal(),
+                    None => {
+                        let reason = format!(
+                            "trigger market order {} is missing trigger_price",
+                            order_for_task.client_order_id(),
+                        );
+                        log::warn!("{reason}");
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(&order_for_task, &reason, ts, false);
+                        return Ok(());
+                    }
+                };
+
+                match trigger_market_limit_price(
+                    trigger_price,
+                    order_for_task.order_side(),
+                    slippage_bps,
+                    instrument.tick_size,
+                ) {
+                    Some(p) => Some(p),
+                    None => {
+                        let reason = format!(
+                            "trigger market-order slippage bound is non-positive for {} ({} bps)",
+                            order_for_task.client_order_id(),
+                            slippage_bps,
+                        );
+                        log::warn!("{reason}");
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(&order_for_task, &reason, ts, false);
+                        return Ok(());
+                    }
+                }
             } else {
                 None
             };
@@ -1096,6 +1176,104 @@ impl ExecutionClient for DeriveExecutionClient {
             let nonce = nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)?;
             let expiry =
                 (clock.get_time_ns().as_u64() / 1_000_000_000) as i64 + signing.signature_expiry_secs as i64;
+
+            if is_trigger_order {
+                let expiry = trigger_order_signature_expiry(clock);
+                let payload = match trigger_order_to_derive_payload(
+                    &order_for_task,
+                    &instrument,
+                    signing.subaccount_id,
+                    signing.wallet_address,
+                    &signing.signer,
+                    nonce,
+                    expiry,
+                    signing.trade_module_address,
+                    signing.domain_separator,
+                    signing.action_typehash,
+                    signing.max_fee_per_contract,
+                    explicit_price,
+                    ws_exec.conn_id(),
+                    UUID4::new().to_string(),
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::warn!(
+                            "Trigger order encode failed for {}: {e}",
+                            order_for_task.client_order_id()
+                        );
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(
+                            &order_for_task,
+                            &format!("order encoding failed: {e}"),
+                            ts,
+                            false,
+                        );
+                        return Ok(());
+                    }
+                };
+
+                log::debug!(
+                    "Derive trigger submit payload client_order_id={} instrument_name={} direction={} order_type={} time_in_force={} amount={} limit_price={} trigger_price={:?} trigger_price_type={:?} trigger_type={:?}",
+                    order_for_task.client_order_id(),
+                    payload.order.instrument_name.as_str(),
+                    payload.order.direction,
+                    payload.order.order_type,
+                    payload.order.time_in_force,
+                    payload.order.amount,
+                    payload.order.limit_price,
+                    payload.order.trigger_price,
+                    payload.order.trigger_price_type,
+                    payload.order.trigger_type,
+                );
+
+                match ws_exec.submit_trigger_order(&payload).await {
+                    Ok(order) => {
+                        let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+                        dispatch_state.record_venue_order_id(
+                            order_for_task.client_order_id(),
+                            venue_order_id,
+                        );
+                        let ts_now = clock.get_time_ns();
+                        ensure_accepted_emitted(
+                            &emitter,
+                            &dispatch_state,
+                            order_for_task.client_order_id(),
+                            identity,
+                            venue_order_id,
+                            account_id,
+                            ts_now,
+                            ts_now,
+                        );
+                        log::debug!(
+                            "Trigger order submitted: client_order_id={} venue_order_id={venue_order_id}",
+                            order_for_task.client_order_id(),
+                        );
+                    }
+                    Err(e) if is_write_outcome_ambiguous_ws(&e) => {
+                        log::warn!(
+                            "Derive trigger submit for {} returned ambiguous WS outcome: {e}; awaiting reconciliation",
+                            order_for_task.client_order_id(),
+                        );
+                    }
+                    Err(e) => {
+                        let (reason, due_post_only) = ws_rejection_reason(&e);
+                        log::debug!(
+                            "Derive rejected trigger order {}: {reason}",
+                            order_for_task.client_order_id(),
+                        );
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(
+                            &order_for_task,
+                            &reason,
+                            ts,
+                            due_post_only,
+                        );
+                    }
+                }
+                return Ok(());
+            }
 
             let payload = match order_to_derive_payload(
                 &order_for_task,
@@ -1206,10 +1384,32 @@ impl ExecutionClient for DeriveExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let stale_venue_order_id = venue_order_id;
+        let is_trigger_order = self
+            .core
+            .cache()
+            .order(&client_order_id)
+            .is_some_and(|order| is_derive_trigger_order_type(order.order_type()));
 
         self.spawn_task("cancel_order", async move {
-            let params = DeriveCancelParams::new(subaccount_id, venue_symbol.as_str(), voi.as_str());
-            match ws_exec.cancel_order(&params).await {
+            let outcome = if is_trigger_order {
+                ws_exec
+                    .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
+                        subaccount_id,
+                        voi.as_str(),
+                    ))
+                    .await
+                    .map(|_| ())
+            } else {
+                ws_exec
+                    .cancel_order(&DeriveCancelParams::new(
+                        subaccount_id,
+                        venue_symbol.as_str(),
+                        voi.as_str(),
+                    ))
+                    .await
+            };
+
+            match outcome {
                 Ok(()) => {}
                 // See docs/integrations/derive.md "Order rejection semantics".
                 Err(e) if is_write_outcome_ambiguous_ws(&e) => {
@@ -1250,8 +1450,8 @@ impl ExecutionClient for DeriveExecutionClient {
             // over the WebSocket. Calling `cancel_all` directly would drop both
             // sides and violate the command's filter.
             if matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
-                let params = DeriveGetOpenOrdersParams::new(subaccount_id);
-                let result = match http_client.get_open_orders(&params).await {
+                let open_params = DeriveGetOpenOrdersParams::new(subaccount_id);
+                let mut orders = match http_client.get_open_orders(&open_params).await {
                     Ok(v) => v,
                     Err(e) => {
                         log::warn!(
@@ -1259,9 +1459,22 @@ impl ExecutionClient for DeriveExecutionClient {
                         );
                         return Ok(());
                     }
-                };
+                }
+                .orders;
 
-                for order in result.orders {
+                match http_client
+                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                    .await
+                {
+                    Ok(result) => orders.extend(result.orders),
+                    Err(e) => {
+                        log::warn!(
+                            "Derive cancel_all_orders: failed to list trigger orders for side filter {side_filter:?}: {e}",
+                        );
+                    }
+                }
+
+                for order in orders {
                     if order.instrument_name.as_str() != venue_symbol {
                         continue;
                     }
@@ -1274,14 +1487,25 @@ impl ExecutionClient for DeriveExecutionClient {
                         continue;
                     }
 
-                    if let Err(e) = ws_exec
-                        .cancel_order(&DeriveCancelParams::new(
-                            subaccount_id,
-                            venue_symbol.as_str(),
-                            order.order_id.as_str(),
-                        ))
-                        .await
-                    {
+                    let outcome = if order.trigger_type.is_some() {
+                        ws_exec
+                            .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
+                                subaccount_id,
+                                order.order_id.as_str(),
+                            ))
+                            .await
+                            .map(|_| ())
+                    } else {
+                        ws_exec
+                            .cancel_order(&DeriveCancelParams::new(
+                                subaccount_id,
+                                venue_symbol.as_str(),
+                                order.order_id.as_str(),
+                            ))
+                            .await
+                    };
+
+                    if let Err(e) = outcome {
                         log::warn!(
                             "Derive cancel_all_orders: cancel for {} failed: {e}",
                             order.order_id,
@@ -1296,6 +1520,40 @@ impl ExecutionClient for DeriveExecutionClient {
                 .await
             {
                 log::warn!("Derive cancel_all_orders failed for {venue_symbol}: {e}");
+            }
+
+            if !matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
+                let trigger_orders = match http_client
+                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                    .await
+                {
+                    Ok(result) => result.orders,
+                    Err(e) => {
+                        log::warn!(
+                            "Derive cancel_all_orders: failed to list trigger orders for {venue_symbol}: {e}",
+                        );
+                        return Ok(());
+                    }
+                };
+
+                for order in trigger_orders {
+                    if order.instrument_name.as_str() != venue_symbol {
+                        continue;
+                    }
+
+                    if let Err(e) = ws_exec
+                        .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
+                            subaccount_id,
+                            order.order_id.as_str(),
+                        ))
+                        .await
+                    {
+                        log::warn!(
+                            "Derive cancel_all_orders: trigger cancel for {} failed: {e}",
+                            order.order_id,
+                        );
+                    }
+                }
             }
             Ok(())
         });
@@ -1344,6 +1602,20 @@ impl ExecutionClient for DeriveExecutionClient {
             );
             return Ok(());
         };
+
+        if is_derive_trigger_order_type(order.order_type()) {
+            let reason = "Derive trigger orders cannot be modified; cancel and resubmit";
+            log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                Some(venue_order_id),
+                reason,
+                ts_now,
+            );
+            return Ok(());
+        }
 
         let target_quantity = cmd.quantity.unwrap_or_else(|| order.quantity());
         let target_price = cmd.price.or_else(|| order.price());
@@ -1519,8 +1791,29 @@ impl ExecutionClient for DeriveExecutionClient {
             {
                 Ok(o) => o,
                 Err(e) => {
-                    log::warn!("Failed to fetch Derive order {voi}: {e}");
-                    return Ok(());
+                    let trigger_orders = match http_client
+                        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                        .await
+                    {
+                        Ok(result) => result.orders,
+                        Err(trigger_err) => {
+                            log::warn!(
+                                "Failed to fetch Derive order {voi}: {e}; trigger lookup also failed: {trigger_err}",
+                            );
+                            return Ok(());
+                        }
+                    };
+
+                    match trigger_orders
+                        .into_iter()
+                        .find(|o| o.order_id.as_str() == voi.as_str())
+                    {
+                        Some(order) => order,
+                        None => {
+                            log::warn!("Failed to fetch Derive order {voi}: {e}");
+                            return Ok(());
+                        }
+                    }
                 }
             };
             let ts_init = clock.get_time_ns();
@@ -1968,6 +2261,42 @@ fn market_order_limit_price(
     Some(rounded)
 }
 
+fn trigger_market_limit_price(
+    trigger_price: Decimal,
+    side: OrderSide,
+    slippage_bps: u32,
+    tick_size: Decimal,
+) -> Option<Decimal> {
+    let bps = Decimal::from(slippage_bps);
+    let scale = Decimal::from(10_000_u32);
+    let one = Decimal::ONE;
+    let raw = match side {
+        OrderSide::Buy => trigger_price * (one + bps / scale),
+        OrderSide::Sell => trigger_price * (one - bps / scale),
+        OrderSide::NoOrderSide => return None,
+    };
+    let rounded = round_to_tick(raw, tick_size, side);
+    if rounded <= Decimal::ZERO {
+        return None;
+    }
+    Some(rounded)
+}
+
+fn is_derive_trigger_order_type(order_type: OrderType) -> bool {
+    matches!(
+        order_type,
+        OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched
+    )
+}
+
+fn trigger_order_signature_expiry(clock: &'static AtomicTime) -> i64 {
+    let now_secs = (clock.get_time_ns().as_u64() / 1_000_000_000) as i64;
+    now_secs + TRIGGER_ORDER_SIGNATURE_TTL.as_secs() as i64
+}
+
 async fn refresh_market_order_quote(
     http_client: &DeriveHttpClient,
     venue_symbol: &str,
@@ -2113,6 +2442,30 @@ mod tests {
         // 20_000 bps = 200% slippage drives the rounded bound below zero; deny.
         let zero = market_order_limit_price(&quote, OrderSide::Sell, 20_000, dec!(0.01));
         assert!(zero.is_none());
+    }
+
+    #[rstest]
+    fn test_trigger_market_limit_price_uses_trigger_price_bound() {
+        let buy = trigger_market_limit_price(dec!(3600), OrderSide::Buy, 50, dec!(0.01)).unwrap();
+        let sell = trigger_market_limit_price(dec!(3600), OrderSide::Sell, 50, dec!(0.01)).unwrap();
+        let zero = trigger_market_limit_price(dec!(1), OrderSide::Sell, 20_000, dec!(0.01));
+
+        assert_eq!(buy, dec!(3618));
+        assert_eq!(sell, dec!(3582));
+        assert!(zero.is_none());
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket, true)]
+    #[case(OrderType::StopLimit, true)]
+    #[case(OrderType::MarketIfTouched, true)]
+    #[case(OrderType::LimitIfTouched, true)]
+    #[case(OrderType::Market, false)]
+    #[case(OrderType::Limit, false)]
+    #[case(OrderType::MarketToLimit, false)]
+    #[case(OrderType::TrailingStopMarket, false)]
+    fn test_is_derive_trigger_order_type(#[case] order_type: OrderType, #[case] expected: bool) {
+        assert_eq!(is_derive_trigger_order_type(order_type), expected);
     }
 
     #[rstest]

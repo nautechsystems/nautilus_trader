@@ -121,6 +121,13 @@ pub const HEADER_LYRA_SIGNATURE: &str = "X-LYRASIGNATURE";
 /// minutes in the future of `now`.
 pub const MIN_SIGNATURE_TTL: Duration = Duration::from_secs(5 * 60);
 
+/// Signature TTL used for Derive trigger orders.
+///
+/// Mainnet rejects trigger orders unless `signature_expiry_sec` is 30 to 90
+/// days from venue time. The one-day buffer avoids edge failures from local
+/// clock drift and request latency.
+pub const TRIGGER_ORDER_SIGNATURE_TTL: Duration = Duration::from_secs(31 * 24 * 60 * 60);
+
 /// Fixed-point scale used by all on-chain decimal fields (1e18).
 pub const DECIMAL_SCALE: u128 = 1_000_000_000_000_000_000;
 
@@ -173,6 +180,14 @@ mod tests {
     #[rstest]
     fn test_min_signature_ttl_is_five_minutes() {
         assert_eq!(MIN_SIGNATURE_TTL, Duration::from_secs(300));
+    }
+
+    #[rstest]
+    fn test_trigger_order_signature_ttl_is_thirty_one_days() {
+        assert_eq!(
+            TRIGGER_ORDER_SIGNATURE_TTL,
+            Duration::from_secs(31 * 24 * 60 * 60),
+        );
     }
 
     #[rstest]
