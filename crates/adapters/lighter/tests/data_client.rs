@@ -61,7 +61,7 @@ use nautilus_common::{
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
             SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
             UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     testing::wait_until_async,
@@ -482,6 +482,36 @@ async fn test_connect_emits_instrument_event() {
 
 #[rstest]
 #[tokio::test]
+async fn test_unsubscribe_instrument_is_cache_replay_noop() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    client
+        .unsubscribe_instrument(&UnsubscribeInstrument::new(
+            eth_perp_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("unsubscribe_instrument");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        state.unsubscribes().await.is_empty(),
+        "instrument unsubscribe is cache-local and must not hit the venue",
+    );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_book_deltas_emits_deltas() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
@@ -556,7 +586,7 @@ async fn test_subscribe_book_deltas_rejects_wrong_book_type() {
 
 #[rstest]
 #[tokio::test]
-async fn test_subscribe_book_depth10_emits_depth10_and_deltas() {
+async fn test_subscribe_book_depth10_emits_depth10_only() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
 
@@ -583,34 +613,27 @@ async fn test_subscribe_book_depth10_emits_depth10_and_deltas() {
         ))
         .expect("subscribe_book_depth10");
 
-    let mut saw_deltas = false;
-    let mut saw_depth10 = false;
+    await_subscribe_count(&state, 1).await;
+    assert_eq!(state.subscribes().await[0]["channel"], "order_book/0");
 
-    for _ in 0..4 {
-        let Some(event) = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-            .await
-            .ok()
-            .flatten()
-        else {
-            break;
-        };
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(e, DataEvent::Data(Data::Depth10(_)))
+    })
+    .await
+    .expect("expected Depth10 event");
 
-        match event {
-            DataEvent::Data(Data::Deltas(_)) => saw_deltas = true,
-            DataEvent::Data(Data::Depth10(depth)) => {
-                saw_depth10 = true;
-                assert_eq!(depth.instrument_id, instrument_id);
-            }
-            _ => {}
+    match event {
+        DataEvent::Data(Data::Depth10(depth)) => {
+            assert_eq!(depth.instrument_id, instrument_id);
         }
-
-        if saw_deltas && saw_depth10 {
-            break;
-        }
+        other => panic!("expected Depth10 event, was {other:?}"),
     }
 
-    assert!(saw_deltas, "expected Deltas on snapshot frame");
-    assert!(saw_depth10, "expected Depth10 on snapshot frame");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        rx.try_recv().is_err(),
+        "depth-only subscription must not emit book deltas",
+    );
 
     client.disconnect().await.expect("disconnect");
 }
@@ -981,12 +1004,7 @@ async fn test_unsubscribe_quotes_and_trades_send_venue_frames() {
 
 #[rstest]
 #[tokio::test]
-async fn test_unsubscribe_book_depth10_does_not_tear_down_order_book_stream() {
-    // depth10 piggybacks on the shared `order_book` channel; the unsubscribe
-    // path only clears the depth-10 emission flag and intentionally leaves
-    // the WS subscription in place so any concurrent deltas subscriber keeps
-    // receiving updates. This pins that contract: no `unsubscribe` frame
-    // reaches the venue when depth10 is dropped on its own.
+async fn test_unsubscribe_book_depth10_without_deltas_sends_venue_unsubscribe() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
 
@@ -1023,12 +1041,252 @@ async fn test_unsubscribe_book_depth10_does_not_tear_down_order_book_stream() {
         ))
         .expect("unsubscribe_book_depth10");
 
-    // Give the runtime a tick to confirm no venue frame is sent.
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    await_unsubscribe_count(&state, 1).await;
+    assert_eq!(state.unsubscribes().await[0]["channel"], "order_book/0");
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_book_deltas_and_depth10_share_order_book_stream() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    let instrument_id = eth_perp_id();
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .expect("subscribe_book_deltas");
+    await_subscribe_count(&state, 1).await;
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(e, DataEvent::Data(Data::Deltas(_)))
+    })
+    .await
+    .expect("expected initial Deltas event");
+
+    match event {
+        DataEvent::Data(Data::Deltas(deltas)) => {
+            assert_eq!(deltas.instrument_id, instrument_id);
+        }
+        other => panic!("expected Deltas event, was {other:?}"),
+    }
+
+    client
+        .subscribe_book_depth10(SubscribeBookDepth10::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .expect("subscribe_book_depth10");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let subs = state.subscribes().await;
+    assert_eq!(
+        subs.len(),
+        1,
+        "late local subscriber must reuse the venue order_book stream"
+    );
+    assert_eq!(subs[0]["channel"], "order_book/0");
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(e, DataEvent::Data(Data::Depth10(_)))
+    })
+    .await
+    .expect("expected cached Depth10 event");
+
+    match event {
+        DataEvent::Data(Data::Depth10(depth)) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+        }
+        other => panic!("expected Depth10 event, was {other:?}"),
+    }
+
+    let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+    assert!(
+        !matches!(next, Ok(Some(DataEvent::Data(Data::Deltas(_))))),
+        "late depth10 subscriber must not re-emit deltas",
+    );
+
+    client
+        .unsubscribe_book_depth10(&UnsubscribeBookDepth10::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("unsubscribe_book_depth10");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
         state.unsubscribes().await.is_empty(),
-        "unsubscribe_book_depth10 must not tear down the shared order_book stream",
+        "dropping depth10 must leave the deltas stream active",
     );
+
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("unsubscribe_book_deltas");
+
+    await_unsubscribe_count(&state, 1).await;
+    assert_eq!(state.unsubscribes().await[0]["channel"], "order_book/0");
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_book_depth10_and_deltas_share_order_book_stream() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    let instrument_id = eth_perp_id();
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    client
+        .subscribe_book_depth10(SubscribeBookDepth10::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .expect("subscribe_book_depth10");
+    await_subscribe_count(&state, 1).await;
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(e, DataEvent::Data(Data::Depth10(_)))
+    })
+    .await
+    .expect("expected initial Depth10 event");
+
+    match event {
+        DataEvent::Data(Data::Depth10(depth)) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+        }
+        other => panic!("expected Depth10 event, was {other:?}"),
+    }
+
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .expect("subscribe_book_deltas");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let subs = state.subscribes().await;
+    assert_eq!(
+        subs.len(),
+        1,
+        "late local subscriber must reuse the venue order_book stream"
+    );
+    assert_eq!(subs[0]["channel"], "order_book/0");
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(e, DataEvent::Data(Data::Deltas(_)))
+    })
+    .await
+    .expect("expected cached Deltas event");
+
+    match event {
+        DataEvent::Data(Data::Deltas(deltas)) => {
+            assert_eq!(deltas.instrument_id, instrument_id);
+        }
+        other => panic!("expected Deltas event, was {other:?}"),
+    }
+
+    let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+    assert!(
+        !matches!(next, Ok(Some(DataEvent::Data(Data::Depth10(_))))),
+        "late deltas subscriber must not re-emit depth10",
+    );
+
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("unsubscribe_book_deltas");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        state.unsubscribes().await.is_empty(),
+        "dropping deltas must leave the depth10 stream active",
+    );
+
+    client
+        .unsubscribe_book_depth10(&UnsubscribeBookDepth10::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("unsubscribe_book_depth10");
+
+    await_unsubscribe_count(&state, 1).await;
+    assert_eq!(state.unsubscribes().await[0]["channel"], "order_book/0");
 
     client.disconnect().await.expect("disconnect");
 }

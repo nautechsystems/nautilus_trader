@@ -32,6 +32,7 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
+use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -39,8 +40,8 @@ use super::{
     error::LighterWsError,
     messages::{
         AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterWsCandle,
-        LighterWsChannel, LighterWsChannelKind, LighterWsFrame, LighterWsRequest,
-        NautilusWsMessage, SendTxRejectionSource,
+        LighterWsChannel, LighterWsChannelKind, LighterWsFrame, LighterWsOrderBook,
+        LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
     },
     parse::{
         parse_ws_account_state, parse_ws_bar, parse_ws_funding_rate_update,
@@ -56,7 +57,7 @@ use crate::{
         },
         enums::LighterCandleResolution,
     },
-    http::models::{LighterOrder, LighterTrade},
+    http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
 };
 
 // Lighter control-frame `type` field values that fall outside the typed
@@ -96,6 +97,9 @@ pub enum HandlerCommand {
         market_index: i16,
         instrument: InstrumentAny,
     },
+    /// Toggle whether `update/order_book` frames for `market_index` should
+    /// be emitted as [`NautilusWsMessage::Deltas`].
+    SetBookDeltasSub { market_index: i16, subscribed: bool },
     /// Toggle whether `update/order_book` frames for `market_index` should
     /// also be emitted as a [`NautilusWsMessage::Depth10`] snapshot.
     SetDepth10Sub { market_index: i16, subscribed: bool },
@@ -145,6 +149,14 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(UpdateInstrument))
                 .field("market_index", market_index)
                 .finish(),
+            Self::SetBookDeltasSub {
+                market_index,
+                subscribed,
+            } => f
+                .debug_struct(stringify!(SetBookDeltasSub))
+                .field("market_index", market_index)
+                .field("subscribed", subscribed)
+                .finish(),
             Self::SetDepth10Sub {
                 market_index,
                 subscribed,
@@ -183,10 +195,18 @@ pub(super) struct FeedHandler {
     retry_manager: RetryManager<LighterWsError>,
     pending_messages: std::collections::VecDeque<NautilusWsMessage>,
     instruments: AHashMap<i16, InstrumentAny>,
-    depth10_subs: AHashSet<i16>,
+    book_delta_subs: AHashSet<i16>,
+    book_depth_10_subs: AHashSet<i16>,
     book_snapshots_seen: AHashSet<i16>,
+    book_states: AHashMap<i16, CachedOrderBook>,
     last_candles: AHashMap<(i16, LighterCandleResolution), LighterWsCandle>,
     exec_account: Option<(AccountId, i64)>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedOrderBook {
+    book: LighterWsOrderBook,
+    timestamp: u64,
 }
 
 impl FeedHandler {
@@ -208,8 +228,10 @@ impl FeedHandler {
             retry_manager: create_websocket_retry_manager(),
             pending_messages: std::collections::VecDeque::new(),
             instruments: AHashMap::new(),
-            depth10_subs: AHashSet::new(),
+            book_delta_subs: AHashSet::new(),
+            book_depth_10_subs: AHashSet::new(),
             book_snapshots_seen: AHashSet::new(),
+            book_states: AHashMap::new(),
             last_candles: AHashMap::new(),
             exec_account: None,
         }
@@ -367,6 +389,10 @@ impl FeedHandler {
                             self.dispatch_subscribe(channel, auth).await;
                         }
                         HandlerCommand::Unsubscribe { channel } => {
+                            if let LighterWsChannel::OrderBook(market_index) = &channel {
+                                self.book_snapshots_seen.remove(market_index);
+                                self.book_states.remove(market_index);
+                            }
                             self.dispatch_unsubscribe(channel).await;
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
@@ -378,11 +404,30 @@ impl FeedHandler {
                         HandlerCommand::UpdateInstrument { market_index, instrument } => {
                             self.instruments.insert(market_index, instrument);
                         }
+                        HandlerCommand::SetBookDeltasSub { market_index, subscribed } => {
+                            if subscribed {
+                                let inserted = self.book_delta_subs.insert(market_index);
+                                if inserted
+                                    && let Some(first) = self
+                                        .emit_cached_order_book_deltas_snapshot(market_index)
+                                {
+                                    return Some(first);
+                                }
+                            } else {
+                                self.book_delta_subs.remove(&market_index);
+                            }
+                        }
                         HandlerCommand::SetDepth10Sub { market_index, subscribed } => {
                             if subscribed {
-                                self.depth10_subs.insert(market_index);
+                                let inserted = self.book_depth_10_subs.insert(market_index);
+                                if inserted
+                                    && let Some(first) =
+                                        self.emit_cached_order_book_depth10_snapshot(market_index)
+                                {
+                                    return Some(first);
+                                }
                             } else {
-                                self.depth10_subs.remove(&market_index);
+                                self.book_depth_10_subs.remove(&market_index);
                             }
                         }
                         HandlerCommand::SetExecutionContext { account_id, account_index } => {
@@ -406,6 +451,7 @@ impl FeedHandler {
                             if text == RECONNECTED {
                                 log::debug!("Received Lighter WebSocket RECONNECTED sentinel");
                                 self.book_snapshots_seen.clear();
+                                self.book_states.clear();
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
                                 return Some(NautilusWsMessage::Reconnected);
@@ -540,6 +586,7 @@ impl FeedHandler {
                         // order-book subscription that is still active.
                         if let Some(market_index) = order_book_market_index_from_topic(topic) {
                             self.book_snapshots_seen.remove(&market_index);
+                            self.book_states.remove(&market_index);
                         }
                         // Reset on resubscribe so the first frame is treated as initialization.
                         if let Some(key) = candle_market_and_resolution_from_topic(topic) {
@@ -734,10 +781,16 @@ impl FeedHandler {
             }
         };
 
-        let Some(instrument) = self.instruments.get(&market_index) else {
+        if !self.instruments.contains_key(&market_index) {
             log::debug!("No instrument cached for Lighter market_index={market_index}");
             return Vec::new();
-        };
+        }
+
+        if !self.book_delta_subs.contains(&market_index)
+            && !self.book_depth_10_subs.contains(&market_index)
+        {
+            return Vec::new();
+        }
 
         // The venue tags the initial book as `subscribed/order_book` and follows
         // up with `update/order_book` for incrementals. An incremental cannot
@@ -751,18 +804,79 @@ impl FeedHandler {
 
         if is_snapshot {
             self.book_snapshots_seen.insert(market_index);
+            self.book_states.insert(
+                market_index,
+                CachedOrderBook {
+                    book: book.clone(),
+                    timestamp,
+                },
+            );
+        } else if let Some(state) = self.book_states.get_mut(&market_index) {
+            apply_order_book_update(&mut state.book, book);
+            state.timestamp = timestamp;
         }
+
+        self.order_book_messages(market_index, book, timestamp, is_snapshot, ts_init)
+    }
+
+    fn emit_cached_order_book_deltas_snapshot(
+        &self,
+        market_index: i16,
+    ) -> Option<NautilusWsMessage> {
+        let cached = self.book_states.get(&market_index)?.clone();
+        let instrument = self.instruments.get(&market_index)?;
+        let ts_init = self.clock.get_time_ns();
+        match parse_ws_order_book_deltas(&cached.book, instrument, cached.timestamp, true, ts_init)
+        {
+            Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
+            Err(e) => {
+                log::error!("Error parsing cached Lighter order_book deltas: {e}");
+                None
+            }
+        }
+    }
+
+    fn emit_cached_order_book_depth10_snapshot(
+        &self,
+        market_index: i16,
+    ) -> Option<NautilusWsMessage> {
+        let cached = self.book_states.get(&market_index)?.clone();
+        let instrument = self.instruments.get(&market_index)?;
+        let ts_init = self.clock.get_time_ns();
+        match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
+            Ok(depth) => Some(NautilusWsMessage::Depth10(Box::new(depth))),
+            Err(e) => {
+                log::error!("Error parsing cached Lighter order_book depth10: {e}");
+                None
+            }
+        }
+    }
+
+    fn order_book_messages(
+        &self,
+        market_index: i16,
+        book: &LighterWsOrderBook,
+        timestamp: u64,
+        is_snapshot: bool,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let Some(instrument) = self.instruments.get(&market_index) else {
+            log::debug!("No instrument cached for Lighter market_index={market_index}");
+            return Vec::new();
+        };
 
         let mut messages = Vec::new();
 
-        match parse_ws_order_book_deltas(book, instrument, timestamp, is_snapshot, ts_init) {
-            Ok(deltas) => messages.push(NautilusWsMessage::Deltas(deltas)),
-            Err(e) => log::error!("Error parsing Lighter order_book deltas: {e}"),
+        if self.book_delta_subs.contains(&market_index) {
+            match parse_ws_order_book_deltas(book, instrument, timestamp, is_snapshot, ts_init) {
+                Ok(deltas) => messages.push(NautilusWsMessage::Deltas(deltas)),
+                Err(e) => log::error!("Error parsing Lighter order_book deltas: {e}"),
+            }
         }
 
         // Depth10 needs the full visible book, which is present only on snapshot
         // frames; incremental frames carry only changed levels.
-        if is_snapshot && self.depth10_subs.contains(&market_index) {
+        if is_snapshot && self.book_depth_10_subs.contains(&market_index) {
             match parse_ws_order_book_depth10(book, instrument, timestamp, ts_init) {
                 Ok(depth) => messages.push(NautilusWsMessage::Depth10(Box::new(depth))),
                 Err(e) => log::error!("Error parsing Lighter order_book depth10: {e}"),
@@ -1120,6 +1234,56 @@ impl FeedHandler {
 fn raw_message(frame: &LighterWsFrame) -> Vec<NautilusWsMessage> {
     let value = serde_json::to_value(frame).unwrap_or(serde_json::Value::Null);
     vec![NautilusWsMessage::Raw(value)]
+}
+
+fn apply_order_book_update(state: &mut LighterWsOrderBook, update: &LighterWsOrderBook) {
+    apply_book_side_update(&mut state.bids, &update.bids, true);
+    apply_book_side_update(&mut state.asks, &update.asks, false);
+
+    state.code = update.code;
+    state.offset = update.offset;
+    state.nonce = update.nonce;
+    state.last_updated_at = update.last_updated_at;
+    state.begin_nonce = update.begin_nonce;
+}
+
+fn apply_book_side_update(
+    levels: &mut Vec<LighterPriceLevel>,
+    updates: &[LighterPriceLevel],
+    bids: bool,
+) {
+    for update in updates {
+        if update.price == Decimal::ZERO {
+            continue;
+        }
+
+        match find_book_level(levels, update.price, bids) {
+            Ok(index) if update.size == Decimal::ZERO => {
+                levels.remove(index);
+            }
+            Ok(index) => {
+                levels[index] = update.clone();
+            }
+            Err(_) if update.size == Decimal::ZERO => {}
+            Err(index) => {
+                levels.insert(index, update.clone());
+            }
+        }
+    }
+}
+
+fn find_book_level(
+    levels: &[LighterPriceLevel],
+    price: Decimal,
+    bids: bool,
+) -> Result<usize, usize> {
+    levels.binary_search_by(|level| {
+        if bids {
+            price.cmp(&level.price)
+        } else {
+            level.price.cmp(&price)
+        }
+    })
 }
 
 // SendTxRejected from a top-level `{code, message}` frame: non-200 sendTx

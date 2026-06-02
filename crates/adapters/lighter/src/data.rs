@@ -39,8 +39,9 @@ use nautilus_common::{
             SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
             TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrumentStatus,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices, UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     },
 };
@@ -906,6 +907,14 @@ impl DataClient for LighterDataClient {
         } else {
             log::warn!("Instrument {} not found in cache", cmd.instrument_id);
         }
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from instrument: {} (cache replay only)",
+            cmd.instrument_id,
+        );
         Ok(())
     }
 
