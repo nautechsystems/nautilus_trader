@@ -21,7 +21,7 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 pub trait FeeModel {
@@ -234,8 +234,8 @@ impl FeeModel for PerContractFeeModel {
         _fill_px: Price,
         _instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        let total = self.commission.as_f64() * fill_quantity.as_f64();
-        Ok(Money::new(total, self.commission.currency))
+        let total = self.commission.as_decimal() * fill_quantity.as_decimal();
+        Money::from_decimal(total, self.commission.currency).map_err(Into::into)
     }
 }
 
@@ -263,15 +263,15 @@ impl FeeModel for MakerTakerFeeModel {
     ) -> anyhow::Result<Money> {
         let notional = instrument.calculate_notional_value(fill_quantity, fill_px, Some(false));
         let commission = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => notional * instrument.maker_fee().to_f64().unwrap(),
-            Some(LiquiditySide::Taker) => notional * instrument.taker_fee().to_f64().unwrap(),
+            Some(LiquiditySide::Maker) => notional * instrument.maker_fee(),
+            Some(LiquiditySide::Taker) => notional * instrument.taker_fee(),
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
         };
 
         if instrument.is_inverse() {
-            Ok(Money::new(commission, instrument.base_currency().unwrap()))
+            Money::from_decimal(commission, instrument.base_currency().unwrap()).map_err(Into::into)
         } else {
-            Ok(Money::new(commission, instrument.quote_currency()))
+            Money::from_decimal(commission, instrument.quote_currency()).map_err(Into::into)
         }
     }
 }
@@ -356,6 +356,7 @@ impl FeeModel for CappedOptionFeeModel {
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "CappedOptionFeeModel")?;
         let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
+        let multiplier = instrument.multiplier().as_decimal();
         let rate_fee = if instrument.is_inverse() {
             rate
         } else {
@@ -364,7 +365,7 @@ impl FeeModel for CappedOptionFeeModel {
             rate * underlying_px.as_decimal()
         };
         let cap_fee = self.cap * fill_px.as_decimal();
-        let fee_per_contract = rate_fee.min(cap_fee);
+        let fee_per_contract = rate_fee.min(cap_fee) * multiplier;
         let total = fee_per_contract * fill_quantity.as_decimal();
         Money::from_decimal(total, commission_currency(instrument)).map_err(Into::into)
     }
@@ -471,8 +472,8 @@ mod tests {
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{
-            CryptoOption, Instrument, InstrumentAny,
-            stubs::{audusd_sim, crypto_option_btc_deribit},
+            CryptoOption, Instrument, InstrumentAny, OptionContract,
+            stubs::{audusd_sim, crypto_option_btc_deribit, option_contract_appl},
         },
         orders::{
             Order, OrderAny,
@@ -586,6 +587,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_maker_taker_fee_model_uses_decimal_rounding() {
+        let fee_model = MakerTakerFeeModel;
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let price = Price::from("1.0");
+        let quantity = Quantity::from("117250");
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Sell)
+            .price(price)
+            .quantity(quantity)
+            .build();
+        let fill = TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
+
+        let commission = fee_model
+            .get_commission(&fill, quantity, price, &aud_usd)
+            .unwrap();
+
+        assert_eq!(commission, Money::from("2.34 USD"));
+    }
+
+    #[rstest]
     fn test_maker_taker_fee_model_taker_commission() {
         let fee_model = MakerTakerFeeModel;
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
@@ -648,6 +670,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(commission, Money::new(500.0, Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_uses_decimal_rounding() {
+        let commission_per_contract = Money::from("0.50 USD");
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("5"))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from("4.69"),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("2.34 USD"));
     }
 
     #[rstest]
@@ -719,6 +765,30 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), dec!(2.50));
+    }
+
+    #[rstest]
+    fn test_capped_option_fee_model_applies_contract_multiplier(
+        mut option_contract_appl: OptionContract,
+    ) {
+        option_contract_appl.multiplier = Quantity::from(100);
+        let instrument = InstrumentAny::OptionContract(option_contract_appl);
+        let fill = option_fill_order(&instrument, LiquiditySide::Maker);
+        let fee_model =
+            CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap();
+
+        let commission = fee_model
+            .get_commission_with_context(
+                &fill,
+                Quantity::from("2"),
+                Price::from("2.00"),
+                &instrument,
+                Some(Price::from("150.00")),
+            )
+            .unwrap();
+
+        assert_eq!(commission.currency, Currency::USD());
+        assert_eq!(commission.as_decimal(), dec!(3.00));
     }
 
     #[rstest]
@@ -804,6 +874,29 @@ mod tests {
 
         assert_eq!(commission.currency, Currency::USD());
         assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_tiered_notional_option_fee_model_inverse_commission_uses_base_currency(
+        mut crypto_option_btc_deribit: CryptoOption,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Taker);
+        let fee_model =
+            TieredNotionalOptionFeeModel::new(Some(dec!(0.0002)), Some(dec!(0.0005))).unwrap();
+
+        let commission = fee_model
+            .get_commission(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("0.010"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission.currency, Currency::BTC());
+        assert_eq!(commission.as_decimal(), dec!(0.10));
     }
 
     #[rstest]
