@@ -188,6 +188,7 @@ pub(super) async fn handle_historical_bars_subscription(
                     match update {
                         Some(HistoricalBarUpdate::Historical(data)) => {
                             had_connection = true;
+
                             for ib_bar in &data.bars {
                                 let bar = ib_bar_to_nautilus_bar(
                                     ib_bar,
@@ -205,6 +206,7 @@ pub(super) async fn handle_historical_bars_subscription(
                         }
                         Some(HistoricalBarUpdate::Update(ib_bar)) => {
                             had_connection = true;
+
                             if !handle_revised_bars {
                                 continue;
                             }
