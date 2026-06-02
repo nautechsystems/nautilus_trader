@@ -85,6 +85,10 @@ use crate::{
     },
 };
 
+const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
+const NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS: usize = 1;
+const NEW_MARKET_EMPTY_RECHECK_DELAY: Duration = Duration::from_millis(500);
+
 struct NewMarketInflightGuard {
     inflight_keys: Arc<DashMap<String, ()>>,
     key: String,
@@ -322,10 +326,19 @@ impl PolymarketDataClient {
         let data_sender = get_data_event_sender();
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
-        let fetch_max_concurrency = config.new_market_fetch_max_concurrency.max(1);
+        let fetch_max_concurrency = config
+            .new_market_fetch_max_concurrency
+            .clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP);
+
         if config.new_market_fetch_max_concurrency == 0 {
             log::warn!(
                 "PolymarketDataClientConfig.new_market_fetch_max_concurrency=0 is invalid, clamping to 1"
+            );
+        } else if config.new_market_fetch_max_concurrency > NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP {
+            log::warn!(
+                "PolymarketDataClientConfig.new_market_fetch_max_concurrency={} exceeds cap {}, clamping",
+                config.new_market_fetch_max_concurrency,
+                NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP,
             );
         }
 
@@ -1174,43 +1187,76 @@ impl PolymarketDataClient {
                         }
                     };
 
-                    let fetch = async {
-                        if let Some(condition_id) = fetch_condition_id {
+                    let result = if let Some(condition_id) = fetch_condition_id {
+                        let mut attempt = 0usize;
+
+                        loop {
                             let params = GetGammaMarketsParams {
-                                condition_ids: Some(condition_id),
+                                condition_ids: Some(condition_id.clone()),
                                 ..Default::default()
                             };
-                            let (instruments, _transient) = gamma_client
-                                .request_instruments_by_params_with_transient(params)
-                                .await?;
-                            Ok::<Vec<InstrumentAny>, anyhow::Error>(instruments)
-                        } else {
-                            log::warn!(
-                                "New market slug='{slug}' missing condition identifiers; falling back to slug query",
-                            );
-                            gamma_client
-                                .request_instruments_by_slugs_with_retry(vec![slug.clone()])
-                                .await
-                        }
-                    };
+                            let fetch = gamma_client
+                                .request_instruments_by_params_with_transient(params);
 
-                    let result = tokio::select! {
-                        r = fetch => r,
-                        () = cancellation.cancelled() => {
-                            log::debug!("New market fetch for '{slug}' cancelled during shutdown");
-                            return;
+                            let attempt_result = tokio::select! {
+                                r = fetch => r,
+                                () = cancellation.cancelled() => {
+                                    log::debug!("New market fetch for '{slug}' cancelled during shutdown");
+                                    return;
+                                }
+                            };
+
+                            match attempt_result {
+                                Ok((instruments, transient)) => {
+                                    if !instruments.is_empty() {
+                                        break Ok(instruments);
+                                    }
+
+                                    let transient_hit = transient.iter().any(|cid| cid == &condition_id);
+                                    if attempt < NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS {
+                                        attempt += 1;
+                                        let reason = if transient_hit {
+                                            "transient hydration"
+                                        } else {
+                                            "empty result"
+                                        };
+                                        log::info!(
+                                            "New market empty fetch retry {attempt}/{NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS} for key='{dedupe_key}' slug='{slug}' ({reason})",
+                                        );
+
+                                        tokio::select! {
+                                            () = tokio::time::sleep(NEW_MARKET_EMPTY_RECHECK_DELAY) => {}
+                                            () = cancellation.cancelled() => {
+                                                log::debug!("New market fetch for '{slug}' cancelled during retry delay");
+                                                return;
+                                            }
+                                        }
+                                        continue;
+                                    }
+
+                                    log::warn!(
+                                        "New market fetch returned no instruments for key='{dedupe_key}' slug='{slug}' after {NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS} recheck attempt(s)",
+                                    );
+                                    return;
+                                }
+                                Err(e) => break Err(e),
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                            "New market slug='{slug}' missing condition identifiers; falling back to slug query",
+                        );
+                        tokio::select! {
+                            r = gamma_client.request_instruments_by_slugs_with_retry(vec![slug.clone()]) => r,
+                            () = cancellation.cancelled() => {
+                                log::debug!("New market slug fallback fetch for '{slug}' cancelled during shutdown");
+                                return;
+                            }
                         }
                     };
 
                     match result {
                         Ok(new_instruments) => {
-                            if new_instruments.is_empty() {
-                                log::warn!(
-                                    "New market fetch returned no instruments for key='{dedupe_key}' slug='{slug}'",
-                                );
-                                return;
-                            }
-
                             for inst in new_instruments {
                                 if cancellation.is_cancelled() {
                                     log::debug!("New market processing cancelled during shutdown");
@@ -1375,6 +1421,9 @@ impl DataClient for PolymarketDataClient {
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
 
+        // Hard reset contract: discard all retained reconnect replay state from
+        // the previous generation. Callers must rebuild instrument/data
+        // subscriptions after connect().
         // Stop the WS handler path even when reset is called without a graceful disconnect.
         self.ws_client.abort();
         self.ws_client.clear_reconnect_state();
@@ -2378,6 +2427,11 @@ mod tests {
         }))
     }
 
+    fn gamma_market_fixture_value() -> Value {
+        serde_json::from_str(include_str!("../test_data/gamma_market.json"))
+            .expect("gamma market fixture json")
+    }
+
     #[derive(Clone, Default)]
     struct NewMarketFetchTestServerState {
         total_requests: Arc<AtomicUsize>,
@@ -2385,6 +2439,9 @@ mod tests {
         max_inflight_requests: Arc<AtomicUsize>,
         seen_condition_ids: Arc<StdMutex<Vec<Option<String>>>>,
         seen_slugs: Arc<StdMutex<Vec<Option<String>>>>,
+        empty_then_success_condition_id: Arc<StdMutex<Option<String>>>,
+        empty_then_success_payload: Arc<StdMutex<Option<Value>>>,
+        per_condition_requests: Arc<StdMutex<AHashMap<String, usize>>>,
         response_delay_ms: u64,
     }
 
@@ -2413,7 +2470,7 @@ mod tests {
             .seen_condition_ids
             .lock()
             .expect("seen_condition_ids mutex poisoned")
-            .push(condition_id);
+            .push(condition_id.clone());
         state
             .seen_slugs
             .lock()
@@ -2439,8 +2496,39 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(state.response_delay_ms)).await;
         }
 
+        let response = if let Some(ref cid) = condition_id {
+            let next_count = {
+                let mut counts = state
+                    .per_condition_requests
+                    .lock()
+                    .expect("per_condition_requests mutex poisoned");
+                let next = counts.get(cid).copied().unwrap_or(0) + 1;
+                counts.insert(cid.clone(), next);
+                next
+            };
+
+            let target_cid = state
+                .empty_then_success_condition_id
+                .lock()
+                .expect("empty_then_success_condition_id mutex poisoned")
+                .clone();
+
+            if target_cid.as_deref() == Some(cid.as_str()) && next_count >= 2 {
+                state
+                    .empty_then_success_payload
+                    .lock()
+                    .expect("empty_then_success_payload mutex poisoned")
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([]))
+            } else {
+                serde_json::json!([])
+            }
+        } else {
+            serde_json::json!([])
+        };
+
         state.inflight_requests.fetch_sub(1, Ordering::SeqCst);
-        Json(serde_json::json!([]))
+        Json(response)
     }
 
     async fn start_new_market_test_server(state: NewMarketFetchTestServerState) -> SocketAddr {
@@ -2504,16 +2592,17 @@ mod tests {
         ctx.subscribe_new_markets = true;
         ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
 
-        let slug_count = 12usize;
+        let slug_count = 6usize;
         for idx in 0..slug_count {
             let slug = format!("asset-{idx}-updown-5m-1");
             PolymarketDataClient::handle_market_message(make_new_market(&slug, true), &ctx);
         }
 
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let expected_requests = slug_count * (1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
 
         loop {
-            let done = state.total_requests.load(Ordering::SeqCst) >= slug_count
+            let done = state.total_requests.load(Ordering::SeqCst) >= expected_requests
                 && state.inflight_requests.load(Ordering::SeqCst) == 0
                 && ctx.new_market_inflight_keys.is_empty();
 
@@ -2527,7 +2616,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        assert_eq!(state.total_requests.load(Ordering::SeqCst), slug_count);
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            expected_requests,
+        );
         assert_eq!(state.max_inflight_requests.load(Ordering::SeqCst), 1);
     }
 
@@ -2548,10 +2640,11 @@ mod tests {
         let dedupe_key = "cond:cond-btc-updown-5m-2";
         PolymarketDataClient::handle_market_message(make_new_market(slug, true), &ctx);
 
+        let per_fetch_requests = 1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS;
         let deadline_first = tokio::time::Instant::now() + Duration::from_secs(3);
 
         loop {
-            let first_done = state.total_requests.load(Ordering::SeqCst) >= 1
+            let first_done = state.total_requests.load(Ordering::SeqCst) >= per_fetch_requests
                 && state.inflight_requests.load(Ordering::SeqCst) == 0
                 && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
 
@@ -2570,7 +2663,7 @@ mod tests {
         let deadline_second = tokio::time::Instant::now() + Duration::from_secs(3);
 
         loop {
-            let second_done = state.total_requests.load(Ordering::SeqCst) >= 2
+            let second_done = state.total_requests.load(Ordering::SeqCst) >= per_fetch_requests * 2
                 && state.inflight_requests.load(Ordering::SeqCst) == 0
                 && !ctx.new_market_inflight_keys.contains_key(dedupe_key);
 
@@ -2584,7 +2677,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        assert_eq!(state.total_requests.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            per_fetch_requests * 2,
+        );
     }
 
     #[rstest]
@@ -2711,11 +2807,19 @@ mod tests {
             .lock()
             .expect("seen_condition_ids mutex poisoned");
         let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
-        assert_eq!(condition_ids.len(), 1);
-        assert_eq!(slugs.len(), 1);
-        assert_eq!(condition_ids[0].as_deref(), Some("0xcondition-query"));
         assert_eq!(
-            slugs[0], None,
+            condition_ids.len(),
+            1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
+        );
+        assert_eq!(slugs.len(), 1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,);
+        assert!(
+            condition_ids
+                .iter()
+                .all(|cid| cid.as_deref() == Some("0xcondition-query")),
+        );
+        assert_eq!(
+            slugs.iter().filter(|slug| slug.is_none()).count(),
+            1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
             "condition-aware path should not send slug query for new_market fetch"
         );
     }
@@ -2761,6 +2865,89 @@ mod tests {
         assert_eq!(slugs.len(), 1);
         assert_eq!(condition_ids[0], None);
         assert_eq!(slugs[0].as_deref(), Some("btc-updown-5m-slug-fallback"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
+        let state = NewMarketFetchTestServerState::default();
+        let target_condition = "0xcondition-recheck";
+        *state
+            .empty_then_success_condition_id
+            .lock()
+            .expect("empty_then_success_condition_id mutex poisoned") =
+            Some(target_condition.to_string());
+        *state
+            .empty_then_success_payload
+            .lock()
+            .expect("empty_then_success_payload mutex poisoned") =
+            Some(serde_json::json!([gamma_market_fixture_value()]));
+
+        let addr = start_new_market_test_server(state.clone()).await;
+        let gamma_base_url = format!("http://{addr}");
+        let (mut ctx, mut data_rx) = make_ws_ctx_with_gamma_base_url(&gamma_base_url);
+        ctx.subscribe_new_markets = true;
+        ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        PolymarketDataClient::handle_market_message(
+            make_new_market_with_ids(
+                "btc-updown-5m-recheck",
+                target_condition,
+                target_condition,
+                true,
+            ),
+            &ctx,
+        );
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let done = state.total_requests.load(Ordering::SeqCst) >= 2
+                && state.inflight_requests.load(Ordering::SeqCst) == 0
+                && ctx.new_market_inflight_keys.is_empty()
+                && !ctx.instruments.load().is_empty();
+
+            if done {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for empty-then-success recheck flow",
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let seen_condition_ids = state
+            .seen_condition_ids
+            .lock()
+            .expect("seen_condition_ids mutex poisoned")
+            .clone();
+        assert!(
+            seen_condition_ids
+                .iter()
+                .all(|cid| cid.as_deref() == Some(target_condition)),
+            "all requests should query target condition_id, saw: {seen_condition_ids:?}",
+        );
+        assert_eq!(
+            state.total_requests.load(Ordering::SeqCst),
+            2,
+            "single recheck policy should perform exactly two condition fetch attempts",
+        );
+
+        let mut emitted_instrument = false;
+
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(200), data_rx.recv()).await
+        {
+            if matches!(event, DataEvent::Instrument(_)) {
+                emitted_instrument = true;
+                break;
+            }
+        }
+        assert!(
+            emitted_instrument,
+            "expected emitted DataEvent::Instrument after successful recheck"
+        );
     }
 
     #[rstest]
@@ -2841,6 +3028,15 @@ mod tests {
     fn new_market_fetch_concurrency_clamps_zero_to_one() {
         let client = make_client_with_fetch_concurrency(0);
         assert_eq!(client.new_market_fetch_semaphore.available_permits(), 1);
+    }
+
+    #[rstest]
+    fn new_market_fetch_concurrency_clamps_high_value_to_cap() {
+        let client = make_client_with_fetch_concurrency(1_000);
+        assert_eq!(
+            client.new_market_fetch_semaphore.available_permits(),
+            NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP,
+        );
     }
 
     #[rstest]
