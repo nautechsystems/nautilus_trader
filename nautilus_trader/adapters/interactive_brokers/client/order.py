@@ -265,6 +265,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         ):
             self._log.debug("`_is_ib_connected` set by `nextValidId`", LogColor.BLUE)
             self._is_ib_connected.set()
+            self._had_ib_connection = True
 
     async def process_open_order(
         self,

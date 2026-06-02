@@ -118,11 +118,10 @@ pub(super) async fn handle_historical_bars_subscription(
 
     let first_start_ns = resolve_historical_bar_start_ns(start_ns, clock.get_time_ns());
     let mut last_disconnection_ns = None;
-    // Only stamp last_disconnection_ns after a genuine prior connection, mirroring the
-    // Python adapter's _is_ib_connected guard in _handle_disconnection. Without this,
-    // a subscription creation failure during the pre-handshake window (client TCP-connected
-    // but IB session not yet ready) would cap the warmup window to now, delivering zero
-    // warmup bars on startup.
+    // Only stamp last_disconnection_ns after receiving real data, mirroring the Python
+    // adapter's _had_ib_connection guard. historical_data_streaming() returns Ok after
+    // sending the request — server-side errors arrive later via subscription.next(). A
+    // pre-data startup failure must not cap the warmup window to now.
     let mut had_connection = false;
 
     loop {
@@ -161,10 +160,7 @@ pub(super) async fn handle_historical_bars_subscription(
             )
             .await
         {
-            Ok(subscription) => {
-                had_connection = true;
-                subscription
-            }
+            Ok(subscription) => subscription,
             Err(e) => {
                 tracing::warn!(
                     "Failed to create historical bars subscription for {}: {:?}",
@@ -191,6 +187,7 @@ pub(super) async fn handle_historical_bars_subscription(
                 update = subscription.next() => {
                     match update {
                         Some(HistoricalBarUpdate::Historical(data)) => {
+                            had_connection = true;
                             for ib_bar in &data.bars {
                                 let bar = ib_bar_to_nautilus_bar(
                                     ib_bar,
@@ -207,6 +204,7 @@ pub(super) async fn handle_historical_bars_subscription(
                             }
                         }
                         Some(HistoricalBarUpdate::Update(ib_bar)) => {
+                            had_connection = true;
                             if !handle_revised_bars {
                                 continue;
                             }
@@ -243,7 +241,10 @@ pub(super) async fn handle_historical_bars_subscription(
                                 );
                             }
 
-                            last_disconnection_ns = Some(clock.get_time_ns());
+                            if had_connection {
+                                last_disconnection_ns = Some(clock.get_time_ns());
+                            }
+
                             break;
                         }
                     }

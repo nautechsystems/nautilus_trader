@@ -166,6 +166,7 @@ class InteractiveBrokersClient(
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", "0"))
         self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
+        self._had_ib_connection: bool = False
         self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
@@ -439,6 +440,8 @@ class InteractiveBrokersClient(
         if self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
+
+        if self._had_ib_connection:
             self._last_disconnection_ns = self._clock.timestamp_ns()
         await self._clear_bar_tracking_state()
         await asyncio.sleep(5)

@@ -232,7 +232,9 @@ async def test_run_connection_watchdog_reconnect(ib_client):
 async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connected(
     ib_client_running,
 ):
-    # Arrange - client is running and connected (_is_ib_connected is set by ib_client_running fixture)
+    # Arrange - client had a genuine prior connection (_had_ib_connection=True) and is
+    # still marked connected (_is_ib_connected set). This is the normal watchdog path.
+    ib_client_running._had_ib_connection = True
     assert ib_client_running._is_ib_connected.is_set()
     assert ib_client_running._last_disconnection_ns is None
     ib_client_running._handle_reconnect = AsyncMock()
@@ -241,7 +243,29 @@ async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connecte
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await ib_client_running._handle_disconnection()
 
-    # Assert - timestamp recorded because client was connected before disconnection
+    # Assert - timestamp recorded because client had a genuine prior connection
+    assert ib_client_running._last_disconnection_ns is not None
+
+
+@pytest.mark.asyncio
+async def test_handle_disconnection_sets_last_disconnection_ns_when_flag_cleared_before_call(
+    ib_client_running,
+):
+    # Arrange - _is_ib_connected was cleared by another code path (e.g.
+    # _run_tws_incoming_msg_reader finally block) before the watchdog fires and calls
+    # _handle_disconnection. Previously the guard on _is_ib_connected.is_set() would
+    # silently skip the timestamp, causing reconnect warmup to miss bars from the downtime.
+    ib_client_running._had_ib_connection = True
+    ib_client_running._is_ib_connected.clear()
+    assert not ib_client_running._is_ib_connected.is_set()
+    assert ib_client_running._last_disconnection_ns is None
+    ib_client_running._handle_reconnect = AsyncMock()
+
+    # Act
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await ib_client_running._handle_disconnection()
+
+    # Assert - timestamp still recorded because _had_ib_connection is True
     assert ib_client_running._last_disconnection_ns is not None
 
 
@@ -249,11 +273,12 @@ async def test_handle_disconnection_sets_last_disconnection_ns_when_was_connecte
 async def test_handle_disconnection_does_not_set_last_disconnection_ns_when_not_connected(
     ib_client,
 ):
-    # Arrange - client is NOT connected (_is_ib_connected is not set)
-    # This simulates the watchdog firing during initial startup before the handshake completes,
-    # which previously caused bar warmup start times to be capped at "now" instead of the
-    # requested warmup window (e.g. 4 hours back).
+    # Arrange - client is NOT connected and _had_ib_connection is False, simulating the
+    # watchdog firing during initial startup before the handshake completes. Previously
+    # this stamped _last_disconnection_ns=now, capping the bar warmup window to now and
+    # delivering zero warmup bars on startup.
     assert not ib_client._is_ib_connected.is_set()
+    assert not ib_client._had_ib_connection
     assert ib_client._last_disconnection_ns is None
     ib_client._handle_reconnect = AsyncMock()
 
