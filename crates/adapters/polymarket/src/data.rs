@@ -52,25 +52,18 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, Params, UnixNanos,
+    AtomicMap, AtomicSet,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        CustomData, Data as NautilusData, HasTsInit, InstrumentClose, InstrumentStatus,
-        OrderBookDeltas_API, QuoteTick, custom::CustomDataTrait,
-    },
-    enums::{BookType, InstrumentCloseType, MarketStatusAction},
+    data::{CustomData, Data as NautilusData, InstrumentStatus, OrderBookDeltas_API, QuoteTick},
+    enums::{BookType, MarketStatusAction},
     events::PositionEvent,
-    identifiers::{ClientId, InstrumentId, PositionId, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    types::Price,
 };
-#[cfg(feature = "python")]
-use pyo3::types::PyDictMethods;
-use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -80,14 +73,19 @@ use crate::{
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
-        clob::PolymarketClobPublicClient,
-        data_api::PolymarketDataApiHttpClient,
-        gamma::PolymarketGammaHttpClient,
-        models::{ClobMarketResponse, GammaMarket},
-        parse::rebuild_instrument_with_tick_size,
+        clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+        gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
         query::GetGammaMarketsParams,
     },
     providers::{PolymarketInstrumentProvider, extract_condition_id, fetch_configured_instruments},
+    resolve::{
+        PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
+        ResolveContext, ResolveRequestSummary, ResolveWatchEntry, ResolveWatchSelectionMode,
+        apply_condition_resolution, collect_resolve_watch_selection,
+        fetch_and_apply_resolutions_by_condition_ids, parse_condition_ids_from_request_params,
+        pause_resolve_watch_entries, request_params_has_explicit_condition_selector,
+        update_resolve_watchlist_from_position_event,
+    },
     websocket::{
         client::PolymarketWebSocketClient,
         messages::{MarketWsMessage, PolymarketQuotes, PolymarketWsMessage},
@@ -97,19 +95,6 @@ use crate::{
         },
     },
 };
-
-const RESOLVE_REQUEST_TYPE_NAME: &str = "PolymarketResolveRequest";
-
-fn resolve_token_id_from(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument_id: InstrumentId,
-) -> anyhow::Result<String> {
-    let loaded = instruments.load();
-    let instrument = loaded
-        .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
-    Ok(instrument.raw_symbol().as_str().to_string())
-}
 
 // Reconciles the WS subscription for `instrument_id` with the union of caller
 // intents. Holds `ws_sub_mutex` across the async WS send so concurrent
@@ -159,596 +144,6 @@ struct TokenMeta {
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct TrackedInstrument {
-    instrument_id: InstrumentId,
-    token_id: String,
-    price_precision: u8,
-    open_position_ids: AHashSet<PositionId>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ResolveWatchEntry {
-    condition_id: String,
-    expiration_ns: UnixNanos,
-    tracked: ahash::AHashMap<String, TrackedInstrument>,
-    paused: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ResolveWatchSelectionMode {
-    AutoPoll,
-    ManualFallback,
-    ManualAllEligible,
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct ResolveWatchSelection {
-    condition_ids: Vec<String>,
-    skipped_not_expired: usize,
-    timed_out_watchlist: usize,
-    paused_watchlist: usize,
-    min_ready_in_secs: Option<u64>,
-    pause_condition_ids: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct ResolveRequestSummary {
-    requested_condition_ids: Vec<String>,
-    fetched_markets: usize,
-    resolved_markets: usize,
-    emitted_condition_ids: Vec<String>,
-    failed_condition_ids: Vec<String>,
-    used_watchlist_fallback: bool,
-    timed_out_watchlist: usize,
-    error: Option<String>,
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct ResolveApplyBatchStats {
-    fetched_markets: usize,
-    resolved_markets: usize,
-    emitted_condition_ids: Vec<String>,
-    failed_condition_ids: Vec<String>,
-    error: Option<String>,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum ResolveBatchErrorMode {
-    Continue,
-    StopOnFirstError,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct PolymarketResolveRequestSummaryData {
-    requested_condition_ids: Vec<String>,
-    fetched_markets: usize,
-    resolved_markets: usize,
-    emitted_condition_ids: Vec<String>,
-    failed_condition_ids: Vec<String>,
-    used_watchlist_fallback: bool,
-    timed_out_watchlist: usize,
-    error: Option<String>,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-}
-
-impl PolymarketResolveRequestSummaryData {
-    fn from_summary(summary: ResolveRequestSummary, ts_now: UnixNanos) -> Self {
-        Self {
-            requested_condition_ids: summary.requested_condition_ids,
-            fetched_markets: summary.fetched_markets,
-            resolved_markets: summary.resolved_markets,
-            emitted_condition_ids: summary.emitted_condition_ids,
-            failed_condition_ids: summary.failed_condition_ids,
-            used_watchlist_fallback: summary.used_watchlist_fallback,
-            timed_out_watchlist: summary.timed_out_watchlist,
-            error: summary.error,
-            ts_event: ts_now,
-            ts_init: ts_now,
-        }
-    }
-}
-
-impl HasTsInit for PolymarketResolveRequestSummaryData {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl CustomDataTrait for PolymarketResolveRequestSummaryData {
-    fn type_name(&self) -> &'static str {
-        RESOLVE_REQUEST_TYPE_NAME
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    fn to_json(&self) -> anyhow::Result<String> {
-        Ok(serde_json::to_string(self)?)
-    }
-
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
-
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        if let Some(other) = other.as_any().downcast_ref::<Self>() {
-            self == other
-        } else {
-            false
-        }
-    }
-
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        let dict = pyo3::types::PyDict::new(py);
-        dict.set_item(
-            "requested_condition_ids",
-            self.requested_condition_ids.clone(),
-        )?;
-        dict.set_item("fetched_markets", self.fetched_markets)?;
-        dict.set_item("resolved_markets", self.resolved_markets)?;
-        dict.set_item("emitted_condition_ids", self.emitted_condition_ids.clone())?;
-        dict.set_item("failed_condition_ids", self.failed_condition_ids.clone())?;
-        dict.set_item("used_watchlist_fallback", self.used_watchlist_fallback)?;
-        dict.set_item("timed_out_watchlist", self.timed_out_watchlist)?;
-        dict.set_item("error", self.error.clone())?;
-        dict.set_item("ts_event", self.ts_event.as_u64())?;
-        dict.set_item("ts_init", self.ts_init.as_u64())?;
-        Ok(dict.unbind().into())
-    }
-
-    fn type_name_static() -> &'static str {
-        RESOLVE_REQUEST_TYPE_NAME
-    }
-
-    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
-        let parsed: Self = serde_json::from_value(value)?;
-        Ok(Arc::new(parsed))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct StrictResolvedMarket {
-    condition_id: String,
-    winning_asset_id: String,
-    winning_outcome: String,
-}
-
-fn instrument_market_context(
-    instrument: &InstrumentAny,
-) -> (Option<String>, Option<String>, Option<String>) {
-    match instrument {
-        InstrumentAny::BinaryOption(binary) => {
-            let slug = binary
-                .info
-                .as_ref()
-                .and_then(|info| info.get_str("market_slug"))
-                .map(ToString::to_string);
-            let market_id = binary
-                .info
-                .as_ref()
-                .and_then(|info| info.get_str("market_id"))
-                .map(ToString::to_string);
-            let condition_id = binary
-                .info
-                .as_ref()
-                .and_then(|info| info.get_str("condition_id"))
-                .map(ToString::to_string);
-            (slug, market_id, condition_id)
-        }
-        _ => (None, None, None),
-    }
-}
-
-fn binary_option_context(
-    instrument: &InstrumentAny,
-) -> Option<(String, String, UnixNanos, TrackedInstrument)> {
-    if !matches!(instrument, InstrumentAny::BinaryOption(_)) {
-        return None;
-    }
-
-    let expiration_ns = instrument.expiration_ns()?;
-    let (_, _, condition_id) = instrument_market_context(instrument);
-    let condition_id = condition_id.or_else(|| extract_condition_id(&instrument.id()).ok())?;
-    let token_id = instrument.raw_symbol().as_str().to_string();
-    let tracked = TrackedInstrument {
-        instrument_id: instrument.id(),
-        token_id: token_id.clone(),
-        price_precision: instrument.price_precision(),
-        open_position_ids: AHashSet::new(),
-    };
-
-    Some((condition_id, token_id, expiration_ns, tracked))
-}
-
-fn upsert_resolve_watch_entry_from_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    instrument: &InstrumentAny,
-    position_id: PositionId,
-) {
-    let Some((condition_id, token_id, expiration_ns, tracked)) = binary_option_context(instrument)
-    else {
-        return;
-    };
-
-    watchlist.rcu(|entries| {
-        let entry = entries
-            .entry(condition_id.clone())
-            .or_insert_with(|| ResolveWatchEntry {
-                condition_id: condition_id.clone(),
-                expiration_ns,
-                tracked: ahash::AHashMap::new(),
-                paused: false,
-            });
-        entry.expiration_ns = expiration_ns;
-        entry
-            .tracked
-            .entry(token_id.clone())
-            .and_modify(|existing| {
-                existing.open_position_ids.insert(position_id);
-            })
-            .or_insert_with(|| {
-                let mut seeded = tracked.clone();
-                seeded.open_position_ids.insert(position_id);
-                seeded
-            });
-    });
-}
-
-fn remove_resolve_watch_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    instrument: &InstrumentAny,
-    position_id: PositionId,
-) {
-    let Some((condition_id, token_id, _expiration_ns, _tracked)) =
-        binary_option_context(instrument)
-    else {
-        return;
-    };
-
-    watchlist.rcu(|entries| {
-        let remove_entry = match entries.get_mut(&condition_id) {
-            Some(entry) => {
-                let remove_token = match entry.tracked.get_mut(&token_id) {
-                    Some(tracked) => {
-                        tracked.open_position_ids.remove(&position_id);
-                        tracked.open_position_ids.is_empty()
-                    }
-                    None => false,
-                };
-
-                if remove_token {
-                    entry.tracked.remove(&token_id);
-                }
-                entry.tracked.is_empty()
-            }
-            None => false,
-        };
-
-        if remove_entry {
-            entries.remove(&condition_id);
-        }
-    });
-}
-
-fn update_resolve_watchlist_from_position_event(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    event: &PositionEvent,
-) {
-    let instrument_id = event.instrument_id();
-    if instrument_id.venue != *POLYMARKET_VENUE {
-        return;
-    }
-
-    let loaded = instruments.load();
-    let Some(instrument) = loaded.get(&instrument_id) else {
-        return;
-    };
-
-    let position_id = match event {
-        PositionEvent::PositionOpened(position) => position.position_id,
-        PositionEvent::PositionChanged(position) => position.position_id,
-        PositionEvent::PositionClosed(position) => position.position_id,
-        PositionEvent::PositionAdjusted(position) => position.position_id,
-    };
-
-    match event {
-        PositionEvent::PositionClosed(_) => {
-            remove_resolve_watch_instrument(watchlist, instrument, position_id);
-        }
-        PositionEvent::PositionOpened(_)
-        | PositionEvent::PositionChanged(_)
-        | PositionEvent::PositionAdjusted(_) => {
-            upsert_resolve_watch_entry_from_instrument(watchlist, instrument, position_id);
-        }
-    }
-}
-
-fn collect_resolve_watch_selection(
-    watchlist: &ahash::AHashMap<String, ResolveWatchEntry>,
-    now_ns: UnixNanos,
-    grace_secs: u64,
-    max_wait_secs: u64,
-    mode: ResolveWatchSelectionMode,
-) -> ResolveWatchSelection {
-    let mut selection = ResolveWatchSelection::default();
-    let grace_ns = grace_secs.saturating_mul(1_000_000_000);
-    let max_wait_ns = max_wait_secs.saturating_mul(1_000_000_000);
-
-    for (condition_id, entry) in watchlist {
-        if entry.tracked.is_empty() {
-            continue;
-        }
-
-        let ready_at_ns = entry.expiration_ns.as_u64().saturating_add(grace_ns);
-        if now_ns.as_u64() < ready_at_ns {
-            selection.skipped_not_expired += 1;
-            let ready_in_secs = (ready_at_ns - now_ns.as_u64()) / 1_000_000_000;
-            selection.min_ready_in_secs = Some(
-                selection
-                    .min_ready_in_secs
-                    .map_or(ready_in_secs, |current| current.min(ready_in_secs)),
-            );
-            continue;
-        }
-
-        let timed_out = now_ns.as_u64() >= entry.expiration_ns.as_u64().saturating_add(max_wait_ns);
-
-        if timed_out {
-            selection.timed_out_watchlist += 1;
-            if entry.paused {
-                selection.paused_watchlist += 1;
-            } else {
-                selection.pause_condition_ids.push(condition_id.clone());
-            }
-
-            if mode == ResolveWatchSelectionMode::AutoPoll {
-                continue;
-            }
-        } else if entry.paused {
-            selection.paused_watchlist += 1;
-
-            if mode == ResolveWatchSelectionMode::AutoPoll {
-                continue;
-            }
-        } else if mode == ResolveWatchSelectionMode::ManualFallback {
-            continue;
-        }
-
-        selection.condition_ids.push(condition_id.clone());
-    }
-
-    selection
-}
-
-fn pause_resolve_watch_entries(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    condition_ids: &[String],
-) {
-    if condition_ids.is_empty() {
-        return;
-    }
-
-    watchlist.rcu(|entries| {
-        for condition_id in condition_ids {
-            if let Some(entry) = entries.get_mut(condition_id) {
-                entry.paused = true;
-            }
-        }
-    });
-}
-
-fn parse_json_string_array(raw: &str) -> Option<Vec<String>> {
-    serde_json::from_str::<Vec<String>>(raw)
-        .ok()
-        .filter(|values| !values.is_empty())
-}
-
-fn parse_string_array_param(value: &serde_json::Value) -> Option<Vec<String>> {
-    match value {
-        serde_json::Value::String(single) => {
-            if single.is_empty() {
-                return None;
-            }
-            Some(vec![single.clone()])
-        }
-        serde_json::Value::Array(items) => {
-            let mut parsed = Vec::with_capacity(items.len());
-            for item in items {
-                let value = item.as_str()?;
-                if value.is_empty() {
-                    return None;
-                }
-                parsed.push(value.to_string());
-            }
-            (!parsed.is_empty()).then_some(parsed)
-        }
-        _ => None,
-    }
-}
-
-fn parse_outcome_prices(raw: &Option<String>) -> Option<Vec<f64>> {
-    let raw = raw.as_ref()?;
-
-    if let Ok(values) = serde_json::from_str::<Vec<f64>>(raw)
-        && !values.is_empty()
-    {
-        return Some(values);
-    }
-
-    let as_strings = serde_json::from_str::<Vec<String>>(raw).ok()?;
-    let mut values = Vec::with_capacity(as_strings.len());
-    for value in as_strings {
-        values.push(value.parse::<f64>().ok()?);
-    }
-    (!values.is_empty()).then_some(values)
-}
-
-fn strict_winner_index(prices: &[f64]) -> Option<usize> {
-    if prices.is_empty() {
-        return None;
-    }
-
-    let mut winner_idx: Option<usize> = None;
-
-    for (idx, value) in prices.iter().copied().enumerate() {
-        if value >= 0.999 {
-            if winner_idx.is_some() {
-                return None;
-            }
-            winner_idx = Some(idx);
-        } else if value > 0.001 {
-            return None;
-        }
-    }
-
-    winner_idx
-}
-
-fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMarket> {
-    if market.closed != Some(true) {
-        return None;
-    }
-
-    let asset_ids = parse_json_string_array(&market.clob_token_ids)?;
-    if asset_ids.len() != 2 {
-        return None;
-    }
-
-    let outcomes = parse_json_string_array(&market.outcomes)?;
-    if outcomes.len() != 2 {
-        return None;
-    }
-
-    let prices = parse_outcome_prices(&market.outcome_prices)?;
-    if prices.len() != 2 {
-        return None;
-    }
-    let winner_idx = strict_winner_index(&prices)?;
-    let winning_asset_id = asset_ids.get(winner_idx)?.clone();
-    let winning_outcome = outcomes.get(winner_idx)?.clone();
-
-    Some(StrictResolvedMarket {
-        condition_id: market.condition_id.clone(),
-        winning_asset_id,
-        winning_outcome,
-    })
-}
-
-fn build_resolved_market_from_clob_market(
-    market: &ClobMarketResponse,
-) -> Option<StrictResolvedMarket> {
-    if !market.closed {
-        return None;
-    }
-
-    if market.tokens.len() != 2 {
-        return None;
-    }
-
-    let mut winner_idx: Option<usize> = None;
-
-    for (idx, token) in market.tokens.iter().enumerate() {
-        if token.winner {
-            if winner_idx.is_some() {
-                return None;
-            }
-            winner_idx = Some(idx);
-        }
-    }
-
-    let winner_idx = winner_idx?;
-    let winner = market.tokens.get(winner_idx)?;
-    if winner.token_id.is_empty() || winner.outcome.is_empty() {
-        return None;
-    }
-
-    Some(StrictResolvedMarket {
-        condition_id: market.condition_id.clone(),
-        winning_asset_id: winner.token_id.clone(),
-        winning_outcome: winner.outcome.clone(),
-    })
-}
-
-fn parse_condition_ids_from_request_params(params: &Option<Params>) -> Vec<String> {
-    let Some(params) = params.as_ref() else {
-        return Vec::new();
-    };
-
-    let mut condition_ids = Vec::new();
-
-    if let Some(condition_id_value) = params.get("condition_id") {
-        if let Some(condition_id) = condition_id_value.as_str() {
-            condition_ids.push(condition_id.to_string());
-        } else {
-            log::warn!(
-                "Ignoring invalid `condition_id` param: expected string, received {condition_id_value}"
-            );
-        }
-    }
-
-    if let Some(condition_ids_value) = params.get("condition_ids") {
-        if let Some(values) = parse_string_array_param(condition_ids_value) {
-            condition_ids.extend(values);
-        } else {
-            log::warn!(
-                "Ignoring invalid `condition_ids` param: expected string or array[string], received {condition_ids_value}"
-            );
-        }
-    }
-
-    if let Some(instrument_ids_value) = params.get("instrument_ids") {
-        if let Some(instrument_ids) = parse_string_array_param(instrument_ids_value) {
-            for value in instrument_ids {
-                if let Ok(instrument_id) = value.parse::<InstrumentId>() {
-                    if instrument_id.venue != *POLYMARKET_VENUE {
-                        log::warn!(
-                            "Ignoring `instrument_ids` entry with non-Polymarket venue: {instrument_id}"
-                        );
-                        continue;
-                    }
-
-                    if let Ok(condition_id) = extract_condition_id(&instrument_id) {
-                        condition_ids.push(condition_id);
-                    } else {
-                        log::warn!(
-                            "Ignoring `instrument_ids` entry that cannot extract condition_id: {value}"
-                        );
-                    }
-                } else {
-                    log::warn!("Ignoring invalid `instrument_ids` entry: {value}");
-                }
-            }
-        } else {
-            log::warn!(
-                "Ignoring invalid `instrument_ids` param: expected string or array[string], received {instrument_ids_value}"
-            );
-        }
-    }
-
-    condition_ids.sort();
-    condition_ids.dedup();
-    condition_ids
-}
-
-fn request_params_has_explicit_condition_selector(params: &Option<Params>) -> bool {
-    let Some(params) = params.as_ref() else {
-        return false;
-    };
-
-    params.contains_key("condition_id")
-        || params.contains_key("condition_ids")
-        || params.contains_key("instrument_ids")
 }
 
 // Inserts `instrument` into the live instrument cache and updates the
@@ -835,6 +230,17 @@ struct WsMessageContext {
     cancellation_token: CancellationToken,
 }
 
+impl WsMessageContext {
+    fn resolve_context(&self) -> ResolveContext {
+        ResolveContext {
+            clock: self.clock,
+            data_sender: self.data_sender.clone(),
+            watchlist: self.resolve_poll_watchlist.clone(),
+            apply_mutex: self.resolve_watch_apply_mutex.clone(),
+        }
+    }
+}
+
 /// Polymarket data client for live market data streaming.
 ///
 /// Integrates with the Nautilus DataEngine to provide:
@@ -872,45 +278,18 @@ pub struct PolymarketDataClient {
     position_event_handler: Option<TypedHandler<PositionEvent>>,
 }
 
+fn resolve_token_id_from(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<String> {
+    let loaded = instruments.load();
+    let instrument = loaded
+        .get(&instrument_id)
+        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+    Ok(instrument.raw_symbol().as_str().to_string())
+}
+
 impl PolymarketDataClient {
-    fn merge_resolve_watch_entry(ctx: &WsMessageContext, entry: ResolveWatchEntry) {
-        let _guard = ctx
-            .resolve_watch_apply_mutex
-            .lock()
-            .expect("resolve_watch_apply_mutex poisoned");
-        let condition_id = entry.condition_id.clone();
-        let incoming_expiration_ns = entry.expiration_ns;
-        let incoming_paused = entry.paused;
-        let incoming_tracked = entry.tracked;
-
-        ctx.resolve_poll_watchlist.rcu(|entries| {
-            if let Some(existing) = entries.get_mut(&condition_id) {
-                existing.expiration_ns = existing.expiration_ns.max(incoming_expiration_ns);
-                existing.paused |= incoming_paused;
-
-                for (token_id, incoming) in &incoming_tracked {
-                    if let Some(current) = existing.tracked.get_mut(token_id.as_str()) {
-                        current
-                            .open_position_ids
-                            .extend(incoming.open_position_ids.iter().copied());
-                    } else {
-                        existing.tracked.insert(token_id.clone(), incoming.clone());
-                    }
-                }
-            } else {
-                entries.insert(
-                    condition_id.clone(),
-                    ResolveWatchEntry {
-                        condition_id: condition_id.clone(),
-                        expiration_ns: incoming_expiration_ns,
-                        tracked: incoming_tracked.clone(),
-                        paused: incoming_paused,
-                    },
-                );
-            }
-        });
-    }
-
     /// Creates a new [`PolymarketDataClient`].
     pub fn new(
         client_id: ClientId,
@@ -961,118 +340,6 @@ impl PolymarketDataClient {
         &self.config
     }
 
-    async fn fetch_and_apply_resolutions_by_condition_ids(
-        gamma_client: &PolymarketGammaHttpClient,
-        clob_public_client: &PolymarketClobPublicClient,
-        ctx: &WsMessageContext,
-        condition_ids: &[String],
-        error_mode: ResolveBatchErrorMode,
-    ) -> ResolveApplyBatchStats {
-        let mut stats = ResolveApplyBatchStats::default();
-        let mut unique_condition_ids = condition_ids.to_vec();
-        unique_condition_ids.sort();
-        unique_condition_ids.dedup();
-
-        for chunk in unique_condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
-            let mut unresolved_in_chunk: Vec<String> = chunk.to_vec();
-            let params = GetGammaMarketsParams {
-                condition_ids: Some(chunk.join(",")),
-                closed: Some(true),
-                ..Default::default()
-            };
-
-            match gamma_client.request_markets_by_params(params).await {
-                Ok(markets) => {
-                    stats.fetched_markets += markets.len();
-                    let resolved_by_condition = markets
-                        .into_iter()
-                        .filter_map(|market| {
-                            build_strict_resolved_market(&market)
-                                .map(|resolved| (resolved.condition_id.clone(), resolved))
-                        })
-                        .collect::<ahash::AHashMap<String, StrictResolvedMarket>>();
-
-                    for condition_id in chunk {
-                        let Some(resolved) = resolved_by_condition.get(condition_id) else {
-                            continue;
-                        };
-
-                        stats.resolved_markets += 1;
-                        let emitted = Self::apply_condition_resolution(
-                            ctx,
-                            &resolved.condition_id,
-                            &resolved.winning_asset_id,
-                            &resolved.winning_outcome,
-                        );
-
-                        if emitted > 0 {
-                            stats
-                                .emitted_condition_ids
-                                .push(resolved.condition_id.clone());
-                        }
-                    }
-
-                    unresolved_in_chunk
-                        .retain(|condition_id| !resolved_by_condition.contains_key(condition_id));
-                }
-                Err(e) => {
-                    let message = format!(
-                        "Resolve request failed for {} condition_id(s): {e}",
-                        chunk.len()
-                    );
-                    log::warn!("{message}");
-                }
-            }
-
-            for condition_id in unresolved_in_chunk {
-                match clob_public_client.get_market(&condition_id).await {
-                    Ok(market) => {
-                        let Some(resolved) = build_resolved_market_from_clob_market(&market) else {
-                            continue;
-                        };
-
-                        stats.resolved_markets += 1;
-                        let emitted = Self::apply_condition_resolution(
-                            ctx,
-                            &resolved.condition_id,
-                            &resolved.winning_asset_id,
-                            &resolved.winning_outcome,
-                        );
-
-                        if emitted > 0 {
-                            stats
-                                .emitted_condition_ids
-                                .push(resolved.condition_id.clone());
-                        }
-                    }
-                    Err(e) => {
-                        let message = format!(
-                            "Resolve fallback via CLOB failed for condition_id={condition_id}: {e}"
-                        );
-                        log::warn!("{message}");
-                        if stats.error.is_none() {
-                            stats.error = Some(message);
-                        }
-                        stats.failed_condition_ids.push(condition_id);
-                    }
-                }
-            }
-
-            if error_mode == ResolveBatchErrorMode::StopOnFirstError
-                && !stats.failed_condition_ids.is_empty()
-            {
-                break;
-            }
-        }
-
-        stats.failed_condition_ids.sort();
-        stats.failed_condition_ids.dedup();
-        stats.emitted_condition_ids.sort();
-        stats.emitted_condition_ids.dedup();
-
-        stats
-    }
-
     fn ensure_position_event_subscription(&mut self) {
         if self.position_event_handler.is_some() {
             return;
@@ -1118,11 +385,7 @@ impl PolymarketDataClient {
     }
 
     fn resolve_token_id(&self, instrument_id: InstrumentId) -> anyhow::Result<String> {
-        let instruments = self.instruments.load();
-        let instrument = instruments
-            .get(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
-        Ok(instrument.raw_symbol().as_str().to_string())
+        resolve_token_id_from(&self.instruments, instrument_id)
     }
 
     // Spawns an async task that reconciles the WS subscription for
@@ -1604,6 +867,11 @@ impl PolymarketDataClient {
                     _ = interval.tick() => {
                         let now_ns = clock.get_time_ns();
                         let snapshot = watchlist.load();
+                        let watched_conditions = snapshot.len();
+                        let watched_instruments = snapshot
+                            .values()
+                            .map(|entry| entry.tracked.len())
+                            .sum::<usize>();
                         let selection = collect_resolve_watch_selection(
                             &snapshot,
                             now_ns,
@@ -1613,12 +881,42 @@ impl PolymarketDataClient {
                         );
                         drop(snapshot);
 
+                        if !selection.pause_condition_ids.is_empty() {
+                            log::warn!(
+                                "Polymarket resolve poll paused {} timed-out condition(s) for manual recovery",
+                                selection.pause_condition_ids.len(),
+                            );
+                        }
+
+                        if !selection.condition_ids.is_empty()
+                            || !selection.pause_condition_ids.is_empty()
+                        {
+                            log::info!(
+                                "Polymarket resolve poll selected={} watched_conditions={} watched_instruments={} skipped_not_expired={} timed_out={} paused={} min_ready_in_secs={:?}",
+                                selection.condition_ids.len(),
+                                watched_conditions,
+                                watched_instruments,
+                                selection.skipped_not_expired,
+                                selection.timed_out_watchlist,
+                                selection.paused_watchlist,
+                                selection.min_ready_in_secs,
+                            );
+                        } else if selection.timed_out_watchlist > 0
+                            && selection.paused_watchlist > 0
+                        {
+                            log::debug!(
+                                "Polymarket resolve poll waiting for manual recovery: timed_out={} paused={} watched_conditions={watched_conditions}",
+                                selection.timed_out_watchlist,
+                                selection.paused_watchlist,
+                            );
+                        }
+
                         pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
 
-                        let _ = Self::fetch_and_apply_resolutions_by_condition_ids(
+                        let _ = fetch_and_apply_resolutions_by_condition_ids(
                             &gamma_client,
                             &clob_public_client,
-                            &ctx,
+                            &ctx.resolve_context(),
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
                         )
@@ -1643,92 +941,6 @@ impl PolymarketDataClient {
                 log::info!("Polymarket WS reconnected");
             }
         }
-    }
-
-    fn apply_condition_resolution(
-        ctx: &WsMessageContext,
-        condition_id: &str,
-        winning_asset_id: &str,
-        winning_outcome: &str,
-    ) -> usize {
-        let entry = {
-            let _guard = ctx
-                .resolve_watch_apply_mutex
-                .lock()
-                .expect("resolve_watch_apply_mutex poisoned");
-            let Some(entry) = ctx
-                .resolve_poll_watchlist
-                .get_cloned(&condition_id.to_string())
-            else {
-                log::debug!(
-                    "Ignoring resolution for condition_id={condition_id}: no local watch entry"
-                );
-                return 0;
-            };
-
-            ctx.resolve_poll_watchlist.remove(&condition_id.to_string());
-            entry
-        };
-
-        if entry.tracked.is_empty() {
-            return 0;
-        }
-
-        let ts_init = ctx.clock.get_time_ns();
-        let reason = Ustr::from(&format!("Winner: {winning_asset_id} ({winning_outcome})"));
-        let tracked_instruments: Vec<TrackedInstrument> = entry.tracked.values().cloned().collect();
-
-        for tracked in &tracked_instruments {
-            let status = InstrumentStatus::new(
-                tracked.instrument_id,
-                MarketStatusAction::Close,
-                ts_init,
-                ts_init,
-                Some(reason),
-                None,
-                Some(false),
-                None,
-                None,
-            );
-
-            if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
-                log::error!(
-                    "Failed to emit instrument status for {}: {e}",
-                    tracked.instrument_id
-                );
-                Self::merge_resolve_watch_entry(ctx, entry);
-                return 0;
-            }
-
-            let close_price = if tracked.token_id == winning_asset_id {
-                Price::from_decimal_dp(rust_decimal::Decimal::ONE, tracked.price_precision)
-                    .expect("valid decimal close price")
-            } else {
-                Price::from_decimal_dp(rust_decimal::Decimal::ZERO, tracked.price_precision)
-                    .expect("valid decimal close price")
-            };
-            let close = InstrumentClose::new(
-                tracked.instrument_id,
-                close_price,
-                InstrumentCloseType::ContractExpired,
-                ts_init,
-                ts_init,
-            );
-
-            if let Err(e) = ctx
-                .data_sender
-                .send(DataEvent::Data(NautilusData::InstrumentClose(close)))
-            {
-                log::error!(
-                    "Failed to emit instrument close for {}: {e}",
-                    tracked.instrument_id
-                );
-                Self::merge_resolve_watch_entry(ctx, entry);
-                return 0;
-            }
-        }
-
-        tracked_instruments.len()
     }
 
     fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
@@ -2098,8 +1310,8 @@ impl PolymarketDataClient {
             }
 
             MarketWsMessage::MarketResolved(resolved) => {
-                let emitted = Self::apply_condition_resolution(
-                    ctx,
+                let emitted = apply_condition_resolution(
+                    &ctx.resolve_context(),
                     resolved.market.as_str(),
                     &resolved.winning_asset_id,
                     &resolved.winning_outcome,
@@ -2320,6 +1532,8 @@ impl DataClient for PolymarketDataClient {
                 requested_condition_ids: Vec::new(),
                 fetched_markets: 0,
                 resolved_markets: 0,
+                skipped_non_binary_markets: 0,
+                clob_fallback_successes: 0,
                 emitted_condition_ids: Vec::new(),
                 failed_condition_ids: Vec::new(),
                 used_watchlist_fallback: false,
@@ -2361,21 +1575,36 @@ impl DataClient for PolymarketDataClient {
 
             summary.requested_condition_ids = condition_ids.clone();
 
-            let stats = Self::fetch_and_apply_resolutions_by_condition_ids(
+            let stats = fetch_and_apply_resolutions_by_condition_ids(
                 &gamma_client,
                 &ctx.clob_public_client,
-                &ctx,
+                &ctx.resolve_context(),
                 &condition_ids,
                 ResolveBatchErrorMode::StopOnFirstError,
             )
             .await;
             summary.fetched_markets = stats.fetched_markets;
             summary.resolved_markets = stats.resolved_markets;
+            summary.skipped_non_binary_markets = stats.skipped_non_binary_markets;
+            summary.clob_fallback_successes = stats.clob_fallback_successes;
             summary.emitted_condition_ids = stats.emitted_condition_ids;
             summary.failed_condition_ids = stats.failed_condition_ids;
             if summary.error.is_none() {
                 summary.error = stats.error;
             }
+
+            log::info!(
+                "Polymarket manual resolve request requested={} fetched={} resolved={} emitted={} failed={} skipped_non_binary={} clob_fallback_successes={} timed_out_watchlist={} used_watchlist_fallback={}",
+                summary.requested_condition_ids.len(),
+                summary.fetched_markets,
+                summary.resolved_markets,
+                summary.emitted_condition_ids.len(),
+                summary.failed_condition_ids.len(),
+                summary.skipped_non_binary_markets,
+                summary.clob_fallback_successes,
+                summary.timed_out_watchlist,
+                summary.used_watchlist_fallback,
+            );
 
             let ts_now = clock.get_time_ns();
             let payload = Arc::new(PolymarketResolveRequestSummaryData::from_summary(
@@ -2742,6 +1971,8 @@ mod tests {
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
+    #[cfg(feature = "python")]
+    use nautilus_model::data::custom::CustomDataTrait;
     use nautilus_model::{
         data::{CustomData as ModelCustomData, DataType},
         enums::{AssetClass, InstrumentCloseType, OrderSide, PositionSide},
@@ -2763,7 +1994,16 @@ mod tests {
     use crate::{
         common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketOrderSide},
         config::PolymarketDataClientConfig,
-        http::{clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient},
+        http::{
+            clob::PolymarketClobPublicClient,
+            data_api::PolymarketDataApiHttpClient,
+            models::{ClobMarketResponse, GammaMarket},
+        },
+        resolve::{
+            TrackedInstrument, build_resolved_market_from_clob_market,
+            build_strict_resolved_market, merge_resolve_watch_entry,
+            upsert_resolve_watch_entry_from_instrument,
+        },
         websocket::{
             client::{PolymarketWebSocketClient, WsSubscriptionHandle},
             handler::HandlerCommand,
@@ -3569,7 +2809,7 @@ mod tests {
     }
 
     #[rstest]
-    fn build_strict_resolved_market_requires_closed_and_binary_settlement_prices() {
+    fn build_strict_resolved_market_requires_closed_and_binary_resolution_prices() {
         let good = make_gamma_market_with_outcome_prices(
             "0xCOND",
             "[\"0xYES\",\"0xNO\"]",
@@ -3635,7 +2875,7 @@ mod tests {
 
     #[rstest]
     fn build_strict_resolved_market_matches_official_fixture_shapes() {
-        // Closed settled fixture should resolve under strict rules.
+        // Closed resolved fixture should resolve under strict rules.
         let closed = load_gamma_market_fixture("gamma_market_sports_market_money_line.json");
         let resolved = build_strict_resolved_market(&closed).expect("expected resolved fixture");
         assert_eq!(
@@ -4262,8 +3502,8 @@ mod tests {
             },
         );
 
-        PolymarketDataClient::merge_resolve_watch_entry(
-            &ctx,
+        merge_resolve_watch_entry(
+            &ctx.resolve_context(),
             ResolveWatchEntry {
                 condition_id: condition_id.clone(),
                 expiration_ns: UnixNanos::from(2_000),
@@ -4600,6 +3840,8 @@ mod tests {
             .downcast_ref::<PolymarketResolveRequestSummaryData>()
             .expect("expected resolve summary payload");
         assert_eq!(summary.resolved_markets, 1);
+        assert_eq!(summary.skipped_non_binary_markets, 1);
+        assert_eq!(summary.clob_fallback_successes, 1);
         assert_eq!(
             summary.emitted_condition_ids,
             vec!["0xCOND-REQ".to_string()]
@@ -4678,16 +3920,17 @@ mod tests {
         )
         .expect("gamma client");
 
-        let stats = PolymarketDataClient::fetch_and_apply_resolutions_by_condition_ids(
+        let stats = fetch_and_apply_resolutions_by_condition_ids(
             &failing_gamma,
             &client.clob_public_client,
-            &ws_ctx,
+            &ws_ctx.resolve_context(),
             &["0xCOND-REQ".to_string()],
             ResolveBatchErrorMode::StopOnFirstError,
         )
         .await;
 
         assert_eq!(stats.resolved_markets, 1);
+        assert_eq!(stats.clob_fallback_successes, 1);
         assert_eq!(stats.emitted_condition_ids, vec!["0xCOND-REQ".to_string()]);
         assert!(stats.failed_condition_ids.is_empty());
         assert_eq!(stats.error, None);
@@ -5042,6 +4285,8 @@ mod tests {
             requested_condition_ids: vec!["0xCOND-A".to_string()],
             fetched_markets: 1,
             resolved_markets: 1,
+            skipped_non_binary_markets: 0,
+            clob_fallback_successes: 0,
             emitted_condition_ids: vec!["0xCOND-A".to_string()],
             failed_condition_ids: Vec::new(),
             used_watchlist_fallback: false,
@@ -5063,8 +4308,7 @@ mod tests {
 
             let requested = dict
                 .get_item("requested_condition_ids")
-                .expect("expected requested_condition_ids")
-                .expect("requested_condition_ids missing");
+                .expect("expected requested_condition_ids");
             let requested_vec: Vec<String> = requested
                 .extract()
                 .expect("expected requested_condition_ids as list[str]");
@@ -5072,12 +4316,27 @@ mod tests {
 
             let resolved = dict
                 .get_item("resolved_markets")
-                .expect("expected resolved_markets")
-                .expect("resolved_markets missing");
+                .expect("expected resolved_markets");
             let resolved_count: usize = resolved
                 .extract()
                 .expect("expected resolved_markets as integer");
             assert_eq!(resolved_count, 1);
+
+            let skipped = dict
+                .get_item("skipped_non_binary_markets")
+                .expect("expected skipped_non_binary_markets");
+            let skipped_count: usize = skipped
+                .extract()
+                .expect("expected skipped_non_binary_markets as integer");
+            assert_eq!(skipped_count, 0);
+
+            let clob_successes = dict
+                .get_item("clob_fallback_successes")
+                .expect("expected clob_fallback_successes");
+            let clob_success_count: usize = clob_successes
+                .extract()
+                .expect("expected clob_fallback_successes as integer");
+            assert_eq!(clob_success_count, 0);
         });
     }
 

@@ -643,6 +643,65 @@ retry budget is exhausted, a condition still missing on Gamma is logged as a ter
 Python adapter then picks it back up on the next `update_instruments_interval_mins` refresh; the
 Rust adapter leaves the subscription unresolved until the caller resubscribes.
 
+### Market resolution events
+
+The Rust data client tracks Polymarket exposure at `condition_id` level so both YES and NO legs
+close together when the venue resolves the market. Position events add open Polymarket binary
+option instruments to an internal watchlist. Once a watched condition expires, the data client
+waits `resolve_poll_grace_secs`, then polls Gamma every `resolve_poll_interval_secs` until the
+condition resolves or `resolve_poll_max_wait_secs` elapses.
+
+Resolution uses strict winner inference:
+
+- Gamma must return a closed binary market with exactly two token IDs, two outcomes, and a binary
+  `outcomePrices` shape.
+- If Gamma does not provide a strict result for the condition, the client falls back to CLOB
+  `GET /markets/{condition_id}` and uses `tokens[].winner`.
+- Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
+  watchlist until the poll window times out or a manual request resolves them.
+
+When the client applies a resolution, it emits one `InstrumentStatus` close and one
+`InstrumentClose` per tracked leg. The winner leg closes at `1`, and the losing leg closes at `0`.
+The close type is `InstrumentCloseType.ContractExpired`. This event closes Nautilus exposure and
+does not redeem tokens or claim funds on-chain.
+
+The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
+requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and
+logs it for manual recovery. Manual requests can still retry the condition later.
+
+#### Manual resolution requests
+
+Use `request_data()` with data type `PolymarketResolveRequest` to force a resolution check. The
+request accepts any of these params:
+
+| Param            | Type                 | Description |
+|------------------|----------------------|-------------|
+| `condition_id`   | `str`                | Resolve one Polymarket condition. |
+| `condition_ids`  | `str` or `list[str]` | Resolve one or more Polymarket conditions. |
+| `instrument_ids` | `str` or `list[str]` | Resolve Polymarket instrument IDs; other venues are ignored. |
+
+If a request omits all selectors, the client uses the watchlist. With automatic polling enabled,
+the fallback selects paused or timed-out entries. With automatic polling disabled, it selects all
+expired eligible entries, so operators can run the recovery flow manually.
+
+The response payload is custom data with this dictionary shape:
+
+| Key                          | Meaning |
+|------------------------------|---------|
+| `requested_condition_ids`    | Deduplicated condition IDs checked by the request. |
+| `fetched_markets`            | Gamma markets returned across the batched lookup. |
+| `resolved_markets`           | Conditions with a strict Gamma result or successful CLOB fallback result. |
+| `skipped_non_binary_markets` | Gamma markets skipped for non‑binary or ambiguous resolution shape. |
+| `clob_fallback_successes`    | Conditions resolved through the CLOB fallback path. |
+| `emitted_condition_ids`      | Conditions that emitted at least one `InstrumentClose`. |
+| `failed_condition_ids`       | Conditions where both Gamma and CLOB lookup failed. |
+| `used_watchlist_fallback`    | Whether the request selected conditions from the watchlist. |
+| `timed_out_watchlist`        | Timed‑out watchlist entries seen during fallback selection. |
+| `error`                      | First summary error, if one occurred. |
+
+Redemption is a separate account or execution workflow. Do not extend the data client resolution
+path to claim funds; it only publishes market-outcome close events into Nautilus.
+
 ### Purging instruments at runtime
 
 Polymarket auto-loads instruments on demand, so a long-running session keeps growing the cache as
@@ -862,6 +921,10 @@ Struct: `PolymarketDataClientConfig` in `crates/adapters/polymarket/src/config.r
 | `auto_load_max_retries`              | `12`                                       | Maximum retry attempts on transient auto‑load failures (markets in the CLOB hydration window). Set to `0` to disable. |
 | `auto_load_retry_delay_initial_secs` | `5.0`                                      | Initial delay (seconds) between transient auto‑load retries. |
 | `auto_load_retry_delay_max_secs`     | `15.0`                                     | Maximum delay (seconds) between transient auto‑load retries. |
+| `resolve_poll_enabled`               | `true`                                     | Automatically poll expired watched conditions for market resolution. |
+| `resolve_poll_interval_secs`         | `30`                                       | Interval (seconds) between automatic resolution polling attempts. |
+| `resolve_poll_grace_secs`            | `10`                                       | Delay (seconds) after expiry before the first automatic resolution poll. |
+| `resolve_poll_max_wait_secs`         | `1800`                                     | Maximum wait (seconds) after expiry before automatic polling pauses a watched condition for manual recovery. |
 | `filters`                            | `[]`                                       | Instrument filters applied during loading and discovery. |
 | `new_market_filter`                  | `None`                                     | Optional filter applied to newly discovered markets before emission. |
 | `transport_backend`                  | `Sockudo`                                  | WebSocket transport backend. |
