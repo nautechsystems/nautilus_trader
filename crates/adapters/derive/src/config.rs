@@ -161,9 +161,9 @@ pub struct DeriveExecClientConfig {
     /// Override for the Trade module contract address. Falls back to the
     /// shipped per-environment constant when unset.
     pub trade_module_address: Option<String>,
-    /// Signature expiry TTL in seconds (added to the wall clock when signing
-    /// each action). Must be at least the venue minimum
-    /// ([`crate::common::consts::MIN_SIGNATURE_TTL`], 300s).
+    /// Signature expiry TTL in seconds for normal orders and replaces (added
+    /// to the wall clock before signing). Must be greater than the venue
+    /// minimum ([`crate::common::consts::MIN_SIGNATURE_TTL`], 300s).
     #[builder(default = 600)]
     pub signature_expiry_secs: u64,
     /// Slippage bound applied to market orders when deriving a worst-acceptable

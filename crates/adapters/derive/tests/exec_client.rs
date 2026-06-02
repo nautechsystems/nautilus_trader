@@ -61,7 +61,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_derive::{
     common::{
-        consts::{DERIVE_VENUE, TRIGGER_ORDER_SIGNATURE_TTL},
+        consts::{DERIVE_VENUE, MIN_SIGNATURE_TTL, TRIGGER_ORDER_SIGNATURE_TTL},
         enums::DeriveEnvironment,
         parse::parse_derive_instrument_any,
     },
@@ -986,6 +986,14 @@ struct TestClient {
 }
 
 async fn build_client(rest_state: RestState, ws_state: WsState) -> TestClient {
+    build_client_with_config(rest_state, ws_state, |config| config).await
+}
+
+async fn build_client_with_config(
+    rest_state: RestState,
+    ws_state: WsState,
+    configure: impl FnOnce(DeriveExecClientConfig) -> DeriveExecClientConfig,
+) -> TestClient {
     let rest_addr = start_rest_server(rest_state).await;
     let ws_addr = start_ws_server(ws_state).await;
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
@@ -998,9 +1006,9 @@ async fn build_client(rest_state: RestState, ws_state: WsState) -> TestClient {
     // emitter directly.
     register_test_account(&cache, AccountId::from("DERIVE-001"));
 
-    let mut client =
-        DeriveExecutionClient::new(build_core(cache.clone()), test_config(rest_addr, ws_addr))
-            .expect("client creation succeeds");
+    let config = configure(test_config(rest_addr, ws_addr));
+    let mut client = DeriveExecutionClient::new(build_core(cache.clone()), config)
+        .expect("client creation succeeds");
     // start() installs the freshly-replaced event sender on the emitter, so
     // tests that drain the receiver must call it before any emit_*.
     client.start().expect("start succeeds");
@@ -1365,6 +1373,135 @@ async fn test_submit_order_limit_posts_signed_payload() {
     assert_eq!(body["subaccount_id"].as_u64(), Some(TEST_SUBACCOUNT));
     assert!(body["signature"].as_str().unwrap().starts_with("0x"));
     assert!(body["nonce"].as_u64().unwrap() > 0);
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_accepts_signature_ttl_above_minimum() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+        config.signature_expiry_secs = MIN_SIGNATURE_TTL.as_secs() + 1;
+        config
+    })
+    .await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-OK-TTL-1");
+    let order = build_limit_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("3500.00"),
+        Quantity::from("1.000"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+
+    let start_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time is after unix epoch")
+        .as_secs() as i64;
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.submitted_orders.lock().await.is_empty() }
+        },
+        "private/order posted",
+    )
+    .await;
+
+    let posts = ws_state.submitted_orders.lock().await;
+    let body = &posts[0];
+    let expiry = body["signature_expiry_sec"]
+        .as_i64()
+        .expect("payload has signature expiry");
+    let expected_ttl = (MIN_SIGNATURE_TTL.as_secs() + 1) as i64;
+    assert!(
+        expiry >= start_secs + expected_ttl - 2 && expiry <= start_secs + expected_ttl + 5,
+        "signature expiry must use the configured TTL above the minimum, was {expiry}",
+    );
+    assert_eq!(body["label"].as_str(), Some("STRAT-OK-TTL-1"));
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case(MIN_SIGNATURE_TTL.as_secs(), "must be greater than the Derive minimum")]
+#[case(MIN_SIGNATURE_TTL.as_secs() - 1, "must be greater than the Derive minimum")]
+#[tokio::test]
+async fn test_submit_order_rejects_signature_ttl_minimum_or_lower_before_posting(
+    #[case] signature_expiry_secs: u64,
+    #[case] reason_fragment: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+        config.signature_expiry_secs = signature_expiry_secs;
+        config
+    })
+    .await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-BAD-TTL-1");
+    let order = build_limit_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("3500.00"),
+        Quantity::from("1.000"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let _ = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted event",
+    )
+    .await;
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
+        "OrderRejected event",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event {
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert!(!rejected.due_post_only);
+        assert!(
+            rejected
+                .reason
+                .as_str()
+                .contains("order expiry validation failed")
+                && rejected.reason.as_str().contains(reason_fragment),
+            "unexpected reject reason: {}",
+            rejected.reason,
+        );
+    } else {
+        unreachable!();
+    }
+    assert!(
+        ws_state.submitted_orders.lock().await.is_empty(),
+        "invalid signature TTL must not post private/order",
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -2351,6 +2488,99 @@ async fn test_modify_order_posts_replace_and_emits_order_updated() {
     assert!(body["signature"].as_str().unwrap().starts_with("0x"));
     // The legacy cancel-only fallback must not fire any more.
     assert!(ws_state.cancelled_orders.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case(
+    MIN_SIGNATURE_TTL.as_secs(),
+    "must be greater than the Derive minimum"
+)]
+#[case(
+    MIN_SIGNATURE_TTL.as_secs() - 1,
+    "must be greater than the Derive minimum"
+)]
+#[case(i64::MAX as u64, "overflows Derive signature_expiry_sec")]
+#[tokio::test]
+async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
+    #[case] signature_expiry_secs: u64,
+    #[case] reason_fragment: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+        config.signature_expiry_secs = signature_expiry_secs;
+        config
+    })
+    .await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-MOD-BAD-TTL");
+    let order = build_limit_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("3500.00"),
+        Quantity::from("1.000"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial AccountState",
+    )
+    .await;
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        instrument_id,
+        client_order_id,
+        Some(VenueOrderId::from("ord-stale-overflow")),
+        Some(Quantity::from("2.000")),
+        Some(Price::from("3505.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.modify_order(cmd).expect("modify_order Ok");
+
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
+        "OrderModifyRejected event",
+    )
+    .await;
+
+    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+        let reason = rejected.reason.as_str();
+        assert!(
+            reason.contains("replace expiry validation failed") && reason.contains(reason_fragment),
+            "unexpected reject reason: {reason}",
+        );
+        assert_eq!(
+            rejected.venue_order_id.map(|v| v.as_str().to_string()),
+            Some("ord-stale-overflow".to_string()),
+        );
+    } else {
+        unreachable!();
+    }
+    assert!(
+        ws_state.replace_orders.lock().await.is_empty(),
+        "invalid signature TTL must not post private/replace",
+    );
+    assert!(
+        ws_state.cancelled_orders.lock().await.is_empty(),
+        "invalid signature TTL must not fall back to private/cancel",
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }

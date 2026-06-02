@@ -69,7 +69,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS, DERIVE_VENUE, TRIGGER_ORDER_SIGNATURE_TTL,
+            DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS, DERIVE_VENUE, MIN_SIGNATURE_TTL,
+            TRIGGER_ORDER_SIGNATURE_TTL,
         },
         credential::DeriveCredential,
         enums::{DeriveInstrumentType, DeriveOrderSide},
@@ -1173,11 +1174,8 @@ impl ExecutionClient for DeriveExecutionClient {
                 None
             };
 
-            let nonce = nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)?;
-            let expiry =
-                (clock.get_time_ns().as_u64() / 1_000_000_000) as i64 + signing.signature_expiry_secs as i64;
-
             if is_trigger_order {
+                let nonce = nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)?;
                 let expiry = trigger_order_signature_expiry(clock);
                 let payload = match trigger_order_to_derive_payload(
                     &order_for_task,
@@ -1275,6 +1273,26 @@ impl ExecutionClient for DeriveExecutionClient {
                 return Ok(());
             }
 
+            let expiry =
+                match normal_order_signature_expiry(clock, signing.signature_expiry_secs) {
+                    Ok(expiry) => expiry,
+                    Err(e) => {
+                        log::warn!(
+                            "Order expiry validation failed for {}: {e}",
+                            order_for_task.client_order_id()
+                        );
+                        dispatch_state.forget(&order_for_task.client_order_id());
+                        let ts = clock.get_time_ns();
+                        emitter.emit_order_rejected(
+                            &order_for_task,
+                            &format!("order expiry validation failed: {e}"),
+                            ts,
+                            false,
+                        );
+                        return Ok(());
+                    }
+                };
+            let nonce = nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)?;
             let payload = match order_to_derive_payload(
                 &order_for_task,
                 &instrument,
@@ -1663,9 +1681,24 @@ impl ExecutionClient for DeriveExecutionClient {
                 }
             };
 
+            let expiry = match normal_order_signature_expiry(clock, signing.signature_expiry_secs) {
+                Ok(expiry) => expiry,
+                Err(e) => {
+                    let reason = format!("replace expiry validation failed: {e}");
+                    log::warn!("Cannot modify order {client_order_id}: {reason}");
+                    let ts = clock.get_time_ns();
+                    emitter.emit_order_modify_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        &reason,
+                        ts,
+                    );
+                    return Ok(());
+                }
+            };
             let nonce = nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)?;
-            let expiry = (clock.get_time_ns().as_u64() / 1_000_000_000) as i64
-                + signing.signature_expiry_secs as i64;
 
             let payload = match order_replace_to_derive_payload(
                 &order_for_task,
@@ -2297,6 +2330,34 @@ fn trigger_order_signature_expiry(clock: &'static AtomicTime) -> i64 {
     now_secs + TRIGGER_ORDER_SIGNATURE_TTL.as_secs() as i64
 }
 
+fn normal_order_signature_expiry(
+    clock: &'static AtomicTime,
+    signature_expiry_secs: u64,
+) -> anyhow::Result<i64> {
+    let min_ttl_secs = MIN_SIGNATURE_TTL.as_secs();
+    if signature_expiry_secs <= min_ttl_secs {
+        anyhow::bail!(
+            "signature_expiry_secs {signature_expiry_secs}s must be greater than the Derive minimum {min_ttl_secs}s"
+        );
+    }
+
+    let now_secs_u64 = clock.get_time_ns().as_u64() / 1_000_000_000;
+    let now_secs = i64::try_from(now_secs_u64).with_context(|| {
+        format!("current UNIX time {now_secs_u64}s cannot fit in Derive signature_expiry_sec")
+    })?;
+    let ttl_secs = i64::try_from(signature_expiry_secs).with_context(|| {
+        format!(
+            "signature_expiry_secs {signature_expiry_secs}s cannot fit in Derive signature_expiry_sec"
+        )
+    })?;
+
+    now_secs.checked_add(ttl_secs).ok_or_else(|| {
+        anyhow::anyhow!(
+            "signature expiry overflows Derive signature_expiry_sec: now {now_secs}s plus TTL {ttl_secs}s"
+        )
+    })
+}
+
 async fn refresh_market_order_quote(
     http_client: &DeriveHttpClient,
     venue_symbol: &str,
@@ -2453,6 +2514,51 @@ mod tests {
         assert_eq!(buy, dec!(3618));
         assert_eq!(sell, dec!(3582));
         assert!(zero.is_none());
+    }
+
+    #[rstest]
+    fn test_normal_order_signature_expiry_accepts_ttl_above_minimum() {
+        let clock = get_atomic_clock_realtime();
+        let start_secs = (clock.get_time_ns().as_u64() / 1_000_000_000) as i64;
+        let ttl_secs = MIN_SIGNATURE_TTL.as_secs() + 1;
+
+        let expiry = normal_order_signature_expiry(clock, ttl_secs).expect("expiry is valid");
+
+        assert!(expiry >= start_secs + ttl_secs as i64);
+    }
+
+    #[rstest]
+    #[case(MIN_SIGNATURE_TTL.as_secs(), "must be greater than the Derive minimum")]
+    #[case(MIN_SIGNATURE_TTL.as_secs() - 1, "must be greater than the Derive minimum")]
+    fn test_normal_order_signature_expiry_rejects_minimum_or_lower_ttl(
+        #[case] ttl_secs: u64,
+        #[case] reason_fragment: &str,
+    ) {
+        let clock = get_atomic_clock_realtime();
+
+        let err = normal_order_signature_expiry(clock, ttl_secs).expect_err("TTL is too short");
+
+        assert!(
+            err.to_string().contains(reason_fragment),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    #[case(i64::MAX as u64, "overflows Derive signature_expiry_sec")]
+    #[case(u64::MAX, "cannot fit in Derive signature_expiry_sec")]
+    fn test_normal_order_signature_expiry_rejects_extreme_ttl(
+        #[case] ttl_secs: u64,
+        #[case] reason_fragment: &str,
+    ) {
+        let clock = get_atomic_clock_realtime();
+
+        let err = normal_order_signature_expiry(clock, ttl_secs).expect_err("TTL is invalid");
+
+        assert!(
+            err.to_string().contains(reason_fragment),
+            "unexpected error: {err}",
+        );
     }
 
     #[rstest]

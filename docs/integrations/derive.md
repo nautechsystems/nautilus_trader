@@ -247,7 +247,8 @@ trigger worker submits the signed child order. Reconciliation therefore reads bo
 
 Derive mainnet requires trigger-order signatures to expire 30 to 90 days from venue time. The
 adapter signs trigger orders with a fixed 31-day expiry; `signature_expiry_secs` still controls
-ordinary `private/order` and `private/replace` writes.
+ordinary `private/order` and `private/replace` writes, and must be greater than the 300s venue
+minimum.
 
 | Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                         |
 |---------------------|-----------|---------------------|-----------------------|-------------------------------|
@@ -416,7 +417,7 @@ Class/struct: `DeriveExecClientConfig`.
 | `domain_separator`          | `None`    | Optional EIP-712 domain separator override. |
 | `action_typehash`           | `None`    | Optional EIP-712 action typehash override. |
 | `trade_module_address`      | `None`    | Optional Trade module contract address override. |
-| `signature_expiry_secs`     | `600`     | Signature expiry TTL for ordinary orders; trigger orders use a fixed 31-day TTL. |
+| `signature_expiry_secs`     | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
 | `market_order_slippage_bps` | `50`      | Slippage bound for market‑order limit prices. |
 | `transport_backend`         | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
 
