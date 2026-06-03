@@ -210,7 +210,7 @@ impl LighterDataClient {
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
         let ws_client = LighterWebSocketClient::new(
-            config.base_url_ws.clone(),
+            Some(config.ws_url()),
             config.environment,
             Arc::clone(&registry),
             config.transport_backend,
@@ -1762,6 +1762,16 @@ mod tests {
     fn test_clamp_book_snapshot_limit(#[case] depth: Option<usize>, #[case] expected: u16) {
         let depth = depth.map(|n| NonZeroUsize::new(n).expect("non-zero"));
         assert_eq!(clamp_book_snapshot_limit(depth), expected);
+    }
+
+    #[rstest]
+    fn test_new_uses_readonly_websocket_url() {
+        let client = create_data_client_for_test();
+
+        assert_eq!(
+            client.ws_client.url(),
+            "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+        );
     }
 
     #[rstest]
