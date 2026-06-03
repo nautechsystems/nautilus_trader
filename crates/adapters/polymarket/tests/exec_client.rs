@@ -82,6 +82,7 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_SIGNER_ADDRESS: &str = "0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb";
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
 const DEFAULT_ACCEPTED_ORDER_ID: &str =
     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
@@ -555,7 +556,7 @@ async fn test_exec_client_poly1271_requires_distinct_funder() {
     );
     let mut config = create_test_exec_config(addr);
     config.signature_type = SignatureType::Poly1271;
-    config.funder = Some("0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb".to_string());
+    config.funder = Some(TEST_SIGNER_ADDRESS.to_string());
 
     let error = PolymarketExecutionClient::new(core, config).unwrap_err();
 
@@ -568,7 +569,7 @@ async fn test_exec_client_poly1271_requires_distinct_funder() {
 
 #[rstest]
 #[tokio::test]
-async fn test_exec_client_poly1271_uses_funder_for_api_auth() {
+async fn test_exec_client_poly1271_uses_signer_for_api_auth() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let trader_id = TraderId::from("TESTER-001");
@@ -616,7 +617,10 @@ async fn test_exec_client_poly1271_uses_funder_for_api_auth() {
         matches!(event, ExecutionEvent::Account(_)),
         "Expected Account event, was {event:?}"
     );
-    assert_eq!(headers.get("poly_address"), Some(&funder));
+    assert_eq!(
+        headers.get("poly_address").map(String::as_str),
+        Some(TEST_SIGNER_ADDRESS),
+    );
 }
 
 #[rstest]
