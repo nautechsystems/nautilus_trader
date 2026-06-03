@@ -478,10 +478,12 @@ mod tests {
 
     #[rstest]
     fn test_decode_batch_invalid_ask_size_returns_error() {
-        use nautilus_model::types::quantity::QUANTITY_RAW_MAX;
+        use nautilus_model::types::{fixed::FIXED_PRECISION, quantity::QUANTITY_RAW_MAX};
 
         let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+        // Decode the size at full precision so the out-of-range raw value bypasses the
+        // precision-0 correction, which would otherwise round it back within the bound.
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, FIXED_PRECISION);
 
         let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
         let bid_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);

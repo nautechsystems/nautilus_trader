@@ -1944,10 +1944,10 @@ extern const uint8_t HIGH_PRECISION_MODE;
  *
  * # Safety
  *
- * This value is computed at compile time from `MONEY_MAX` * `FIXED_SCALAR`.
- * The multiplication is guaranteed not to overflow because `MONEY_MAX` and `FIXED_SCALAR`
- * are chosen such that their product fits within `MoneyRaw`'s range in both
- * high-precision (i128) and standard-precision (i64) modes.
+ * `MONEY_MAX` and `FIXED_SCALAR` are cast to `MoneyRaw` before multiplying, so the
+ * scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+ * fits within `MoneyRaw`'s range in both high-precision (i128) and standard-precision
+ * (i64) modes, so the multiplication cannot overflow.
  */
 extern const MoneyRaw MONEY_RAW_MAX;
 
@@ -1956,10 +1956,10 @@ extern const MoneyRaw MONEY_RAW_MAX;
  *
  * # Safety
  *
- * This value is computed at compile time from `MONEY_MIN` * `FIXED_SCALAR`.
- * The multiplication is guaranteed not to overflow because `MONEY_MIN` and `FIXED_SCALAR`
- * are chosen such that their product fits within `MoneyRaw`'s range in both
- * high-precision (i128) and standard-precision (i64) modes.
+ * `MONEY_MIN` and `FIXED_SCALAR` are cast to `MoneyRaw` before multiplying, so the
+ * scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+ * fits within `MoneyRaw`'s range in both high-precision (i128) and standard-precision
+ * (i64) modes, so the multiplication cannot overflow.
  */
 extern const MoneyRaw MONEY_RAW_MIN;
 
@@ -1968,10 +1968,10 @@ extern const MoneyRaw MONEY_RAW_MIN;
  *
  * # Safety
  *
- * This value is computed at compile time from `PRICE_MAX` * `FIXED_SCALAR`.
- * The multiplication is guaranteed not to overflow because `PRICE_MAX` and `FIXED_SCALAR`
- * are chosen such that their product fits within `PriceRaw`'s range in both
- * high-precision (i128) and standard-precision (i64) modes.
+ * `PRICE_MAX` and `FIXED_SCALAR` are cast to `PriceRaw` before multiplying, so the
+ * scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+ * fits within `PriceRaw`'s range in both high-precision (i128) and standard-precision
+ * (i64) modes, so the multiplication cannot overflow.
  */
 extern const PriceRaw PRICE_RAW_MAX;
 
@@ -1980,15 +1980,20 @@ extern const PriceRaw PRICE_RAW_MAX;
  *
  * # Safety
  *
- * This value is computed at compile time from `PRICE_MIN` * `FIXED_SCALAR`.
- * The multiplication is guaranteed not to overflow because `PRICE_MIN` and `FIXED_SCALAR`
- * are chosen such that their product fits within `PriceRaw`'s range in both
- * high-precision (i128) and standard-precision (i64) modes.
+ * `PRICE_MIN` and `FIXED_SCALAR` are cast to `PriceRaw` before multiplying, so the
+ * scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+ * fits within `PriceRaw`'s range in both high-precision (i128) and standard-precision
+ * (i64) modes, so the multiplication cannot overflow.
  */
 extern const PriceRaw PRICE_RAW_MIN;
 
 /**
  * The maximum raw quantity integer value.
+ *
+ * `QUANTITY_MAX` and `FIXED_SCALAR` are cast to `QuantityRaw` before multiplying, so the
+ * scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+ * fits within `QuantityRaw`'s range in both high-precision (u128) and standard-precision
+ * (u64) modes, so the multiplication cannot overflow.
  */
 extern const QuantityRaw QUANTITY_RAW_MAX;
 

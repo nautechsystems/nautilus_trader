@@ -87,25 +87,25 @@ pub type PriceRaw = i64;
 ///
 /// # Safety
 ///
-/// This value is computed at compile time from `PRICE_MAX` * `FIXED_SCALAR`.
-/// The multiplication is guaranteed not to overflow because `PRICE_MAX` and `FIXED_SCALAR`
-/// are chosen such that their product fits within `PriceRaw`'s range in both
-/// high-precision (i128) and standard-precision (i64) modes.
+/// `PRICE_MAX` and `FIXED_SCALAR` are cast to `PriceRaw` before multiplying, so the
+/// scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+/// fits within `PriceRaw`'s range in both high-precision (i128) and standard-precision
+/// (i64) modes, so the multiplication cannot overflow.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
-pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
+pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX as PriceRaw) * (FIXED_SCALAR as PriceRaw);
 
 /// The minimum raw price integer value.
 ///
 /// # Safety
 ///
-/// This value is computed at compile time from `PRICE_MIN` * `FIXED_SCALAR`.
-/// The multiplication is guaranteed not to overflow because `PRICE_MIN` and `FIXED_SCALAR`
-/// are chosen such that their product fits within `PriceRaw`'s range in both
-/// high-precision (i128) and standard-precision (i64) modes.
+/// `PRICE_MIN` and `FIXED_SCALAR` are cast to `PriceRaw` before multiplying, so the
+/// scaling uses exact integer arithmetic rather than a lossy `f64` product. The result
+/// fits within `PriceRaw`'s range in both high-precision (i128) and standard-precision
+/// (i64) modes, so the multiplication cannot overflow.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
-pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
+pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN as PriceRaw) * (FIXED_SCALAR as PriceRaw);
 
 /// The sentinel value for an unset or null price.
 pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
@@ -850,6 +850,19 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_extreme_prices_round_trip_through_raw() {
+        // Regression: a lossy `f64` scalar previously left `PRICE_RAW_MAX`/`PRICE_RAW_MIN`
+        // beyond the raw produced by `new` at the bounds, causing spurious panics and errors.
+        let max = Price::new(PRICE_MAX, 0);
+        let min = Price::new(PRICE_MIN, 0);
+
+        assert_eq!(max.raw, PRICE_RAW_MAX);
+        assert_eq!(min.raw, PRICE_RAW_MIN);
+        assert!(Price::from_raw_checked(max.raw, 0).is_ok());
+        assert!(Price::from_raw_checked(min.raw, 0).is_ok());
+    }
 
     #[rstest]
     #[cfg(all(not(feature = "defi"), not(feature = "high-precision")))]
