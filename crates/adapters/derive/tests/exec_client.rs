@@ -3512,7 +3512,7 @@ async fn test_generate_order_status_report_finds_trigger_order_by_label_before_h
             "limit",
             "untriggered",
             "3700",
-            "3600",
+            "3800",
             "mark",
             "takeprofit",
         )],
@@ -3547,7 +3547,7 @@ async fn test_generate_order_status_report_finds_trigger_order_by_label_before_h
     assert_eq!(report.order_type, OrderType::LimitIfTouched);
     assert_eq!(report.order_status, OrderStatus::Accepted);
     assert_eq!(report.price, Some(Price::from("3700")));
-    assert_eq!(report.trigger_price, Some(Price::from("3600")));
+    assert_eq!(report.trigger_price, Some(Price::from("3800")));
     assert!(!rest_state.open_orders_calls.lock().await.is_empty());
     assert!(!rest_state.trigger_orders_calls.lock().await.is_empty());
     assert!(

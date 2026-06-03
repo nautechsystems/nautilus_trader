@@ -28,7 +28,10 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         consts::DERIVE_VENUE,
-        enums::{DeriveLiquidityRole, DeriveOrderStatus, DeriveTimeInForce, DeriveTxStatus},
+        enums::{
+            DeriveLiquidityRole, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
+            DeriveTimeInForce, DeriveTriggerType, DeriveTxStatus,
+        },
         parse::{
             derive_order_side_to_nautilus, derive_order_type_to_nautilus_for_order,
             derive_rejection_due_post_only, derive_status_to_nautilus, derive_tif_to_nautilus,
@@ -57,7 +60,7 @@ pub fn parse_derive_order_to_report(
         InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE);
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
     let order_side = derive_order_side_to_nautilus(order.direction);
-    let order_type = derive_order_type_to_nautilus_for_order(order.order_type, order.trigger_type);
+    let order_type = derive_order_type_to_nautilus_for_report(order);
     let post_only = matches!(order.time_in_force, DeriveTimeInForce::PostOnly);
     let time_in_force = derive_tif_to_nautilus(order.time_in_force);
     let order_status =
@@ -136,6 +139,37 @@ fn order_type_has_limit_price(order_type: OrderType) -> bool {
         order_type,
         OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
     )
+}
+
+fn derive_order_type_to_nautilus_for_report(order: &DeriveOrder) -> OrderType {
+    let order_type = derive_order_type_to_nautilus_for_order(order.order_type, order.trigger_type);
+    if order_type != OrderType::LimitIfTouched {
+        return order_type;
+    }
+
+    match (order.order_type, order.trigger_type, order.trigger_price) {
+        (DeriveOrderType::Limit, Some(DeriveTriggerType::Takeprofit), Some(trigger_price))
+            if !limit_if_touched_prices_are_valid(
+                order.direction,
+                order.limit_price,
+                trigger_price,
+            ) =>
+        {
+            OrderType::StopLimit
+        }
+        _ => order_type,
+    }
+}
+
+fn limit_if_touched_prices_are_valid(
+    direction: DeriveOrderSide,
+    limit_price: Decimal,
+    trigger_price: Decimal,
+) -> bool {
+    match direction {
+        DeriveOrderSide::Buy => trigger_price <= limit_price,
+        DeriveOrderSide::Sell => trigger_price >= limit_price,
+    }
 }
 
 /// Builds a [`FillReport`] from a Derive trade record.
@@ -548,14 +582,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_order_report_maps_limit_if_touched_trigger() {
+    #[case(DeriveOrderSide::Buy, dec!(3700), dec!(3600))]
+    #[case(DeriveOrderSide::Buy, dec!(3700), dec!(3700))]
+    #[case(DeriveOrderSide::Sell, dec!(3700), dec!(3800))]
+    #[case(DeriveOrderSide::Sell, dec!(3700), dec!(3700))]
+    fn test_parse_order_report_maps_limit_if_touched_trigger(
+        #[case] direction: DeriveOrderSide,
+        #[case] limit_price: Decimal,
+        #[case] trigger_price: Decimal,
+    ) {
         let mut order = sample_order();
         order.average_price = Decimal::ZERO;
+        order.direction = direction;
         order.filled_amount = Decimal::ZERO;
-        order.limit_price = dec!(3700);
+        order.limit_price = limit_price;
         order.order_status = DeriveOrderStatus::Untriggered;
         order.order_type = DeriveOrderType::Limit;
-        order.trigger_price = Some(dec!(3600));
+        order.trigger_price = Some(trigger_price);
         order.trigger_price_type = Some(DeriveTriggerPriceType::Index);
         order.trigger_type = Some(DeriveTriggerType::Takeprofit);
         let account_id = AccountId::new("DERIVE-001");
@@ -563,8 +606,48 @@ mod tests {
         let report = parse_derive_order_to_report(&order, account_id, UnixNanos::from(1)).unwrap();
 
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
-        assert_eq!(report.price, Some(Price::from("3700")));
-        assert_eq!(report.trigger_price, Some(Price::from("3600")));
+        assert_eq!(
+            report.price,
+            Some(Price::from_decimal(limit_price.normalize()).unwrap())
+        );
+        assert_eq!(
+            report.trigger_price,
+            Some(Price::from_decimal(trigger_price.normalize()).unwrap())
+        );
+        assert_eq!(report.trigger_type, Some(TriggerType::IndexPrice));
+    }
+
+    #[rstest]
+    #[case(DeriveOrderSide::Buy, dec!(3700), dec!(3800))]
+    #[case(DeriveOrderSide::Sell, dec!(3700), dec!(3600))]
+    fn test_parse_order_report_maps_take_profit_limit_with_stop_shape(
+        #[case] direction: DeriveOrderSide,
+        #[case] limit_price: Decimal,
+        #[case] trigger_price: Decimal,
+    ) {
+        let mut order = sample_order();
+        order.average_price = Decimal::ZERO;
+        order.direction = direction;
+        order.filled_amount = Decimal::ZERO;
+        order.limit_price = limit_price;
+        order.order_status = DeriveOrderStatus::Untriggered;
+        order.order_type = DeriveOrderType::Limit;
+        order.trigger_price = Some(trigger_price);
+        order.trigger_price_type = Some(DeriveTriggerPriceType::Index);
+        order.trigger_type = Some(DeriveTriggerType::Takeprofit);
+        let account_id = AccountId::new("DERIVE-001");
+
+        let report = parse_derive_order_to_report(&order, account_id, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(
+            report.price,
+            Some(Price::from_decimal(limit_price.normalize()).unwrap())
+        );
+        assert_eq!(
+            report.trigger_price,
+            Some(Price::from_decimal(trigger_price.normalize()).unwrap())
+        );
         assert_eq!(report.trigger_type, Some(TriggerType::IndexPrice));
     }
 
