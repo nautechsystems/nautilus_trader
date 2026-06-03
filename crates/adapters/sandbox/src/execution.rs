@@ -579,6 +579,23 @@ impl SandboxExecutionClient {
         self.get_account_balances()
     }
 
+    fn sync_cached_account_config(&self) -> anyhow::Result<()> {
+        let Some(mut account) = self.get_account() else {
+            return Ok(());
+        };
+
+        account.set_calculate_account_state(!self.config.frozen_account);
+
+        if let AccountAny::Margin(margin_account) = &mut account {
+            margin_account.set_default_leverage(self.config.default_leverage);
+            for (instrument_id, leverage) in &self.config.leverages {
+                margin_account.set_leverage(*instrument_id, *leverage);
+            }
+        }
+
+        self.cache.borrow_mut().update_account(&account)
+    }
+
     /// Processes a quote tick through the matching engine.
     ///
     /// # Errors
@@ -776,6 +793,7 @@ impl ExecutionClient for SandboxExecutionClient {
             .generate_account_state(balances, margins, reported, ts_event, ts_init);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
+        self.sync_cached_account_config()?;
         Ok(())
     }
 
