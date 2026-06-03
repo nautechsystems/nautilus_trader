@@ -61,7 +61,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision,
-    mantissa_exponent_to_fixed_i128, raw_scales_match,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scales_match,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -513,6 +513,29 @@ impl Quantity {
         );
 
         Self { raw, precision }
+    }
+
+    /// Checked variant of [`Quantity::from_mantissa_exponent`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the precision is invalid or the resulting raw value
+    /// exceeds [`QUANTITY_RAW_MAX`].
+    pub fn from_mantissa_exponent_checked(
+        mantissa: u64,
+        exponent: i8,
+        precision: u8,
+    ) -> CorrectnessResult<Self> {
+        let raw = mantissa_exponent_to_raw_checked::<QuantityRaw>(
+            i128::from(mantissa),
+            exponent,
+            precision,
+            "Quantity::from_mantissa_exponent",
+            "QuantityRaw",
+            "Quantity",
+        )?;
+
+        Self::from_raw_checked(raw, precision)
     }
 
     /// Creates a new [`Quantity`] from a U256 amount with specified precision.
@@ -1612,6 +1635,39 @@ mod tests {
     fn test_from_mantissa_exponent_zero() {
         let qty = Quantity::from_mantissa_exponent(0, 2, 2);
         assert_eq!(qty.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_checked_exact_precision() {
+        let qty = Quantity::from_mantissa_exponent_checked(12345, -2, 2).unwrap();
+        assert_eq!(qty.as_decimal(), dec!(123.45));
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_checked_zero_with_large_exponent() {
+        let qty = Quantity::from_mantissa_exponent_checked(0, 119, 2).unwrap();
+        assert_eq!(qty.as_decimal(), dec!(0.00));
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_checked_invalid_precision() {
+        #[cfg(feature = "defi")]
+        let invalid_precision = crate::defi::WEI_PRECISION + 1;
+        #[cfg(not(feature = "defi"))]
+        let invalid_precision = FIXED_PRECISION + 1;
+
+        let error = Quantity::from_mantissa_exponent_checked(1, 0, invalid_precision).unwrap_err();
+        assert!(error.to_string().contains("`precision` exceeded maximum"));
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_checked_overflow_returns_error() {
+        let error = Quantity::from_mantissa_exponent_checked(u64::MAX, 100, 0).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Overflow in Quantity::from_mantissa_exponent")
+        );
     }
 
     #[rstest]

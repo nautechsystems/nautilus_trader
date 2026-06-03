@@ -645,6 +645,40 @@ pub fn mantissa_exponent_to_fixed_i128(
     })
 }
 
+pub(crate) fn mantissa_exponent_to_raw_checked<R>(
+    mantissa: i128,
+    exponent: i8,
+    precision: u8,
+    context: &'static str,
+    raw_type_name: &'static str,
+    value_type_name: &'static str,
+) -> CorrectnessResult<R>
+where
+    R: TryFrom<i128>,
+{
+    check_fixed_precision(precision)?;
+
+    let raw_i128 = if mantissa == 0 {
+        0
+    } else {
+        mantissa_exponent_to_fixed_i128(mantissa, exponent, precision).map_err(|_| {
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Overflow in {context} (mantissa={mantissa}, exponent={exponent}, precision={precision})"
+                ),
+            }
+        })?
+    };
+
+    raw_i128
+        .try_into()
+        .map_err(|_| CorrectnessError::PredicateViolation {
+            message: format!(
+                "Raw value {raw_i128} exceeds {raw_type_name} range for {value_type_name}"
+            ),
+        })
+}
+
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
 ///
 /// # Precision and Rounding
